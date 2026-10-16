@@ -93,6 +93,111 @@
       }
     }
 
+    /* Yüksek karşıtlık (o-25): ayarlar.js, "Yüksek karşıtlık" açıkken <html data-karsitlik="1"> yazar. Opak zemin, belirgin kenarlık ve
+       metinlerde en az 7:1 kontrast; koyu palet varsayılan, Windows açık temadaysa (ya da "Her zaman açık" seçiliyse) açık palet. */
+    :root[data-karsitlik] {
+      --bg: #000000;
+      --card-bg: #000000;
+      --card-border: #ffffff;
+      --text-main: #ffffff;
+      --text-muted: #ffffff;
+      --text-dim: #ffffff;
+      --label: #ffffff;
+      --primary: #8ab4ff;
+      --primary-btn: #1e40af;
+      --primary-btn-hover: #1e3a8a;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #ff6b6b;
+      --input-bg: #000000;
+      --input-border: #ffffff;
+      --input-focus: #ffff00;
+      --btn2-bg: #000000;
+      --btn2-text: #ffffff;
+      --btn2-hover: #1a1a1a;
+      --btn2-border-hover: #ffff00;
+      --danger-text: #ffb4b4;
+      --danger-bg: #000000;
+      --danger-border: #ffb4b4;
+      --warn-text: #ffe066;
+      --warn-bg: #000000;
+      --warn-border: #ffe066;
+      --err-text: #ffb4b4;
+      --err-bg: #000000;
+      --err-border: #ffb4b4;
+      --err-line: #ff8080;
+      --ok-text: #7dffb3;
+      --ok-bg: #000000;
+      --ok-border: #7dffb3;
+      --chip-bg: #000000;
+      --chip-text: #ffffff;
+      --hover-row: rgba(255, 255, 255, 0.14);
+      --rule-text: #ffe066;
+      --rule-bg: #000000;
+      --bar-bg: #000000;
+      --kod-text: #ffffff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root[data-karsitlik] {
+        --bg: #ffffff;
+        --card-bg: #ffffff;
+        --card-border: #000000;
+        --text-main: #000000;
+        --text-muted: #000000;
+        --text-dim: #000000;
+        --label: #000000;
+        --primary: #0b3a9e;
+        --primary-btn: #0b3a9e;
+        --primary-btn-hover: #082a75;
+        --success: #005a2f;
+        --warning: #7a4a00;
+        --danger: #a00000;
+        --input-bg: #ffffff;
+        --input-border: #000000;
+        --input-focus: #0000cc;
+        --btn2-bg: #ffffff;
+        --btn2-text: #000000;
+        --btn2-hover: #e5e5e5;
+        --btn2-border-hover: #0000cc;
+        --danger-text: #8a0000;
+        --danger-bg: #ffffff;
+        --danger-border: #8a0000;
+        --warn-text: #5c3500;
+        --warn-bg: #ffffff;
+        --warn-border: #5c3500;
+        --err-text: #8a0000;
+        --err-bg: #ffffff;
+        --err-border: #8a0000;
+        --err-line: #8a0000;
+        --ok-text: #005a2f;
+        --ok-bg: #ffffff;
+        --ok-border: #005a2f;
+        --chip-bg: #ffffff;
+        --chip-text: #000000;
+        --hover-row: rgba(0, 0, 0, 0.12);
+        --rule-text: #4a2f00;
+        --rule-bg: #ffffff;
+        --bar-bg: #ffffff;
+        --kod-text: #000000;
+      }
+    }
+
+    /* Yüksek karşıtlık: kenarlıklar kalın, odak halkası belirgin; renkler yukarıdaki değişkenlerden gelir. */
+    :root[data-karsitlik] .bolum,
+    :root[data-karsitlik] .buton-ikincil,
+    :root[data-karsitlik] input[type="text"],
+    :root[data-karsitlik] input[type="password"],
+    :root[data-karsitlik] input[type="number"],
+    :root[data-karsitlik] select {
+      border-width: 2px;
+    }
+
+    :root[data-karsitlik] :focus-visible {
+      outline-width: 3px;
+      outline-color: var(--input-focus);
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -1025,6 +1130,67 @@
       flex-shrink: 0;
     }
 
+    /* Grup "tema" (o-25, o-29): Görünüm bölümünün alt başlıkları ve panel renk önizlemesi. Önizleme renkleri tema-renk.js'in ürettiği
+       paletten gelir (kök değil, yalnız bu kutuya style.setProperty ile yazılır); değişkenler yokken aşağıdaki varsayılanlar geçerlidir. */
+    .alt-baslik {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin: 22px 0 10px;
+      padding-top: 14px;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .tema-onizleme {
+      --bg: #1b1f27;
+      --karo: #262c37;
+      --kenar: #3a4150;
+      --metin: #f1f5f9;
+      --soluk: #94a3b8;
+      --vurgu: #60a5fa;
+      --rozet-metin: #0b1220;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 280px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--kenar);
+      background: var(--bg);
+      color: var(--metin);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .tema-onizleme-baslik {
+      font-weight: 600;
+    }
+
+    .tema-onizleme-karo {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--kenar);
+      background: var(--karo);
+    }
+
+    .tema-onizleme-soluk {
+      color: var(--soluk);
+      font-size: 12px;
+    }
+
+    .tema-onizleme-vurgu {
+      align-self: flex-start;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--vurgu);
+      color: var(--rozet-metin);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
     .yedek-satir {
       display: flex;
       align-items: center;
@@ -1318,8 +1484,9 @@
       <select id="temaZorla">
         <option value="koyu" data-i18n="ayar.tema.koyu">Her zaman koyu (önerilen)</option>
         <option value="sistem" data-i18n="ayar.tema.sistem">Windows temasını izle</option>
+        <option value="acik" data-i18n="ayar.tema.acik">Her zaman açık</option>
       </select>
-      <div class="ipucu" data-i18n="ayar.tema.ipucu">“Her zaman koyu” seçilirse Windows başlık çubuğu, bu Ayarlar penceresi ve Home Assistant koyu çizilmeye çalışılır. “Windows temasını izle” seçilirse Home Assistant, başlık çubuğu, bu Ayarlar penceresi, hızlı panel, palet ve köşe bildirimi pencereleri Windows’un açık ya da koyu temasını izler. Home Assistant profilinde tema “otomatik” ise Home Assistant da bu seçimi izler. Başlık çubuğunun gerçekten renk değiştirip değiştirmediği Windows sürümüne göre değişebilir.</div>
+      <div class="ipucu" data-i18n="ayar.tema.ipucu">“Her zaman koyu” seçilirse Windows başlık çubuğu, bu Ayarlar penceresi ve Home Assistant koyu çizilmeye çalışılır; “Her zaman açık” aynısını açık tema için yapar. “Windows temasını izle” seçilirse Home Assistant, başlık çubuğu, bu Ayarlar penceresi, hızlı panel, palet ve köşe bildirimi pencereleri Windows’un açık ya da koyu temasını izler. Home Assistant profilinde tema “otomatik” ise Home Assistant da bu seçimi izler. Başlık çubuğunun gerçekten renk değiştirip değiştirmediği Windows sürümüne göre değişebilir.</div>
     </div>
 
     <div class="form-grubu">
@@ -1332,6 +1499,122 @@
       </div>
       <div class="ipucu" id="vurguIpucu" data-i18n="ayar.vurgu.ipucu">Ana pencerenin kenarlık rengi, #rrggbb biçiminde (örn. #0f75e0). Renk kutusundan seçebilir ya da elle yazabilirsin. Boş bırakırsan Windows’un vurgu rengi kullanılır. Geçersiz bir değer kaydedilmez, önceki renk korunur.</div>
       <div class="alan-hata" id="vurguHata" style="display: none;"></div>
+    </div>
+
+    <!-- Grup "tema" (o-25, o-29, o-34): okunabilirlik, panel renkleri ve kozmetik animasyonlar -->
+    <h3 class="alt-baslik" id="okunurBaslik" data-i18n="ayar.okunur.baslik">Okunabilirlik</h3>
+    <div class="form-grubu">
+      <label for="metinOlcegi" data-i18n="ayar.okunur.metinEtiket">Metin boyutu</label>
+      <select id="metinOlcegi">
+        <option value="100" data-i18n="ayar.okunur.metin100">%100 (varsayılan)</option>
+        <option value="115">%115</option>
+        <option value="130">%130</option>
+        <option value="150">%150</option>
+      </select>
+      <div class="ipucu" data-i18n="ayar.okunur.metinIpucu">Hızlı panel, komut paleti, köşe bildirimi ve bu Ayarlar penceresindeki yazıları ve denetimleri büyütür; Home Assistant penceresine dokunulmaz. Bu pencere seçimi hemen gösterir, panel ve palet “Kaydet”ten sonraki ilk açılışta büyür.</div>
+    </div>
+
+    <div class="form-grubu">
+      <label class="checkbox-etiket">
+        <input type="checkbox" id="yuksekKarsitlik">
+        <span data-i18n="ayar.okunur.karsitlik">Yüksek karşıtlık</span>
+      </label>
+      <div class="ipucu" data-i18n="ayar.okunur.karsitlikIpucu">Panel, palet, köşe bildirimi ve bu pencere opak zeminle, belirgin kenarlıklarla ve en az 7:1 metin kontrastıyla çizilir. Yarı saydam malzeme, özel panel renkleri ve süs animasyonları bu sırada kullanılmaz.</div>
+    </div>
+
+    <h3 class="alt-baslik" id="panelRenkBaslik" data-i18n="ayar.panelTema.baslik">Panel renkleri</h3>
+    <div class="form-grubu">
+      <label for="panelTemasi" data-i18n="ayar.panelTema.etiket">Hazır tema</label>
+      <select id="panelTemasi">
+        <option value="varsayilan" data-i18n="ayar.panelTema.varsayilan">Varsayılan</option>
+        <option value="okyanus" data-i18n="ayar.panelTema.okyanus">Okyanus</option>
+        <option value="orman" data-i18n="ayar.panelTema.orman">Orman</option>
+        <option value="gunbatimi" data-i18n="ayar.panelTema.gunbatimi">Gün batımı</option>
+        <option value="lavanta" data-i18n="ayar.panelTema.lavanta">Lavanta</option>
+        <option value="grafit" data-i18n="ayar.panelTema.grafit">Grafit</option>
+      </select>
+    </div>
+
+    <div class="form-grubu">
+      <label for="panelVurguRengi" id="panelVurguEtiketi" data-i18n="ayar.panelTema.vurguEtiket">Panel vurgu rengi</label>
+      <div class="renk-satiri">
+        <input type="color" id="panelVurguSecici" value="#60a5fa" aria-label="Panel vurgu rengi seçici" data-i18n-attr="aria-label:ayar.panelTema.vurguSecici">
+        <input type="text" id="panelVurguRengi" placeholder="#rrggbb" maxlength="7" spellcheck="false" autocomplete="off" aria-describedby="panelVurguHata">
+        <button class="buton buton-ikincil" id="btnPanelVurguSifirla" type="button" data-i18n="ayar.panelTema.sifirla">Sıfırla</button>
+      </div>
+      <div class="alan-hata" id="panelVurguHata" style="display: none;"></div>
+    </div>
+
+    <div class="form-grubu">
+      <label for="panelArkaPlani" id="panelArkaEtiketi" data-i18n="ayar.panelTema.arkaEtiket">Panel arka plan rengi</label>
+      <div class="renk-satiri">
+        <input type="color" id="panelArkaSecici" value="#1b1f27" aria-label="Panel arka plan rengi seçici" data-i18n-attr="aria-label:ayar.panelTema.arkaSecici">
+        <input type="text" id="panelArkaPlani" placeholder="#rrggbb" maxlength="7" spellcheck="false" autocomplete="off" aria-describedby="panelArkaHata">
+        <button class="buton buton-ikincil" id="btnPanelArkaSifirla" type="button" data-i18n="ayar.panelTema.sifirla">Sıfırla</button>
+      </div>
+      <div class="alan-hata" id="panelArkaHata" style="display: none;"></div>
+    </div>
+
+    <div class="form-grubu">
+      <div class="tema-onizleme" id="temaOnizleme" aria-hidden="true">
+        <div class="tema-onizleme-baslik" data-i18n="ayar.panelTema.ornekBaslik">Örnek panel</div>
+        <div class="tema-onizleme-karo">
+          <span data-i18n="ayar.panelTema.ornekKaro">Örnek karo</span>
+          <span class="tema-onizleme-soluk" data-i18n="ayar.panelTema.ornekSoluk">İkincil metin</span>
+        </div>
+        <div class="tema-onizleme-vurgu" data-i18n="ayar.panelTema.ornekVurgu">Vurgu</div>
+      </div>
+      <div class="ipucu" id="temaKontrast" role="status" aria-live="polite"></div>
+      <div class="ipucu" data-i18n="ayar.panelTema.ipucu">Hızlı panel, komut paleti ve köşe bildirimi için. Renkler “#rrggbb” biçiminde yazılır ya da kutudan seçilir; boş bırakılırsa temanın rengi kullanılır. Yazılar her zaman en az 4,5:1 kontrastta kalır: çok açık ya da çok koyu seçimler gerekirse okunur bir tona çekilir, önizleme gerçek sonucu gösterir. Seçimler “Kaydet”ten sonraki ilk açılışta görünür.</div>
+    </div>
+
+    <h3 class="alt-baslik" id="animBaslik" data-i18n="ayar.anim.baslik">Animasyonlar</h3>
+    <div class="form-grubu">
+      <label class="checkbox-etiket">
+        <input type="checkbox" id="animasyonlar">
+        <span data-i18n="ayar.anim.etiket">Süs animasyonlarını aç</span>
+      </label>
+      <div class="ipucu" data-i18n="ayar.anim.ipucu">Hava durumu ve mevsim efektleri ile küçük geçiş animasyonları; yalnızca süstür, hiçbir şeyi değiştirmez. Varsayılan olarak kapalıdır. Windows’ta animasyonlar kapalıysa ya da aşağıdaki “Hareketi azalt” açıksa hiçbiri çalışmaz.</div>
+    </div>
+
+    <div class="form-grubu">
+      <label class="checkbox-etiket">
+        <input type="checkbox" id="animasyonGecisleri">
+        <span data-i18n="ayar.anim.gecisler">Geçiş animasyonları (kayan vurgu, karoların süzülmesi, simge büyümesi)</span>
+      </label>
+    </div>
+
+    <div class="form-grubu">
+      <label for="havaEfekti" data-i18n="ayar.anim.havaEtiket">Hava durumu efekti</label>
+      <select id="havaEfekti">
+        <option value="yok" data-i18n="ayar.anim.yok">Yok</option>
+        <option value="otomatik" data-i18n="ayar.anim.hava.otomatik">Otomatik (hava durumu karosuna göre)</option>
+        <option value="yagmur" data-i18n="ayar.anim.hava.yagmur">Yağmur</option>
+        <option value="kar" data-i18n="ayar.anim.hava.kar">Kar</option>
+        <option value="gunes" data-i18n="ayar.anim.hava.gunes">Güneş</option>
+        <option value="firtina" data-i18n="ayar.anim.hava.firtina">Fırtına</option>
+      </select>
+      <div class="ipucu" data-i18n="ayar.anim.havaIpucu">“Otomatik” hızlı paneldeki hava durumu karosunun durumuna bakar; yeni bir istek göndermez. Fırtınadaki şimşek hafif ve seyrektir.</div>
+    </div>
+
+    <div class="form-grubu">
+      <label for="mevsimEfekti" data-i18n="ayar.anim.mevsimEtiket">Mevsim süsü</label>
+      <select id="mevsimEfekti">
+        <option value="yok" data-i18n="ayar.anim.yok">Yok</option>
+        <option value="otomatik" data-i18n="ayar.anim.mevsim.otomatik">Otomatik (içinde bulunulan mevsim)</option>
+        <option value="ilkbahar" data-i18n="ayar.anim.mevsim.ilkbahar">İlkbahar (çiçekler)</option>
+        <option value="yaz" data-i18n="ayar.anim.mevsim.yaz">Yaz (parıltılar)</option>
+        <option value="sonbahar" data-i18n="ayar.anim.mevsim.sonbahar">Sonbahar (yapraklar)</option>
+        <option value="kis" data-i18n="ayar.anim.mevsim.kis">Kış (kar)</option>
+      </select>
+    </div>
+
+    <div class="form-grubu">
+      <label class="checkbox-etiket">
+        <input type="checkbox" id="hareketiAzalt">
+        <span data-i18n="ayar.anim.azalt">Hareketi azalt</span>
+      </label>
+      <div class="ipucu" data-i18n="ayar.anim.azaltIpucu">Açıkken hiçbir süs animasyonu çalışmaz. Windows’un “hareketi azalt” tercihi bu ayardan bağımsız olarak her zaman geçerlidir; yüksek karşıtlıkta efektler çizilmez.</div>
     </div>
   </section>
 
@@ -1695,6 +1978,7 @@
   <script src="lib/ceviri/ayarlar.js"></script>
   <script src="lib/kisayol.js"></script>
   <script src="lib/arama.js"></script>
+  <script src="lib/tema-renk.js"></script>
   <script src="lib/karo-gorunum.js"></script>
   <script src="lib/duzen-islemleri.js"></script>
   <script src="ayarlar-duzen.js"></script>

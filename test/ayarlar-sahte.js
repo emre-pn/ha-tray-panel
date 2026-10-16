@@ -26,6 +26,7 @@ const DUZEN_ISLEMLERI_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'duz
 const KISAYOL_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'kisayol.js'), 'utf8');
 const ARAMA_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'arama.js'), 'utf8');
 const DIL_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'dil.js'), 'utf8');
+const TEMA_RENK_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'tema-renk.js'), 'utf8');
 const SOZLUK_ANA_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'ceviri', 'ana.js'), 'utf8');
 const SOZLUK_AYARLAR_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'ceviri', 'ayarlar.js'), 'utf8');
 const DIL_AYARLARI = ['sistem', 'tr', 'en'];
@@ -43,7 +44,15 @@ class SahteOge {
     this.sahne = sahne;
     this.children = [];
     this.dinleyiciler = {};
-    this.style = {};
+    // style.setProperty / removeProperty: CSSOM değişkenleri (önizleme); değerler style.degiskenler'de (görünür anahtar eklemez)
+    this.style = {
+      setProperty(ad, deger) {
+        (this.degiskenler ??= {})[ad] = String(deger);
+      },
+      removeProperty(ad) {
+        if (this.degiskenler) delete this.degiskenler[ad];
+      },
+    };
     this.attributes = {};
     this.className = '';
     this._deger = '';
@@ -183,6 +192,9 @@ const ALAN_ADLARI = [
   'saatBicimi', 'tarihBicimi', 'takvimler', 'takvimGunSayisi', 'yapilacakListeleri', 'hizliListe',
   // 1.4.0 düzen grubu: panel sayfaları
   'sayfalar',
+  // grup "tema" (ayar-alanlari.js tablosu)
+  'metinOlcegi', 'yuksekKarsitlik', 'panelTemasi', 'panelVurguRengi', 'panelArkaPlani', 'animasyonlar', 'animasyonGecisleri', 'havaEfekti',
+  'mevsimEfekti', 'hareketiAzalt',
 ];
 
 /** HTML'deki data-i18n / data-i18n-attr işaretli öğeler (kimliği olmayanlar dahil); sayfayiCevir bunları querySelectorAll ile bulur. */
@@ -424,6 +436,9 @@ function sayfayiKur({
       getAttribute(ad) {
         return this.ozellikler[ad] ?? null;
       },
+      removeAttribute(ad) {
+        delete this.ozellikler[ad];
+      },
     },
     nodeType: 9,
     querySelectorAll: (secici) => {
@@ -467,6 +482,7 @@ function sayfayiKur({
   vm.runInContext(SOZLUK_AYARLAR_BETIGI, sandbox, { filename: 'ceviri/ayarlar.js' });
   vm.runInContext(KISAYOL_BETIGI, sandbox, { filename: 'kisayol.js' });
   vm.runInContext(ARAMA_BETIGI, sandbox, { filename: 'arama.js' });
+  vm.runInContext(TEMA_RENK_BETIGI, sandbox, { filename: 'tema-renk.js' });
   vm.runInContext(KARO_GORUNUM_BETIGI, sandbox, { filename: 'karo-gorunum.js' });
   vm.runInContext(DUZEN_ISLEMLERI_BETIGI, sandbox, { filename: 'duzen-islemleri.js' });
   vm.runInContext(DUZEN_BETIK, sandbox, { filename: 'ayarlar-duzen.js' });
@@ -484,6 +500,8 @@ function sayfayiKur({
     },
     sonOdak: () => durum.sonOdak,
     yakinlastirma: () => belge.documentElement.style.zoom,
+    /** <html> özniteliği (ör. data-karsitlik). */
+    htmlOzelligi: (ad) => belge.documentElement.getAttribute(ad),
     /** <html lang> (sayfayiCevir yazar). */
     htmlDili: () => belge.documentElement.getAttribute('lang'),
     /** Ana süreç 'dil:degisti' gönderdi (kayıt dışı bir yoldan, ör. başka pencereden). */

@@ -230,9 +230,12 @@ function yakinlastirmaTusu(girdi) {
   }
 }
 
-/** Geçerli yakınlaştırmaya adımı uygular; sonuç YAKINLASTIRMA_ADIMLARI içindedir (bilinmeyen değer 1 sayılır). */
-function yakinlastirmaDegeri(mevcut, adim) {
-  if (adim === 'sifirla') return 1;
+/**
+ * Geçerli yakınlaştırmaya adımı uygular; sonuç YAKINLASTIRMA_ADIMLARI içindedir (bilinmeyen değer 1 sayılır).
+ * `taban` (o-25): Ayarlar > Görünüm > Metin boyutu; "sıfırla" (Ctrl 0) buna döner (geçersizse 1). Ctrl − tabanın altına da inebilir.
+ */
+function yakinlastirmaDegeri(mevcut, adim, taban = 1) {
+  if (adim === 'sifirla') return YAKINLASTIRMA_ADIMLARI.includes(taban) ? taban : 1;
   let sira = YAKINLASTIRMA_ADIMLARI.indexOf(mevcut);
   if (sira < 0) sira = 0;
   if (adim === 'artir') sira = Math.min(YAKINLASTIRMA_ADIMLARI.length - 1, sira + 1);

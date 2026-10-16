@@ -17,10 +17,10 @@ function dinle(kanal, callback) {
 
 if (location.protocol === 'file:') {
   contextBridge.exposeInMainWorld('evYuzey', {
-    // Ana süreç modeli: { ok, mod, model } (model: gruplar, sonlar, ust; src/lib/yuzey-modeli.js)
+    // Ana süreç modeli: { ok, mod, model, malzeme, dil?, gorunum? } (model: gruplar, sonlar, ust; src/lib/yuzey-modeli.js; gorunum: src/lib/gorunum.js)
     durumAl: () => ipcRenderer.invoke('yuzey:durum-al'),
     onDurum: (callback) => dinle('yuzey:durum', callback),
-    // Yük: { mod: 'panel' | 'palet' } (pencere her gösterildiğinde)
+    // Yük: { mod: 'panel' | 'palet', malzeme, gorunum? } (pencere her gösterildiğinde)
     onGoster: (callback) => dinle('yuzey:goster', callback),
     // Arayüz dili değişti: yük { dil: 'tr' | 'en' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
     onDilDegisti: (callback) => dinle('dil:degisti', callback),

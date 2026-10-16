@@ -20,12 +20,17 @@ function onbellegiTemizle() {
 }
 
 /** Sahte Electron + köşe bildirimi modülü. `yuklemeSonucu`: loadFile'ın sonucu ('tamam' | 'red' | 'bekle'). */
-function kur({ yuklemeSonucu = 'tamam', malzemeAl, engelAl } = {}) {
+function kur({ yuklemeSonucu = 'tamam', malzemeAl, engelAl, gorunumAl, metinOlcegiAl } = {}) {
   const pencereler = [];
   class SahteWebContents extends EventEmitter {
     constructor() {
       super();
       this.mesajlar = [];
+      this.zoomlar = []; // setZoomFactor çağrıları
+    }
+
+    setZoomFactor(f) {
+      this.zoomlar.push(f);
     }
 
     setWindowOpenHandler() {}
@@ -109,7 +114,7 @@ function kur({ yuklemeSonucu = 'tamam', malzemeAl, engelAl } = {}) {
   }
   const gunlukler = [];
   const yedekler = [];
-  const kose = modul.koseBildirimiOlustur({ gunluk: (m) => gunlukler.push(m), yedekGoster: (b) => yedekler.push(b), ...(malzemeAl ? { malzemeAl } : {}), ...(engelAl ? { engelAl } : {}) });
+  const kose = modul.koseBildirimiOlustur({ gunluk: (m) => gunlukler.push(m), yedekGoster: (b) => yedekler.push(b), ...(malzemeAl ? { malzemeAl } : {}), ...(engelAl ? { engelAl } : {}), ...(gorunumAl ? { gorunumAl } : {}), ...(metinOlcegiAl ? { metinOlcegiAl } : {}) });
   const akit = () => new Promise((coz) => setImmediate(coz));
   const mesajlar = (p) => p.webContents.mesajlar.filter((m) => m.kanal === 'kose:goster').map((m) => m.yuk);
   return { kose, pencereler, gunlukler, yedekler, akit, mesajlar, temizle: () => { kose.kapat(); onbellegiTemizle(); } };
@@ -337,6 +342,106 @@ test('köşe bildirimi: malzemeyiUygula var olan pencerenin malzemesini ve rengi
     assert.equal(p.arkaPlanRenkleri.at(-1), '#00000000');
     o.kose.goster({ tur: 'ok', metin: 'B' });
     assert.equal(o.mesajlar(p).at(-1).malzeme, 'mica', 'sonraki bildirim yeni malzemeyi bildirir');
+  } finally {
+    o.temizle();
+  }
+});
+
+// ---- 1.4.0 grup "tema": görünüm modeli (o-29, o-34) ve metin boyutu (o-25) -----------------------------------------------
+
+test('tema: köşe bildirimi yüküne görünüm modeli YALNIZ varsayılandan farklıysa eklenir; model üretilemezse bildirim yine gider', async () => {
+  const model = { karsitlik: true };
+  let simdiki = null;
+  const o = kur({ gorunumAl: () => simdiki });
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'A' });
+    await o.akit();
+    const p = o.pencereler[0];
+    assert.equal(Object.hasOwn(o.mesajlar(p).at(-1), 'gorunum'), false, 'varsayılan görünümde anahtar yok');
+    simdiki = model;
+    o.kose.goster({ tur: 'ok', metin: 'B' });
+    assert.deepEqual(o.mesajlar(p).at(-1).gorunum, model);
+    simdiki = null;
+    o.kose.goster({ tur: 'ok', metin: 'C' });
+    assert.equal(Object.hasOwn(o.mesajlar(p).at(-1), 'gorunum'), false, 'varsayılana dönünce yük yine temiz (sayfa eski görünümü temizler)');
+  } finally {
+    o.temizle();
+  }
+  const bozuk = kur({ gorunumAl: () => { throw new Error('bozuk ayar'); } });
+  try {
+    bozuk.kose.goster({ tur: 'ok', metin: 'D' });
+    await bozuk.akit();
+    const p = bozuk.pencereler[0];
+    assert.equal(bozuk.mesajlar(p).length, 1);
+    assert.equal(Object.hasOwn(bozuk.mesajlar(p)[0], 'gorunum'), false);
+    assert.equal(bozuk.yedekler.length, 0, 'yedek bildirime düşmez');
+  } finally {
+    bozuk.temizle();
+  }
+});
+
+test('o-25 metin boyutu: köşe bildirimi pencere boyutu ve sayfa yakınlaştırması ölçekle büyür; ölçek değişmedikçe yakınlaştırma yeniden yazılmaz', async () => {
+  let olcek = 1.5;
+  const o = kur({ metinOlcegiAl: () => olcek });
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'A' });
+    await o.akit();
+    const p = o.pencereler[0];
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [480, 84]);
+    assert.deepEqual(p.webContents.zoomlar, [1.5]);
+    o.kose.goster({ tur: 'ok', metin: 'B' });
+    assert.deepEqual(p.webContents.zoomlar, [1.5], 'aynı ölçek yeniden uygulanmaz');
+    olcek = 1.15;
+    o.kose.goster({ tur: 'ok', metin: 'C' });
+    assert.deepEqual(p.webContents.zoomlar, [1.5, 1.15]);
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [368, 64]);
+    olcek = 1;
+    o.kose.goster({ tur: 'ok', metin: 'D' });
+    assert.equal(p.webContents.zoomlar.at(-1), 1);
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [320, 56]);
+    const alan = { x: 0, y: 0, width: 1920, height: 1040 };
+    assert.ok(p.sinirlar.at(-1).x + p.sinirlar.at(-1).width <= alan.width && p.sinirlar.at(-1).y + p.sinirlar.at(-1).height <= alan.height, 'çalışma alanında kalır');
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-25 metin boyutu: ölçek 1 iken yakınlaştırma çağrısı yok; geçersiz ya da hatalı ölçek 1 sayılır', async () => {
+  for (const kotu of [undefined, null, 0, 0.5, 2.5, NaN, 'x', {}]) {
+    const o = kur({ metinOlcegiAl: () => kotu });
+    try {
+      o.kose.goster({ tur: 'ok', metin: 'A' });
+      await o.akit();
+      const p = o.pencereler[0];
+      assert.deepEqual(p.webContents.zoomlar, [], String(kotu));
+      assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [320, 56], String(kotu));
+    } finally {
+      o.temizle();
+    }
+  }
+  const hatali = kur({ metinOlcegiAl: () => { throw new Error('x'); } });
+  try {
+    hatali.kose.goster({ tur: 'ok', metin: 'A' });
+    await hatali.akit();
+    assert.equal(hatali.pencereler[0].sinirlar.at(-1).width, 320);
+  } finally {
+    hatali.temizle();
+  }
+});
+
+test('o-25 metin boyutu: sayfa süreci ölüp pencere yeniden oluşunca yakınlaştırma yeni sayfaya yeniden yazılır', async () => {
+  const o = kur({ metinOlcegiAl: () => 1.3 });
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'A' });
+    await o.akit();
+    const ilk = o.pencereler[0];
+    assert.deepEqual(ilk.webContents.zoomlar, [1.3]);
+    ilk.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+    o.kose.goster({ tur: 'ok', metin: 'B' });
+    await o.akit();
+    const yeni = o.pencereler[1];
+    assert.ok(yeni && yeni !== ilk);
+    assert.deepEqual(yeni.webContents.zoomlar, [1.3], 'yeni sayfa 1 ile başlar, ölçek yeniden yazılır');
   } finally {
     o.temizle();
   }

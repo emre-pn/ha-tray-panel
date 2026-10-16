@@ -9,7 +9,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 if (location.protocol === 'file:') {
   contextBridge.exposeInMainWorld('evKose', {
-    // Yük: { tur: 'ok' | 'hata', metin, sureMs, malzeme }; metin ana süreçte zaten seçili dilde yazılır
+    // Yük: { tur: 'ok' | 'hata', metin, sureMs, malzeme, gorunum? }; metin ana süreçte zaten seçili dilde yazılır.
+    // gorunum (yalnız varsayılandan farklıysa): özel palet değişkenleri, yüksek karşıtlık, hareket (src/lib/gorunum.js gorunumModeli)
     onGoster: (callback) => {
       if (typeof callback !== 'function') return () => {};
       const dinleyici = (_olay, yuk) => callback(yuk);

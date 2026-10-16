@@ -78,7 +78,7 @@ const { YARDIMCI_VARLIKLAR, karolariOlustur, yuzeyModeliOlustur } = require('./l
 const { tepsiMenuPlani, acikIsikSayisi, ipucuMetni, ekranMenuPlani, ekranEtiketi } = require('./lib/tepsi-menu');
 const { bilgiKimlikleri, bilgiKaydi, bilgiModeliOlustur, bilgiBolumunuEkle, bilgiKarolari, sensorUyariSayisi } = require('./lib/bilgi-modeli');
 const { malzemeDestekliMi, pencereMalzemesi } = require('./lib/malzeme');
-const { temaKaynagi } = require('./lib/gorunum');
+const { temaKaynagi, etkinSema, sistemKoyuMu, ozelPalet, gorunumModeli, metinOlcegiOrani } = require('./lib/gorunum');
 const { sonKullanilanlarOlustur } = require('./lib/son-kullanilanlar');
 const { komutSatiriEylemi, eylemIstendiMi } = require('./lib/komut-satiri');
 const { tekrarEngeliOlustur } = require('./lib/tekrar-engeli');
@@ -799,7 +799,27 @@ function yuzeyModeli() {
  * çağrılırsa varsayılan malzeme (acrylic) hesaplanır.
  */
 function yeniPencereMalzemesi() {
-  return pencereMalzemesi(ayarlar?.yeniPencereMalzemesi, os.release());
+  // o-25 / o-29: yüksek karşıtlık malzemeyi kapatır; açık tema ve özel panel arka planı opak ilk boyama rengini belirler.
+  const sistemKoyu = sistemKoyuMu(nativeTheme);
+  const palet = ozelPalet(ayarlar, { sistemKoyu });
+  return pencereMalzemesi(ayarlar?.yeniPencereMalzemesi, os.release(), {
+    yuksekKarsitlik: ayarlar?.yuksekKarsitlik === true,
+    acikTema: etkinSema(ayarlar?.temaZorla, sistemKoyu) === 'acik',
+    arkaPlan: palet ? palet.arkaPlan : null,
+  });
+}
+
+/**
+ * Hızlı panel, palet ve köşe bildirimi sayfalarına giden görünüm modeli (özel/hazır palet, yüksek karşıtlık, kozmetik animasyonlar;
+ * src/lib/gorunum.js). Her şey varsayılansa null: yüke hiç eklenmez. Renkler ana süreçte üretilir, sayfa yalnız beyaz listeli değişkenleri yazar.
+ */
+function gorunumuAl() {
+  return gorunumModeli(ayarlar, { malzeme: yeniPencereMalzemesi().malzeme, sistemKoyu: sistemKoyuMu(nativeTheme) });
+}
+
+/** Ayarlar > Görünüm > Metin boyutu çarpanı (1, 1.15, 1.3, 1.5); HA penceresine uygulanmaz. */
+function metinOlcegiAl() {
+  return metinOlcegiOrani(ayarlar?.metinOlcegi);
 }
 
 /** Süzülmüş karolar FAVORİ SIRASINDA (tepsi menüsünün "ilk 8 favori" listesi; grup sırası değil). */
@@ -847,6 +867,8 @@ const yuzey = yuzeyYoneticisiOlustur({
   gunluk,
   okuma: haOkuma,
   sagTik: (kimlik, pencere) => duzen.karoMenusuAc(kimlik, pencere), // 1.4.0 düzen (o-16): karo bağlam menüsü
+  gorunumAl: gorunumuAl, // o-25 / o-29 / o-34
+  metinOlcegiAl, // o-25
 });
 
 /**
@@ -1020,6 +1042,8 @@ const kose = koseBildirimiOlustur({
   malzemeAl: yeniPencereMalzemesi,
   engelAl: () => yuzey.gorunenSinirlar(), // açık panelin üstüne yerleşsin (g-09)
   dilAl: () => etkinDil,
+  gorunumAl: gorunumuAl, // o-25 / o-29 / o-34
+  metinOlcegiAl, // o-25
   yedekGoster: ({ tur, metin }) => bildir(metin, tur === 'hata' ? t('uygulama.hataBaslik') : uygulamaAdi()),
 });
 
@@ -1822,6 +1846,19 @@ function temayiUygula() {
     nativeTheme.themeSource = temaKaynagi(ayarlar?.temaZorla);
   } catch {
     gunluk('Tema ayarlanamadı.');
+  }
+}
+
+/**
+ * Tema, malzeme, yüksek karşıtlık ya da panel renkleri değişti (o-25, o-29): açık panel/palet/bildirim pencerelerinin arka plan rengi ve malzemesi
+ * güncellenir. Sayfanın kendi renkleri bir sonraki gösterimde gelir (gorunumuAl).
+ */
+function gorunumuYenile() {
+  try {
+    yuzey.malzemeyiUygula();
+    kose.malzemeyiUygula();
+  } catch {
+    gunluk('Pencere görünümü güncellenemedi.');
   }
 }
 
@@ -2642,6 +2679,10 @@ ekAyarDinle('tepsiRozeti', tepsiRozetiAyariDegisti);
 ekAyarDinle('tepsiRozetSensoru', tepsiRozetiAyariDegisti);
 ekAyarDinle('masaustuKarolari', () => masaustuKarolari.esitle());
 ekAyarDinle('masaustuKaroUstte', () => masaustuKarolari.ustteDegisti());
+// Grup "tema" (o-25, o-29, o-34): görünüm ayarları değişince açık pencereler güncellenir. Sayfaların kendi görünümü (renkler, animasyon)
+// `gorunum` olarak her gösterimde yeniden gönderilir; burada yalnız pencere düzeyindeki şeyler (arka plan rengi/malzemesi, yakınlaştırma) tazelenir.
+ekAyarDinle('metinOlcegi', () => yuzey.metinOlcegiUygula());
+for (const ad of ['yuksekKarsitlik', 'panelTemasi', 'panelVurguRengi', 'panelArkaPlani']) ekAyarDinle(ad, () => gorunumuYenile());
 
 function ipcKaydet() {
   // --- offline.html ---
@@ -2746,6 +2787,7 @@ function ipcKaydet() {
     if (yeni.temaZorla !== undefined && yeni.temaZorla !== ayarlar.temaZorla) {
       ayarlar.temaZorla = yeni.temaZorla;
       temayiUygula();
+      gorunumuYenile(); // 'acik' tema: pencere arka planı da açık olur (o-29)
     }
     if (yeni.vurguRengi !== undefined && yeni.vurguRengi !== ayarlar.vurguRengi) {
       ayarlar.vurguRengi = yeni.vurguRengi;
@@ -3189,6 +3231,8 @@ function baslat() {
     const reddedilmisKayit = yetkiKesici.yukle();
     if (reddedilmisKayit > 0) gunluk(`Yetki kesici: ${reddedilmisKayit} reddedilmiş anahtar kaydı yüklendi.`);
     temayiUygula(); // pencereler oluşmadan önce: koyu tema (gorunum-13)
+    // Windows teması değişince ("sistem" teması) opak pencere arka planı da açık/koyu olur (o-29).
+    if (typeof nativeTheme.on === 'function') nativeTheme.on('updated', () => gorunumuYenile());
     son.yukle();
     duzenGecmisi.yukle();
     ekAyarDinle('sayfalar', (yeni, eski) => duzen.sayfalarDegisti(yeni, eski)); // 1.4.0 düzen (o-24, o-30)

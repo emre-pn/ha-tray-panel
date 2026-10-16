@@ -399,7 +399,7 @@ test('Görünüm: HTML kimlikleri var; malzeme ve tema seçenekleri beklenen de�
   }
   const secenekler = (kimlik) => [...new RegExp(`<select[^>]*id="${kimlik}"[^>]*>([\\s\\S]*?)</select>`).exec(HTML)[1].matchAll(/value="([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(secenekler('yeniPencereMalzemesi'), ['acrylic', 'mica', 'yok']);
-  assert.deepEqual(secenekler('temaZorla'), ['koyu', 'sistem']);
+  assert.deepEqual(secenekler('temaZorla'), ['koyu', 'sistem', 'acik']);
   assert.match(HTML, /id="vurguRengi"[^>]*maxlength="7"|maxlength="7"[^>]*id="vurguRengi"/);
 });
 

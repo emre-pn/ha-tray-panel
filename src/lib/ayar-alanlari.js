@@ -40,6 +40,7 @@ const { kisalt } = require('./metin');
 const { sayfalariDuzelt } = require('./sayfalar');
 const { KONUM_MODLARI, VARSAYILAN_KONUM_MODU, OPAKLIK_SINIRI, konumlariDuzelt, tercihEkranDuzelt } = require('./pencere-yerlesim');
 const { EN_COK_KARO, SABITLENEBILIR_ALANLAR, karoKonumlariniDuzelt } = require('./masaustu-karo');
+const { METIN_OLCEKLERI, VARSAYILAN_METIN_OLCEGI, HAZIR_TEMA_ADLARI, HAVA_EFEKTI_DEGERLERI, MEVSIM_EFEKTI_DEGERLERI, vurguRengiDuzelt } = require('./gorunum');
 
 const GUNCEL_EK_SURUM = 6;
 const KORUNAN_ADLAR = new Set(['__proto__', 'constructor', 'prototype', 'semaSurumu']);
@@ -138,6 +139,28 @@ function nesneAlan(ad, { varsayilan, duzelt, tip = Array.isArray(varsayilan) ? '
   return tanim(ad, tip, varsayilan, duzelt, ek);
 }
 
+// --- Grup "tema": metin boyutu ve yüksek karşıtlık (o-25), panel teması (o-29), kozmetik animasyonlar (o-34) ---------------------
+const renkDuzelt = (ham) => {
+  const renk = vurguRengiDuzelt(ham);
+  return renk === null ? undefined : renk; // '' = hazır temanın / varsayılanın rengi
+};
+const metinOlcegiAl = (ham) => {
+  const n = typeof ham === 'number' ? ham : typeof ham === 'string' && ham.trim() !== '' ? Number(ham) : NaN;
+  return METIN_OLCEKLERI.includes(n) ? n : undefined;
+};
+const TEMA_ALANLARI = [
+  nesneAlan('metinOlcegi', { varsayilan: VARSAYILAN_METIN_OLCEGI, tip: 'sayi', duzelt: metinOlcegiAl }), // % (100 | 115 | 130 | 150): panel, palet, bildirim, Ayarlar
+  mantiksalAlan('yuksekKarsitlik', false), // opak zemin, malzeme kapalı, belirgin kenarlık, >= 7:1 metin
+  secenekAlan('panelTemasi', HAZIR_TEMA_ADLARI, 'varsayilan'), // hazır panel teması
+  nesneAlan('panelVurguRengi', { varsayilan: '', tip: 'metin', duzelt: renkDuzelt }), // '' ya da "#rrggbb" (ana pencere kenarlığı olan vurguRengi'nden ayrı)
+  nesneAlan('panelArkaPlani', { varsayilan: '', tip: 'metin', duzelt: renkDuzelt }), // '' ya da "#rrggbb"
+  mantiksalAlan('animasyonlar', false), // kozmetik animasyonlar: varsayılan KAPALI
+  mantiksalAlan('animasyonGecisleri', true), // animasyonlar açıkken hareketli geçişler
+  secenekAlan('havaEfekti', HAVA_EFEKTI_DEGERLERI, 'otomatik'), // animasyonlar açıkken hava efekti
+  secenekAlan('mevsimEfekti', MEVSIM_EFEKTI_DEGERLERI, 'yok'), // animasyonlar açıkken mevsimsel süs
+  mantiksalAlan('hareketiAzalt', false), // true: hiçbir kozmetik animasyon çalışmaz (sistemin "hareketi azalt" tercihi zaten uygulanır)
+];
+
 /**
  * Panelin üst kart yuvası (o-08): 'yok' | 'saat' (saat ve tarih) | 'hava' (havaVarligi) | karo olabilen herhangi bir varlık kimliği
  * (yalnız durumu gösterilir; karttan eylem çalıştırılmaz). Kimlik Kapı Kuralı'ndan ve alan kaydından geçmelidir.
@@ -200,6 +223,9 @@ const AYAR_ALANLARI = Object.freeze([
   nesneAlan('masaustuKaroKonumlari', { varsayilan: {}, duzelt: karoKonumlariniDuzelt }, { aktarilir: false, ozette: false }),
   // Karolar diğer pencerelerin üstünde mi kalsın (varsayılan KAPALI: masaüstünde, pencerelerin altında durur).
   mantiksalAlan('masaustuKaroUstte', false),
+
+  // --- tema grubu: görünüm (o-25 metin boyutu ve yüksek karşıtlık, o-29 tema ve renkler, o-34 animasyonlar) ---
+  ...TEMA_ALANLARI,
 ]);
 
 /**

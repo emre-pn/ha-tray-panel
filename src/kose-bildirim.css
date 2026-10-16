@@ -109,3 +109,62 @@ body {
     transition: none;
   }
 }
+
+/*
+ * Görünüm ayarları (1.4.0 grup "tema"): src/lib/tema-renk.js gorunumUygula, ana sürecin görünüm modelini <html> öğesine yazar (yuzey.css ile aynı
+ * öznitelikler). Özel/hazır panel paleti değişkenleri CSSOM ile gelir (--bg, --metin, --basari, --hata, --isaret-metin dahil).
+ */
+:root[data-sema="koyu"] {
+  color-scheme: dark;
+}
+
+:root[data-sema="acik"] {
+  color-scheme: light;
+}
+
+/* Yüksek karşıtlık (o-25): opak zemin, belirgin kenarlık, metin >= 7:1 (malzeme ana süreçte kapatılır) */
+:root[data-karsitlik] {
+  color-scheme: dark;
+  --bg: #000000;
+  --metin: #ffffff;
+  --basari: #3ddc84;
+  --hata: #ff6b6b;
+  --isaret-metin: #000000;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-karsitlik] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --metin: #000000;
+    --basari: #005a2f;
+    --hata: #a50000;
+    --isaret-metin: #ffffff;
+  }
+}
+
+:root[data-karsitlik] .bildirim {
+  border: 2px solid var(--metin);
+  border-left-width: 8px;
+  border-left-color: var(--basari);
+}
+
+:root[data-karsitlik] .bildirim.hata {
+  border-left-color: var(--hata);
+}
+
+:root[data-hareket="azalt"] .bildirim {
+  transition: none;
+}
+
+/* Kozmetik geçiş (o-34, varsayılan KAPALI): bildirim sağdan kayarak girer. Yalnız :root[data-gecis] ve hareket azaltılmamışken. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-gecis] .bildirim {
+    transform: translateX(18px);
+    transition: opacity 160ms ease-out, transform 160ms ease-out;
+  }
+
+  :root[data-gecis] .bildirim.gorunur {
+    transform: none;
+  }
+}

@@ -20,7 +20,7 @@
 const path = require('node:path');
 const { ipcMain, screen } = require('electron');
 const { yerelPencereOlustur, yerelOlaydanMi, malzemeUygula } = require('./yerel-pencere');
-const { PANEL_BOYUTU, PALET_BOYUTU, panelKonumu, paletKonumu, yuzeyYuksekligiKirp, yuzeyBoyutu, yakinlastirmaTusu, yakinlastirmaDegeri, opaklikOrani } = require('./lib/pencere-yerlesim');
+const { PANEL_BOYUTU, PALET_BOYUTU, YAKINLASTIRMA_ADIMLARI, panelKonumu, paletKonumu, yuzeyYuksekligiKirp, yuzeyBoyutu, yakinlastirmaTusu, yakinlastirmaDegeri, opaklikOrani } = require('./lib/pencere-yerlesim');
 const { rendererModeli } = require('./lib/yuzey-modeli');
 const { tiklamaKarari } = require('./lib/pencere-davranisi');
 const { cokmeSayilirMi, cokmeNedeniMetni } = require('./lib/cokme-siniri');
@@ -63,8 +63,12 @@ function varsayilanZaman() {
  * @param {object|null} [bag.okuma] 1.4.0 okuma uçları (src/lib/ha-okuma.js haOkumaOlustur); verilmezse yuzey:oku hep boş döner
  * @param {((kimlik: string, pencere: object) => Promise<unknown>)|null} [bag.sagTik] 1.4.0 düzen (o-16): karoya sağ tık menüsü
  *   (ana süreç Menu.popup). Menü ve seçilen işlem bitene kadar çözülmez; o sürece panel odak kaybıyla gizlenmez. Yalnız favori karolar için çağrılır.
+ * @param {() => (object|null)} [bag.gorunumAl] görünüm modeli (src/lib/gorunum.js gorunumModeli: özel palet, yüksek karşıtlık, animasyon);
+ *   null ise (varsayılan görünüm) yüke hiç eklenmez
+ * @param {() => number} [bag.metinOlcegiAl] Ayarlar > Görünüm > Metin boyutu çarpanı (1, 1.15, 1.3, 1.5): panel ve palet bu yakınlaştırmayla açılır,
+ *   Ctrl 0 buna döner (o-25)
  */
-function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, ustteAl = () => false, opaklikAl = () => 100, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null, sagTik = null }) {
+function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, ustteAl = () => false, opaklikAl = () => 100, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null, sagTik = null, gorunumAl = () => null, metinOlcegiAl = () => 1 }) {
   const izinYok = () => ({ ok: false, hata: t('ana.izinYok') });
   let pencere = null;
   let yuklendi = false;
@@ -78,6 +82,34 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   let menuAcik = 0; // açık bağlam menüsü / onay sayısı (o-16): sürerken odak kaybı paneli gizlemez
   const yukseklik = { panel: PANEL_BOYUTU.height, palet: PALET_BOYUTU.height }; // renderer'ın bildirdiği içerik yüksekliği (CSS pikseli)
   let yakinlastirma = 1; // Ctrl + / Ctrl − / Ctrl 0 (g-13); pencere gizlenip yeniden oluşturulsa da korunur
+  let elleYakinlastirma = false; // kullanıcı Ctrl + / − ile tabandan ayrıldı: Ayarlar'daki metin boyutu değişse bile oturum seçimi korunur
+  let uygulananOlcek = 1; // pencerenin sayfasına son yazılan yakınlaştırma (yeni pencerede 1)
+
+  /** Ayarlar > Görünüm > Metin boyutu (o-25): yakınlaştırmanın tabanı. Geçersiz ya da adımlarda olmayan değer 1 sayılır. */
+  function tabanYakinlastirma() {
+    let olcek = 1;
+    try {
+      olcek = Number(metinOlcegiAl());
+    } catch {
+      olcek = 1;
+    }
+    return YAKINLASTIRMA_ADIMLARI.includes(olcek) ? olcek : 1;
+  }
+
+  /** Elle değiştirilmediyse yakınlaştırma Ayarlar'daki tabana eşitlenir (ayarlar pencere oluşmadan sonra da yüklenmiş olabilir). */
+  function yakinlastirmayiTabanaEsitle() {
+    if (!elleYakinlastirma) yakinlastirma = tabanYakinlastirma();
+  }
+
+  /** Görünüm modeli yüke eklenir; varsayılan görünümde (null) hiçbir anahtar eklenmez. */
+  function gorunumEki() {
+    try {
+      const g = gorunumAl();
+      return g ? { gorunum: g } : {};
+    } catch {
+      return {};
+    }
+  }
 
   const canliMi = () => !!pencere && !pencere.isDestroyed();
   const gorunurMu = () => canliMi() && pencere.isVisible();
@@ -125,7 +157,10 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   /** Sayfa yakınlaştırmasını uygular (yoksa/başarısızsa sessizce geçer; boyut yine de ölçeklenir). */
   function yakinlastirmayiUygula(wc) {
     try {
-      if (typeof wc?.setZoomFactor === 'function') wc.setZoomFactor(yakinlastirma);
+      if (typeof wc?.setZoomFactor === 'function') {
+        wc.setZoomFactor(yakinlastirma);
+        uygulananOlcek = yakinlastirma;
+      }
     } catch {
       gunluk('Hızlı panel yakınlaştırması uygulanamadı.');
     }
@@ -133,7 +168,9 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
 
   /** Ctrl + / Ctrl − / Ctrl 0: yakınlaştırma adımı değişir, pencere (genişlik ve yükseklik) aynı oranda yeniden yerleştirilir. */
   function yakinlastir(adim) {
-    const yeni = yakinlastirmaDegeri(yakinlastirma, adim);
+    const taban = tabanYakinlastirma();
+    const yeni = yakinlastirmaDegeri(yakinlastirma, adim, taban); // Ctrl 0 Ayarlar'daki metin boyutuna döner
+    elleYakinlastirma = yeni !== taban;
     if (yeni === yakinlastirma) return;
     yakinlastirma = yeni;
     if (!canliMi()) return;
@@ -160,6 +197,8 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   function olustur() {
     if (canliMi()) return;
     yuklendi = false;
+    uygulananOlcek = 1; // yeni sayfa 1 ile başlar
+    yakinlastirmayiTabanaEsitle();
     try {
       const bu = yerelPencereOlustur({
         preload: PRELOAD_YUZEY,
@@ -185,6 +224,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       wc.once('did-finish-load', () => {
         if (pencere !== bu) return;
         yuklendi = true;
+        yakinlastirmayiTabanaEsitle();
         if (yakinlastirma !== 1) yakinlastirmayiUygula(wc);
         if (bekleyenMod) {
           const istenen = bekleyenMod;
@@ -275,7 +315,9 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     if (!canliMi() || typeof pencere.setOpacity !== 'function') return;
     let oran = 1;
     try {
-      if (malzemeAl().malzeme === 'yok') oran = opaklikOrani(opaklikAl());
+      // Yüksek karşıtlık (o-25) opak zemin vaat eder: yarı saydam pencere o sözü bozar, opaklık ayarı bu kipte yok sayılır.
+      const yuksekKarsitlik = gorunumAl()?.karsitlik === true;
+      if (malzemeAl().malzeme === 'yok' && !yuksekKarsitlik) oran = opaklikOrani(opaklikAl());
     } catch {
       oran = 1;
     }
@@ -307,9 +349,11 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     menuAcik = 0;
     mod = kip;
     try {
+      yakinlastirmayiTabanaEsitle();
+      if (yakinlastirma !== uygulananOlcek) yakinlastirmayiUygula(pencere.webContents); // ayarlar pencere oluştuktan sonra yüklendiyse
       yerlestir(kip);
       modelGonder();
-      pencere.webContents.send('yuzey:goster', { mod: kip, malzeme: malzemeAl().malzeme });
+      pencere.webContents.send('yuzey:goster', { mod: kip, malzeme: malzemeAl().malzeme, ...gorunumEki() });
       opaklikUygula();
       ustSeviyesiniUygula(true);
       pencere.show();
@@ -366,7 +410,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   function ipcKaydet() {
     ipcMain.handle('yuzey:durum-al', (olay) => {
       if (!yuzeydenMi(olay)) return izinYok();
-      return { ok: true, mod, model: rendererModeli(modelAl()), malzeme: malzemeAl().malzeme, ...(dilAl ? { dil: dilAl() } : {}) };
+      return { ok: true, mod, model: rendererModeli(modelAl()), malzeme: malzemeAl().malzeme, ...(dilAl ? { dil: dilAl() } : {}), ...gorunumEki() };
     });
     ipcMain.handle('yuzey:calistir', async (olay, yuk) => {
       if (!yuzeydenMi(olay)) return izinYok();
@@ -460,6 +504,17 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     /** o-32: panel opaklığı ayarı değişti: açık pencereye hemen uygulanır (kapalıysa bir sonraki gösterimde). */
     opaklikDegisti() {
       if (gorunurMu()) opaklikUygula();
+    },
+    /**
+     * Ayarlar > Görünüm > Metin boyutu değişti (o-25): oturumdaki elle yakınlaştırma (Ctrl + / −) bırakılır, yakınlaştırma yeni tabana gelir;
+     * pencere açıksa aynı oranda yeniden yerleştirilir.
+     */
+    metinOlcegiUygula() {
+      elleYakinlastirma = false;
+      yakinlastirma = tabanYakinlastirma();
+      if (!canliMi()) return;
+      yakinlastirmayiUygula(pencere.webContents);
+      if (gorunurMu() && KIPLER.includes(mod)) yerlestir(mod);
     },
     panelAcKapat: (kaynak = 'tepsi') => acKapat('panel', kaynak),
     paletAcKapat: () => acKapat('palet', 'kisayol'),

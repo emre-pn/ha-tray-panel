@@ -88,7 +88,7 @@ test('ayarlar.html: data-i18n içeriği ve data-i18n-attr öznitelikleri Türkç
       nitelikSayisi += 1;
     }
   }
-  assert.equal(nitelikSayisi, 8, 'öznitelik çevirileri (placeholder, aria-label)');
+  assert.equal(nitelikSayisi, 10, 'öznitelik çevirileri (placeholder, aria-label)');
 });
 
 test('ayarlar.html: dil seçici Görünüm bölümünde; "Dil / Language" etiketi ve dil adları sabit, "Sistem dili" çevrilir; sayfa betikleri doğru sırada', () => {
@@ -100,7 +100,7 @@ test('ayarlar.html: dil seçici Görünüm bölümünde; "Dil / Language" etiket
   // Sözlükler ve dil.js, ayarlar.js'ten ve kisayol.js'ten önce yüklenir
   const betikler = [...HTML.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
   assert.deepEqual(betikler, [
-    'lib/dil.js', 'lib/ceviri/ana.js', 'lib/ceviri/ayarlar.js', 'lib/kisayol.js', 'lib/arama.js',
+    'lib/dil.js', 'lib/ceviri/ana.js', 'lib/ceviri/ayarlar.js', 'lib/kisayol.js', 'lib/arama.js', 'lib/tema-renk.js',
     'lib/karo-gorunum.js', 'lib/duzen-islemleri.js', 'ayarlar-duzen.js', 'ayarlar.js',
   ]);
   assert.match(HTML, /<html lang="tr">/);

@@ -22,6 +22,7 @@
   const SozlukAyarlar = window.EvCeviriAyarlar || null;
   const SozlukAna = window.EvCeviriAna || null;
   const DuzenModulu = window.EvAyarlarDuzen || null; // 1.4.0 düzen (ayarlar-duzen.js): karo görünümü, sayfalar, geçmiş, onarım; yoksa Ayarlar bugünkü gibi çalışır
+  const TemaRenk = window.EvTemaRenk || null; // panel renk önizlemesi (lib/tema-renk.js); yoksa önizleme çizilmez
 
   // --- Arayüz dili -------------------------------------------------------------------------------------------------------------
   const DIL_ANAHTARI = 'evPaneli.ayarlar.dil'; // son etkin dil ('tr' | 'en'): sayfa ilk boyamadan önce doğru dilde açılsın diye
@@ -89,6 +90,14 @@
   const YAKINLASTIRMA_ADIMLARI = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
   const YAKINLASTIRMA_ANAHTARI = 'evPaneli.ayarlar.yakinlastirma';
   let yakinlastirmaSirasi = 2;
+  // Grup "tema": Metin boyutu (%) ve ayar değerleri (src/lib/gorunum.js ile aynı kümeler; renderer ana süreç modülü yüklemez)
+  const METIN_OLCEKLERI = [100, 115, 130, 150];
+  const PANEL_TEMALARI = ['varsayilan', 'okyanus', 'orman', 'gunbatimi', 'lavanta', 'grafit'];
+  const HAVA_EFEKTLERI = ['yok', 'otomatik', 'yagmur', 'kar', 'gunes', 'firtina'];
+  const MEVSIM_EFEKTLERI = ['yok', 'otomatik', 'ilkbahar', 'yaz', 'sonbahar', 'kis'];
+  const RENK_DESENI = /^#[0-9a-fA-F]{6}$/;
+  let metinCarpani = 1; // Ayarlar penceresinin kendi metin boyutu çarpanı (Ctrl +/- yakınlaştırmasının üstüne biner)
+  let yakinlastirmaDokunuldu = false; // Ctrl +/-/0, kayıtlı seçim ya da metin boyutu: false iken sayfaya yakınlaştırma hiç yazılmaz
 
   // --- Öğeler --------------------------------------------------------------------------------------------------------------
   const $ = (kimlik) => document.getElementById(kimlik);
@@ -127,6 +136,24 @@
   const vurguOnizleme = $('vurguOnizleme');
   const vurguHata = $('vurguHata');
   const btnVurguSifirla = $('btnVurguSifirla');
+  const metinOlcegi = $('metinOlcegi');
+  const yuksekKarsitlik = $('yuksekKarsitlik');
+  const panelTemasi = $('panelTemasi');
+  const panelVurguRengi = $('panelVurguRengi');
+  const panelVurguSecici = $('panelVurguSecici');
+  const panelVurguHata = $('panelVurguHata');
+  const btnPanelVurguSifirla = $('btnPanelVurguSifirla');
+  const panelArkaPlani = $('panelArkaPlani');
+  const panelArkaSecici = $('panelArkaSecici');
+  const panelArkaHata = $('panelArkaHata');
+  const btnPanelArkaSifirla = $('btnPanelArkaSifirla');
+  const temaOnizleme = $('temaOnizleme');
+  const temaKontrast = $('temaKontrast');
+  const animasyonlar = $('animasyonlar');
+  const animasyonGecisleri = $('animasyonGecisleri');
+  const havaEfekti = $('havaEfekti');
+  const mevsimEfekti = $('mevsimEfekti');
+  const hareketiAzalt = $('hareketiAzalt');
   const btnAyarlariKaydet = $('btnAyarlariKaydet');
   const kirliGosterge = $('kirliGosterge');
   const tepsiSolTik = $('tepsiSolTik');
@@ -245,6 +272,8 @@
     yerelAdres: { girdi: yerelAdres, hata: yerelAdresHata },
     disAdres: { girdi: disAdres, hata: disAdresHata },
     vurguRengi: { girdi: vurguRengi, hata: vurguHata },
+    panelVurguRengi: { girdi: panelVurguRengi, hata: panelVurguHata },
+    panelArkaPlani: { girdi: panelArkaPlani, hata: panelArkaHata },
     anaPanoyaDonDk: { girdi: anaPanoyaDonDk, hata: anaPanoyaDonHata, detay: 'bolumPencere' },
     kisayol: { girdi: kisayol, kutu: kisayolUyarilari },
     paletKisayol: { girdi: paletKisayol, kutu: paletKisayolUyarilari },
@@ -902,6 +931,16 @@
       yeniPencereMalzemesi: yeniPencereMalzemesi.value,
       temaZorla: temaZorla.value,
       vurguRengi: vurguRengi.value.trim().toLowerCase(),
+      metinOlcegi: Number(metinOlcegi.value),
+      yuksekKarsitlik: yuksekKarsitlik.checked,
+      panelTemasi: panelTemasi.value,
+      panelVurguRengi: panelVurguRengi.value.trim().toLowerCase(),
+      panelArkaPlani: panelArkaPlani.value.trim().toLowerCase(),
+      animasyonlar: animasyonlar.checked,
+      animasyonGecisleri: animasyonGecisleri.checked,
+      havaEfekti: havaEfekti.value,
+      mevsimEfekti: mevsimEfekti.value,
+      hareketiAzalt: hareketiAzalt.checked,
       panolar: panoYuku(),
       ...bilgiAnlik(),
       sayfalar: duzen ? duzen.sayfalarAnlik() : [],
@@ -934,8 +973,18 @@
       koseBildirimi: sonuc.koseBildirimi !== false,
       bipSesi: sonuc.bipSesi === true,
       yeniPencereMalzemesi: ['acrylic', 'mica', 'yok'].indexOf(sonuc.yeniPencereMalzemesi) >= 0 ? sonuc.yeniPencereMalzemesi : 'acrylic',
-      temaZorla: sonuc.temaZorla === 'sistem' ? 'sistem' : 'koyu',
+      temaZorla: sonuc.temaZorla === 'sistem' || sonuc.temaZorla === 'acik' ? sonuc.temaZorla : 'koyu',
       vurguRengi: (typeof sonuc.vurguRengi === 'string' ? sonuc.vurguRengi : '').toLowerCase(),
+      metinOlcegi: METIN_OLCEKLERI.indexOf(Number(sonuc.metinOlcegi)) >= 0 ? Number(sonuc.metinOlcegi) : 100,
+      yuksekKarsitlik: sonuc.yuksekKarsitlik === true,
+      panelTemasi: PANEL_TEMALARI.indexOf(sonuc.panelTemasi) >= 0 ? sonuc.panelTemasi : 'varsayilan',
+      panelVurguRengi: typeof sonuc.panelVurguRengi === 'string' && RENK_DESENI.test(sonuc.panelVurguRengi) ? sonuc.panelVurguRengi.toLowerCase() : '',
+      panelArkaPlani: typeof sonuc.panelArkaPlani === 'string' && RENK_DESENI.test(sonuc.panelArkaPlani) ? sonuc.panelArkaPlani.toLowerCase() : '',
+      animasyonlar: sonuc.animasyonlar === true,
+      animasyonGecisleri: sonuc.animasyonGecisleri !== false,
+      havaEfekti: HAVA_EFEKTLERI.indexOf(sonuc.havaEfekti) >= 0 ? sonuc.havaEfekti : 'otomatik',
+      mevsimEfekti: MEVSIM_EFEKTLERI.indexOf(sonuc.mevsimEfekti) >= 0 ? sonuc.mevsimEfekti : 'yok',
+      hareketiAzalt: sonuc.hareketiAzalt === true,
       panolar: (Array.isArray(sonuc.panolar) ? sonuc.panolar : []).map(function (p) {
         return { ad: String(p.ad || '').trim(), yol: String(p.yol || '').trim(), kisayol: kisNorm(p.kisayol) };
       }),
@@ -1052,6 +1101,83 @@
     }
   }
 
+  // --- Grup "tema": okunabilirlik (o-25), panel renkleri (o-29), animasyonlar (o-34) -----------------------------------------------
+  const ONIZLEME_DEGISKENLERI = ['--bg', '--karo', '--kenar', '--metin', '--soluk', '--vurgu', '--rozet-metin'];
+
+  const sistemAcikMi = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches === true;
+
+  /**
+   * Bu pencerenin kendi görünümü: yüksek karşıtlık <html data-karsitlik> ile, metin boyutu yakınlaştırmaya çarpan olarak uygulanır.
+   * Seçim formdan okunur: kutuyu değiştirince hemen görünür (kaydedilmese de); kaydedilmezse sayfa yenilenince eski haline döner.
+   */
+  function ayarlarGorunumunuUygula() {
+    const kok = document.documentElement;
+    if (yuksekKarsitlik.checked) kok.setAttribute('data-karsitlik', '1');
+    else kok.removeAttribute('data-karsitlik');
+    const olcek = Number(metinOlcegi.value);
+    metinCarpani = METIN_OLCEKLERI.indexOf(olcek) >= 0 ? olcek / 100 : 1;
+    if (metinCarpani !== 1) yakinlastirmaDokunuldu = true;
+    yakinlastirmaYaz();
+  }
+
+  /** Panel rengi kutusu: "#rrggbb" ya da boş. Geçerliyse seçici eşlenir ve hata temizlenir; geçersizse kutu işaretlenir. true = geçerli. */
+  function panelRengiDenetle(ad, girdi, secici) {
+    const renk = girdi.value.trim();
+    const gecerli = RENK_DESENI.test(renk);
+    if (gecerli) secici.value = renk.toLowerCase();
+    if (renk !== '' && !gecerli) {
+      gecersizIsaretle(girdi, true);
+      const hata = ALAN_KUTULARI[ad].hata;
+      hata.textContent = t('ayar.vurgu.hata');
+      hata.style.display = 'block';
+      return false;
+    }
+    alanTemizle(ad);
+    return true;
+  }
+
+  function onizlemeKontrastiMetni(oran) {
+    const yazi = (Math.floor(oran * 10) / 10).toFixed(1); // aşağı yuvarlanır: "4,5" gösterilip gerçekte 4,46 olmasın
+    return t('ayar.panelTema.kontrast', { oran: dil === 'tr' ? yazi.replace('.', ',') : yazi });
+  }
+
+  /**
+   * Panel renkleri önizlemesi: lib/tema-renk.js ana süreçteki aynı paleti üretir; en düşük metin kontrastı yazılır.
+   * Geçersiz renk yok sayılır (kutu işaretlenir). Yüksek karşıtlık açıksa özel renkler kullanılmaz ve önizleme varsayılana döner.
+   */
+  function temaOnizlemeGuncelle() {
+    const vurguGecerli = panelRengiDenetle('panelVurguRengi', panelVurguRengi, panelVurguSecici);
+    const arkaGecerli = panelRengiDenetle('panelArkaPlani', panelArkaPlani, panelArkaSecici);
+    if (!TemaRenk) return;
+    if (yuksekKarsitlik.checked) {
+      ONIZLEME_DEGISKENLERI.forEach(function (ad) { temaOnizleme.style.removeProperty(ad); });
+      temaKontrast.textContent = t('ayar.panelTema.kontrastYuksek');
+      return;
+    }
+    const sema = temaZorla.value === 'acik' || (temaZorla.value === 'sistem' && sistemAcikMi()) ? 'acik' : 'koyu';
+    const palet = TemaRenk.paletUret({
+      sema: sema,
+      tema: panelTemasi.value,
+      arkaPlan: arkaGecerli ? panelArkaPlani.value.trim() : '',
+      vurgu: vurguGecerli ? panelVurguRengi.value.trim() : '',
+    });
+    const d = palet.degiskenler;
+    ONIZLEME_DEGISKENLERI.forEach(function (ad) { temaOnizleme.style.setProperty(ad, d[ad]); });
+    const oran = Math.min(
+      TemaRenk.kontrast(d['--metin'], d['--bg']),
+      TemaRenk.kontrast(d['--metin'], d['--karo']),
+      TemaRenk.kontrast(d['--soluk'], d['--bg']),
+      TemaRenk.kontrast(d['--soluk'], d['--karo']),
+      TemaRenk.kontrast(d['--rozet-metin'], d['--vurgu']),
+    );
+    temaKontrast.textContent = onizlemeKontrastiMetni(oran);
+  }
+
+  /** Animasyonlar kapalıyken alt seçenekler (geçişler, hava, mevsim) pasif görünür; değerleri korunur. "Hareketi azalt" her zaman açıktır. */
+  function animasyonAlanlariniGuncelle() {
+    [animasyonGecisleri, havaEfekti, mevsimEfekti].forEach(function (girdi) { girdi.disabled = !animasyonlar.checked; });
+  }
+
   /** Ana kısayol ve palet kısayolu kutularının sunucu kaynaklı iletileri (kisayolDurumlari güncel olmalı). */
   function kisayolSunucuIletileri(sonuc) {
     const ana = (sonuc.kisayolUyarilari || []).slice();
@@ -1127,6 +1253,16 @@
     masaustuKaroUstte.checked = d.masaustuKaroUstte;
     masaustuSecili = d.masaustuKarolari.slice();
     masaustuKaroListesiniCiz();
+    metinOlcegi.value = String(d.metinOlcegi);
+    yuksekKarsitlik.checked = d.yuksekKarsitlik;
+    panelTemasi.value = d.panelTemasi;
+    yaz('panelVurguRengi', panelVurguRengi, d.panelVurguRengi);
+    yaz('panelArkaPlani', panelArkaPlani, d.panelArkaPlani);
+    animasyonlar.checked = d.animasyonlar;
+    animasyonGecisleri.checked = d.animasyonGecisleri;
+    havaEfekti.value = d.havaEfekti;
+    mevsimEfekti.value = d.mevsimEfekti;
+    hareketiAzalt.checked = d.hareketiAzalt;
     uyariKutusuDoldur(malzemeUyari, sonuc.malzemeDestekleniyor === false ? [t('ayar.malzeme.desteklenmiyor')] : []);
     ayarDosyasiYolu.textContent = sonuc.ayarDosyasi || '%APPDATA%\\Ev Paneli\\ayarlar.json';
 
@@ -1144,6 +1280,9 @@
       if (!korunan.has(ad)) alanTemizle(ad);
     });
     vurguOnizlemeGuncelle(); // geçerli ya da boş renkte işareti kaldırır, korunan geçersiz değerde işaretli bırakır
+    ayarlarGorunumunuUygula();
+    temaOnizlemeGuncelle();
+    animasyonAlanlariniGuncelle();
     uyariKutusuDoldur(panoUyarilari, []);
     hazirListeDurumunuGoster(sonuc.hazirListeGuncel);
     otomatikBaslatDurumunuGoster(sonuc.otomatikBaslatDurumu);
@@ -2133,10 +2272,21 @@
       tepsiRozetSensoru: a.tepsiRozetSensoru,
       masaustuKarolari: masaustuKaroSecimi(),
       masaustuKaroUstte: a.masaustuKaroUstte,
+      // Grup "tema" (ayar-alanlari.js tablosu): sunucu her alanı yeniden doğrular, geçersiz değer mevcut olanı korur
+      metinOlcegi: a.metinOlcegi,
+      yuksekKarsitlik: a.yuksekKarsitlik,
+      panelTemasi: a.panelTemasi,
+      panelVurguRengi: panelVurguRengi.value.trim(),
+      panelArkaPlani: panelArkaPlani.value.trim(),
+      animasyonlar: a.animasyonlar,
+      animasyonGecisleri: a.animasyonGecisleri,
+      havaEfekti: a.havaEfekti,
+      mevsimEfekti: a.mevsimEfekti,
+      hareketiAzalt: a.hareketiAzalt,
     };
   }
 
-  const KORUNACAK_ALANLAR = ['kisayol', 'paletKisayol', 'vurguRengi', 'anaPanoyaDonDk', 'pilEsigi', 'takvimGunSayisi'];
+  const KORUNACAK_ALANLAR = ['kisayol', 'paletKisayol', 'vurguRengi', 'anaPanoyaDonDk', 'pilEsigi', 'takvimGunSayisi', 'panelVurguRengi', 'panelArkaPlani'];
 
   async function hepsiniKaydet() {
     if (kaydediliyor) return;
@@ -2435,8 +2585,15 @@
   }
 
   // --- Yakınlaştırma (g-13) ------------------------------------------------------------------------------------------------
+  /** Sayfaya yazılan yakınlaştırma: Ctrl +/- adımı x Ayarlar > Görünüm > Metin boyutu çarpanı (o-25). */
+  function yakinlastirmaYaz() {
+    if (!yakinlastirmaDokunuldu) return;
+    document.documentElement.style.zoom = String(Math.round(YAKINLASTIRMA_ADIMLARI[yakinlastirmaSirasi] * metinCarpani * 1000) / 1000);
+  }
+
   function yakinlastirmaUygula() {
-    document.documentElement.style.zoom = String(YAKINLASTIRMA_ADIMLARI[yakinlastirmaSirasi]);
+    yakinlastirmaDokunuldu = true;
+    yakinlastirmaYaz();
     try {
       window.localStorage.setItem(YAKINLASTIRMA_ANAHTARI, String(yakinlastirmaSirasi));
     } catch {
@@ -2456,7 +2613,8 @@
       const kayit = ham === null || ham === '' ? NaN : Number(ham);
       if (Number.isInteger(kayit) && kayit >= 0 && kayit < YAKINLASTIRMA_ADIMLARI.length) {
         yakinlastirmaSirasi = kayit;
-        document.documentElement.style.zoom = String(YAKINLASTIRMA_ADIMLARI[kayit]);
+        yakinlastirmaDokunuldu = true;
+        yakinlastirmaYaz();
       }
     } catch {
       /* yerel depolama yok */
@@ -2513,6 +2671,7 @@
     anahtarGorunurlugunuAyarla(anahtarGirdisi.type !== 'password');
     anahtarUzunluguGuncelle();
     vurguOnizlemeGuncelle();
+    temaOnizlemeGuncelle();
     guncelleSecilenSayisi();
     // Adres sınama sonucu o anki dilde yazılmış tek seferlik bir iletidir: eski dilde kalmasın diye kaldırılır.
     sonucYaz(yerelAdresSonuc, '', false);
@@ -2563,6 +2722,7 @@
   const kirliAlanlari = [
     yerelAdres, disAdres, canliBaglanti, otomatikBaslat, pencereBoyutu, odakKaybindaGizle, anaPanoyaDonDk,
     koseBildirimi, bipSesi, yeniPencereMalzemesi, temaZorla, tepsiSolTik, dilSecimi,
+    metinOlcegi, yuksekKarsitlik, panelTemasi, animasyonlar, animasyonGecisleri, havaEfekti, mevsimEfekti, hareketiAzalt,
   ];
   kirliAlanlari.forEach(function (girdi) {
     girdi.addEventListener('input', kirliGuncelle);
@@ -2576,6 +2736,38 @@
   });
   panelOpaklik.addEventListener('input', opaklikYazisiniGuncelle);
   tepsiRozeti.addEventListener('change', rozetSensorDurumunuGuncelle);
+  // Grup "tema": önizleme ve bu pencerenin kendi görünümü seçimle birlikte güncellenir (kirli gösterge yukarıda bağlıdır)
+  [temaZorla, panelTemasi].forEach(function (girdi) {
+    girdi.addEventListener('change', temaOnizlemeGuncelle);
+  });
+  yuksekKarsitlik.addEventListener('change', function () {
+    ayarlarGorunumunuUygula();
+    temaOnizlemeGuncelle();
+  });
+  metinOlcegi.addEventListener('change', ayarlarGorunumunuUygula);
+  animasyonlar.addEventListener('change', animasyonAlanlariniGuncelle);
+  [
+    [panelVurguRengi, panelVurguSecici, btnPanelVurguSifirla],
+    [panelArkaPlani, panelArkaSecici, btnPanelArkaSifirla],
+  ].forEach(function (grup) {
+    const metin = grup[0];
+    const secici = grup[1];
+    const sifirla = grup[2];
+    metin.addEventListener('input', function () {
+      temaOnizlemeGuncelle();
+      kirliGuncelle();
+    });
+    secici.addEventListener('input', function () {
+      metin.value = secici.value;
+      temaOnizlemeGuncelle();
+      kirliGuncelle();
+    });
+    sifirla.addEventListener('click', function () {
+      metin.value = '';
+      temaOnizlemeGuncelle();
+      kirliGuncelle();
+    });
+  });
 
   [yerelAdres, disAdres, vurguRengi, anaPanoyaDonDk].forEach(function (girdi) {
     const ad = girdi === yerelAdres ? 'yerelAdres' : girdi === disAdres ? 'disAdres' : girdi === vurguRengi ? 'vurguRengi' : 'anaPanoyaDonDk';
