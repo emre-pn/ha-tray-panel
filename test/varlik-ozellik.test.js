@@ -89,7 +89,12 @@ test('seçici, sayı, zamanlayıcı, süpürge, ışık, fan', () => {
 
 test('sensör ve ikili sensör: değer metni süzülür; hava; takvim; yapılacaklar', () => {
   const s = guvenliOzellikler(v('sensor.sicaklik', '21.4', { unit_of_measurement: '°C', device_class: 'temperature', state_class: 'measurement', suggested_display_precision: 1 }));
-  assert.deepEqual(s, { deger: '21.4', sayi: 21.4, birim: '°C', sinif: 'temperature', durumSinifi: 'measurement', hassasiyet: 1 });
+  assert.deepEqual(s, { deger: '21.4', sayi: 21.4, birim: '°C', sinif: 'temperature', durumSinifi: 'measurement', hassasiyet: 1, enAz: null, enCok: null });
+  // min/max öznitelikleri (gösterge aralığı): min_value/max_value önce, yoksa min/max; sayı olmayan değer null
+  const aralikli = guvenliOzellikler(v('sensor.seviye', '40', { min_value: 0, max_value: '200', min: 5, max: 'x' }));
+  assert.equal(aralikli.enAz, 0);
+  assert.equal(aralikli.enCok, 200);
+  assert.deepEqual([guvenliOzellikler(v('sensor.a', '1', { min: 2 })).enAz, guvenliOzellikler(v('sensor.a', '1', { max: 'x' })).enCok], [2, null]);
   assert.equal(guvenliOzellikler(v('sensor.son', 'Ön kapı açıldı')).deger, null, 'kapı metni taşıyan sensör değeri gösterilmez');
   assert.deepEqual(guvenliOzellikler(v('binary_sensor.hareket', 'on', { device_class: 'motion' })), { acik: true, sinif: 'motion' });
   assert.equal(guvenliOzellikler(v('binary_sensor.x', 'unavailable')).acik, null);

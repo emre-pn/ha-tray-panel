@@ -331,6 +331,277 @@
     odakla(girdi);
   }
 
+  // --- Bilgi kartları (o-04, o-07, o-08, o-09, o-10, o-11) ------------------------------------------------------------------
+  // Hızlı panelin sensör şeridi, üst kartları, takvimi ve yapılacaklar listeleri. Alan adları src/lib/ayar-alanlari.js tablosundakilerle
+  // aynıdır; değerler genelYuku içinde diğer genel ayarlarla birlikte gider, doğrulama ana süreçtedir (geçersiz değer reddedilir ve
+  // alan işaretlenir). Varlık seçenekleri ana sürecin Kapı Kuralı'ndan geçirdiği listeden (cihazlar:getir: cihazlar + bilgiVarliklari)
+  // gelir: kilit, alarm, kapı gibi varlıklar bu sayfaya hiç ulaşmaz. Seçili kimlikler seçenekler yüklenmemiş olsa da (HA'ya ulaşılamıyor)
+  // korunur ve kaydedilir. Tüm metinler sözlükten gelir; dil değişince bilgiMetinleriniYenile seçenekleri yeniden yazar.
+  const sensorGrafik = $('sensorGrafik');
+  const sensorGrafikSaat = $('sensorGrafikSaat');
+  const pilEsigi = $('pilEsigi');
+  const pilEsigiHata = $('pilEsigiHata');
+  const sensorTepsiIpucu = $('sensorTepsiIpucu');
+  const ustKart1 = $('ustKart1');
+  const ustKart2 = $('ustKart2');
+  const havaVarligi = $('havaVarligi');
+  const saatBicimi = $('saatBicimi');
+  const tarihBicimi = $('tarihBicimi');
+  const takvimGunSayisi = $('takvimGunSayisi');
+  const takvimGunHata = $('takvimGunHata');
+  const hizliListe = $('hizliListe');
+  const bilgiYuklemeIpucu = $('bilgiYuklemeIpucu');
+
+  const BILGI_SINIRLARI = { sensorSeridi: 6, takvimler: 4, yapilacakListeleri: 4 }; // src/lib/ayar-alanlari.js enCok değerleriyle aynı
+  const BILGI_LISTELERI = {
+    sensorSeridi: { kap: $('sensorSeridiListesi'), sec: $('sensorSeridiEkle'), dugme: $('btnSensorSeridiEkle'), ilkKaldir: null },
+    takvimler: { kap: $('takvimlerListesi'), sec: $('takvimlerEkle'), dugme: $('btnTakvimlerEkle'), ilkKaldir: null },
+    yapilacakListeleri: { kap: $('yapilacakListeleriListesi'), sec: $('yapilacakListeleriEkle'), dugme: $('btnYapilacakListeleriEkle'), ilkKaldir: null },
+  };
+  const KART_SABITLERI = [['yok', 'ayar.bilgi.kart.yok'], ['saat', 'ayar.bilgi.kart.saat'], ['hava', 'ayar.bilgi.kart.hava']];
+  const bilgiSecim = { sensorSeridi: [], takvimler: [], yapilacakListeleri: [] }; // seçili kimlikler (şeritte sıra önemli)
+  const bilgiAdlari = new Map(); // kimlik -> ad (yüklenen cihaz ve bilgi varlıkları)
+  let bilgiAdaylari = null; // null: seçenekler henüz yüklenmedi; sonra { sensorSeridi, havalar, takvimler, yapilacakListeleri }
+
+  Object.assign(ALAN_KUTULARI, {
+    pilEsigi: { girdi: pilEsigi, hata: pilEsigiHata, detay: 'bolumBilgi' },
+    takvimGunSayisi: { girdi: takvimGunSayisi, hata: takvimGunHata, detay: 'bolumBilgi' },
+  });
+
+  function bilgiDizisi(ham, enCok) {
+    const sonuc = [];
+    (Array.isArray(ham) ? ham : []).forEach(function (kimlik) {
+      if (typeof kimlik === 'string' && kimlik !== '' && sonuc.indexOf(kimlik) < 0 && sonuc.length < enCok) sonuc.push(kimlik);
+    });
+    return sonuc;
+  }
+
+  function bilgiSecenektenBiri(liste, deger, varsayilan) {
+    return liste.indexOf(deger) >= 0 ? deger : varsayilan;
+  }
+
+  function bilgiMetni(ham, varsayilan) {
+    return typeof ham === 'string' && ham.trim() !== '' ? ham.trim() : varsayilan;
+  }
+
+  /** Form alanlarındaki bilgi değerleri (genelAnlik ile birlikte karşılaştırılır; anahtar sırası bilgiDegerleri ile aynıdır). */
+  function bilgiAnlik() {
+    return {
+      sensorSeridi: bilgiSecim.sensorSeridi.slice(),
+      sensorGrafik: sensorGrafik.checked,
+      sensorGrafikSaat: String(sensorGrafikSaat.value),
+      pilEsigi: String(pilEsigi.value).trim(),
+      sensorTepsiIpucu: sensorTepsiIpucu.checked,
+      ustKart1: bilgiMetni(ustKart1.value, 'yok'),
+      ustKart2: bilgiMetni(ustKart2.value, 'yok'),
+      havaVarligi: bilgiMetni(havaVarligi.value, ''),
+      saatBicimi: String(saatBicimi.value),
+      tarihBicimi: String(tarihBicimi.value),
+      takvimler: bilgiSecim.takvimler.slice(),
+      takvimGunSayisi: String(takvimGunSayisi.value).trim(),
+      yapilacakListeleri: bilgiSecim.yapilacakListeleri.slice(),
+      hizliListe: bilgiMetni(hizliListe.value, ''),
+    };
+  }
+
+  /** Sunucu özetinin aynı biçimdeki karşılığı. */
+  function bilgiDegerleri(sonuc) {
+    return {
+      sensorSeridi: bilgiDizisi(sonuc.sensorSeridi, BILGI_SINIRLARI.sensorSeridi),
+      sensorGrafik: sonuc.sensorGrafik !== false,
+      sensorGrafikSaat: String(bilgiSecenektenBiri([1, 6, 24], sonuc.sensorGrafikSaat, 6)),
+      pilEsigi: String(Number.isInteger(sonuc.pilEsigi) ? sonuc.pilEsigi : 20),
+      sensorTepsiIpucu: sonuc.sensorTepsiIpucu === true,
+      ustKart1: bilgiMetni(sonuc.ustKart1, 'yok'),
+      ustKart2: bilgiMetni(sonuc.ustKart2, 'yok'),
+      havaVarligi: bilgiMetni(sonuc.havaVarligi, ''),
+      saatBicimi: bilgiSecenektenBiri(['sistem', '24', '12'], sonuc.saatBicimi, 'sistem'),
+      tarihBicimi: bilgiSecenektenBiri(['orta', 'kisa', 'uzun', 'yok'], sonuc.tarihBicimi, 'orta'),
+      takvimler: bilgiDizisi(sonuc.takvimler, BILGI_SINIRLARI.takvimler),
+      takvimGunSayisi: String(Number.isInteger(sonuc.takvimGunSayisi) ? sonuc.takvimGunSayisi : 3),
+      yapilacakListeleri: bilgiDizisi(sonuc.yapilacakListeleri, BILGI_SINIRLARI.yapilacakListeleri),
+      hizliListe: bilgiMetni(sonuc.hizliListe, ''),
+    };
+  }
+
+  /** Kayıt yükü: sayısal alanlar sayı olarak gider (sayıya benzemeyen metin olduğu gibi gider ve ana süreçte reddedilir). */
+  function bilgiYuku(a) {
+    const sayi = function (metin) { return /^\d{1,4}$/.test(metin) ? Number(metin) : metin; };
+    return {
+      sensorSeridi: a.sensorSeridi,
+      sensorGrafik: a.sensorGrafik,
+      sensorGrafikSaat: Number(a.sensorGrafikSaat),
+      pilEsigi: sayi(a.pilEsigi),
+      sensorTepsiIpucu: a.sensorTepsiIpucu,
+      ustKart1: a.ustKart1,
+      ustKart2: a.ustKart2,
+      havaVarligi: a.havaVarligi,
+      saatBicimi: a.saatBicimi,
+      tarihBicimi: a.tarihBicimi,
+      takvimler: a.takvimler,
+      takvimGunSayisi: sayi(a.takvimGunSayisi),
+      yapilacakListeleri: a.yapilacakListeleri,
+      hizliListe: a.hizliListe,
+    };
+  }
+
+  /** Varlığın görünen adı: bilinen ad + kimlik ("Salon sıcaklık (sensor.salon_sicaklik)"), ad bilinmiyorsa kimliğin kendisi. */
+  function bilgiAdiMetni(kimlik) {
+    const ad = bilgiAdlari.get(kimlik);
+    return ad && ad !== kimlik ? ad + ' (' + kimlik + ')' : kimlik;
+  }
+
+  /** Seçim kutusunu yeniden kurar; seçili değer listede yoksa (varlıklar yüklenmemiş) kimliğiyle eklenir, böylece kayıtlı değer korunur. */
+  function bilgiSecimKutusunuKur(kutu, ogeler, deger) {
+    const liste = ogeler.slice();
+    if (!liste.some(function (o) { return o.deger === deger; })) liste.push({ deger: deger, metin: bilgiAdiMetni(deger) });
+    kutu.replaceChildren();
+    liste.forEach(function (o) {
+      const secenek = document.createElement('option');
+      secenek.value = o.deger;
+      secenek.textContent = o.metin;
+      kutu.appendChild(secenek);
+    });
+    kutu.value = deger;
+  }
+
+  /** Üst kart, hava ve hızlı liste kutularını kurar. degerler verilmezse kutulardaki şimdiki seçimler korunur. */
+  function bilgiSecenekleriniCiz(degerler) {
+    const simdi = degerler || { ustKart1: ustKart1.value, ustKart2: ustKart2.value, havaVarligi: havaVarligi.value, hizliListe: hizliListe.value };
+    const adaylar = bilgiAdaylari || { sensorSeridi: [], havalar: [], takvimler: [], yapilacakListeleri: [] };
+    const ogeler = function (liste) {
+      return liste.map(function (c) { return { deger: c.entity_id, metin: bilgiAdiMetni(c.entity_id) }; });
+    };
+    const kartlar = KART_SABITLERI.map(function (s) { return { deger: s[0], metin: t(s[1]) }; }).concat(ogeler(adaylar.sensorSeridi));
+    bilgiSecimKutusunuKur(ustKart1, kartlar, bilgiMetni(simdi.ustKart1, 'yok'));
+    bilgiSecimKutusunuKur(ustKart2, kartlar, bilgiMetni(simdi.ustKart2, 'yok'));
+    bilgiSecimKutusunuKur(havaVarligi, [{ deger: '', metin: t('ayar.bilgi.hava.yok') }].concat(ogeler(adaylar.havalar)), bilgiMetni(simdi.havaVarligi, ''));
+    bilgiSecimKutusunuKur(hizliListe, [{ deger: '', metin: t('ayar.bilgi.hizli.ilk') }].concat(ogeler(adaylar.yapilacakListeleri)), bilgiMetni(simdi.hizliListe, ''));
+    bilgiYuklemeIpucu.style.display = bilgiAdaylari === null ? 'block' : 'none';
+  }
+
+  /** Seçili varlıkların satırları ve "ekle" kutusu (henüz seçilmemiş adaylar; sınır dolunca kapanır). */
+  function bilgiListesiCiz(ad) {
+    const oge = BILGI_LISTELERI[ad];
+    const secili = bilgiSecim[ad];
+    const enCok = BILGI_SINIRLARI[ad];
+    oge.kap.replaceChildren();
+    oge.ilkKaldir = null;
+    if (secili.length === 0) oge.kap.appendChild(el('div', 'ipucu', t('ayar.bilgi.listeBos')));
+    secili.forEach(function (kimlik) {
+      const gorunenAd = bilgiAdlari.get(kimlik) || kimlik;
+      const satir = el('div', 'bilgi-satir');
+      const metin = el('div', 'bilgi-satir-metin');
+      metin.appendChild(el('span', 'bilgi-satir-ad', gorunenAd));
+      if (gorunenAd !== kimlik) metin.appendChild(el('span', 'bilgi-satir-kimlik', kimlik));
+      const kaldir = el('button', 'buton buton-ikincil', t('ayar.bilgi.kaldir'));
+      kaldir.type = 'button';
+      kaldir.setAttribute('aria-label', t('ayar.bilgi.kaldirEtiket', { ad: gorunenAd }));
+      kaldir.addEventListener('click', function () {
+        const sira = bilgiSecim[ad].indexOf(kimlik);
+        if (sira < 0) return;
+        bilgiSecim[ad].splice(sira, 1);
+        bilgiListesiCiz(ad);
+        kirliGuncelle();
+        odakla(oge.sec.disabled ? oge.ilkKaldir : oge.sec);
+      });
+      if (oge.ilkKaldir === null) oge.ilkKaldir = kaldir;
+      satir.appendChild(metin);
+      satir.appendChild(kaldir);
+      oge.kap.appendChild(satir);
+    });
+    const aday = bilgiAdaylari ? bilgiAdaylari[ad] : [];
+    const kalan = aday.filter(function (c) { return secili.indexOf(c.entity_id) < 0; });
+    const dolu = secili.length >= enCok;
+    oge.sec.replaceChildren();
+    const ilk = document.createElement('option');
+    ilk.value = '';
+    ilk.textContent = dolu ? t('ayar.bilgi.limitDolu', { n: enCok }) : bilgiAdaylari !== null && kalan.length === 0 ? t('ayar.bilgi.adayYok') : t('ayar.bilgi.secenekSec');
+    oge.sec.appendChild(ilk);
+    if (!dolu) {
+      kalan.forEach(function (c) {
+        const secenek = document.createElement('option');
+        secenek.value = c.entity_id;
+        secenek.textContent = bilgiAdiMetni(c.entity_id);
+        oge.sec.appendChild(secenek);
+      });
+    }
+    oge.sec.value = '';
+    oge.sec.disabled = dolu || kalan.length === 0;
+    oge.dugme.disabled = true;
+  }
+
+  /** Cihaz listesi alındığında seçenekleri kurar (cihazlar:getir yanıtı: sensör ve hava cihazlar içinde, takvim ve yapılacaklar bilgiVarliklari içinde). */
+  function bilgiAdaylariniKur(sonuc) {
+    const cihazlar = Array.isArray(sonuc.cihazlar) ? sonuc.cihazlar : [];
+    const bilgiVarliklari = Array.isArray(sonuc.bilgiVarliklari) ? sonuc.bilgiVarliklari : [];
+    const gecerli = function (c) { return !!c && typeof c.entity_id === 'string'; };
+    cihazlar.concat(bilgiVarliklari).forEach(function (c) {
+      if (gecerli(c)) bilgiAdlari.set(c.entity_id, typeof c.ad === 'string' && c.ad !== '' ? c.ad : c.entity_id);
+    });
+    const sec = function (liste, alanlar) {
+      return liste.filter(function (c) { return gecerli(c) && alanlar.indexOf(c.alan) >= 0 && c.gizli !== true; });
+    };
+    bilgiAdaylari = {
+      sensorSeridi: sec(cihazlar, ['sensor', 'binary_sensor']),
+      havalar: sec(cihazlar, ['weather']),
+      takvimler: sec(bilgiVarliklari, ['calendar']),
+      yapilacakListeleri: sec(bilgiVarliklari, ['todo']),
+    };
+    bilgiMetinleriniYenile();
+  }
+
+  /** Metinleri (seçenek adları, satırlar, ipuçları) etkin dilde yeniden yazar; seçili değerlere dokunmaz. */
+  function bilgiMetinleriniYenile() {
+    bilgiSecenekleriniCiz();
+    Object.keys(BILGI_LISTELERI).forEach(bilgiListesiCiz);
+  }
+
+  /** Sunucudaki değerleri (bilgiDegerleri çıktısı) alanlara yazar. korunan: sunucunun reddettiği, yazılan değerle kalan alanlar. */
+  function bilgiUygula(d, korunan) {
+    Object.keys(BILGI_SINIRLARI).forEach(function (ad) { bilgiSecim[ad] = d[ad].slice(); });
+    sensorGrafik.checked = d.sensorGrafik;
+    sensorGrafikSaat.value = d.sensorGrafikSaat;
+    sensorTepsiIpucu.checked = d.sensorTepsiIpucu;
+    saatBicimi.value = d.saatBicimi;
+    tarihBicimi.value = d.tarihBicimi;
+    if (!korunan.has('pilEsigi')) {
+      pilEsigi.value = d.pilEsigi;
+      alanTemizle('pilEsigi');
+    }
+    if (!korunan.has('takvimGunSayisi')) {
+      takvimGunSayisi.value = d.takvimGunSayisi;
+      alanTemizle('takvimGunSayisi');
+    }
+    bilgiSecenekleriniCiz({ ustKart1: d.ustKart1, ustKart2: d.ustKart2, havaVarligi: d.havaVarligi, hizliListe: d.hizliListe });
+    Object.keys(BILGI_LISTELERI).forEach(bilgiListesiCiz);
+  }
+
+  [
+    sensorGrafik, sensorGrafikSaat, pilEsigi, sensorTepsiIpucu, ustKart1, ustKart2, havaVarligi, saatBicimi, tarihBicimi,
+    takvimGunSayisi, hizliListe,
+  ].forEach(function (girdi) {
+    girdi.addEventListener('input', kirliGuncelle);
+    girdi.addEventListener('change', kirliGuncelle);
+  });
+  pilEsigi.addEventListener('input', function () { alanTemizle('pilEsigi'); });
+  takvimGunSayisi.addEventListener('input', function () { alanTemizle('takvimGunSayisi'); });
+
+  Object.keys(BILGI_LISTELERI).forEach(function (ad) {
+    const oge = BILGI_LISTELERI[ad];
+    oge.sec.addEventListener('change', function () {
+      oge.dugme.disabled = oge.sec.value === '' || bilgiSecim[ad].length >= BILGI_SINIRLARI[ad];
+    });
+    oge.dugme.addEventListener('click', function () {
+      const kimlik = oge.sec.value;
+      if (kimlik === '' || bilgiSecim[ad].indexOf(kimlik) >= 0 || bilgiSecim[ad].length >= BILGI_SINIRLARI[ad]) return;
+      bilgiSecim[ad].push(kimlik);
+      bilgiListesiCiz(ad);
+      kirliGuncelle();
+      odakla(oge.sec.disabled ? oge.ilkKaldir : oge.sec);
+    });
+  });
+
   // --- Kısayol yakalama ve anlık denetim (h-24, k-01, h-25) ------------------------------------------------------------------
   /** Kutudaki kısayolu anında denetler: geçersizse neden (Windows’a ayrılmış dahil), geçerliyse AltGr gibi uyarılar. true = geçersiz. */
   function kisayolAnlikDenetle(girdi, kutu, bosIzinli) {
@@ -425,6 +696,7 @@
       temaZorla: temaZorla.value,
       vurguRengi: vurguRengi.value.trim().toLowerCase(),
       panolar: panoYuku(),
+      ...bilgiAnlik(),
     };
   }
 
@@ -450,6 +722,7 @@
       panolar: (Array.isArray(sonuc.panolar) ? sonuc.panolar : []).map(function (p) {
         return { ad: String(p.ad || '').trim(), yol: String(p.yol || '').trim(), kisayol: kisNorm(p.kisayol) };
       }),
+      ...bilgiDegerleri(sonuc),
     };
   }
 
@@ -632,6 +905,7 @@
     uyariKutusuDoldur(panoUyarilari, []);
     hazirListeDurumunuGoster(sonuc.hazirListeGuncel);
     otomatikBaslatDurumunuGoster(sonuc.otomatikBaslatDurumu);
+    bilgiUygula(d, korunan);
     bazGenel = JSON.stringify(d);
   }
 
@@ -1161,6 +1435,7 @@
           if (e.ad) adHaritasi.set(e.entity_id, e.ad);
         });
         cihazlarYuklendi = true;
+        bilgiAdaylariniKur(sonuc);
         gosterilenCihazSayisi = CIHAZ_SAYFA_BOYUTU;
         guncelleSecilenSayisi();
         cihazlariCiz();
@@ -1482,10 +1757,11 @@
       paletKisayol: a.paletKisayol,
       canliBaglanti: a.canliBaglanti,
       panolar: a.panolar,
+      ...bilgiYuku(a),
     };
   }
 
-  const KORUNACAK_ALANLAR = ['kisayol', 'paletKisayol', 'vurguRengi', 'anaPanoyaDonDk'];
+  const KORUNACAK_ALANLAR = ['kisayol', 'paletKisayol', 'vurguRengi', 'anaPanoyaDonDk', 'pilEsigi', 'takvimGunSayisi'];
 
   async function hepsiniKaydet() {
     if (kaydediliyor) return;
@@ -1866,6 +2142,7 @@
     }
     panolariCiz();
     siraCiz();
+    bilgiMetinleriniYenile();
     if (cihazlarYuklendi) cihazlariCiz();
     else if (listeIletisi) listeMesaji(listeIletisi.anahtar, listeIletisi.hata, listeIletisi.ham);
     if (sonYedekler !== null) yedekleriCiz(sonYedekler);

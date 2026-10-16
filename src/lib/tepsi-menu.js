@@ -63,16 +63,18 @@ function acikIsikSayisi(karolar) {
  * Tepsi simgesinin ipucu: "Ev Paneli — Ev ağı — 2 ışık açık". Açık ışık yoksa (ya da sayı bilinmiyorsa) ekleme yapılmaz.
  * Canlı bağlantı yokken sayı REST yedeğinin son okumasıdır: "(son bilinen)" notu düşülür. Geliştirme sürümü başlıkta ayrılır.
  * Yetki kesici açıksa (anahtar Home Assistant tarafından reddedildi) `uyari` kısa metni durumdan hemen sonra görünür.
- * @param {{ad?: string, durum: string, uyari?: string|null, acikIsik?: number|null, canli?: boolean, gelistirme?: boolean, t?: Function}} g
- *   ad verilmezse uygulamanın o dildeki adı (t('uygulama.ad')) kullanılır
+ * @param {{ad?: string, durum: string, uyari?: string|null, acikIsik?: number|null, sensorUyari?: number|null, canli?: boolean, gelistirme?: boolean, t?: Function}} g
+ *   ad verilmezse uygulamanın o dildeki adı (t('uygulama.ad')) kullanılır. sensorUyari (o-04): dikkat gerektiren sensör sayısı
+ *   (bilgi-modeli.js sensorUyariSayisi); 0 ya da verilmezse eklenmez. Sayı sonda durur: ipucu kısalırsa önce o kesilir.
  */
-function ipucuMetni({ ad, durum, uyari = null, acikIsik = null, canli = true, gelistirme = false, t = TR }) {
+function ipucuMetni({ ad, durum, uyari = null, acikIsik = null, sensorUyari = null, canli = true, gelistirme = false, t = TR }) {
   let metin = `${ad ?? t('uygulama.ad')}${gelistirme ? t('uygulama.gelistirme') : ''} — ${durum}`;
   if (typeof uyari === 'string' && uyari) metin += ` — ${uyari}`;
   if (Number.isInteger(acikIsik) && acikIsik > 0) {
     metin += ` — ${cogul(t, 'tepsi.isikAcik', acikIsik)}`;
     if (canli === false) metin += ` ${t('tepsi.sonBilinen')}`;
   }
+  if (Number.isInteger(sensorUyari) && sensorUyari > 0) metin += ` — ${cogul(t, 'tepsi.sensorUyari', sensorUyari)}`;
   return kisalt(metin, IPUCU_SINIRI);
 }
 

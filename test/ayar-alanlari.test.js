@@ -23,7 +23,7 @@ const ORNEK = [
   A.mantiksalAlan('yerelGizli', true, { aktarilir: false, ozette: false }),
 ];
 
-test('şema sürümü 6; kayıt şimdilik boş ve dondurulmuş; göç 6 tanımlı', () => {
+test('şema sürümü 6; kayıt dondurulmuş; göç 6 tanımlı', () => {
   assert.equal(SEMA_SURUMU, 6);
   assert.equal(A.GUNCEL_EK_SURUM, 6);
   assert.ok(Object.isFrozen(A.AYAR_ALANLARI));
@@ -122,10 +122,10 @@ test('tipler, aktarılanlar ve özet: aktarilir/ozette bayrakları uyulur', () =
   assert.equal(ozet.saatBicimi, '12');
   assert.equal(ozet.metinOlcegi, 100, 'ayarda yoksa varsayılan');
   assert.equal(Object.hasOwn(ozet, 'yerelGizli'), false);
-  // boş kayıtla bugünkü uygulama: hiçbir ek alan yok
-  assert.deepEqual(A.alanTipleri(), {});
-  assert.deepEqual(A.aktarilanAlanlar(), []);
-  assert.deepEqual(A.ekAyarOzeti({}), {});
+  // gerçek kayıt: tablodaki her alan tipte, aktarılanlarda ve özette (ozette:false olmayanlar) görünür; sayısı gruplara göre değişir
+  assert.deepEqual(Object.keys(A.alanTipleri()), A.AYAR_ALANLARI.map((a) => a.ad));
+  assert.deepEqual(A.aktarilanAlanlar(), A.AYAR_ALANLARI.filter((a) => a.aktarilir).map((a) => a.ad));
+  assert.deepEqual(Object.keys(A.ekAyarOzeti({})), A.AYAR_ALANLARI.filter((a) => a.ozette).map((a) => a.ad));
 });
 
 test('gocleriUygula: yalnız kayıtlı sürümden yeni göçler, sürüm sırasıyla', () => {

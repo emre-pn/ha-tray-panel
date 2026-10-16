@@ -22,6 +22,9 @@ const SOZLUK = oku('src/lib/ceviri/yuzey.js');
 const ARAMA = oku('src/lib/arama.js');
 const KAYDIRICI = oku('src/lib/kaydirici.js');
 const BETIK = oku('src/yuzey-sayfa.js');
+const BILGI_BICIM = oku('src/lib/bilgi-bicim.js');
+const GRAFIK = oku('src/lib/grafik.js');
+const YUZEY_BILGI = oku('src/yuzey-bilgi.js');
 
 class SahteOge {
   /** `odak`: sayfanın { aktif } kaydı (document.activeElement); focus() buraya yazar, DOM'dan çıkarılan odaklı öğe odağı yitirir. */
@@ -197,7 +200,7 @@ const MODEL = {
  * `dil`: durumAl yanıtındaki etkin arayüz dili (verilmezse yanıtta yoktur: sayfa Türkçe kalır). Sayfadaki data-i18n / data-i18n-attr
  * öğeleri HTML'den okunur (document.querySelectorAll), böylece sayfayiCevir gerçek sayfadaki gibi çalışır.
  */
-function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true }, malzeme, aramaYama, dil } = {}) {
+function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true }, malzeme, aramaYama, dil, okuYaniti = (istek) => ({ ok: true, veri: istek.tur === 'gecmis' ? {} : [] }) } = {}) {
   const odak = { aktif: null };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
@@ -243,6 +246,11 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
       cagrilar.push(['basiliBirak', kimlik]);
       return { ok: true };
     },
+    // 1.4.0 okuma ucu (geçmiş, takvim, yapılacaklar): yanıtı okuYaniti belirler
+    oku: async (istek) => {
+      cagrilar.push(['oku', JSON.parse(JSON.stringify(istek))]);
+      return typeof okuYaniti === 'function' ? okuYaniti(istek) : okuYaniti;
+    },
     kapat: () => cagrilar.push(['kapat']),
     boyut: (h) => cagrilar.push(['boyut', h]),
     haAc: async () => cagrilar.push(['haAc']),
@@ -262,6 +270,7 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
       return oge;
     },
     createElement: (etiket) => new SahteOge(etiket, null, odak),
+    createElementNS: (adAlani, etiket) => new SahteOge(etiket, null, odak), // grafikler (lib/grafik.js svgOlustur)
     addEventListener: (ad, fn) => (belgeDinleyicileri[ad] ??= []).push(fn),
     get activeElement() {
       return odak.aktif;
@@ -283,6 +292,9 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
   vm.runInContext(ARAMA, sandbox, { filename: 'lib/arama.js' });
   if (aramaYama) aramaYama(sandbox.EvArama);
   vm.runInContext(KAYDIRICI, sandbox, { filename: 'lib/kaydirici.js' });
+  vm.runInContext(BILGI_BICIM, sandbox, { filename: 'lib/bilgi-bicim.js' });
+  vm.runInContext(GRAFIK, sandbox, { filename: 'lib/grafik.js' });
+  vm.runInContext(YUZEY_BILGI, sandbox, { filename: 'yuzey-bilgi.js' });
   vm.runInContext(BETIK, sandbox, { filename: 'yuzey-sayfa.js' });
   return {
     oge: (kimlik) => ogeler.get(kimlik),
@@ -307,6 +319,7 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
     },
     pencereOlayi: (tip) => (pencereDinleyicileri[tip] ?? []).forEach((fn) => fn({ type: tip })),
     calistirmalar: () => cagrilar.filter((c) => c[0] === 'calistir').map((c) => c[1]),
+    okumalar: () => cagrilar.filter((c) => c[0] === 'oku').map((c) => c[1]),
   };
 }
 
@@ -2069,4 +2082,253 @@ test('dil: sürükleme / basılı tutma sürerken gelen dil değişimi çizimi e
   sayfa.belgeOlayi('pointerup');
   sayfa.zaman.ilerle(1);
   assert.equal(sayfa.oge('baglanti').textContent, 'Live');
+});
+
+// ---- 1.4.0 bilgi bölümleri (o-04, o-07, o-08, o-09, o-10, o-11): src/yuzey-bilgi.js sayfaya bağlı --------------------------
+
+const bilgiKaro = (id, etiket, alan, ozellik, ek = {}) => ({
+  ...karo(id, etiket, { grup: 'sensor', grupEtiketi: 'Sensör', alan, durum: 'notr' }),
+  ozellik,
+  ...ek,
+});
+const B_SICAKLIK = bilgiKaro('sensor.salon_sicaklik', 'Salon sıcaklık', 'sensor', { deger: '21.4', sayi: 21.4, birim: '°C', sinif: 'temperature', hassasiyet: 1, enAz: null, enCok: null });
+const B_PIL = bilgiKaro('sensor.kumanda_pil', 'Kumanda pil', 'sensor', { deger: '12', sayi: 12, birim: '%', sinif: 'battery', hassasiyet: null, enAz: null, enCok: null });
+const B_HAVA = bilgiKaro('weather.ev', 'Ev', 'weather', { durum: 'sunny', sicaklik: 24, birim: '°C', nem: 40, ruzgar: null, ruzgarBirim: null, basinc: null });
+const BILGI = {
+  ayar: { saatBicimi: '24', tarihBicimi: 'kisa', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20 },
+  kartlar: [{ yuva: 1, tur: 'saat', karo: null, secilmedi: false }, { yuva: 2, tur: 'hava', karo: B_HAVA, secilmedi: false }],
+  serit: [B_SICAKLIK],
+  sensorler: [B_SICAKLIK, B_PIL],
+  takvimler: [{ id: 'calendar.ev', etiket: 'Ev takvimi', kullanilabilir: true, mesgul: false }],
+  listeler: [{ id: 'todo.alisveris', etiket: 'Alışveriş', kullanilabilir: true, acikSayisi: 1 }],
+  hizliListe: 'todo.alisveris',
+};
+const BILGI_MODEL = { ...MODEL, bilgi: BILGI };
+const bilgiOkuma = (istek) => {
+  if (istek.tur === 'yapilacak') return { ok: true, veri: [{ uid: 'u1', baslik: 'Süt', tamamlandi: false }] };
+  if (istek.tur === 'takvim') return { ok: true, veri: [] };
+  return { ok: true, veri: Object.fromEntries(istek.kimlikler.map((k) => [k, [{ t: Date.now() - 3 * 3_600_000, d: 20 }, { t: Date.now() - 3_600_000, d: 22 }]])) };
+};
+const sinifVar = (o, ad) => `${o.className} ${o.attributes.class ?? ''}`.split(/\s+/).includes(ad);
+const bulSinif = (sayfa, ad) => sayfa.oge('icerik').bul((o) => sinifVar(o, ad));
+
+test('bilgi: panel bölümleri sırayla çizilir (kartlar, şerit, son kullanılanlar, gruplar, sensörler, yapılacaklar, takvim); okumalar yalnız panel açıkken istenir', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  await akit();
+  sayfa.zaman.ilerle(100);
+  const basliklar = yazilar(sayfa, 'bolum-baslik');
+  assert.deepEqual(basliklar, ['Son kullanılanlar', 'Işık', 'Sahne', 'PC', 'Medya', 'Sensörler', 'Yapılacaklar: Alışveriş · 1 açık', 'Yaklaşan etkinlikler']);
+  const govdeSirasi = sayfa.oge('icerik').children.map((c) => c.className);
+  assert.deepEqual(govdeSirasi.slice(0, 3), ['bilgi-kartlar', 'sensor-serit', 'bolum son']);
+  assert.match(bulSinif(sayfa, 'kart-hava')[0].textContent, /24 °C/);
+  const turler = sayfa.okumalar().map((o) => o.tur).sort();
+  assert.deepEqual(turler, ['gecmis', 'takvim', 'yapilacak']);
+  assert.deepEqual(sayfa.okumalar().find((o) => o.tur === 'gecmis'), { tur: 'gecmis', kimlikler: ['sensor.salon_sicaklik', 'sensor.kumanda_pil'], saat: 6 });
+  assert.equal(sayfa.calistirmalar().length, 0, 'bilgi bölümü açılışta hiçbir eylem çalıştırmaz');
+});
+
+test('bilgi: model bilgi taşımıyorsa panel eskisi gibi çizilir ve hiçbir okuma istenmez', async () => {
+  const sayfa = await panelAc({ model: MODEL, okuYaniti: bilgiOkuma });
+  await akit();
+  assert.deepEqual(sayfa.okumalar(), []);
+  assert.deepEqual(yazilar(sayfa, 'bolum-baslik'), ['Son kullanılanlar', 'Işık', 'Sahne', 'PC', 'Medya']);
+});
+
+test('bilgi: saat kartı sayfanın zamanlayıcısıyla dakikada bir güncellenir', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  const once = bulSinif(sayfa, 'saat-deger')[0].textContent;
+  assert.match(once, /^\d{2}:\d{2}$/);
+  sayfa.zaman.ilerle(61_000);
+  const sonra = bulSinif(sayfa, 'saat-deger')[0].textContent;
+  assert.notEqual(sonra, once);
+});
+
+test('bilgi: sensöre tıklayınca geçmiş görünümü açılır, Esc önce onu kapatır (panel kapanmaz), ikinci Esc paneli kapatır', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  await akit();
+  bulSinif(sayfa, 'serit-oge')[0].gonder('click');
+  sayfa.zaman.ilerle(100);
+  await akit();
+  sayfa.zaman.ilerle(100);
+  assert.equal(bulSinif(sayfa, 'bilgi-detay').length, 1);
+  assert.equal(bulSinif(sayfa, 'sensor-serit').length, 0, 'görünüm panelin yerini alır');
+  assert.deepEqual(sayfa.okumalar().filter((o) => o.tur === 'gecmis').at(-1), { tur: 'gecmis', kimlikler: ['sensor.salon_sicaklik'], saat: 24 });
+  assert.equal(sayfa.odakta(), bulSinif(sayfa, 'detay-geri')[0], 'odak Geri düğmesine gider');
+  const ilk = sayfa.belgeOlayi('keydown', { key: 'Escape' });
+  assert.equal(ilk.onlendi, true);
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'kapat').length, 0);
+  assert.equal(bulSinif(sayfa, 'bilgi-detay').length, 0);
+  assert.equal(sayfa.odakta(), bulSinif(sayfa, 'serit-oge')[0], 'odak görünümü açan sensöre döner');
+  sayfa.belgeOlayi('keydown', { key: 'Escape' });
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'kapat').length, 1);
+});
+
+test('bilgi: pencere yeniden gösterilince açık geçmiş görünümü kapanır', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  await akit();
+  bulSinif(sayfa, 'serit-oge')[0].gonder('click');
+  sayfa.zaman.ilerle(100);
+  assert.equal(bulSinif(sayfa, 'bilgi-detay').length, 1);
+  sayfa.goster('panel');
+  assert.equal(bulSinif(sayfa, 'bilgi-detay').length, 0);
+  assert.equal(bulSinif(sayfa, 'sensor-serit').length, 1);
+});
+
+test('bilgi: ok tuşu gezintisi sensör şeridine ve yapılacaklar düğmelerine ulaşır (ekleme kutusu yazı imlecini bozmasın diye gezintide değildir)', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  await akit();
+  sayfa.zaman.ilerle(100);
+  const icerik = sayfa.oge('icerik');
+  icerik.focus();
+  sayfa.belgeOlayi('keydown', { key: 'ArrowDown', target: icerik });
+  assert.ok(sinifVar(sayfa.odakta(), 'serit-oge'), 'ilk ok tuşu ilk gezilebilir öğeye (sensör şeridi) gider');
+  const girdi = bulSinif(sayfa, 'liste-girdi')[0];
+  girdi.focus();
+  const olay = sayfa.belgeOlayi('keydown', { key: 'ArrowLeft', target: girdi });
+  assert.equal(olay.onlendi, undefined, 'ekleme kutusunda oklar imlecindir');
+});
+
+test('yapılacaklar: silme, panelde basılı tutmayla gider (başlangıç bildirilir, ~0,8 sn sonra remove_item + basili:true); erken bırakma iptal eder', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  await akit();
+  sayfa.zaman.ilerle(100);
+  const sil = () => bulSinif(sayfa, 'liste-sil')[0];
+  sil().gonder('click');
+  assert.deepEqual(sayfa.calistirmalar(), [], 'düz tıklama silmez');
+  sil().gonder('pointerdown', { button: 0 });
+  assert.deepEqual(sayfa.cagrilar.filter((c) => c[0] === 'basiliBasla'), [['basiliBasla', 'todo.alisveris']]);
+  sayfa.zaman.ilerle(400);
+  sil().gonder('pointerup');
+  sayfa.zaman.ilerle(2000);
+  assert.deepEqual(sayfa.calistirmalar(), [], 'erken bırakma isteği iptal eder');
+  assert.ok(sayfa.cagrilar.some((c) => c[0] === 'basiliBirak' && c[1] === 'todo.alisveris'));
+  sil().gonder('pointerdown', { button: 0 });
+  sayfa.zaman.ilerle(900);
+  await akit();
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'todo.alisveris', servis: 'remove_item', veri: { item: 'u1' }, basili: true }]);
+});
+
+test('yapılacaklar: tamamlama ve ekleme eylem hattına servis + veri olarak gider; yazarken gelen model çizimi ertelenir, yazılan metin korunur', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  await akit();
+  sayfa.zaman.ilerle(100);
+  bulSinif(sayfa, 'liste-onay')[0].gonder('click');
+  await akit();
+  assert.deepEqual(sayfa.calistirmalar().at(-1), { kimlik: 'todo.alisveris', servis: 'update_item', veri: { item: 'u1', status: 'completed' } });
+
+  const girdi = bulSinif(sayfa, 'liste-girdi')[0];
+  girdi.focus();
+  girdi.gonder('focus');
+  girdi.value = 'yarı';
+  girdi.gonder('input');
+  sayfa.durum({ ...BILGI_MODEL, bilgi: { ...BILGI, serit: [] } });
+  assert.equal(bulSinif(sayfa, 'liste-girdi')[0], girdi, 'yazarken çizim ertelendi: kutu yok edilmedi');
+  girdi.gonder('blur');
+  sayfa.zaman.ilerle(1);
+  const yeni = bulSinif(sayfa, 'liste-girdi')[0];
+  assert.notEqual(yeni, girdi);
+  assert.equal(yeni.value, 'yarı', 'taslak yeni kutuya taşındı');
+  yeni.value = 'ekmek';
+  yeni.gonder('keydown', { key: 'Enter' });
+  await akit();
+  assert.deepEqual(sayfa.calistirmalar().at(-1), { kimlik: 'todo.alisveris', servis: 'add_item', veri: { item: 'ekmek' } });
+});
+
+test('palet: "liste süt" ilk satırda "listeye ekle" önerir; Enter yalnız add_item gönderir ve paleti kapatır', async () => {
+  const sayfa = await paletAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  sayfa.oge('arama').value = 'liste süt';
+  sayfa.oge('arama').gonder('input');
+  const satirlar = paletSatirlari(sayfa);
+  assert.match(satirlar[0].textContent, /“süt” → Alışveriş listesine ekle/);
+  assert.match(satirlar[0].textContent, /Yapılacaklar/);
+  assert.ok(satirlar[0].className.split(' ').includes('secili'));
+  assert.equal(satirlar[0].className.includes('yikici'), false);
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  await akit();
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'todo.alisveris', servis: 'add_item', veri: { item: 'süt' } }]);
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'kapat').length, 1, 'başarıda palet kapanır');
+  assert.deepEqual(sayfa.okumalar(), [], 'palette hiçbir okuma istenmez');
+});
+
+test('palet: hızlı ekleme satırı yalnız "liste/list/todo <metin>" için ve hızlı liste seçiliyse çıkar; başka sorgular eskisi gibi', async () => {
+  const sayfa = await paletAc({ model: BILGI_MODEL });
+  for (const [sorgu, beklenen] of [['list milk', true], ['todo ekmek', true], ['liste', false], ['led 40', false], ['ampul', false]]) {
+    sayfa.oge('arama').value = sorgu;
+    sayfa.oge('arama').gonder('input');
+    assert.equal(paletSatirlari(sayfa).some((s) => /listesine ekle/.test(s.textContent)), beklenen, sorgu);
+  }
+  const listesiz = await paletAc({ model: { ...MODEL, bilgi: { ...BILGI, hizliListe: '' } } });
+  listesiz.oge('arama').value = 'liste süt';
+  listesiz.oge('arama').gonder('input');
+  assert.equal(paletSatirlari(listesiz).some((s) => /listesine ekle/.test(s.textContent)), false);
+});
+
+test('palet: ekleme başarısız olursa palet açık kalmaz ama eylem yalnız add_item\'dır; "çok sık" yanıtında açık kalır ve uyarı verir', async () => {
+  const sayfa = await paletAc({ model: BILGI_MODEL, calistirYaniti: { ok: false, tur: 'cok-sik' } });
+  sayfa.oge('arama').value = 'liste süt';
+  sayfa.oge('arama').gonder('input');
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  await akit();
+  assert.match(sayfa.oge('ipucu').textContent, /Çok sık/);
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'kapat').length, 0);
+  assert.equal(sayfa.calistirmalar().every((c) => c.servis === 'add_item'), true);
+});
+
+test('dil: İngilizce arayüzde bilgi bölümleri İngilizce yazılır (başlıklar, durum, ipuçları) ve Türkçe karakter sızmaz', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, dil: 'en', okuYaniti: bilgiOkuma });
+  await akit();
+  sayfa.zaman.ilerle(100);
+  const basliklar = yazilar(sayfa, 'bolum-baslik');
+  assert.ok(basliklar.includes('Sensors'));
+  assert.ok(basliklar.includes('Upcoming events'));
+  assert.ok(basliklar.includes('To-do: Alışveriş · 1 open'));
+  assert.match(bulSinif(sayfa, 'kart-hava')[0].textContent, /Sunny/);
+  assert.match(bulSinif(sayfa, 'kart-hava')[0].textContent, /Humidity 40%/);
+  assert.match(bulSinif(sayfa, 'bilgi-takvim')[0].textContent, /No upcoming events/);
+  const kart = bulSinif(sayfa, 'sensor-karo').find((k) => /Kumanda pil/.test(k.textContent));
+  assert.match(kart.textContent, /! low battery/);
+  assert.match(kart.textContent, /12%/);
+  sayfa.dilDegisti({ dil: 'tr' });
+  assert.ok(yazilar(sayfa, 'bolum-baslik').includes('Sensörler'));
+  assert.match(bulSinif(sayfa, 'kart-hava')[0].textContent, /Güneşli/);
+});
+
+test('bilgi: sayfada yeni betikler yuzey-sayfa.js\'den önce yüklenir ve HTML\'de satır içi betik yok', () => {
+  const sira = [...HTML.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
+  const sayfa = sira.indexOf('yuzey-sayfa.js');
+  for (const betik of ['lib/bilgi-bicim.js', 'lib/grafik.js', 'yuzey-bilgi.js']) {
+    assert.ok(sira.indexOf(betik) >= 0 && sira.indexOf(betik) < sayfa, `${betik} yuzey-sayfa.js'den önce`);
+  }
+  assert.ok(sira.indexOf('yuzey-bilgi.js') > sira.indexOf('lib/grafik.js') && sira.indexOf('yuzey-bilgi.js') > sira.indexOf('lib/bilgi-bicim.js'));
+  assert.doesNotMatch(HTML, /<script>|\sstyle="/);
+});
+
+test('bilgi (CSS): seri renkleri iki temada tanımlıdır; çizim sınıfları (sparkline, gösterge, grafik, seri-0..6) stil alır; satır içi renk yok', () => {
+  const css = oku('src/yuzey.css');
+  const { koyu, acik } = temalar(css);
+  for (const tema of [koyu, acik]) {
+    for (let i = 0; i < 7; i += 1) assert.match(tema[`--seri-${i}`] ?? '', /^#[0-9a-f]{6}$/i, `--seri-${i}`);
+    assert.equal(new Set(Array.from({ length: 7 }, (_, i) => tema[`--seri-${i}`])).size, 7, 'yedi ayrı renk');
+  }
+  for (const secici of ['.sparkline-cizgi', '.sparkline-alan', '.gosterge-arka', '.gosterge-deger', '.gosterge-deger.uyari', '.gosterge-deger.kritik', '.grafik-izgara', '.eksen', '.imlec', '.cizgi.seri-0', '.cizgi.seri-6', '.nokta.seri-3', '.seri-isaret.seri-4']) {
+    assert.notEqual(kuralGovdesi(css, secici), '', `${secici}: kural yok`);
+  }
+  // seri renkleri yalnız değişkenlerden gelir (g-01 kuralı) ve grafik ızgarası kutu ızgarasından ayrı sınıftır
+  assert.match(kuralGovdesi(css, '.cizgi.seri-4'), /var\(--seri-4\)/);
+  assert.doesNotMatch(oku('src/lib/grafik.js'), /class: 'izgara'/);
+});
+
+test('bilgi (CSS): grafik çizgileri ve gösterge yayları kartlarında WCAG 1.4.11 için ayırt edilir; yedi serinin dokusu / etiketi renge ek olarak vardır', () => {
+  const css = oku('src/yuzey.css');
+  const { koyu, acik } = temalar(css);
+  // Kartlarda 3:1 yakalayan seriler grafikte yeterli; kalanlar için (açık temada sarı / yeşil / pembe) lejant etiketi + sayısal istatistik + desen zorunludur.
+  let zayif = 0;
+  for (const [ad, tema] of [['koyu', koyu], ['açık', acik]]) {
+    for (let i = 0; i < 7; i += 1) if (kontrast(tema[`--seri-${i}`], tema['--karo']) < 3) zayif += 1;
+    for (const d of ['--vurgu', '--yedek', '--hata']) assert.ok(kontrast(tema[d], tema['--karo']) >= 3, `${ad}: ${d} gösterge yayı --karo üzerinde`);
+  }
+  assert.ok(zayif <= 4, `düşük kontrastlı seri sayısı sınırlı (${zayif})`);
+  assert.match(kuralGovdesi(css, '.seri-isaret.seri-4'), /dashed/);
+  assert.match(kuralGovdesi(css, '.seri-isaret.seri-5'), /dotted/);
+  assert.match(oku('src/lib/grafik.js'), /SERI_KESIK_DESENLERI/);
 });

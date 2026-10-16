@@ -28,6 +28,8 @@ const SAYFALAR = [
 
 test('yüzey sözlüğü: sayfa betiklerinde ve HTML işaretlerinde kullanılan her anahtar tanımlı; tanımlı her anahtar kullanılıyor', () => {
   const kullanilan = new Set();
+  // hızlı panelin bilgi bölümleri (kartlar, sensörler, yapılacaklar, takvim, grafik) kendi dosyasındadır: src/yuzey-bilgi.js
+  for (const m of oku('src/yuzey-bilgi.js').matchAll(/'((?:yuzey|offline|kose)\.[A-Za-z0-9_.]+)'/g)) kullanilan.add(m[1]);
   for (const [html, betik] of SAYFALAR) {
     for (const m of oku(betik).matchAll(/'((?:yuzey|offline|kose)\.[A-Za-z0-9_.]+)'/g)) kullanilan.add(m[1]);
     for (const m of oku(html).matchAll(/\bdata-i18n="([^"]+)"/g)) kullanilan.add(m[1]);

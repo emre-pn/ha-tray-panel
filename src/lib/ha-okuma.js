@@ -18,7 +18,8 @@
  * API (ajanlar için):
  *   gecmis(kimlikler, { saat } | { baslangic, bitis })  -> Promise<{ [kimlik]: {t: number(ms), d: number|string|null}[] }>
  *       REST /api/history/period (minimal_response, no_attributes, significant_changes_only); en çok 7 varlık, en uzun 7 gün,
- *       seri başına en çok 500 nokta (fazlası seyreltilir).
+ *       seri başına en çok 500 nokta (fazlası seyreltilir). Başarılı yanıtta kaydı olmayan varlık için [] döner (boş dönem);
+ *       hata, hız sınırı ya da kapalı uçta anahtar hiç yoktur (alınamadı): arayüz ikisini ayrı gösterir.
  *   takvimEtkinlikleri(kimlik, { gun } | { baslangic, bitis }) -> Promise<{baslik, baslangic, bitis, tumGun}[]>
  *       REST /api/calendars/<kimlik>?start&end; en uzun 31 gün, en çok 50 etkinlik; başlığı süzgeçten geçmeyen etkinlik düşer.
  *   havaTahmini(kimlik, tur = 'daily') -> Promise<{zaman, durum, sicaklik, enDusuk, yagis, yagisOlasiligi, nem, ruzgar}[]>
@@ -87,12 +88,13 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
    * Önbellekli, tek uçuşlu, hız sınırlı okuma. `is` fırlatırsa ya da hak yoksa `bosDeger()` döner (önbelleğe yazılmaz).
    * @param {string} uc TTL anahtarı
    */
-  async function oku(uc, anahtar, is, bosDeger) {
+  async function oku(uc, anahtar, is, bosDeger, { taze = false } = {}) {
     if (kapali.has(uc)) return bosDeger();
     const tam = `${uc}|${anahtar}`;
     const kayit = onbellek.get(tam);
-    if (kayit && simdi() - kayit.t < TTL[uc]) return kayit.deger;
-    if (surenler.has(tam)) return surenler.get(tam);
+    // taze: kullanıcının kendi değişikliğinden sonra (ör. yapılacaklara öğe eklendi) önbellek ve süren okuma atlanır; hız sınırı yine geçerlidir.
+    if (!taze && kayit && simdi() - kayit.t < TTL[uc]) return kayit.deger;
+    if (!taze && surenler.has(tam)) return surenler.get(tam);
     if (!agHakkiVarMi()) return kayit ? kayit.deger : bosDeger();
     const soz = (async () => {
       try {
@@ -212,6 +214,9 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
           }
           seriler[kimlik] = seyrelt(noktalar);
         }
+        // Başarılı yanıtta verisi olmayan varlık BOŞ dizi alır ("bu dönemde kayıt yok"); hata ve hız sınırında anahtar hiç yoktur
+        // (arayüz iki durumu ayrı söyler: boş dönem / alınamadı).
+        for (const kimlik of benzersiz) if (!Object.hasOwn(seriler, kimlik)) seriler[kimlik] = [];
         return seriler;
       }, bos.nesne);
     },
@@ -318,7 +323,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
       }, bosAlan);
     },
 
-    async yapilacaklar(kimlik) {
+    async yapilacaklar(kimlik, { taze = false } = {}) {
       if (!(await izinliMi(kimlik, ['todo']))) return [];
       return oku('yapilacak', kimlik, async () => {
         const sonuc = await wsKomut('yapilacak', { type: 'todo/item/list', entity_id: kimlik });
@@ -331,7 +336,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
           liste.push({ uid: o.uid, baslik, tamamlandi: o.status === 'completed' });
         }
         return liste;
-      }, bos.dizi);
+      }, bos.dizi, { taze: taze === true });
     },
 
     async yoneticiMi() {
@@ -396,7 +401,7 @@ const YUZEY_OKUMA_TURLERI = Object.freeze(['gecmis', 'takvim', 'hava', 'yapilaca
  *   { tur: 'gecmis', kimlikler: string[] (1..7), saat?: 1..168 }
  *   { tur: 'takvim', kimlik, gun?: 1..31 }
  *   { tur: 'hava', kimlik, tahmin?: 'daily'|'hourly'|'twice_daily' }
- *   { tur: 'yapilacak', kimlik }
+ *   { tur: 'yapilacak', kimlik, taze?: true }   taze: önbellek atlanır (kullanıcı kendi eklediği/tamamladığı öğeyi hemen görsün)
  * @param {ReturnType<typeof haOkumaOlustur>} okuma
  * @param {unknown} yuk
  * @param {(kimlik: string) => boolean} kayitliMi
@@ -422,7 +427,7 @@ async function yuzeyOkumasi(okuma, yuk, kayitliMi) {
     const tur = TAHMIN_TURLERI.includes(yuk.tahmin) ? yuk.tahmin : 'daily';
     return { ok: true, veri: await okuma.havaTahmini(yuk.kimlik, tur) };
   }
-  return { ok: true, veri: await okuma.yapilacaklar(yuk.kimlik) };
+  return { ok: true, veri: await okuma.yapilacaklar(yuk.kimlik, { taze: yuk.taze === true }) };
 }
 
 module.exports = {

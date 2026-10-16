@@ -37,6 +37,7 @@ const GRUPLAR = Object.freeze([
   { kod: 'sahne', etiket: 'Sahne' },
   { kod: 'pc', etiket: 'PC' },
   { kod: 'medya', etiket: 'Medya' },
+  { kod: 'sensor', etiket: 'Sensör' }, // 1.4.0: sensör ve ikili sensör karoları (salt okunur; src/yuzey-bilgi.js çizer)
   { kod: 'diger', etiket: 'Diğer' },
 ]);
 
@@ -70,13 +71,14 @@ const HAZIR_LISTE = Object.freeze([
 const HAZIR_LISTE_SURUMU = 1;
 const HAZIR_HARITA = new Map(HAZIR_LISTE.map((h) => [h.kimlik, h]));
 
-/** Kimliğin panel grubu: hazır listedeki açık tablo, yoksa alan varsayılanı (light -> isik, scene -> sahne, gerisi diger). */
+/** Kimliğin panel grubu: hazır listedeki açık tablo, yoksa alan varsayılanı (light -> isik, scene -> sahne, sensor/binary_sensor -> sensor, gerisi diger). */
 function grupBul(kimlik) {
   const hazir = HAZIR_HARITA.get(kimlik);
   if (hazir) return hazir.grup;
   const alan = alanAl(kimlik);
   if (alan === 'light') return 'isik';
   if (alan === 'scene') return 'sahne';
+  if (alan === 'sensor' || alan === 'binary_sensor') return 'sensor';
   return 'diger';
 }
 

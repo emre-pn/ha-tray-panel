@@ -22,7 +22,7 @@
  *   sayi         { deger, enAz, enCok, adim, birim, kip }
  *   zamanlayici  { durum, sure, kalan, bitis }
  *   yapilacak    { acikSayisi }
- *   sensor       { deger, sayi, birim, sinif, durumSinifi, hassasiyet }
+ *   sensor       { deger, sayi, birim, sinif, durumSinifi, hassasiyet, enAz, enCok }   (enAz/enCok: min_value/min ve max_value/max özniteliği; gösterge aralığı için)
  *   ikiliSensor  { acik, sinif }
  *   hava         { durum, sicaklik, birim, nem, ruzgar, ruzgarBirim, basinc }
  *   takvim       { mesgul }
@@ -174,6 +174,8 @@ const MODELLER = Object.freeze({
       sinif: metinAl(n.device_class, 30),
       durumSinifi: secenekAl(n.state_class, DURUM_SINIFLARI),
       hassasiyet: sayiAl(n.suggested_display_precision, { min: 0, max: 10 }),
+      enAz: sayiAl(n.min_value ?? n.min),
+      enCok: sayiAl(n.max_value ?? n.max),
     };
   },
   ikiliSensor(v, n) {

@@ -381,6 +381,68 @@
       cursor: pointer;
     }
 
+    /* Bilgi kartları bölümü: alt başlıklar ve seçilen varlıkların satırları (iç içe kaydırma yok). */
+    .bilgi-alt-baslik {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin: 22px 0 10px;
+      padding-top: 14px;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .bilgi-satirlar {
+      margin-bottom: 8px;
+    }
+
+    .bilgi-satir {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--card-border);
+      font-size: 13px;
+    }
+
+    .bilgi-satir:last-child {
+      border-bottom: none;
+    }
+
+    .bilgi-satir-metin {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 4px 10px;
+      min-width: 0;
+    }
+
+    .bilgi-satir-ad {
+      color: var(--text-main);
+      overflow-wrap: anywhere;
+    }
+
+    .bilgi-satir-kimlik {
+      font-size: 11px;
+      color: var(--text-dim);
+      overflow-wrap: anywhere;
+    }
+
+    .bilgi-ekle-satiri {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .bilgi-ekle-satiri select {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .bilgi-ekle-satiri .buton {
+      flex-shrink: 0;
+    }
+
     .buton {
       display: inline-flex;
       align-items: center;
@@ -1219,6 +1281,124 @@
           <span data-i18n="ayar.geri.bip">Başarılı olunca kısa bip sesi çal</span>
         </label>
         <div class="ipucu" data-i18n="ayar.geri.bipIpucu">Varsayılan olarak kapalıdır.</div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bolum" id="bolumBilgi">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.bilgi.baslik">Bilgi kartları ve sensörler</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.bilgi.aciklama">Hızlı panelin üstünde sensörler, saat ve hava kartları, yaklaşan takvim etkinlikleri ve yapılacaklar listeleri gösterebilirsin. Hepsi varsayılan olarak kapalıdır; yalnızca burada seçtiklerin görünür. Sensörler ve takvim salt okunurdur.</p>
+      <div class="ipucu-uyari" id="bilgiYuklemeIpucu" style="display: none;" data-i18n="ayar.bilgi.yuklenmedi">Sensör, takvim ve liste seçenekleri Home Assistant’tan yüklenince burada görünür. Daha önce kaydettiklerin korunur.</div>
+      <div class="ipucu" data-i18n="ayar.bilgi.guvenlik">Güvenlik kuralı bu kartlar için de geçerlidir: kilit, alarm, kapı, garaj kapısı, bariyer ve kepenk gibi cihazlar hiçbir kartta görünmez ve buradan seçilemez.</div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.bilgi.sensor.baslik">Sensör şeridi</h4>
+      <div class="form-grubu">
+        <label for="sensorSeridiEkle" id="sensorSeridiEtiket" data-i18n="ayar.bilgi.sensor.etiket">Şeride sensör ekle</label>
+        <div class="bilgi-satirlar" id="sensorSeridiListesi" role="group" aria-labelledby="sensorSeridiEtiket"></div>
+        <div class="bilgi-ekle-satiri">
+          <select id="sensorSeridiEkle"></select>
+          <button class="buton buton-ikincil" id="btnSensorSeridiEkle" type="button" aria-labelledby="btnSensorSeridiEkle sensorSeridiEtiket" data-i18n="ayar.bilgi.ekle">Ekle</button>
+        </div>
+        <div class="ipucu" data-i18n="ayar.bilgi.sensor.ipucu">En çok 6 sensör seçebilirsin; şerit, eklediğin sırayla dizilir. Kapı, pencere ve kilit gibi güvenlik sensörleri listelenmez.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="sensorGrafik">
+          <span data-i18n="ayar.bilgi.grafik.etiket">Sensör karolarında mini grafik ve gösterge göster</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.bilgi.grafik.ipucu">Grafik, panel açıkken Home Assistant geçmişinden okunur; panel kapalıyken hiçbir istek gitmez.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="sensorGrafikSaat" data-i18n="ayar.bilgi.grafikSaat.etiket">Mini grafiğin kapsadığı süre</label>
+        <select id="sensorGrafikSaat">
+          <option value="1" data-i18n="ayar.bilgi.aralik.s1">1 saat</option>
+          <option value="6" data-i18n="ayar.bilgi.aralik.s6">6 saat</option>
+          <option value="24" data-i18n="ayar.bilgi.aralik.s24">24 saat</option>
+        </select>
+      </div>
+
+      <div class="form-grubu">
+        <label for="pilEsigi" data-i18n="ayar.bilgi.pil.etiket">Pil uyarı eşiği (%)</label>
+        <input type="number" id="pilEsigi" min="5" max="50" step="1" inputmode="numeric" aria-describedby="pilEsigiIpucu pilEsigiHata">
+        <div class="ipucu" id="pilEsigiIpucu" data-i18n="ayar.bilgi.pil.ipucu">Pil seviyesi bu değerin altına düşen sensör “dikkat” olarak vurgulanır (5 ile 50 arası).</div>
+        <div class="alan-hata" id="pilEsigiHata" style="display: none;"></div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="sensorTepsiIpucu">
+          <span data-i18n="ayar.bilgi.tepsi.etiket">Dikkat gerektiren sensörleri tepsi ipucunda da yaz</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.bilgi.tepsi.ipucu">Pili azalan ya da ulaşılamayan sensörler, tepsi simgesinin üstüne gelince görünen yazıya eklenir. Varsayılan olarak kapalıdır.</div>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.bilgi.kart.baslik">Üst kartlar</h4>
+      <div class="form-grubu">
+        <label for="ustKart1" data-i18n="ayar.bilgi.kart1.etiket">Birinci kart</label>
+        <select id="ustKart1"></select>
+      </div>
+      <div class="form-grubu">
+        <label for="ustKart2" data-i18n="ayar.bilgi.kart2.etiket">İkinci kart</label>
+        <select id="ustKart2"></select>
+        <div class="ipucu" data-i18n="ayar.bilgi.kart.ipucu">Panelin en üstünde yan yana iki kart gösterilebilir: saat ve tarih, hava durumu ya da seçtiğin herhangi bir sensör. Kartlar yalnızca bilgi gösterir; üzerine tıklayınca hiçbir şey çalışmaz.</div>
+      </div>
+      <div class="form-grubu">
+        <label for="havaVarligi" data-i18n="ayar.bilgi.hava.etiket">Hava durumu varlığı</label>
+        <select id="havaVarligi"></select>
+        <div class="ipucu" data-i18n="ayar.bilgi.hava.ipucu">Hava durumu kartı bu varlığın şu anki durumunu gösterir; tahmin gösterilmez.</div>
+      </div>
+      <div class="form-grubu">
+        <label for="saatBicimi" data-i18n="ayar.bilgi.saat.etiket">Saat biçimi</label>
+        <select id="saatBicimi">
+          <option value="sistem" data-i18n="ayar.bilgi.saat.sistem">Windows bölge ayarına göre</option>
+          <option value="24" data-i18n="ayar.bilgi.saat.s24">24 saatlik</option>
+          <option value="12" data-i18n="ayar.bilgi.saat.s12">12 saatlik (ÖÖ/ÖS)</option>
+        </select>
+      </div>
+      <div class="form-grubu">
+        <label for="tarihBicimi" data-i18n="ayar.bilgi.tarih.etiket">Tarih biçimi</label>
+        <select id="tarihBicimi">
+          <option value="orta" data-i18n="ayar.bilgi.tarih.orta">Orta</option>
+          <option value="kisa" data-i18n="ayar.bilgi.tarih.kisa">Kısa</option>
+          <option value="uzun" data-i18n="ayar.bilgi.tarih.uzun">Uzun</option>
+          <option value="yok" data-i18n="ayar.bilgi.tarih.yok">Gösterme</option>
+        </select>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.bilgi.takvim.baslik">Takvim</h4>
+      <div class="form-grubu">
+        <label for="takvimlerEkle" id="takvimlerEtiket" data-i18n="ayar.bilgi.takvim.etiket">Takvim ekle</label>
+        <div class="bilgi-satirlar" id="takvimlerListesi" role="group" aria-labelledby="takvimlerEtiket"></div>
+        <div class="bilgi-ekle-satiri">
+          <select id="takvimlerEkle"></select>
+          <button class="buton buton-ikincil" id="btnTakvimlerEkle" type="button" aria-labelledby="btnTakvimlerEkle takvimlerEtiket" data-i18n="ayar.bilgi.ekle">Ekle</button>
+        </div>
+        <div class="ipucu" data-i18n="ayar.bilgi.takvim.ipucu">En çok 4 takvim seçebilirsin. Yaklaşan etkinlikler salt okunur gösterilir; etkinlik eklenmez, değiştirilmez ya da silinmez.</div>
+      </div>
+      <div class="form-grubu">
+        <label for="takvimGunSayisi" data-i18n="ayar.bilgi.takvimGun.etiket">Kaç gün ilerisine bakılsın</label>
+        <input type="number" id="takvimGunSayisi" min="1" max="14" step="1" inputmode="numeric" aria-describedby="takvimGunIpucu takvimGunHata">
+        <div class="ipucu" id="takvimGunIpucu" data-i18n="ayar.bilgi.takvimGun.ipucu">Bugünden başlayarak 1 ile 14 gün arasında bir değer.</div>
+        <div class="alan-hata" id="takvimGunHata" style="display: none;"></div>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.bilgi.yapilacak.baslik">Yapılacaklar</h4>
+      <div class="form-grubu">
+        <label for="yapilacakListeleriEkle" id="yapilacakListeleriEtiket" data-i18n="ayar.bilgi.yapilacak.etiket">Liste ekle</label>
+        <div class="bilgi-satirlar" id="yapilacakListeleriListesi" role="group" aria-labelledby="yapilacakListeleriEtiket"></div>
+        <div class="bilgi-ekle-satiri">
+          <select id="yapilacakListeleriEkle"></select>
+          <button class="buton buton-ikincil" id="btnYapilacakListeleriEkle" type="button" aria-labelledby="btnYapilacakListeleriEkle yapilacakListeleriEtiket" data-i18n="ayar.bilgi.ekle">Ekle</button>
+        </div>
+        <div class="ipucu" data-i18n="ayar.bilgi.yapilacak.ipucu">En çok 4 liste seçebilirsin. Panelden madde ekleyebilir ve tamamlayabilirsin; silmek için düğmeyi basılı tutman gerekir.</div>
+      </div>
+      <div class="form-grubu">
+        <label for="hizliListe" data-i18n="ayar.bilgi.hizli.etiket">Palette hızlı ekleme (“liste süt”) hangi listeye yazsın</label>
+        <select id="hizliListe"></select>
+        <div class="ipucu" data-i18n="ayar.bilgi.hizli.ipucu">Paletteye “liste süt” yazıp Enter’a basınca “süt” bu listeye eklenir. Yazdığın metin yalnızca bu listeye gider (en çok 200 karakter); palet başka hiçbir serbest metin göndermez.</div>
       </div>
     </div>
   </details>

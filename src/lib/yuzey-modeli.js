@@ -178,6 +178,7 @@ const RENDERER_KARO_ALANLARI = Object.freeze([
   'onayliServisler', // 1.4.0
 ]);
 
+/** Tek karoyu renderer'a giden beyaz liste hâline çevirir (bilgi-modeli.js de şerit/kart karoları için kullanır). */
 function rendererKaro(karo) {
   const sonuc = {};
   for (const alan of RENDERER_KARO_ALANLARI) {
@@ -198,6 +199,9 @@ function rendererModeli(model) {
     gruplar: dizi(model?.gruplar).map((g) => ({ kod: g.kod, etiket: g.etiket, karolar: dizi(g.karolar).map(rendererKaro) })),
     sonlar: dizi(model?.sonlar).map(rendererKaro),
     ust: model?.ust ?? {},
+    // 1.4.0 bilgi kartları (o-04, o-07, o-08, o-10): kendi beyaz listesinden geçer (bilgi-modeli.js rendererBilgi). İşlev içinde
+    // yüklenir: bilgi-modeli.js bu dosyadan karoOlustur/rendererKaro alır (döngüsel yükleme olmasın).
+    bilgi: model?.bilgi ? require('./bilgi-modeli').rendererBilgi(model.bilgi) : null,
   };
 }
 
@@ -210,5 +214,6 @@ module.exports = {
   karolariGrupla,
   yuzeyModeliOlustur,
   RENDERER_KARO_ALANLARI,
+  rendererKaro,
   rendererModeli,
 };

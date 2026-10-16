@@ -87,7 +87,7 @@ test('karolariGrupla: sabit sıra Işık, Sahne, PC, Medya, Diğer; yıkıcılar
   const onayli = modeli.gruplar.find((g) => g.kod === 'onayli');
   assert.deepEqual(onayli.karolar.map((k) => k.id).sort(), ['button.pc_bilgisayari_kapat', 'script.iyi_geceler']);
   assert.ok(onayli.karolar.every((k) => k.sinif === 'yikici'));
-  assert.ok(GRUPLAR.length === 5);
+  assert.deepEqual(GRUPLAR.map((g) => g.kod), ['isik', 'sahne', 'pc', 'medya', 'sensor', 'diger']); // 1.4.0: sensör grubu Medya ile Diğer arasında
   const toplam = modeli.gruplar.reduce((n, g) => n + g.karolar.length, 0);
   assert.equal(toplam, HAZIR_LISTE.length, 'hiçbir karo kaybolmaz');
 });

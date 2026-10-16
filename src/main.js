@@ -76,6 +76,7 @@ const { HAZIR_LISTE_SURUMU, favorileriBirlestir, hazirListeUygula, onayiDuzelt }
 const { durumDeposuOlustur } = require('./lib/durum-deposu');
 const { YARDIMCI_VARLIKLAR, karolariOlustur, yuzeyModeliOlustur } = require('./lib/yuzey-modeli');
 const { tepsiMenuPlani, acikIsikSayisi, ipucuMetni } = require('./lib/tepsi-menu');
+const { bilgiKimlikleri, bilgiKaydi, bilgiModeliOlustur, bilgiBolumunuEkle, bilgiKarolari, sensorUyariSayisi } = require('./lib/bilgi-modeli');
 const { malzemeDestekliMi, pencereMalzemesi } = require('./lib/malzeme');
 const { temaKaynagi } = require('./lib/gorunum');
 const { sonKullanilanlarOlustur } = require('./lib/son-kullanilanlar');
@@ -669,9 +670,9 @@ const { adresSec, haIstek } = haIstemcisi;
 const depo = durumDeposuOlustur();
 const son = sonKullanilanlarOlustur({ dosyaYolu: path.join(app.getPath('userData'), 'son-kullanilanlar.json'), fs, gunluk });
 
-/** İzlenen varlıklar: favoriler + salt-okunur yardımcı varlıklar (medya çalıyor, ses çıkışı). */
+/** İzlenen varlıklar: favoriler + salt-okunur yardımcı varlıklar (medya çalıyor, ses çıkışı) + bilgi kartlarının varlıkları (sensör şeridi, hava, takvim, yapılacaklar). */
 function izlenenKimlikler() {
-  return new Set([...(ayarlar?.favoriler ?? []).map((f) => f.entity_id), ...YARDIMCI_VARLIKLAR]);
+  return new Set([...(ayarlar?.favoriler ?? []).map((f) => f.entity_id), ...YARDIMCI_VARLIKLAR, ...bilgiKimlikleri(ayarlar)]);
 }
 
 const ws = haWsOlustur({
@@ -746,7 +747,7 @@ function gosterilecekHata() {
 /** Renderer'a ve tepsi menüsüne giden karo modeli: GÜVENLİK KURALI'ndan geçmeyen favoriler hiç girmez (src/lib/yuzey-modeli.js). */
 function yuzeyModeli() {
   const d = ws.durum();
-  return yuzeyModeliOlustur({
+  const model = yuzeyModeliOlustur({
     favoriler: ayarlar?.favoriler ?? [],
     durumAl: (kimlik) => depo.al(kimlik),
     sonKimlikler: son.en(8),
@@ -759,6 +760,8 @@ function yuzeyModeli() {
     },
     t,
   });
+  // Bilgi kartları (o-04, o-07, o-08, o-10): sensör şeridi, sensör karoları, üst kartlar, takvim ve yapılacaklar; renderer'a rendererModeli ile süzülerek gider.
+  return bilgiBolumunuEkle(model, { ayarlar, durumAl: (kimlik) => depo.al(kimlik), t });
 }
 
 /**
@@ -790,6 +793,9 @@ const eylem = eylemKatmaniOlustur({
   t,
   gunluk,
 });
+// Bilgi kartlarının varlıkları (sensör şeridi, hava, takvim, yapılacaklar listeleri) favori olmasa da okunabilir/yazılabilir kayıtlıdır;
+// hat yine alan izin listesini, Kapı Kuralı'nı ve servis izinlerini uygular (sensör/hava/takvim salt okunur).
+eylem.kayitKaynagiEkle(bilgiKaydi(() => ayarlar));
 
 /**
  * 1.4.0 okuma uçları (src/lib/ha-okuma.js): geçmiş, takvim, hava tahmini, alan (oda) kaydı, yapılacaklar, kalıcı bildirim
@@ -1445,6 +1451,16 @@ function basligiGuncelle() {
 }
 
 /**
+ * Dikkat gerektiren sensör sayısı (zayıf pil, açık sorun/duman/gaz/su sensörü): favori sensör karoları + bilgi bölümündeki sensörler.
+ * Ayar kapalıysa (sensorTepsiIpucu) ya da hiç sensör yoksa 0; sayı olmayan/ulaşılamayan sensör uyarı sayılmaz.
+ */
+function sensorUyarisi() {
+  if (ayarlar?.sensorTepsiIpucu !== true) return 0;
+  const karolar = [...favoriKarolari(), ...bilgiKarolari(bilgiModeliOlustur({ ayarlar, durumAl: (kimlik) => depo.al(kimlik), t }))];
+  return sensorUyariSayisi(karolar, ayarlar.pilEsigi);
+}
+
+/**
  * Tepsi ipucu ve simgesi (detay-18). İpucu: "Ev Paneli — Ev ağı — 2 ışık açık" (İngilizcede "Home Panel — Home network — 2 lights on") (favori ışıklar; canlı bağlantıda anında).
  * Simge: bağlantı yokken (ana pencere hiçbir adrese bağlı değilken) soluk. Değişmeyen değer yeniden yazılmaz. Windows 11'de
  * simge taşma alanındaysa (^) bunların hiçbiri görünmez: ilk gizleme bildirimi bunu söyler.
@@ -1457,6 +1473,7 @@ function tepsiyiGuncelle() {
     durum: baglantiDurumMetni(),
     uyari: yetkiKisaMetni(), // yetki kesici açık
     acikIsik: acikIsikSayisi(favoriKarolari()),
+    sensorUyari: sensorUyarisi(), // o-04: yalnız "Tepsi ipucunda sensör uyarısı" açıksa (varsayılan kapalı)
     canli: ws.canliMi() || (baglantiTuru !== null && depo.sonHata === null), // REST yedeği sağlıklıysa sayı en çok 1 dk eski: "son bilinen" denmez
     gelistirme: !app.isPackaged, // kurulu sürümle karışmasın (hata-23)
   });
@@ -2058,7 +2075,8 @@ function komutSatiriEylemiCalistir(ad) {
  * şey yapmaz: depoyu zaten canlı bağlantı günceller. 25'e kadar varlık için varlık başına istek, fazlası için tek /api/states.
  */
 async function durumlariYenile({ zorla = false } = {}) {
-  if (!anahtarDeposu.varMi() || !ayarlar || ayarlar.favoriler.length === 0) {
+  // Favori yoksa ama bilgi kartları (sensör şeridi, hava, takvim, yapılacaklar) seçiliyse yine okunur.
+  if (!anahtarDeposu.varMi() || !ayarlar || (ayarlar.favoriler.length === 0 && bilgiKimlikleri(ayarlar).size === 0)) {
     depo.sifirla();
     return undefined;
   }
@@ -2346,6 +2364,26 @@ function ekAyarDegisimleriniYay(degisenler) {
       }
     }
   }
+}
+
+// --- Bilgi kartları (o-04, o-07, o-08, o-09, o-10, o-11) ayar dinleyicileri ---
+/** Bilgi bölümünün izlenen varlıkları değişti: izlenen küme budanır, canlı abonelik yenilenir, eksik durumlar okunur, panel ve tepsi tazelenir. */
+function bilgiIzleneniYenile() {
+  depo.buda(izlenenKimlikler());
+  if (ws.canliMi()) ws.abonelikYenile();
+  else ws.yenidenBaglan();
+  if (!ws.canliMi()) durumlariYenile({ zorla: true });
+  yuzey.modelDegisti();
+  tepsiyiGuncelle();
+}
+for (const ad of ['sensorSeridi', 'ustKart1', 'ustKart2', 'havaVarligi', 'takvimler', 'yapilacakListeleri', 'hizliListe']) {
+  ekAyarDinle(ad, bilgiIzleneniYenile);
+}
+for (const ad of ['saatBicimi', 'tarihBicimi', 'takvimGunSayisi', 'sensorGrafik', 'sensorGrafikSaat', 'pilEsigi', 'sensorTepsiIpucu']) {
+  ekAyarDinle(ad, () => {
+    yuzey.modelDegisti();
+    tepsiyiGuncelle();
+  });
 }
 
 function ipcKaydet() {
@@ -2692,6 +2730,11 @@ function ipcKaydet() {
         })
         .sort((a, b) => alanSirasi(a.alan) - alanSirasi(b.alan) || a.ad.localeCompare(b.ad, etkinDil));
       const guvenli = new Map(cihazlar.map((c) => [c.entity_id, c.ad]));
+      // o-07 / o-10: yapılacaklar listesi ve takvim favori (karo) olamaz; Ayarlar'daki bilgi seçimleri için ayrı, Kapı Kuralı'ndan geçmiş liste.
+      const bilgiVarliklari = durumlar
+        .filter((v) => guvenliVarlikMi(v) && ['calendar', 'todo'].includes(alanAl(v.entity_id)))
+        .map((v) => ({ entity_id: v.entity_id, ad: varlikAdi(v), alan: alanAl(v.entity_id), alanEtiketi: t(`alan.${alanAl(v.entity_id)}`) }))
+        .sort((a, b) => alanSirasi(a.alan) - alanSirasi(b.alan) || a.ad.localeCompare(b.ad, etkinDil));
       cihazOnbellegi = { guvenli, tumKimlikler };
       // Kayıtlı favorilerden listede görünmeyenler: HA'da şu an yok (korunur) ya da güvenlik kuralına takılıyor.
       const eksik = [];
@@ -2701,7 +2744,7 @@ function ipcKaydet() {
         if (!tumKimlikler.has(kimlik) && adGuvenliMi(kimlik, ad)) eksik.push({ entity_id: kimlik, ad });
         else engelli.push({ entity_id: kimlik, ad });
       }
-      return { ok: true, cihazlar, eksik, engelli };
+      return { ok: true, cihazlar, eksik, engelli, bilgiVarliklari };
     } catch (hata) {
       return { ok: false, hata: t('ana.cihazListesiAlinamadi', { hata: hataMetni(hata, t) }) };
     }
