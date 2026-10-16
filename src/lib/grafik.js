@@ -6,7 +6,7 @@
  *
  * Çıktı SVG METNİ DEĞİL, düz bir betimdir: { e: etiket, a: {öznitelik}, c: [çocuk], m: metin }. `svgOlustur(doc, betim)` bunu
  * createElementNS + setAttribute + textContent ile DOM'a çevirir. Böylece renderer'ın CSP'siyle (inline stil/betik yok,
- * innerHTML yok) uyumludur: renkler ve kalınlıklar CSS sınıflarından gelir, `style` özniteliği ve `on*` öznitelikleri
+ * HTML metni ataması yok) uyumludur: renkler ve kalınlıklar CSS sınıflarından gelir, `style` özniteliği ve `on*` öznitelikleri
  * svgOlustur'da reddedilir. Bu dosyada dile bağlı sözcük yoktur; eksen yazıları çağıranın verdiği işlevlerle üretilir.
  *
  * Veri biçimi (ha-okuma.js gecmis): nokta = { t: ms, d: sayı | metin | null }. Sayı olmayan değer ("unavailable", "on") çizgide

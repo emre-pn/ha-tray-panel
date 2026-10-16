@@ -133,7 +133,7 @@ test('200 favori sınırı uygulanır', () => {
 
 test('bozuk girdiler çökmez', () => {
   const sonuc = favorileriBirlestir({ mevcut: null, secilen: 'x', guvenliListe: new Map(), tumKimlikler: new Set() });
-  assert.deepEqual(sonuc, { yeni: [], eksik: [], engelli: [], kisayolHatalari: [], etiketHatalari: [] });
+  assert.deepEqual(sonuc, { yeni: [], eksik: [], engelli: [], kisayolHatalari: [], etiketHatalari: [], gorunumHatalari: [] });
 });
 
 test('onayiDuzelt: zorunlu onaylı eylemde onay:false atılır; diğerleri korunur', () => {

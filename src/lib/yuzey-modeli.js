@@ -16,6 +16,8 @@
  *                    atlar, panel düz tıklamada servis göndermez (karo kendi denetimini çizer)
  *   onayliServisler  bu karoda onay (basılı tut / onay penceresi) isteyen servis adları (eylem-sinifi.js eylemSinifi(varlik,
  *                    favori, servis)); renderer basılı tutma ipucunu buna göre gösterir, karar yine ana süreçtedir
+ * 1.4.0 düzen grubu: her karoya görünüm alanları (simge, renk, boyut; src/lib/karo-gorunum.js, o-31) ve tepsi (tepsiye sabitli mi, o-16) eklendi;
+ *   model ayrıca `sayfalar` taşır (o-24): her sayfa { id, ad, kimlikler } — yalnız modelde karo olan (kapı kuralından geçmiş) varlıklar.
  * Renderer'a giden alanların tam listesi RENDERER_KARO_ALANLARI'dır; yeni alan ekleyen ajan oraya ve test/yuzey-modeli.test.js'e ekler.
  */
 
@@ -23,6 +25,8 @@ const { alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
 const { karoAlaniMi, varsayilanServis } = require('./alan-kaydi');
 const { izinliServisler } = require('./servis-izinleri');
 const { guvenliOzellikler } = require('./varlik-ozellik');
+const { simgeDuzelt, renkDuzelt, boyutDuzelt, VARSAYILAN_BOYUT } = require('./karo-gorunum');
+const { sayfalariModele } = require('./sayfalar');
 const { SINIF, eylemSinifi } = require('./eylem-sinifi');
 const { GRUPLAR, grupBul, altGrupBul, tekrarliMi } = require('./favoriler');
 const { karoDurumu, aktifCikis } = require('./durum-deposu');
@@ -84,6 +88,11 @@ function karoOlustur(favori, varlik, t = TR) {
     ozellik: canli ? guvenliOzellikler(canli) : null,
     varsayilanEylem: varsayilanServis(alan) !== null,
     onayliServisler,
+    // 1.4.0 düzen (o-31, o-16): görünüm alanları kayıttan yeniden doğrulanır; geçersiz değer karoda yok sayılır
+    simge: simgeDuzelt(favori.simge) || null,
+    renk: renkDuzelt(favori.renk) || null,
+    boyut: boyutDuzelt(favori.boyut) ?? VARSAYILAN_BOYUT,
+    tepsi: favori.tepsi === true,
   };
 }
 
@@ -133,9 +142,10 @@ function karolariOlustur(favoriler, durumAl, t = TR) {
  *   uyari: yetki kesici açıkken kısa metin (panelin başlık altı şeridinde görünür); anahtarYok: erişim anahtarı hiç eklenmemiş
  *   (panel/palet boş durumunda "anahtar yok" ile "favori yok" ayrılır)
  * @param {Function} [girdi.t] çevirmen (grup etiketleri o dilde yazılır; verilmezse Türkçe)
- * @returns {{ gruplar: object[], sonlar: object[], ust: {canli:boolean, baglanti:string, medyaCaliyor:boolean|null, aktifCikis:string|null, hata:string|null, uyari:string|null, anahtarYok:boolean} }}
+ * @param {object[]} [girdi.sayfalar] ayardaki sayfalar (src/lib/sayfalar.js); modele yalnız karo olan varlıklarla girer
+ * @returns {{ gruplar: object[], sonlar: object[], sayfalar: {id:string, ad:string, kimlikler:string[]}[], ust: {canli:boolean, baglanti:string, medyaCaliyor:boolean|null, aktifCikis:string|null, hata:string|null, uyari:string|null, anahtarYok:boolean} }}
  */
-function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = {}, t = TR }) {
+function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = {}, t = TR, sayfalar = [] }) {
   const karolar = karolariOlustur(favoriler, durumAl, t);
   const gruplar = karolariGrupla(karolar, t);
   const harita = new Map(karolar.map((k) => [k.id, k]));
@@ -149,6 +159,7 @@ function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = 
   return {
     gruplar,
     sonlar,
+    sayfalar: sayfalariModele(sayfalar, new Set(harita.keys()), (n) => t('sayfa.adsiz', { n })),
     ust: {
       canli: baglanti.canli === true,
       baglanti: typeof baglanti.baglanti === 'string' ? baglanti.baglanti : 'kapali',
@@ -179,6 +190,10 @@ const RENDERER_KARO_ALANLARI = Object.freeze([
   'ozellik', // 1.4.0: güvenli öznitelik alt kümesi (varlik-ozellik.js)
   'varsayilanEylem', // 1.4.0
   'onayliServisler', // 1.4.0
+  'simge', // 1.4.0 düzen: 'ikon:<ad>' ya da emoji (karo-gorunum.js; renderer yine doğrular)
+  'renk', // 1.4.0 düzen: hazır palet adı ya da null
+  'boyut', // 1.4.0 düzen: 'kucuk' | 'normal' | 'genis' | 'buyuk'
+  'tepsi', // 1.4.0 düzen: tepsiye sabitli mi (bağlam menüsü "Tepsiden kaldır" metni için)
 ]);
 
 /** Tek karoyu renderer'a giden beyaz liste hâline çevirir (bilgi-modeli.js de şerit/kart karoları için kullanır). */
@@ -201,6 +216,7 @@ function rendererModeli(model) {
   return {
     gruplar: dizi(model?.gruplar).map((g) => ({ kod: g.kod, etiket: g.etiket, karolar: dizi(g.karolar).map(rendererKaro) })),
     sonlar: dizi(model?.sonlar).map(rendererKaro),
+    sayfalar: dizi(model?.sayfalar).map((s) => ({ id: s.id, ad: s.ad, kimlikler: dizi(s.kimlikler).filter((k) => typeof k === 'string') })),
     ust: model?.ust ?? {},
     // 1.4.0 bilgi kartları (o-04, o-07, o-08, o-10): kendi beyaz listesinden geçer (bilgi-modeli.js rendererBilgi). İşlev içinde
     // yüklenir: bilgi-modeli.js bu dosyadan karoOlustur/rendererKaro alır (döngüsel yükleme olmasın).

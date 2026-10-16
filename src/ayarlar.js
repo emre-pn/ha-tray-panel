@@ -21,6 +21,7 @@
   const Dil = window.EvDil || null;
   const SozlukAyarlar = window.EvCeviriAyarlar || null;
   const SozlukAna = window.EvCeviriAna || null;
+  const DuzenModulu = window.EvAyarlarDuzen || null; // 1.4.0 düzen (ayarlar-duzen.js): karo görünümü, sayfalar, geçmiş, onarım; yoksa Ayarlar bugünkü gibi çalışır
 
   // --- Arayüz dili -------------------------------------------------------------------------------------------------------------
   const DIL_ANAHTARI = 'evPaneli.ayarlar.dil'; // son etkin dil ('tr' | 'en'): sayfa ilk boyamadan önce doğru dilde açılsın diye
@@ -52,6 +53,8 @@
   let cihazlarYuklendi = false;
   const cihazHaritasi = new Map(); // kimlik -> cihaz (yüklenen listeden)
   const siraDugmeleri = new Map(); // kimlik -> { yukari, asagi } (sıra panelindeki düğmeler; taşımadan sonra odak için)
+  const satirOgeleri = new Map(); // kimlik -> cihaz listesindeki satırın seçim kutusu ("Düzenle…" ile gelindiğinde odak için)
+  let bekleyenOdak = ''; // cihaz listesi yüklenince odaklanılacak favori (panel menüsü "Düzenle…")
   const adHaritasi = new Map(); // kimlik -> bilinen ad (kayıtlı favori adı ya da cihaz adı)
   let seciliSira = []; // seçili kimlikler, tepsi sırasıyla (k-05)
   let kayitliSira = []; // sunucudaki favori sırası
@@ -142,6 +145,42 @@
   const gizlileriGosterMetin = $('gizlileriGosterMetin');
   const favoriSirasi = $('favoriSirasi');
   const favoriSirasiListesi = $('favoriSirasiListesi');
+
+  // 1.4.0 düzen (o-16, o-24, o-28, o-30, o-31): ayarlar-duzen.js. Kur başarısız olursa ya da dosya yoksa Ayarlar düzen bölümü olmadan çalışır.
+  const duzen = (function () {
+    if (!DuzenModulu) return null;
+    try {
+      return DuzenModulu.kur({
+        belge: document,
+        kopru: window.evPaneli,
+        cevir: function (anahtar, degiskenler) { return t(anahtar, degiskenler); },
+        cogul: function (anahtar, n, degiskenler) { return cogul(anahtar, n, degiskenler); },
+        dil: function () { return dil; },
+        sayfalarListesi: $('sayfalarListesi'),
+        btnSayfaEkle: $('btnSayfaEkle'),
+        sayfaSayaci: $('sayfaSayaci'),
+        gecmisListesi: $('duzenGecmisiListesi'),
+        duyuru: $('duzenDuyuru'),
+        siraKabi: favoriSirasiListesi,
+        kirliGuncelle: function () { kirliGuncelle(); },
+        kirliMi: function () { return kirliMi(); },
+        bildirimGoster: function (mesaj, tur) { bildirimGoster(mesaj, tur); },
+        odakla: function (oge) { odakla(oge); },
+        onayIste: function (metin) { return confirm(metin); },
+        gorunenSira: function () { return gorunenSira(); },
+        gorunenAd: function (kimlik) { return gorunenAd(kimlik); },
+        siraDuzenlenebilir: function () { return cihazlarYuklendi; },
+        favoriyiTasi: function (kimlik, yon) { favoriyiTasi(kimlik, yon); },
+        favoriyiKonumaTasi: function (kimlik, hedef) { favoriyiKonumaTasi(kimlik, hedef); },
+        tumunuYenile: function () { return aktarimSonrasiYenile(); },
+        favoriOnarildi: function (eski, yeni) { return favoriOnarildi(eski, yeni); },
+        onarmaAdaylari: function (eski) { return onarmaAdaylari(eski); },
+        cihazlarYuklendi: function () { return cihazlarYuklendi; },
+      });
+    } catch (err) {
+      return null;
+    }
+  })();
 
   const anahtarRozet = $('anahtarRozet');
   const anahtarReddedildiUyari = $('anahtarReddedildiUyari');
@@ -697,6 +736,7 @@
       vurguRengi: vurguRengi.value.trim().toLowerCase(),
       panolar: panoYuku(),
       ...bilgiAnlik(),
+      sayfalar: duzen ? duzen.sayfalarAnlik() : [],
     };
   }
 
@@ -723,12 +763,14 @@
         return { ad: String(p.ad || '').trim(), yol: String(p.yol || '').trim(), kisayol: kisNorm(p.kisayol) };
       }),
       ...bilgiDegerleri(sonuc),
+      sayfalar: duzen ? duzen.sayfalarDegerleri(sonuc.sayfalar) : [],
     };
   }
 
   function favoriKirli() {
     if (seciliSira.length !== kayitliSira.length) return true;
     if (seciliSira.some(function (kimlik, i) { return kimlik !== kayitliSira[i]; })) return true;
+    if (duzen && duzen.favoriGorunumuKirli(seciliSira)) return true;
     return [onayDegisiklikleri, kisayolDegisiklikleri, parlaklikDegisiklikleri, etiketDegisiklikleri].some(function (harita) {
       return Array.from(harita.keys()).some(function (kimlik) { return seciliSira.indexOf(kimlik) >= 0; });
     });
@@ -906,6 +948,7 @@
     hazirListeDurumunuGoster(sonuc.hazirListeGuncel);
     otomatikBaslatDurumunuGoster(sonuc.otomatikBaslatDurumu);
     bilgiUygula(d, korunan);
+    if (duzen) duzen.sayfalariYukle(sonuc.sayfalar); // panel sayfaları (o-24): taslak sunucudaki değerlere döner
     bazGenel = JSON.stringify(d);
   }
 
@@ -1283,6 +1326,7 @@
       if (typeof f.etiket === 'string' && f.etiket) kayitliEtiket.set(f.entity_id, f.etiket);
     });
     kayitliSira = favoriler.map(function (f) { return f.entity_id; });
+    if (duzen) duzen.favorileriYukle(favoriler, birlestir && !temizdi); // karo görünümü (o-31): simge, renk, boyut, tepsi
     if (birlestir && !temizdi) {
       kayitliSira.forEach(function (kimlik) {
         if (!eskiKayitli.has(kimlik) && seciliSira.indexOf(kimlik) < 0) seciliSira.push(kimlik);
@@ -1362,6 +1406,7 @@
     gorunen.forEach(function (kimlik, sira) {
       const satir = el('div', 'sira-satir');
       satir.setAttribute('role', 'listitem');
+      if (duzen) duzen.siraTutamaciEkle(satir); // sürükleme tutamacı (o-30); klavye yolu Alt+↑ / Alt+↓
       satir.appendChild(el('span', 'sira-no', String(sira + 1) + '.'));
       satir.appendChild(el('span', 'sira-ad', gorunenAd(kimlik)));
       let konum;
@@ -1390,8 +1435,36 @@
       satir.appendChild(yukari);
       satir.appendChild(asagi);
       siraDugmeleri.set(kimlik, { yukari: yukari, asagi: asagi });
+      if (duzen) duzen.siraSatiriniBagla(satir, kimlik);
       favoriSirasiListesi.appendChild(satir);
     });
+    if (duzen) duzen.sayfalariTazele(); // sayfa üyeleri seçili favorilere ve görünen adlara göre
+  }
+
+  /** Seçili (engelli olmayan) favorilerin görünen sırası. */
+  function gorunenSira() {
+    const engelli = engelliKimlikleri();
+    return seciliSira.filter(function (k) { return !engelli.has(k); });
+  }
+
+  /** Sürükle-bırak: favoriyi görünen sıradaki `hedef` konumuna taşır (engelli kayıtlar kendi yuvalarında kalır). */
+  function favoriyiKonumaTasi(kimlik, hedef) {
+    const engelli = engelliKimlikleri();
+    const gorunen = gorunenSira();
+    const konum = gorunen.indexOf(kimlik);
+    if (konum < 0 || !Number.isInteger(hedef)) return;
+    const varis = Math.max(0, Math.min(gorunen.length - 1, hedef));
+    if (varis === konum) return;
+    const yeni = gorunen.slice();
+    yeni.splice(konum, 1);
+    yeni.splice(varis, 0, kimlik);
+    let j = 0;
+    seciliSira = seciliSira.map(function (k) { return engelli.has(k) ? k : yeni[j++]; });
+    siraCiz();
+    kirliGuncelle();
+    if (duzen) duzen.siraDuyur(kimlik, varis + 1, gorunen.length);
+    const dugmeler = siraDugmeleri.get(kimlik);
+    if (dugmeler) odakla(!dugmeler.yukari.disabled ? dugmeler.yukari : dugmeler.asagi);
   }
 
   function favoriyiTasi(kimlik, yon) {
@@ -1406,6 +1479,7 @@
     seciliSira[b] = kimlik;
     siraCiz();
     kirliGuncelle();
+    if (duzen) duzen.siraDuyur(kimlik, konum + yon + 1, gorunen.length);
     // Taşıma sonrası odak, taşınan satırın aynı yöndeki düğmesinde kalsın (klavyeyle art arda taşımak için).
     const dugmeler = siraDugmeleri.get(kimlik);
     if (dugmeler) odakla(yon < 0 && !dugmeler.yukari.disabled ? dugmeler.yukari : !dugmeler.asagi.disabled ? dugmeler.asagi : dugmeler.yukari);
@@ -1414,6 +1488,7 @@
   /** Cihaz listesinin yerine bir ileti yazar. anahtar: sözlük anahtarı; ham: sunucudan gelen hazır metin (varsa anahtarın yerine geçer). */
   function listeMesaji(anahtar, hata, ham) {
     listeIletisi = { anahtar: anahtar, ham: ham, hata: hata === true };
+    satirOgeleri.clear();
     cihazListesi.replaceChildren();
     const kutu = el('div', 'liste-bos', typeof ham === 'string' && ham !== '' ? ham : t(anahtar));
     if (hata) kutu.classList.add('liste-hata');
@@ -1454,6 +1529,7 @@
         guncelleSecilenSayisi();
         cihazlariCiz();
         siraCiz();
+        if (bekleyenOdak) favoriyeOdaklan(bekleyenOdak);
       } else {
         listeMesaji('ayar.favori.listeAlinamadi', true, sonuc.hata);
       }
@@ -1478,6 +1554,7 @@
     cb.checked = s.secili;
     cb.disabled = !s.secilebilir;
     cb.setAttribute('aria-label', s.ad);
+    satirOgeleri.set(s.kimlik, cb);
 
     const metinKapsayici = el('div', 'cihaz-metin');
     metinKapsayici.appendChild(el('div', 'cihaz-ad', s.ad));
@@ -1517,6 +1594,7 @@
     let kisayolGirdisi = null;
     let etiketGirdisi = null;
     let parlaklikCb = null;
+    let gorunumDenetimi = null;
     if (s.cihaz) {
       const ek = el('div', 'cihaz-ek');
       if (s.cihaz.kisayolUygun === true) {
@@ -1589,6 +1667,7 @@
         ileti.appendChild(el('div', '', t('ayar.cihaz.karoAdiEngelli')));
       }
       ek.appendChild(ileti);
+      if (duzen) gorunumDenetimi = duzen.gorunumKur(ek, s.kimlik, s.ad, cb.checked, { tepsiYok: s.cihaz.tekTiklama === false }); // karo görünümü (o-31) ve tepsiye sabitle (o-16); tek tıklama eylemi olmayan karo tepside olmaz
       if (ek.children.length > 0) {
         ek.addEventListener('click', function (e) {
           e.stopPropagation(); // satırın seç/bırak tıklaması buraya taşmasın
@@ -1605,10 +1684,14 @@
       if (kisayolGirdisi) kisayolGirdisi.disabled = !cb.checked;
       if (etiketGirdisi) etiketGirdisi.disabled = !cb.checked;
       if (parlaklikCb) parlaklikCb.disabled = !cb.checked;
+      if (gorunumDenetimi) gorunumDenetimi.etkinlestir(cb.checked);
       guncelleSecilenSayisi();
       siraCiz();
       kirliGuncelle();
     });
+
+    // HA'da bulunamayan favori (o-28): aynı türden yeni bir cihaza bağlanabilir.
+    if (duzen && !s.cihaz && s.sinifAdi === 'satir-bulunamadi') duzen.onarmaKur(satir, s.kimlik, s.ad);
 
     // Satıra tıklayınca da işaret kutusu değişsin
     if (s.secilebilir) {
@@ -1658,6 +1741,7 @@
     });
     const gorunen = eslesen.slice(0, gosterilenCihazSayisi);
 
+    satirOgeleri.clear();
     cihazListesi.replaceChildren();
     btnDahaFazla.style.display = eslesen.length > gorunen.length ? 'inline-flex' : 'none';
     btnDahaFazla.textContent = t('ayar.favori.dahaFazlaSayili', { n: eslesen.length - gorunen.length });
@@ -1732,6 +1816,7 @@
       if (kisayolDegisiklikleri.has(kimlik)) girdi.kisayol = kisayolDegisiklikleri.get(kimlik);
       if (parlaklikDegisiklikleri.has(kimlik)) girdi.parlaklik = parlaklikDegisiklikleri.get(kimlik);
       if (etiketDegisiklikleri.has(kimlik)) girdi.etiket = etiketDegisiklikleri.get(kimlik);
+      if (duzen) duzen.favoriYukunuEkle(kimlik, girdi); // yalnız değiştirilen görünüm alanları (ana süreç yeniden doğrular)
       return girdi;
     });
   }
@@ -1741,13 +1826,76 @@
     const sonuc = await window.evPaneli.ayarlariGetir();
     if (!sonuc || !sonuc.ok) return false;
     mevcutAyarlar = sonuc;
+    if (duzen && !duzen.sayfalarKirli()) duzen.sayfalariYukle(sonuc.sayfalar); // panel menüsünden de sayfa değişir (o-16): düzenlenmemişse taslak tazelenir
+    bazSayfalariEsitle();
     favoriUygula(sonuc, true);
     hazirListeDurumunuGoster(sonuc.hazirListeGuncel);
     if (cihazlarYuklendi) await cihazlariYukle(true);
     else cihazlariCiz();
     kurulumGuncelle();
     kirliGuncelle();
+    if (duzen) duzen.gecmisiYenile();
     return true;
+  }
+
+  /** Genel ayarların karşılaştırma metnindeki sayfa listesini düzen bölümünün kayıtlı sayfalarıyla eşitler. */
+  function bazSayfalariEsitle() {
+    if (!duzen || bazGenel === null) return;
+    const temel = JSON.parse(bazGenel);
+    temel.sayfalar = duzen.kayitliSayfalar();
+    bazGenel = JSON.stringify(temel);
+  }
+
+  // --- Düzen: onarım ve "Düzenle…" odağı (o-28, o-16) ----------------------------------------------------------------------
+  /** HA'da bulunamayan favori için aday cihazlar: ana sürecin güvenli listesinden, aynı alandan (alan değişmez) ve henüz favori olmayanlar. */
+  function onarmaAdaylari(eski) {
+    const alan = String(eski).split('.')[0];
+    const alinmis = new Set(seciliSira.concat(kayitliSira));
+    return yuklenenCihazlar.filter(function (c) {
+      return String(c.entity_id).split('.')[0] === alan && !alinmis.has(c.entity_id);
+    });
+  }
+
+  /** Onarım sunucuda yapıldı: yerel seçim, sıra ve bekleyen düzenlemeler yeni kimliğe taşınır (yoksa sonraki kayıt onarımı geri alırdı). */
+  function favoriKimliginiDegistir(eski, yeni) {
+    const degistir = function (k) { return k === eski ? yeni : k; };
+    seciliSira = seciliSira.indexOf(yeni) >= 0 ? seciliSira.filter(function (k) { return k !== eski; }) : seciliSira.map(degistir);
+    kayitliSira = kayitliSira.map(degistir);
+    [onayDegisiklikleri, kisayolDegisiklikleri, parlaklikDegisiklikleri, etiketDegisiklikleri].forEach(function (harita) {
+      if (!harita.has(eski)) return;
+      const deger = harita.get(eski);
+      harita.delete(eski);
+      if (!harita.has(yeni)) harita.set(yeni, deger);
+    });
+    kisayolHatali.delete(eski);
+    etiketHatali.delete(eski);
+    if (duzen) duzen.kimlikDegisti(eski, yeni);
+    bazSayfalariEsitle();
+  }
+
+  async function favoriOnarildi(eski, yeni) {
+    favoriKimliginiDegistir(eski, yeni);
+    await favorileriYenile();
+  }
+
+  /** Panel menüsündeki "Düzenle…": Favoriler bölümüne gider ve favorinin satırına odaklanır (liste henüz yüklü değilse yüklenince). */
+  function favoriyeOdaklan(kimlik) {
+    if (typeof kimlik !== 'string' || kimlik === '') return;
+    bolumeGit('bolumFavoriler', 'favorilerBaslik');
+    if (!cihazlarYuklendi) {
+      bekleyenOdak = kimlik;
+      return;
+    }
+    bekleyenOdak = '';
+    let kutu = satirOgeleri.get(kimlik);
+    if (!kutu && seciliSira.indexOf(kimlik) >= 0) {
+      // süzgeç ya da "daha fazla göster" satırı gizliyor: süzgeç bu favoriye daraltılır
+      cihazAra.value = kimlik;
+      gosterilenCihazSayisi = CIHAZ_SAYFA_BOYUTU;
+      cihazlariCiz();
+      kutu = satirOgeleri.get(kimlik);
+    }
+    if (kutu) odakla(kutu);
   }
 
   // --- Kaydet (tek çubuk) --------------------------------------------------------------------------------------------------
@@ -1772,6 +1920,7 @@
       canliBaglanti: a.canliBaglanti,
       panolar: a.panolar,
       ...bilgiYuku(a),
+      ...(duzen && duzen.sayfalarKirli() ? { sayfalar: a.sayfalar } : {}), // yalnız düzenlendiyse (o-24); ana süreç doğrular ve kapı kuralına takılan adı boşaltır
     };
   }
 
@@ -1859,6 +2008,7 @@
       else cihazlariCiz();
       siraCiz();
       kirliGuncelle();
+      if (duzen) duzen.gecmisiYenile(); // kayıt düzen geçmişine yeni bir nokta eklemiş olabilir
 
       // 4) Sonuç iletisi (hata ve uyarılar kapatılana dek kalır)
       const parcalar = [];
@@ -1894,6 +2044,11 @@
         const etiketSayisi = (favoriSonuc.etiketHatalari || []).length;
         if (etiketSayisi > 0) {
           parcalar.push(cogul('ayar.kaydet.etiketRed', etiketSayisi));
+          tur = 'uyari';
+        }
+        const gorunumSayisi = (favoriSonuc.gorunumHatalari || []).length;
+        if (gorunumSayisi > 0) {
+          parcalar.push(cogul('ayar.kaydet.gorunumRed', gorunumSayisi)); // simge / renk / boyut kabul edilmedi (o-31): önceki değer korundu
           tur = 'uyari';
         }
       }
@@ -2002,6 +2157,7 @@
     kurulumGuncelle();
     if (cihazlarYuklendi) await cihazlariYukle(true);
     kirliGuncelle();
+    if (duzen) duzen.gecmisiYenile();
   }
 
   async function aktarimSonucunuGoster(sonuc, ozetAnahtari) {
@@ -2160,6 +2316,7 @@
     if (cihazlarYuklendi) cihazlariCiz();
     else if (listeIletisi) listeMesaji(listeIletisi.anahtar, listeIletisi.hata, listeIletisi.ham);
     if (sonYedekler !== null) yedekleriCiz(sonYedekler);
+    if (duzen) duzen.metinleriYenile(); // sayfalar ve düzen geçmişi yeni dilde
   }
 
   /** Ayar özetindeki etkin dil şimdikinden farklıysa dili değiştirir ve sayfayı yeniden yazar. true: dil değişti. */
@@ -2302,6 +2459,13 @@
     });
   }
 
+  // Panelde karo menüsünden "Düzenle…" (o-16): ilgili favorinin satırına gidilir.
+  if (typeof window.evPaneli.onFavoriyeGit === 'function') {
+    window.evPaneli.onFavoriyeGit(function (kimlik) {
+      favoriyeOdaklan(kimlik);
+    });
+  }
+
   gizlileriGoster.addEventListener('change', function () {
     if (cihazlarYuklendi) cihazlariCiz();
   });
@@ -2435,6 +2599,8 @@
         cihazlariYukle(false);
       }
       yedekleriYukle();
+      if (duzen) duzen.gecmisiYenile();
+      if (typeof sonuc.odakFavori === 'string' && sonuc.odakFavori !== '') favoriyeOdaklan(sonuc.odakFavori); // panel menüsü "Düzenle…" ile açıldıysa
     } catch (err) {
       bildirimGoster(t('ayar.yukleme.alinirkenHata'), 'hata');
     }

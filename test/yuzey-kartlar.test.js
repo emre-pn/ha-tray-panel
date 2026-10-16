@@ -164,7 +164,7 @@ test('ışık rengi: beyaz tonu ve renk paleti parlaklık kontrollü ışıkta �
     { kimlik: 'light.masa', servis: 'turn_on', veri: { color_temp_kelvin: 2700 } },
     { kimlik: 'light.masa', servis: 'turn_on', veri: { color_temp_kelvin: 6500 } },
   ]);
-  const renkler = dugmeler(sayfa, (o) => o.sinifVar('renk'));
+  const renkler = dugmeler(sayfa, (o) => o.sinifVar('kart-renk'));
   assert.equal(renkler.length, 8);
   dugmeAra(sayfa, 'Masa: Mavi').gonder('click', { detail: 1 });
   assert.deepEqual(sayfa.calistirmalar().at(-1), { kimlik: 'light.masa', servis: 'turn_on', veri: { rgb_color: [30, 90, 255] } });
@@ -175,7 +175,7 @@ test('ışık rengi: cihazın üst kelvin sınırı düşükse "Soğuk beyaz" o 
   const sayfa = await panelAc({ model: modelYap(dar) });
   dugmeAra(sayfa, 'Dar: Soğuk beyaz (5000 K)').gonder('click', { detail: 1 });
   assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'light.dar', servis: 'turn_on', veri: { color_temp_kelvin: 5000 } }]);
-  assert.equal(dugmeler(sayfa, (o) => o.sinifVar('renk')).length, 0, 'yalnız beyaz tonu destekleyen ışıkta renk paleti yok');
+  assert.equal(dugmeler(sayfa, (o) => o.sinifVar('kart-renk')).length, 0, 'yalnız beyaz tonu destekleyen ışıkta renk paleti yok');
 });
 
 test('ışık rengi: rengi desteklemeyen ışıkta bölüm tamamen gizlenir; yalnız renk (tonsuz) destekleyen ışıkta yalnız palet çıkar', async () => {
@@ -188,14 +188,14 @@ test('ışık rengi: rengi desteklemeyen ışıkta bölüm tamamen gizlenir; yal
   const yalnizRenk = varyant(RENKLI, 'light.rgb', 'Rgb', { ozellik: { renkModlari: ['rgb'], enAzKelvin: null, enCokKelvin: null, renkSicakligi: null, rgb: [1, 2, 3] } });
   const r = await panelAc({ model: modelYap(yalnizRenk) });
   assert.equal(dugmeler(r, (o) => /beyaz/i.test(o.attributes['aria-label'] ?? '')).length, 0);
-  assert.equal(dugmeler(r, (o) => o.sinifVar('renk')).length, 8);
+  assert.equal(dugmeler(r, (o) => o.sinifVar('kart-renk')).length, 8);
 });
 
 test('ışık rengi: renk düğmesi metin taşımaz (dolgu CSS sınıfından), erişilebilir adı vardır; ışık yoksa ya da parlaklık kontrolü kapalıysa düz karo kalır', async () => {
   const sayfa = await panelAc({ model: modelYap(RENKLI) });
   const kirmizi = dugmeAra(sayfa, 'Masa: Kırmızı');
   assert.equal(kirmizi.textContent, '');
-  assert.ok(kirmizi.sinifVar('renk-kirmizi'));
+  assert.ok(kirmizi.sinifVar('kart-renk-kirmizi'));
   assert.equal(JSON.stringify(kirmizi.style), '{}', 'satır içi stil yok');
   const duz = await panelAc({ model: modelYap(varyant(RENKLI, 'light.duz', 'Düz', { parlaklikKontrol: false })) });
   assert.equal(duz.bul((o) => o.sinifVar('kart-renkler')).length, 0);

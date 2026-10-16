@@ -29,7 +29,7 @@ function onbellegiTemizle() {
 const akit = () => new Promise((coz) => setImmediate(coz));
 
 /** Sahte Electron + yönetici. `zoomVar`: webContents.setZoomFactor var mı (eski sürüm/sahte ortam davranışı). */
-function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {} } = {}) {
+function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {}, sagTik = null } = {}) {
   const pencereler = [];
   const ipcIsleyicileri = new Map();
   class SahteWebContents extends EventEmitter {
@@ -126,6 +126,7 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
     modelAl: () => model ?? { gruplar: [], sonlar: [], ust: {} },
     eylem,
     okuma,
+    sagTik,
     tepsiSinirlariAl: () => TEPSI,
     haAc() {},
     ayarlarAc() {},
@@ -389,5 +390,62 @@ test('1.4.0 yuzey:oku: yalnız açık yüzeyden ve yalnız kayıtlı varlık iç
     assert.deepEqual(await okumasiz.ipcIsleyicileri.get('yuzey:oku')(okumasiz.yuzeyOlayi(p), { tur: 'gecmis', kimlikler: ['sensor.a'] }), { ok: false, tur: 'gecersiz' });
   } finally {
     okumasiz.temizle();
+  }
+});
+
+test('1.4.0 yuzey:sag-tik (o-16): yalnız açık yüzeyden, yalnız kayıtlı karo için; menüyü kimlik ve pencereyle açar, hata paneli çökertmez, menü sürerken sayaç tutulur', async () => {
+  const cagrilar = [];
+  let bitir = null;
+  const sagTik = (kimlik, pencere) => {
+    cagrilar.push([kimlik, pencere]);
+    return new Promise((coz) => {
+      bitir = coz;
+    });
+  };
+  const o = kur({ sagTik, eylem: { kayitliMi: (k) => k === 'light.salon' } });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:sag-tik');
+    assert.equal(typeof isle, 'function');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await isle(yabanci, 'light.salon')).ok, false, 'yabancı gönderici reddedilir');
+    assert.deepEqual(cagrilar, []);
+
+    const kapaliyken = o.yuzeyOlayi({ webContents: {} });
+    assert.deepEqual(await isle(kapaliyken, 'light.salon'), { ok: false, hata: 'İzin yok.' }, 'açık olmayan yüzeyden gelen istek reddedilir');
+
+    const p = await panelAc(o);
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'light.baska'), { ok: false, tur: 'gecersiz' }, 'kayıtlı olmayan varlık için menü açılmaz');
+    for (const kotu of [undefined, null, 42, {}, ['light.salon']]) {
+      assert.deepEqual(await isle(o.yuzeyOlayi(p), kotu), { ok: false, tur: 'gecersiz' });
+    }
+    assert.deepEqual(cagrilar, []);
+
+    const bekleyen = isle(o.yuzeyOlayi(p), 'light.salon');
+    await akit();
+    assert.equal(cagrilar.length, 1);
+    assert.equal(cagrilar[0][0], 'light.salon');
+    assert.equal(cagrilar[0][1], p, 'menü panel penceresine bağlı açılır');
+    bitir();
+    assert.deepEqual(await bekleyen, { ok: true });
+  } finally {
+    o.temizle();
+  }
+
+  const patlayan = kur({ sagTik: () => Promise.reject(new Error('menu')), eylem: { kayitliMi: () => true } });
+  try {
+    const p = await panelAc(patlayan);
+    assert.deepEqual(await patlayan.ipcIsleyicileri.get('yuzey:sag-tik')(patlayan.yuzeyOlayi(p), 'light.salon'), { ok: true });
+    assert.ok(patlayan.gunlukler.includes('Karo menüsü açılamadı.'));
+    assert.doesNotMatch(patlayan.gunlukler.join(' | '), /menu|light.salon/, 'günlüğe hata ayrıntısı ve kimlik yazılmaz');
+  } finally {
+    patlayan.temizle();
+  }
+
+  const menusuz = kur({ eylem: { kayitliMi: () => true } });
+  try {
+    const p = await panelAc(menusuz);
+    assert.deepEqual(await menusuz.ipcIsleyicileri.get('yuzey:sag-tik')(menusuz.yuzeyOlayi(p), 'light.salon'), { ok: false, tur: 'gecersiz' });
+  } finally {
+    menusuz.temizle();
   }
 });

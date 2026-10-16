@@ -33,15 +33,15 @@
   --vurgu-metin: #93c5fd; /* eşleşen harfler (seçili satırda >= 4,5) */
   --yikici-metin: #fca5a5; /* yıkıcı etiket ve "basılı tut" alt yazısı */
   --rozet-metin: #0b1220; /* dolu zemin (vurgu, yıkıcı, hata, yedek, canlı) üzerindeki metin */
-  /* Işık renk paleti düğmeleri (lib/arama.js RENK_PALETI ile aynı renkler; metin değil, dolgu): iki temada da aynı */
-  --renk-kirmizi: #ff0000;
-  --renk-turuncu: #ff8c00;
-  --renk-sari: #ffd700;
-  --renk-yesil: #00c83c;
-  --renk-turkuaz: #00d2d2;
-  --renk-mavi: #1e5aff;
-  --renk-mor: #963cff;
-  --renk-pembe: #ff69b4;
+  /* Işık renk paleti düğmeleri (lib/arama.js RENK_PALETI ile aynı renkler; metin değil, dolgu): iki temada da aynı. Karo rengi (--renk-*) ile karışmasın diye --isik-renk-* adını taşır */
+  --isik-renk-kirmizi: #ff0000;
+  --isik-renk-turuncu: #ff8c00;
+  --isik-renk-sari: #ffd700;
+  --isik-renk-yesil: #00c83c;
+  --isik-renk-turkuaz: #00d2d2;
+  --isik-renk-mavi: #1e5aff;
+  --isik-renk-mor: #963cff;
+  --isik-renk-pembe: #ff69b4;
   /* Grafik serileri (geçmiş / karşılaştırma): sabit sırayla atanır, döngüsel değil; dataviz doğrulaması (lib/grafik.js en çok 7 seri). Seriyi renk TEK BAŞINA tanıtmaz: lejant etiketi + istatistik satırı + 5. seriden sonra çizgi deseni var. */
   --seri-0: #3987e5;
   --seri-1: #d95926;
@@ -50,6 +50,16 @@
   --seri-4: #d55181;
   --seri-5: #008300;
   --seri-6: #9085e9;
+  /* Karo rengi (1.4.0 düzen, o-31): sol şerit ve simge rengi; hazır dokuz renk, her biri --karo üzerinde >= 4,5 (test/yuzey-duzen.test.js) */
+  --renk-kirmizi: #f87171;
+  --renk-turuncu: #fb923c;
+  --renk-sari: #facc15;
+  --renk-yesil: #4ade80;
+  --renk-turkuaz: #2dd4bf;
+  --renk-mavi: #60a5fa;
+  --renk-mor: #a78bfa;
+  --renk-pembe: #f472b6;
+  --renk-gri: #cbd5e1;
 }
 
 /*
@@ -88,14 +98,14 @@
     --vurgu-metin: #1d4ed8;
     --yikici-metin: #b91c1c;
     --rozet-metin: #ffffff;
-    --renk-kirmizi: #ff0000;
-    --renk-turuncu: #ff8c00;
-    --renk-sari: #ffd700;
-    --renk-yesil: #00c83c;
-    --renk-turkuaz: #00d2d2;
-    --renk-mavi: #1e5aff;
-    --renk-mor: #963cff;
-    --renk-pembe: #ff69b4;
+    --isik-renk-kirmizi: #ff0000;
+    --isik-renk-turuncu: #ff8c00;
+    --isik-renk-sari: #ffd700;
+    --isik-renk-yesil: #00c83c;
+    --isik-renk-turkuaz: #00d2d2;
+    --isik-renk-mavi: #1e5aff;
+    --isik-renk-mor: #963cff;
+    --isik-renk-pembe: #ff69b4;
     --seri-0: #2a78d6;
     --seri-1: #eb6834;
     --seri-2: #1baf7a;
@@ -103,6 +113,15 @@
     --seri-4: #e87ba4;
     --seri-5: #008300;
     --seri-6: #6250d6;
+    --renk-kirmizi: #b91c1c;
+    --renk-turuncu: #c2410c;
+    --renk-sari: #854d0e;
+    --renk-yesil: #15803d;
+    --renk-turkuaz: #0f766e;
+    --renk-mavi: #1d4ed8;
+    --renk-mor: #6d28d9;
+    --renk-pembe: #be185d;
+    --renk-gri: #475569;
   }
 
   :root[data-malzeme] {
@@ -746,7 +765,7 @@ input:focus-visible,
   font-size: 12px;
 }
 
-.kart-dugme.renk {
+.kart-dugme.kart-renk {
   width: 30px;
   min-width: 30px;
   height: 30px;
@@ -754,39 +773,39 @@ input:focus-visible,
   border-radius: 50%;
 }
 
-.renk-kirmizi {
-  background: var(--renk-kirmizi);
+.kart-renk-kirmizi {
+  background: var(--isik-renk-kirmizi);
 }
 
-.renk-turuncu {
-  background: var(--renk-turuncu);
+.kart-renk-turuncu {
+  background: var(--isik-renk-turuncu);
 }
 
-.renk-sari {
-  background: var(--renk-sari);
+.kart-renk-sari {
+  background: var(--isik-renk-sari);
 }
 
-.renk-yesil {
-  background: var(--renk-yesil);
+.kart-renk-yesil {
+  background: var(--isik-renk-yesil);
 }
 
-.renk-turkuaz {
-  background: var(--renk-turkuaz);
+.kart-renk-turkuaz {
+  background: var(--isik-renk-turkuaz);
 }
 
-.renk-mavi {
-  background: var(--renk-mavi);
+.kart-renk-mavi {
+  background: var(--isik-renk-mavi);
 }
 
-.renk-mor {
-  background: var(--renk-mor);
+.kart-renk-mor {
+  background: var(--isik-renk-mor);
 }
 
-.renk-pembe {
-  background: var(--renk-pembe);
+.kart-renk-pembe {
+  background: var(--isik-renk-pembe);
 }
 
-.kart-dugme.renk:hover:not(:disabled) {
+.kart-dugme.kart-renk:hover:not(:disabled) {
   filter: brightness(1.15);
 }
 
@@ -1598,6 +1617,259 @@ button.bilgi-kart:hover {
   border-color: var(--vurgu);
 }
 
+/* ---- 1.4.0 düzen (o-16, o-24, o-31): sayfa sekmeleri, karo görünümü, ayrıntı bölmesi ---- */
+
+/* Sayfa sekmeleri (o-24): yalnız panel kipinde ve en az bir sayfa varken görünür; seçili sekme renge ek olarak alt çizgi taşır */
+.sekmeler {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 6px 12px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--kenar);
+}
+
+.sekmeler[hidden],
+.mod-palet .sekmeler {
+  display: none;
+}
+
+.sekme {
+  flex: none;
+  max-width: 140px;
+  padding: 6px 10px;
+  overflow: hidden;
+  color: var(--soluk);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+}
+
+.sekme:hover {
+  color: var(--metin);
+  background: var(--karo);
+}
+
+.sekme.secili {
+  font-weight: 600;
+  color: var(--metin);
+  background: var(--karo);
+  border-color: var(--kenar);
+  box-shadow: inset 0 -2px 0 var(--vurgu);
+}
+
+/* Karo sarmalayıcısı: boyut sınıfı buraya (ya da sarmasız yıkıcı / tekrarlı karoya) verilir; "⋯" düğmesi köşede, üstüne gelince / odakta belirir */
+.karo-sarma {
+  position: relative;
+  display: grid;
+}
+
+.karo-kontrol {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 22px;
+  height: 22px;
+  line-height: 20px;
+  text-align: center;
+  color: var(--soluk);
+  background: var(--karo-uzerinde);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+  opacity: 0;
+}
+
+.karo-sarma:hover .karo-kontrol,
+.karo-sarma:focus-within .karo-kontrol,
+.isik-karo:hover .karo-kontrol,
+.isik-karo:focus-within .karo-kontrol,
+.karo-kontrol:focus-visible {
+  opacity: 1;
+}
+
+.karo-kontrol:hover {
+  color: var(--metin);
+  border-color: var(--vurgu);
+}
+
+/* Işık karosunda "⋯" kapsayıcının sağ üst köşesindedir; ana düğmenin durum metni altına girmesin */
+.isik-karo.kontrollu {
+  position: relative;
+}
+
+.isik-karo.kontrollu .karo {
+  padding-right: 36px;
+}
+
+.isik-karo .karo-kontrol {
+  top: 14px;
+  right: 10px;
+  bottom: auto;
+}
+
+@media (hover: none) {
+  .karo-kontrol {
+    opacity: 1;
+  }
+}
+
+/* Boyut: küçük / normal / geniş (2 sütun) / büyük (tam satır) */
+.boyut-genis {
+  grid-column: span 2;
+}
+
+.boyut-buyuk {
+  grid-column: 1 / -1;
+}
+
+.boyut-kucuk .karo,
+.karo.boyut-kucuk {
+  min-height: 38px;
+  padding: 5px 8px;
+}
+
+.boyut-kucuk .karo-durum,
+.karo.boyut-kucuk .karo-durum {
+  font-size: 10px;
+}
+
+.boyut-buyuk .karo,
+.karo.boyut-buyuk {
+  min-height: 84px;
+}
+
+.boyut-buyuk .karo-etiket,
+.karo.boyut-buyuk .karo-etiket {
+  font-size: 15px;
+}
+
+/* Simge (o-31): karonun sağ üst köşesinde, süs (aria-hidden); ışık karosunda satır başında */
+.karo-simge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--renk, var(--soluk));
+}
+
+.karo.simgeli .karo-simge {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+}
+
+.karo.simgeli .karo-etiket {
+  padding-right: 24px;
+}
+
+/* Açık karoda simge vurgulanır (renk seçilmediyse vurgu rengiyle; seçilmişse seçilen renk kalır) */
+.karo.durum-acik .karo-simge {
+  color: var(--renk, var(--acik));
+}
+
+.isik-karo .karo.simgeli .karo-simge {
+  position: static;
+  margin-right: 8px;
+}
+
+.isik-karo .karo.simgeli .karo-etiket {
+  padding-right: 0;
+}
+
+/* Renk (o-31): sol şerit + simge rengi. Renk tek başına bilgi taşımaz (durum metni ve çerçeve ayrıdır) */
+.renk-kirmizi { --renk: var(--renk-kirmizi); }
+.renk-turuncu { --renk: var(--renk-turuncu); }
+.renk-sari { --renk: var(--renk-sari); }
+.renk-yesil { --renk: var(--renk-yesil); }
+.renk-turkuaz { --renk: var(--renk-turkuaz); }
+.renk-mavi { --renk: var(--renk-mavi); }
+.renk-mor { --renk: var(--renk-mor); }
+.renk-pembe { --renk: var(--renk-pembe); }
+.renk-gri { --renk: var(--renk-gri); }
+
+.karo[class*="renk-"] {
+  box-shadow: inset 4px 0 0 var(--renk);
+}
+
+/* Uzun basma ipucu (o-16): 150 ms sonra ince bir ilerleme çizgisi; kısa tıklamada görünmez */
+.karo.uzun-basma::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--vurgu);
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: uzun-basma 350ms linear 150ms forwards;
+}
+
+@keyframes uzun-basma {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Karo ayrıntı bölmesi (o-16) */
+.ayrinti {
+  margin-top: 8px;
+}
+
+.ayrinti-ust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ayrinti-geri,
+.ayrinti-menu {
+  flex: none;
+  padding: 5px 10px;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.ayrinti-geri:hover,
+.ayrinti-menu:hover {
+  background: var(--karo-uzerinde);
+}
+
+.ayrinti-baslik {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ayrinti-durum {
+  flex: none;
+  font-size: 11px;
+  color: var(--soluk);
+}
+
+.ayrinti-govde {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ayrinti-not {
+  padding: 8px 2px;
+  font-size: 12px;
+  color: var(--soluk);
+}
+
 /* Kip düzeni: panelde arama kutusu ve palet ipucu şeridi yok; paletle üst şerit, hata şeridi ve alt düğmeler yok */
 .mod-panel .palet-kutusu,
 .mod-panel .palet-serit {
@@ -1613,5 +1885,9 @@ button.bilgi-kart:hover {
 @media (prefers-reduced-motion: reduce) {
   .karo {
     transition: none;
+  }
+
+  .karo.uzun-basma::after {
+    content: none; /* hareket azaltma: ilerleme çizgisi yok (ayrıntı yine 500 ms sonra açılır) */
   }
 }

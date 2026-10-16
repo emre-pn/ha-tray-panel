@@ -49,6 +49,18 @@
     ['yuzey.bos.favoriYokAlt', 'Ayarlar’dan favori seçin.', 'Choose favorites in Settings.'],
     ['yuzey.bos.ayarlariAc', 'Ayarlar’ı aç', 'Open Settings'],
 
+    // --- Sayfalar (sekmeler), karo ayrıntı bölmesi ve karo menüsü (1.4.0 düzen; src/yuzey-duzen.js) ---
+    ['yuzey.sekme.etiket', 'Panel sayfaları', 'Panel pages'],
+    ['yuzey.sekme.tumu', 'Tümü', 'All'],
+    ['yuzey.sayfa.bos', 'Bu sayfada karo yok.', 'There are no tiles on this page.'],
+    ['yuzey.sayfa.bosAlt', 'Bir karoya sağ tıklayıp “Sayfaya ekle”yi seçin ya da Ayarlar’dan sayfayı düzenleyin.',
+      'Right-click a tile and choose “Add to page”, or edit the page in Settings.'],
+    ['yuzey.karo.kontrollerAc', '{etiket} kontrolleri', '{etiket} controls'],
+    ['yuzey.ayrinti.etiket', '{etiket} kontrolleri', '{etiket} controls'],
+    ['yuzey.ayrinti.geri', 'Geri', 'Back'],
+    ['yuzey.ayrinti.menu', 'Karo menüsü', 'Tile menu'],
+    ['yuzey.ayrinti.yalnizDurum', 'Bu karo yalnızca durum gösterir.', 'This tile only shows status.'],
+
     // --- Palet ---
     ['yuzey.arama.ipucu', 'Eylem ara…  (örn. “ışık 40”)', 'Search actions…  (e.g. “light 40”)'],
     ['yuzey.arama.etiket', 'Eylem ara', 'Search actions'],

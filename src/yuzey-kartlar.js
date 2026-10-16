@@ -1018,7 +1018,7 @@
       if (modlar.some(function (m) { return ISIK_RENK_MODLARI.indexOf(m) >= 0; })) {
         const renkler = RENK_SIRASI.map(function (renk) {
           const k = Arama.alanKomutu(karo, renk);
-          return k && !k.hata ? { metin: '', aria: t('yuzey.isik.renkAra', { etiket: karo.etiket, ad: t('yuzey.renk.' + renk) }), servis: k.servis, veri: k.veri, sinif: 'renk renk-' + renk, ad: 'renk-' + renk } : null;
+          return k && !k.hata ? { metin: '', aria: t('yuzey.isik.renkAra', { etiket: karo.etiket, ad: t('yuzey.renk.' + renk) }), servis: k.servis, veri: k.veri, sinif: 'kart-renk kart-renk-' + renk, ad: 'renk-' + renk } : null;
         }).filter(Boolean);
         if (renkler.length > 0) {
           const sira = secenekSatiri(karo, 'renk', t('yuzey.isik.renkler', { etiket: karo.etiket }), renkler);

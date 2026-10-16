@@ -11,7 +11,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const AYARLAR = require('../src/lib/ceviri/ayarlar');
-const { AYAR_ALANLARI } = require('../src/lib/ayar-alanlari');
+const { AYAR_ALANLARI: TUM_AYAR_ALANLARI } = require('../src/lib/ayar-alanlari');
+
+// Bu dosya yalnız bilgi grubunun alanlarını sınar (birleşik tabloda başka gruplar da var).
+const BILGI_ALAN_ADLARI = [
+  'sensorSeridi', 'sensorGrafik', 'sensorGrafikSaat', 'pilEsigi', 'sensorTepsiIpucu', 'ustKart1', 'ustKart2', 'havaVarligi',
+  'saatBicimi', 'tarihBicimi', 'takvimler', 'takvimGunSayisi', 'yapilacakListeleri', 'hizliListe',
+];
+const AYAR_ALANLARI = TUM_AYAR_ALANLARI.filter((a) => BILGI_ALAN_ADLARI.includes(a.ad));
 const { HTML, BETIK, AYAR, CIHAZLAR, akit, duzles, acilmisSayfa } = require('./ayarlar-sahte');
 
 const kaydet = async (sayfa) => {

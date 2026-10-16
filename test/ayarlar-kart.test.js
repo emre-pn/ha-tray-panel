@@ -47,7 +47,8 @@ const AYAR = {
   ],
 };
 
-const notlar = (satir) => satir.bul((o) => o.className === 'cihaz-not').map((o) => o.textContent).filter(Boolean);
+// gizli notlar (kısayol uyarısı, geçersiz emoji iletisi) sayılmaz: yalnız satırda görünenler
+const notlar = (satir) => satir.bul((o) => o.className === 'cihaz-not' && o.style?.display !== 'none').map((o) => o.textContent).filter(Boolean);
 const konumlar = (sayfa) => sira(sayfa).map((s) => s.bul((o) => o.className.startsWith('sira-konum'))[0].textContent);
 
 test('yeni alanlar cihaz listesinde türleriyle görünür; tek tıklama eylemi olmayanlarda kısayol kutusu yoktur', async () => {
@@ -132,4 +133,17 @@ test('cihaz süzgeci yeni alan türünü de bulur ("iklim")', async () => {
   arama.dispatchEvent({ type: 'input' });
   const gorunen = sayfa.oge('cihazListesi').bul((o) => o.className === 'cihaz-kimlik').map((o) => o.textContent);
   assert.deepEqual(gorunen, ['climate.salon']);
+});
+
+// Birleştirme (kart + düzen): tek tıklama eylemi olmayan karo tepsi menüsüne hiç girmez; "tepsiye sabitle" kutusu da yoktur.
+test('"Tepsiye sabitle" kutusu yalnız tek tıklama eylemi olan satırlarda çıkar (klima, medya, seçici satırında yok)', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR });
+  const tepsiKutulari = (kimlik) =>
+    satirBul(sayfa, kimlik)
+      .bul((o) => o.etiket === 'input' && o.type === 'checkbox' && /tepsiye sabitlensin/.test(o.attributes?.['aria-label'] ?? ''));
+  assert.equal(tepsiKutulari('light.salon_lambasi').length, 1, 'ışık tepsiye sabitlenebilir');
+  assert.equal(tepsiKutulari('fan.vantilator').length, 1, 'tek tıklama eylemi olan vantilatör sabitlenebilir');
+  for (const kimlik of ['climate.salon', 'media_player.tv', 'vacuum.supurge', 'input_select.ev_modu', 'timer.mutfak']) {
+    assert.equal(tepsiKutulari(kimlik).length, 0, `${kimlik}: tepsiye sabitle kutusu yok`);
+  }
 });

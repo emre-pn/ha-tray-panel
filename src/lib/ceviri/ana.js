@@ -473,6 +473,33 @@
       'Windows başlangıç kaydı bulunamadı; “Ayarları Kaydet” ya da “Yeniden etkinleştir” ile oluşturulur.',
       'No Windows startup entry was found; it is created with “Save settings” or “Re-enable”.'],
     ['oturum.belirsiz', 'Windows başlangıç durumu doğrulanamadı.', 'The Windows startup state could not be verified.'],
+
+    // --- Düzen: sayfalar, karo bağlam menüsü, düzen geçmişi ve onarım (src/lib/karo-menusu.js, duzen-yoneticisi.js; 1.4.0 düzen grubu) ---
+    ['sayfa.adsiz', 'Sayfa {n}', 'Page {n}'],
+    ['karoMenu.duzenle', 'Düzenle…', 'Edit…'],
+    ['karoMenu.tepsiyeEkle', 'Tepsiye ekle', 'Add to tray'],
+    ['karoMenu.tepsidenKaldir', 'Tepsiden kaldır', 'Remove from tray'],
+    ['karoMenu.sayfayaEkle', 'Sayfaya ekle', 'Add to page'],
+    ['karoMenu.favoridenKaldir', 'Favorilerden kaldır…', 'Remove from favorites…'],
+    ['karoMenu.kaldirMesaj', '“{ad}” favorilerden kaldırılsın mı?', 'Remove “{ad}” from favorites?'],
+    ['karoMenu.kaldirAyrinti',
+      'Karo panelden, tepsi menüsünden ve sayfalardan kalkar. Ayarlar’daki Düzen geçmişinden geri alınabilir.',
+      'The tile disappears from the panel, the tray menu and the pages. You can undo this from Layout history in Settings.'],
+    ['karoMenu.kaldirDugme', 'Kaldır', 'Remove'],
+    ['duzen.hata.noktaYok', 'Bu geri yükleme noktası artık yok.', 'This restore point no longer exists.'],
+    ['duzen.hata.cihazlar', 'Önce cihaz listesini yükleyin.', 'Load the device list first.'],
+    ['duzen.hata.gecersiz', 'Geçersiz onarım isteği.', 'Invalid repair request.'],
+    ['duzen.hata.bulunuyor', 'Bu varlık Home Assistant’ta bulunuyor; onarım gerekmiyor.', 'This entity exists in Home Assistant; no repair is needed.'],
+    ['duzen.hata.guvenlik', 'Seçilen cihaz güvenlik kuralı nedeniyle favori olamaz.', 'The selected device cannot be a favorite because of the safety rule.'],
+    ['duzen.hata.kayitsiz', 'Onarılacak favori listede yok.', 'The favorite to repair is not in the list.'],
+    ['duzen.hata.zaten-var', 'Seçilen cihaz zaten favorilerde.', 'The selected device is already a favorite.'],
+    ['duzen.hata.alan', 'Yeni cihaz aynı türden olmalı (örneğin ışık yerine ışık).', 'The new device must be of the same kind (for example a light for a light).'],
+    ['kaydet.sayfaAdiEngellendi',
+      '{n} sayfanın adı güvenlik kuralı nedeniyle kullanılamadı; sayfalar adsız bırakıldı.',
+      'The names of {n} pages could not be used because of the safety rule; the pages were left unnamed.'],
+    ['kaydet.sayfaAdiEngellendi.bir',
+      '{n} sayfanın adı güvenlik kuralı nedeniyle kullanılamadı; sayfa adsız bırakıldı.',
+      'The name of {n} page could not be used because of the safety rule; the page was left unnamed.'],
   ];
 
   const tr = {};

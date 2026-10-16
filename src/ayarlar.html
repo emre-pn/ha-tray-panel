@@ -803,6 +803,147 @@
       border: 1px solid var(--ok-border);
     }
 
+    /* 1.4.0 düzen (src/ayarlar-duzen.js): sıra sürükleme, karo görünümü, onarım, panel sayfaları, düzen geçmişi */
+    .sira-satir[draggable="true"] {
+      cursor: grab;
+    }
+
+    .sira-tutamac {
+      color: var(--text-dim);
+      font-size: 14px;
+      line-height: 1;
+      user-select: none;
+    }
+
+    .sira-satir.suruklenen {
+      opacity: 0.5;
+    }
+
+    .sira-satir.sira-hedef-once {
+      box-shadow: inset 0 2px 0 var(--primary);
+    }
+
+    .sira-satir.sira-hedef-sonra {
+      box-shadow: inset 0 -2px 0 var(--primary);
+    }
+
+    .gorunum-grubu {
+      flex-basis: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 14px;
+      padding-top: 4px;
+    }
+
+    .cihaz-ek select,
+    .onar-kutusu select,
+    .sayfa-uyeler select {
+      width: auto;
+      max-width: 100%;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    .cihaz-ek input[type="text"].gorunum-emoji {
+      width: 90px;
+    }
+
+    .onar-kutusu {
+      flex-basis: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      padding: 4px 0 2px 26px;
+    }
+
+    .onar-kutusu .cihaz-not {
+      flex-basis: 100%;
+      margin-top: 0;
+    }
+
+    .duzen-kutusu {
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-top: 14px;
+    }
+
+    .duzen-kutusu h3 {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .sayfa-satir {
+      padding: 8px 0;
+      border-top: 1px solid var(--input-border);
+    }
+
+    .sayfa-satir:first-child {
+      border-top: 0;
+    }
+
+    .sayfa-ust {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sayfa-ust input[type="text"] {
+      flex: 1 1 160px;
+      width: auto;
+      min-width: 120px;
+      padding: 5px 8px;
+    }
+
+    .sayfa-uyeler {
+      padding: 6px 0 2px 12px;
+    }
+
+    .sayfa-uye {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 0;
+      font-size: 12px;
+    }
+
+    .sayfa-uye-ad {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .gecmis-satir {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 10px;
+      padding: 6px 0;
+      border-top: 1px solid var(--input-border);
+      font-size: 12px;
+    }
+
+    .gecmis-satir:first-child {
+      border-top: 0;
+    }
+
+    .gecmis-zaman {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .gecmis-metin {
+      flex: 1;
+      min-width: 0;
+      color: var(--text-muted);
+    }
+
     .pano-satir {
       display: grid;
       grid-template-columns: 1fr 1.4fr 1fr auto;
@@ -1065,6 +1206,7 @@
     <div class="favori-sirasi" id="favoriSirasi" style="display: none;">
       <h3 data-i18n="ayar.sira.baslik">Sıra ve tepsi</h3>
       <div class="ipucu" data-i18n="ayar.sira.ipucu">Tepsi menüsünün üstünde sıradaki ilk 8 zararsız favori görünür; geri kalanlar “Diğer favoriler”, onay isteyenler “Onaylı eylemler” altında yer alır. Tek tıklama eylemi olmayanlar (klima, medya, süpürge, seçici gibi) tepside yer almaz; yalnız panelde ve palette görünür. Sırayı ↑ ↓ düğmeleriyle değiştirebilirsin.</div>
+      <div class="ipucu" data-i18n="ayar.sira.surukleIpucu">Satırı sürükleyerek ya da bir ↑ ↓ düğmesindeyken Alt+↑ / Alt+↓ ile de taşıyabilirsin.</div>
       <div id="favoriSirasiListesi" role="list" aria-label="Seçili favorilerin sırası" data-i18n-attr="aria-label:ayar.sira.listeEtiket"></div>
     </div>
 
@@ -1086,6 +1228,25 @@
       <span id="secilenSayisi" style="font-size: 13px; color: var(--text-muted);" data-i18n="ayar.favori.seciliBaslangic">0 favori seçili</span>
       <button class="buton buton-ikincil" id="btnDahaFazla" type="button" style="display: none;" data-i18n="ayar.favori.dahaFazla">Daha fazla göster</button>
     </div>
+
+    <!-- 1.4.0 düzen (o-24, o-30): panel sayfaları ve düzen geçmişi (src/ayarlar-duzen.js) -->
+    <div class="duzen-kutusu" id="sayfalarKabi">
+      <h3 id="sayfalarBaslik" data-i18n="ayar.sayfa.baslik">Panel sayfaları</h3>
+      <div class="ipucu" data-i18n="ayar.sayfa.ipucu">Sayfalar hızlı panelde sekme olarak görünür. Bir sayfa, favorilerinden seçtiklerinin bir alt kümesidir ve yeni bir eylem yolu açmaz; “Tümü” sekmesi her zaman bugünkü gruplarla durur. En çok 12 sayfa.</div>
+      <div class="ipucu" data-i18n="ayar.sayfa.adKurali">Sayfa adı da kapı / kilit kuralına uyar; takılan ad kaydedilince boşaltılır.</div>
+      <div id="sayfalarListesi" role="list"></div>
+      <div class="buton-satiri" style="align-items: center;">
+        <button class="buton buton-ikincil" id="btnSayfaEkle" type="button" data-i18n="ayar.sayfa.ekle">Sayfa ekle</button>
+        <span id="sayfaSayaci" class="ipucu"></span>
+      </div>
+    </div>
+
+    <div class="duzen-kutusu" id="duzenGecmisiKabi">
+      <h3 id="duzenGecmisiBaslik" data-i18n="ayar.gecmis.baslik">Düzen geçmişi</h3>
+      <div class="ipucu" data-i18n="ayar.gecmis.ipucu">Favori ve sayfa düzeninin son 20 hâli burada tutulur (yalnız bu bilgisayarda; erişim anahtarı ve adres içermez). Bir noktaya dönünce geçerli düzen değişir; dönmeden önceki düzen de geçmişe eklenir, böylece dönüşü geri alabilirsin.</div>
+      <div id="duzenGecmisiListesi" role="list"></div>
+    </div>
+    <div class="gorunmez" id="duzenDuyuru" role="status" aria-live="polite"></div>
   </section>
 
   <!-- BÖLÜM 3: KISAYOLLAR -->
@@ -1458,6 +1619,9 @@
   <script src="lib/ceviri/ayarlar.js"></script>
   <script src="lib/kisayol.js"></script>
   <script src="lib/arama.js"></script>
+  <script src="lib/karo-gorunum.js"></script>
+  <script src="lib/duzen-islemleri.js"></script>
+  <script src="ayarlar-duzen.js"></script>
   <script src="ayarlar.js"></script>
 </body>
 </html>

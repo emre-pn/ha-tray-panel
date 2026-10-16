@@ -46,7 +46,9 @@ function menuOgesi(karo, t = TR) {
 function tepsiMenuPlani(karolar, { ustSayi = UST_SAYISI, t = TR } = {}) {
   // 1.4.0: tek tıklama eylemi olmayan karolar (iklim, medya, sensör...; varsayilanEylem:false) menüye girmez.
   const liste = (Array.isArray(karolar) ? karolar : []).filter((k) => k.varsayilanEylem !== false);
-  const zararsiz = liste.filter((k) => k.sinif !== 'yikici').map((k) => menuOgesi(k, t));
+  // 1.4.0 (o-16 "tepsiye ekle"): tepsiye sabitlenen zararsız favoriler (tepsi:true) üst düzeyde önce gelir; sıra kendi içinde favori sırasıdır.
+  const zararsizKarolar = liste.filter((k) => k.sinif !== 'yikici');
+  const zararsiz = [...zararsizKarolar.filter((k) => k.tepsi === true), ...zararsizKarolar.filter((k) => k.tepsi !== true)].map((k) => menuOgesi(k, t));
   return {
     ust: zararsiz.slice(0, ustSayi),
     alt: zararsiz.slice(ustSayi),

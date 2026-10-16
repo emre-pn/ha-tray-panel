@@ -119,7 +119,12 @@ test('varsayılan ayarlar güvenli: favori yok, kısayol geçerli', () => {
 // ---------------------------------------------------------------------------
 
 const YEREL_SAYFALAR = tumDosyalar.filter((d) => goreli(d).startsWith('src/') && d.endsWith('.html')).map(goreli);
-const RENDERER_BETIKLERI = ['src/ayarlar.js', 'src/offline.js', 'src/kose-sayfa.js', 'src/yuzey-sayfa.js', 'src/yuzey-kartlar.js', 'src/lib/arama.js', 'src/lib/kaydirici.js', 'src/lib/kisayol.js', 'src/lib/dil.js', 'src/lib/ceviri/ana.js', 'src/lib/ceviri/ayarlar.js', 'src/lib/ceviri/yuzey.js'];
+const RENDERER_BETIKLERI = [
+  'src/ayarlar.js', 'src/offline.js', 'src/kose-sayfa.js', 'src/yuzey-sayfa.js', 'src/yuzey-kartlar.js', 'src/yuzey-bilgi.js',
+  'src/lib/arama.js', 'src/lib/kaydirici.js', 'src/lib/kisayol.js', 'src/lib/dil.js', 'src/lib/bilgi-bicim.js', 'src/lib/grafik.js',
+  'src/lib/ceviri/ana.js', 'src/lib/ceviri/ayarlar.js', 'src/lib/ceviri/yuzey.js',
+  'src/ayarlar-duzen.js', 'src/yuzey-duzen.js', 'src/lib/karo-gorunum.js', 'src/lib/duzen-islemleri.js',
+];
 // preload.js'in window.evPaneli altında açtığı tam liste (başka işlev açılırsa bu test bilinçli güncellenmeli).
 const EV_PANELI_KOPRUSU = [
   'tekrarDene',
@@ -142,10 +147,15 @@ const EV_PANELI_KOPRUSU = [
   'yedektenDon',
   'onFavorilerDegisti',
   'onDilDegisti',
+  // 1.4.0 düzen grubu (o-16, o-28, o-30): düzen geçmişi, geçmişe dönüş, kullanılamayan favoriyi onarma, panel menüsünden "Düzenle…"
+  'duzenGecmisiniGetir',
+  'duzeneDon',
+  'favoriyiOnar',
+  'onFavoriyeGit',
 ];
 // preload-yuzey.js'in window.evYuzey altında açtığı tam liste (hızlı panel / palet; Dalga 3).
 // 1.4.0: 'oku' (yuzey:oku; geçmiş/takvim/hava/yapılacaklar, yalnız kayıtlı varlıklar, ana süreçte süzülür) bilinçli eklendi.
-const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc'];
+const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc', 'sagTik'];
 
 test('yerel sayfalar bulundu (ayarlar, çevrimdışı, köşe bildirimi, hızlı panel/palet)', () => {
   assert.deepEqual([...YEREL_SAYFALAR].sort(), ['src/ayarlar.html', 'src/kose-bildirim.html', 'src/offline.html', 'src/yuzey.html']);
@@ -204,7 +214,7 @@ test('renderer betikleri HTML ataması, eval ve uzak yükleme kullanmaz (metin y
 });
 
 test('renderer betikleri yalnız preload\'un açtığı işlevleri çağırır; Ayarlar betiğinin kimlikleri HTML\'de var', () => {
-  for (const betik of ['src/ayarlar.js', 'src/offline.js']) {
+  for (const betik of ['src/ayarlar.js', 'src/ayarlar-duzen.js', 'src/offline.js']) {
     for (const [, ad] of oku(betik).matchAll(/window\.evPaneli\.(\w+)/g)) {
       assert.ok(EV_PANELI_KOPRUSU.includes(ad), `${betik}: evPaneli.${ad} preload'da yok`);
     }

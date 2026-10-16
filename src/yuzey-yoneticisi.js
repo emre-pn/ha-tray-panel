@@ -57,8 +57,10 @@ function varsayilanZaman() {
  * @param {() => number} [bag.simdi]
  * @param {{setTimeout: Function, clearTimeout: Function}} [bag.zaman]
  * @param {object|null} [bag.okuma] 1.4.0 okuma uçları (src/lib/ha-okuma.js haOkumaOlustur); verilmezse yuzey:oku hep boş döner
+ * @param {((kimlik: string, pencere: object) => Promise<unknown>)|null} [bag.sagTik] 1.4.0 düzen (o-16): karoya sağ tık menüsü
+ *   (ana süreç Menu.popup). Menü ve seçilen işlem bitene kadar çözülmez; o sürece panel odak kaybıyla gizlenmez. Yalnız favori karolar için çağrılır.
  */
-function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null }) {
+function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null, sagTik = null }) {
   const izinYok = () => ({ ok: false, hata: t('ana.izinYok') });
   let pencere = null;
   let yuklendi = false;
@@ -69,6 +71,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   let yuklemeZamanlayicisi = null;
   let sonOdakKaybi = 0;
   let sonOtomatikGizleme = 0;
+  let menuAcik = 0; // açık bağlam menüsü / onay sayısı (o-16): sürerken odak kaybı paneli gizlemez
   const yukseklik = { panel: PANEL_BOYUTU.height, palet: PALET_BOYUTU.height }; // renderer'ın bildirdiği içerik yüksekliği (CSS pikseli)
   let yakinlastirma = 1; // Ctrl + / Ctrl − / Ctrl 0 (g-13); pencere gizlenip yeniden oluşturulsa da korunur
 
@@ -83,6 +86,15 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   function odakYedeginiIptalEt() {
     zaman.clearTimeout(odakYedekZamanlayicisi);
     odakYedekZamanlayicisi = null;
+  }
+
+  /** Odak kaybından kısa süre sonra hâlâ odaksızsa paneli gizler (blur olayı ve bağlam menüsü kapanışı ortak kullanır). */
+  function odakKaybiniZamanla(bu) {
+    odakKaybiniIptalEt();
+    odakKaybiZamanlayicisi = zaman.setTimeout(() => {
+      odakKaybiZamanlayicisi = null;
+      if (pencere === bu && !bu.isDestroyed() && bu.isVisible() && !bu.isFocused()) gizle('odak');
+    }, YUZEY_ODAK_KAYBI_MS);
   }
 
   /**
@@ -197,10 +209,8 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
         if (pencere !== bu) return;
         sonOdakKaybi = simdi();
         odakKaybiniIptalEt();
-        odakKaybiZamanlayicisi = zaman.setTimeout(() => {
-          odakKaybiZamanlayicisi = null;
-          if (pencere === bu && !bu.isDestroyed() && bu.isVisible() && !bu.isFocused()) gizle('odak');
-        }, YUZEY_ODAK_KAYBI_MS);
+        if (menuAcik > 0) return; // bağlam menüsü açık: kapanınca odak yeniden denetlenir (menuBitti)
+        odakKaybiniZamanla(bu);
       });
       bu.on('focus', () => {
         if (pencere !== bu) return;
@@ -253,6 +263,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       return true;
     }
     odakKaybiniIptalEt();
+    menuAcik = 0;
     mod = kip;
     try {
       yerlestir(kip);
@@ -272,6 +283,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   function gizle(neden = 'kapat') {
     odakKaybiniIptalEt();
     odakYedeginiIptalEt();
+    menuAcik = 0;
     bekleyenMod = null;
     if (!canliMi()) return;
     const gorunurdu = pencere.isVisible();
@@ -351,6 +363,25 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       if (!yuzeydenMi(olay)) return izinYok();
       if (!kaynakKip() || !okuma) return { ok: false, tur: 'gecersiz' };
       return yuzeyOkumasi(okuma, yuk, (kimlik) => eylem.kayitliMi(kimlik));
+    });
+    // 1.4.0 düzen (o-16): karoya sağ tık. Yük yalnız bir varlık kimliğidir; menü içeriğini ana süreç kendi ayarından kurar ve
+    // HA'ya hiçbir şey göndermez. Yalnız açık panel/paletten, yalnız KAYITLI (favori) karo için.
+    ipcMain.handle('yuzey:sag-tik', async (olay, kimlik) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (!sagTik || !kaynakKip() || typeof kimlik !== 'string' || !eylem.kayitliMi(kimlik)) return { ok: false, tur: 'gecersiz' };
+      const bu = pencere;
+      menuAcik += 1;
+      odakKaybiniIptalEt();
+      try {
+        await sagTik(kimlik, bu);
+      } catch {
+        gunluk('Karo menüsü açılamadı.');
+      } finally {
+        menuAcik = Math.max(0, menuAcik - 1);
+        // Menü dışına tıklanarak kapatıldıysa odak başka yere gitmiştir: panel her zamanki kuralla gizlenir.
+        if (menuAcik === 0 && pencere === bu && !bu.isDestroyed() && bu.isVisible() && !bu.isFocused()) odakKaybiniZamanla(bu);
+      }
+      return { ok: true };
     });
     ipcMain.handle('yuzey:ha-ac', (olay) => {
       if (!yuzeydenMi(olay)) return izinYok();

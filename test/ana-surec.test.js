@@ -383,7 +383,12 @@ function sahteElectronOlustur(durum) {
   return {
     app,
     BrowserWindow: SahteBrowserWindow,
-    Menu: { setApplicationMenu() {}, buildFromTemplate: (sablon) => sablon },
+    Menu: {
+      setApplicationMenu() {},
+      // Bağlam menüsü (karo sağ tık, 1.4.0): popup testin durum.menuPopup işleviyle yönetilir; tanımsızsa menü hemen kapanır. Dizi aynen döner.
+      buildFromTemplate: (sablon) =>
+        Object.defineProperty(sablon, 'popup', { configurable: true, enumerable: false, value: (secenek) => (durum.menuPopup ? durum.menuPopup(sablon, secenek) : secenek?.callback?.()) }),
+    },
     Notification: SahteBildirim,
     dialog: {
       async showMessageBox(secenek) {
@@ -1313,7 +1318,7 @@ ortamda('favori kaydı: HA\'da görünmeyen favori silinmez; güvenlik engelli d
     { entity_id: 'script.kendi_scriptim', onay: false },
     { entity_id: 'button.pc_bilgisayari_kapat', onay: false }, // zorunlu onay kapatılamaz
   ]);
-  assert.deepEqual(sonuc, { ok: true, sayi: 4, eksik: 1, engelli: 1, kisayolHatalari: [], etiketHatalari: [], kisayolSorunlari: [] });
+  assert.deepEqual(sonuc, { ok: true, sayi: 4, eksik: 1, engelli: 1, kisayolHatalari: [], etiketHatalari: [], gorunumHatalari: [], kisayolSorunlari: [] });
   const ayar = ortam.ayarOku();
   assert.deepEqual(ayar.favoriler, [
     { entity_id: 'light.eski_lamba', ad: 'Eski Lamba' },
@@ -1329,7 +1334,7 @@ ortamda('favori kaydı: kullanıcı listeden işareti kaldırdığı favori sili
   const olay = ayarlarOlayi(ortam);
   await ortam.durum.ipc.get('cihazlar:getir')(olay);
   const sonuc = await ortam.durum.ipc.get('favoriler:kaydet')(olay, [{ entity_id: 'light.salon_lambasi' }]);
-  assert.deepEqual(sonuc, { ok: true, sayi: 1, eksik: 0, engelli: 0, kisayolHatalari: [], etiketHatalari: [], kisayolSorunlari: [] });
+  assert.deepEqual(sonuc, { ok: true, sayi: 1, eksik: 0, engelli: 0, kisayolHatalari: [], etiketHatalari: [], gorunumHatalari: [], kisayolSorunlari: [] });
   assert.deepEqual(ortam.ayarOku().favoriler.map((f) => f.entity_id), ['light.salon_lambasi']);
 });
 
@@ -4676,4 +4681,281 @@ ortamda('dil: dil değişimiyle gelen kayıt reddedilirse hata sayfanın şimdik
   const endenTr = await ayarlarKaydet(ortam, { dil: 'tr', yerelAdres: 'abc' });
   assert.equal(endenTr.ok, false);
   assert.doesNotMatch(endenTr.hata, /[çğıöşüÇĞİÖŞÜ]/, 'kayıt reddedildi, sayfa İngilizce kaldı: hata İngilizce olmalı');
+});
+
+// --- 1.4.0 düzen (o-16, o-24, o-28, o-30, o-31): ana süreç tarafı ------------------------------------------------------------
+
+const DUZEN_VARLIKLARI = [...AYAR_VARLIKLARI, durumNesnesi('light.yeni_lamba', 'Yeni Lamba', 'off'), durumNesnesi('scene.film', 'Film', 'off')];
+const DUZEN_EKRANI = {
+  yoklama: 200,
+  anahtar: true,
+  tohum: {
+    semaSurumu: 6,
+    favoriler: [SALON, { entity_id: 'light.eski_lamba', ad: 'Eski Lamba', etiket: 'Okuma köşesi' }],
+    sayfalar: [{ id: 'abc12', ad: 'Akşam', varliklar: ['light.eski_lamba', 'light.salon_lambasi'] }],
+  },
+};
+const duzenIpc = (ortam, kanal, ...yuk) => ortam.durum.ipc.get(kanal)(ayarlarOlayi(ortam), ...yuk);
+const kimlikler = (liste) => liste.map((f) => f.entity_id);
+
+ortamda('düzen IPC: duzen:gecmis, duzen:don ve favoriler:onar yalnız yerel Ayarlar sayfasından kabul edilir; reddedilen istek ayarı değiştirmez', DUZEN_EKRANI, async (ortam) => {
+  haKur(ortam.durum, DUZEN_VARLIKLARI);
+  const olay = ayarlarOlayi(ortam);
+  await ortam.durum.ipc.get('cihazlar:getir')(olay);
+  const uzak = { sender: olay.sender, senderFrame: { url: 'http://192.168.1.10:8123/lovelace', parent: null } };
+  const baskaPencere = { sender: ortam.pencere.webContents, senderFrame: olay.senderFrame };
+  const altCerceve = { sender: olay.sender, senderFrame: { ...olay.senderFrame, parent: {} } };
+  const once = JSON.stringify(ortam.ayarOku());
+  for (const [kanal, ...yuk] of [['duzen:gecmis'], ['duzen:don', 1], ['favoriler:onar', 'light.eski_lamba', 'light.yeni_lamba']]) {
+    for (const kotu of [uzak, baskaPencere, altCerceve]) {
+      assert.deepEqual(await ortam.durum.ipc.get(kanal)(kotu, ...yuk), { ok: false, hata: 'İzin yok.' }, `${kanal} reddedilmeli`);
+    }
+  }
+  assert.equal(JSON.stringify(ortam.ayarOku()), once, 'reddedilen istekler ayarı değiştirmez');
+  assert.deepEqual(postlar(ortam), [], 'düzen işlemleri HA’ya hiçbir şey göndermez');
+});
+
+ortamda('ayarlar özeti: sayfalar, karo görünümü alanları ve (bir kez) odakFavori gelir', {
+  ...DUZEN_EKRANI,
+  tohum: { ...DUZEN_EKRANI.tohum, favoriler: [{ ...SALON, simge: 'ikon:isik', renk: 'mavi', boyut: 'genis', tepsi: true }, { entity_id: 'light.eski_lamba', ad: 'Eski Lamba' }] },
+}, async (ortam) => {
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.deepEqual(JSON.parse(JSON.stringify(ozet.sayfalar)), [{ id: 'abc12', ad: 'Akşam', varliklar: ['light.eski_lamba', 'light.salon_lambasi'] }]);
+  const salon = JSON.parse(JSON.stringify(ozet.favoriler.find((f) => f.entity_id === 'light.salon_lambasi')));
+  assert.deepEqual(salon, { entity_id: 'light.salon_lambasi', ad: 'Salon Lambası', simge: 'ikon:isik', renk: 'mavi', boyut: 'genis', tepsi: true });
+  assert.equal(ozet.odakFavori ?? null, null);
+});
+
+ortamda('favori kaydı (o-31, o-16): simge / renk / boyut / tepsi yazılır, geçersiz olan gorunumHatalari ile bildirilir ve önceki değer korunur; yasak emoji hiç yazılmaz', DUZEN_EKRANI, async (ortam) => {
+  haKur(ortam.durum, DUZEN_VARLIKLARI);
+  const olay = ayarlarOlayi(ortam);
+  await ortam.durum.ipc.get('cihazlar:getir')(olay);
+  const kaydet = ortam.durum.ipc.get('favoriler:kaydet');
+  const tamam = await kaydet(olay, [
+    { entity_id: 'light.salon_lambasi', simge: 'ikon:isik', renk: 'mavi', boyut: 'genis', tepsi: true },
+    { entity_id: 'light.eski_lamba' },
+  ]);
+  assert.equal(tamam.ok, true);
+  assert.deepEqual(tamam.gorunumHatalari, []);
+  assert.deepEqual(ortam.ayarOku().favoriler[0], { entity_id: 'light.salon_lambasi', ad: 'Salon Lambası', simge: 'ikon:isik', renk: 'mavi', boyut: 'genis', tepsi: true });
+
+  const red = await kaydet(olay, [
+    { entity_id: 'light.salon_lambasi', simge: '🚪', renk: 'cam-gobegi', boyut: 'dev' },
+    { entity_id: 'light.eski_lamba' },
+  ]);
+  assert.equal(red.ok, true, 'görünüm reddi kaydı durdurmaz');
+  assert.deepEqual(red.gorunumHatalari, [
+    { entity_id: 'light.salon_lambasi', alan: 'simge' },
+    { entity_id: 'light.salon_lambasi', alan: 'renk' },
+    { entity_id: 'light.salon_lambasi', alan: 'boyut' },
+  ]);
+  assert.deepEqual(ortam.ayarOku().favoriler[0], { entity_id: 'light.salon_lambasi', ad: 'Salon Lambası', simge: 'ikon:isik', renk: 'mavi', boyut: 'genis', tepsi: true }, 'önceki değerler duruyor');
+
+  const temiz = await kaydet(olay, [{ entity_id: 'light.salon_lambasi', simge: '', renk: '', boyut: 'normal', tepsi: false }, { entity_id: 'light.eski_lamba' }]);
+  assert.deepEqual(temiz.gorunumHatalari, []);
+  assert.deepEqual(ortam.ayarOku().favoriler[0], { entity_id: 'light.salon_lambasi', ad: 'Salon Lambası' }, '"" / normal / false kaydı temizler');
+});
+
+ortamda('sayfalar (o-24): ayarlar kaydıyla gelir, kapı kuralına takılan ad boşaltılıp bildirilir ve kapı / kilit varlığı sayfaya girmez; favori kaydı sayfayı favorilere göre budar', DUZEN_EKRANI, async (ortam) => {
+  haKur(ortam.durum, DUZEN_VARLIKLARI);
+  const sonuc = await ayarlarKaydet(ortam, {
+    sayfalar: [
+      { id: 'abc12', ad: 'Ön kapı', varliklar: ['light.salon_lambasi', 'lock.on_kapi', 'cover.garaj'] },
+      { id: 'def34', ad: '  Mutfak ', varliklar: ['light.salon_lambasi', 'light.salon_lambasi'] },
+    ],
+  });
+  assert.equal(sonuc.ok, true);
+  assert.ok(sonuc.uyarilar.some((u) => u.alan === 'sayfalar' && u.mesaj), 'kapı kuralına takılan sayfa adı bildirilir');
+  const sayfalar = ortam.ayarOku().sayfalar;
+  assert.deepEqual(sayfalar.map((s) => s.ad), ['', 'Mutfak']);
+  assert.doesNotMatch(JSON.stringify(sayfalar), /lock\.|cover\.|garaj/i, 'kapı / kilit varlığı sayfaya girmez');
+  assert.deepEqual(sayfalar[1].varliklar, ['light.salon_lambasi'], 'yinelenen üye tek kalır');
+  assert.deepEqual(JSON.parse(JSON.stringify((await ayarOzeti(ortam)).sayfalar)), sayfalar);
+
+  // sayfa en çok 12 tane olur
+  const cokSayfa = Array.from({ length: 15 }, (_, i) => ({ id: `sy${String(i).padStart(3, '0')}`, ad: `S${i}`, varliklar: [] }));
+  await ayarlarKaydet(ortam, { sayfalar: cokSayfa });
+  assert.ok(ortam.ayarOku().sayfalar.length <= 12);
+
+  // favori kaydı: favori olmayan üyeler sayfalardan budanır
+  await ayarlarKaydet(ortam, { sayfalar: [{ id: 'abc12', ad: 'Akşam', varliklar: ['light.eski_lamba', 'light.salon_lambasi'] }] });
+  const olay = ayarlarOlayi(ortam);
+  await ortam.durum.ipc.get('cihazlar:getir')(olay);
+  await ortam.durum.ipc.get('favoriler:kaydet')(olay, [{ entity_id: 'light.salon_lambasi' }]);
+  assert.deepEqual(ortam.ayarOku().sayfalar[0].varliklar, ['light.salon_lambasi']);
+});
+
+ortamda('düzen geçmişi (o-30): favori kaydı önceki düzeni geçmişe yazar (yalnız zaman, neden, sayı); duzen:don o düzeni geri yükler ve dönüşün kendisi de geri alınabilir', DUZEN_EKRANI, async (ortam) => {
+  haKur(ortam.durum, DUZEN_VARLIKLARI);
+  const olay = ayarlarOlayi(ortam);
+  await ortam.durum.ipc.get('cihazlar:getir')(olay);
+  assert.deepEqual((await duzenIpc(ortam, 'duzen:gecmis')).noktalar, [], 'başlangıçta geçmiş boş');
+
+  await ortam.durum.ipc.get('favoriler:kaydet')(olay, [{ entity_id: 'light.salon_lambasi' }]); // eski lamba kaldırıldı
+  assert.deepEqual(kimlikler(ortam.ayarOku().favoriler), ['light.salon_lambasi']);
+  const g1 = await duzenIpc(ortam, 'duzen:gecmis');
+  assert.equal(g1.ok, true);
+  assert.equal(g1.noktalar.length, 1);
+  const nokta = g1.noktalar[0];
+  assert.equal(nokta.neden, 'kaydet');
+  assert.equal(nokta.favoriSayisi, 2);
+  assert.equal(nokta.sayfaSayisi, 1);
+  assert.ok(Number.isInteger(nokta.id) && Number.isFinite(nokta.zaman));
+  assert.doesNotMatch(JSON.stringify(g1), /light\.|Eski|Okuma|Akşam/, 'geçmiş listesi varlık kimliği, karo adı ya da sayfa adı taşımaz');
+
+  // geçersiz kimlik
+  assert.equal((await duzenIpc(ortam, 'duzen:don', 9999)).ok, false);
+  assert.equal((await duzenIpc(ortam, 'duzen:don', 'x')).ok, false);
+  assert.equal((await duzenIpc(ortam, 'duzen:don')).ok, false);
+  assert.deepEqual(kimlikler(ortam.ayarOku().favoriler), ['light.salon_lambasi'], 'geçersiz dönüş isteği ayarı değiştirmez');
+
+  // geri dön
+  const don = await duzenIpc(ortam, 'duzen:don', nokta.id);
+  assert.deepEqual(don, { ok: true, favoriSayisi: 2, sayfaSayisi: 1, atilan: 0 });
+  const geri = ortam.ayarOku();
+  assert.deepEqual(kimlikler(geri.favoriler), ['light.salon_lambasi', 'light.eski_lamba']);
+  assert.equal(geri.favoriler[1].etiket, 'Okuma köşesi');
+  assert.deepEqual(geri.sayfalar[0].varliklar, ['light.eski_lamba', 'light.salon_lambasi'], 'sayfa üyeliği de geri geldi');
+  assert.equal(geri.yerelAdres, 'http://192.168.1.10:8123', 'adres ve diğer ayarlar değişmez');
+
+  // dönüş de bir nokta bıraktı: dönüşü geri almak mümkün
+  const g2 = await duzenIpc(ortam, 'duzen:gecmis');
+  assert.equal(g2.noktalar.length, 2);
+  assert.equal(g2.noktalar[0].neden, 'don', 'en yeni nokta: dönmeden önceki düzen');
+  assert.equal(g2.noktalar[0].favoriSayisi, 1);
+  await duzenIpc(ortam, 'duzen:don', g2.noktalar[0].id);
+  assert.deepEqual(kimlikler(ortam.ayarOku().favoriler), ['light.salon_lambasi']);
+});
+
+ortamda('onarım (o-28): HA’da bulunamayan favori aynı türden güvenli bir cihaza bağlanır; karo adı, sıra, sayfa üyeliği taşınır ve onarım geçmişe yazılır', DUZEN_EKRANI, async (ortam) => {
+  haKur(ortam.durum, DUZEN_VARLIKLARI);
+  const olay = ayarlarOlayi(ortam);
+  const onar = (eski, yeni) => ortam.durum.ipc.get('favoriler:onar')(olay, eski, yeni);
+
+  const cihazsiz = await onar('light.eski_lamba', 'light.yeni_lamba');
+  assert.equal(cihazsiz.ok, false, 'önce cihaz listesi alınmış olmalı');
+  assert.equal(cihazsiz.neden, 'cihazlar');
+
+  await ortam.durum.ipc.get('cihazlar:getir')(olay);
+  const once = JSON.stringify(ortam.ayarOku());
+  const redler = [
+    [['light.salon_lambasi', 'light.yeni_lamba'], 'bulunuyor', 'çalışan bir favori onarılmaz'],
+    [['light.eski_lamba', 'lock.on_kapi'], 'guvenlik', 'kapı / kilit asla onarım hedefi olamaz'],
+    [['light.eski_lamba', 'button.garaj_kapisi_ac'], 'guvenlik', 'kapı / garaj adlı cihaz hedef olamaz'],
+    [['light.eski_lamba', 'light.salon_lambasi'], 'zaten-var', 'zaten favori olan cihaz'],
+    [['light.eski_lamba', 'scene.film'], 'alan', 'farklı tür'],
+    [['light.olmayan', 'light.yeni_lamba'], 'kayitsiz', 'kayıtlı olmayan favori'],
+    [['light.eski_lamba', 'light.hic_yok'], 'guvenlik', 'güvenli listede olmayan cihaz'],
+    [[42, 'light.yeni_lamba'], 'gecersiz', 'tür denetimi'],
+    [['light.eski_lamba', 'light.eski_lamba'], 'guvenlik', 'kendisiyle onarılmaz (HA’da yok, güvenli listede değil)'],
+  ];
+  for (const [[eski, yeni], neden, aciklama] of redler) {
+    const sonuc = await onar(eski, yeni);
+    assert.equal(sonuc.ok, false, aciklama);
+    assert.ok(sonuc.hata, `${aciklama}: hata metni var`);
+    assert.equal(sonuc.neden, neden, aciklama);
+  }
+  assert.equal(JSON.stringify(ortam.ayarOku()), once, 'reddedilen onarımlar ayarı değiştirmez');
+
+  const sonuc = await onar('light.eski_lamba', 'light.yeni_lamba');
+  assert.deepEqual(sonuc, { ok: true, favoriSayisi: 2 });
+  const ayar = ortam.ayarOku();
+  assert.deepEqual(ayar.favoriler, [SALON, { entity_id: 'light.yeni_lamba', ad: 'Yeni Lamba', etiket: 'Okuma köşesi' }], 'aynı sırada, karo adı ve diğer alanlar taşındı');
+  assert.deepEqual(ayar.sayfalar[0].varliklar, ['light.yeni_lamba', 'light.salon_lambasi'], 'sayfa üyeliği yeni kimliğe geçti');
+  const gecmis = await duzenIpc(ortam, 'duzen:gecmis');
+  assert.equal(gecmis.noktalar[0].neden, 'onar');
+  assert.deepEqual(postlar(ortam), [], 'onarım HA’ya hiçbir servis çağrısı göndermez');
+});
+
+const KARO_MENU_EKRANI = {
+  yoklama: 200,
+  anahtar: true,
+  tohum: { semaSurumu: 6, hazirListeSurumu: 1, favoriler: [SALON, EKRAN_KAPAT, PC_KAPAT], sayfalar: [{ id: 'abc12', ad: 'Akşam', varliklar: ['light.salon_lambasi'] }] },
+};
+
+ortamda('karo bağlam menüsü (o-16): panelden gelen sağ tık menüyü ana süreçte kurar; tepsiye ekle, sayfaya ekle, kaldır (onayla) ve Düzenle… ayara yazılır; kayıtlı olmayan karo için menü açılmaz', KARO_MENU_EKRANI, async (ortam) => {
+  haKur(ortam.durum, D3_VARLIKLARI);
+  await ortam.akit();
+  const panel = await paneliAc(ortam);
+  const olay = yuzeyOlayi(ortam, panel);
+  const sagTik = ortam.durum.ipc.get('yuzey:sag-tik');
+  const acilanlar = [];
+  // Menüyü açar, `sec` ile bir öğe seçtirir ve kapatır (gerçek menüde seçim click, kapanış callback ile gelir).
+  const menudenSec = async (kimlik, sec) => {
+    ortam.durum.menuPopup = (sablon, secenek) => {
+      acilanlar.push(sablon);
+      sec(sablon)?.click();
+      secenek.callback();
+    };
+    const sonuc = await sagTik(olay, kimlik);
+    await ortam.akit();
+    return sonuc;
+  };
+  const etiketler = (sablon) => sablon.filter((o) => o.type !== 'separator').map((o) => o.label);
+  const bul = (sablon, etiket) => sablon.find((o) => o.label === etiket);
+  const ayar = () => ortam.ayarOku();
+
+  // kayıtlı olmayan ya da geçersiz karo: menü hiç açılmaz, HA'ya bir şey gitmez
+  for (const kotu of ['light.kayitsiz', 'lock.on_kapi', 42, undefined]) {
+    assert.deepEqual(await menudenSec(kotu, () => null), { ok: false, tur: 'gecersiz' });
+  }
+  assert.equal(acilanlar.length, 0);
+
+  // ışık: Düzenle…, Tepsiye ekle, Sayfaya ekle, Favorilerden kaldır…
+  await menudenSec('light.salon_lambasi', (sablon) => {
+    assert.deepEqual(etiketler(sablon), ['Düzenle…', 'Tepsiye ekle', 'Sayfaya ekle', 'Favorilerden kaldır…']);
+    return bul(sablon, 'Tepsiye ekle');
+  });
+  assert.equal(ayar().favoriler.find((f) => f.entity_id === 'light.salon_lambasi').tepsi, true, 'tepsiye sabitlendi');
+  await menudenSec('light.salon_lambasi', (sablon) => {
+    assert.ok(etiketler(sablon).includes('Tepsiden kaldır'));
+    return bul(sablon, 'Tepsiden kaldır');
+  });
+  assert.equal('tepsi' in ayar().favoriler.find((f) => f.entity_id === 'light.salon_lambasi'), false, 'sabitleme kalktı');
+
+  // yıkıcı eylem (PC kapat): tepsiye sabitleme önerilmez (zaten onaylı eylemler altında)
+  await menudenSec('button.pc_bilgisayari_kapat', (sablon) => {
+    assert.equal(etiketler(sablon).includes('Tepsiye ekle'), false);
+    assert.equal(etiketler(sablon).includes('Tepsiden kaldır'), false);
+    return null;
+  });
+
+  // sayfaya ekle: alt menüden sayfa seçilir
+  await menudenSec('button.pc_ekran_kapat', (sablon) => {
+    const alt = bul(sablon, 'Sayfaya ekle');
+    assert.deepEqual(alt.submenu.map((o) => [o.label, o.checked]), [['Akşam', false]]);
+    return alt.submenu[0];
+  });
+  assert.deepEqual(ayar().sayfalar[0].varliklar, ['light.salon_lambasi', 'button.pc_ekran_kapat']);
+  await menudenSec('button.pc_ekran_kapat', (sablon) => {
+    const alt = bul(sablon, 'Sayfaya ekle');
+    assert.deepEqual(alt.submenu.map((o) => [o.label, o.checked]), [['Akşam', true]], 'sayfada olan işaretli görünür');
+    return alt.submenu[0]; // çıkar
+  });
+  assert.deepEqual(ayar().sayfalar[0].varliklar, ['light.salon_lambasi']);
+
+  // kaldır: onay ister; vazgeçilirse favori kalır
+  ortam.durum.diyalogYaniti = 1;
+  await menudenSec('button.pc_ekran_kapat', (sablon) => bul(sablon, 'Favorilerden kaldır…'));
+  assert.ok(ayar().favoriler.some((f) => f.entity_id === 'button.pc_ekran_kapat'), 'vazgeçildi: favori kaldı');
+  assert.match(ortam.durum.diyaloglar.at(-1).message, /Ekranı Kapat/);
+  ortam.durum.diyalogYaniti = 0;
+  await menudenSec('button.pc_ekran_kapat', (sablon) => bul(sablon, 'Favorilerden kaldır…'));
+  assert.equal(ayar().favoriler.some((f) => f.entity_id === 'button.pc_ekran_kapat'), false, 'onaylandı: favori kaldırıldı');
+
+  // geçmişe yazıldı: son nokta kaldırmadan öncekini taşır ve geri dönülebilir
+  const gecmis = await duzenIpc(ortam, 'duzen:gecmis');
+  assert.equal(gecmis.noktalar[0].neden, 'menu-kaldir');
+  assert.equal((await duzenIpc(ortam, 'duzen:don', gecmis.noktalar[0].id)).ok, true);
+  assert.ok(ayar().favoriler.some((f) => f.entity_id === 'button.pc_ekran_kapat'), 'geçmişten geri geldi');
+
+  // Düzenle…: Ayarlar açılır ve favoriye götürür (olay ya da ayar özetindeki odakFavori ile, bir kez)
+  await menudenSec('light.salon_lambasi', (sablon) => bul(sablon, 'Düzenle…'));
+  const ayarlarPenceresi = ortam.ayarlarPenceresi();
+  assert.ok(ayarlarPenceresi, 'Ayarlar penceresi açıldı');
+  const gonderildi = ayarlarPenceresi.webContents.mesajlar.some((m) => m.kanal === 'ayarlar:favoriye-git' && m.yuk === 'light.salon_lambasi');
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.ok(gonderildi || ozet.odakFavori === 'light.salon_lambasi', 'Ayarlar o favoriye yönlendirildi');
+  assert.equal(((await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam))).odakFavori ?? null), null, 'odak isteği bir kez verilir');
+  assert.deepEqual(postlar(ortam), [], 'menü işlemleri HA’ya hiçbir servis çağrısı göndermez');
 });

@@ -44,6 +44,26 @@ test('plan: az favoride alt boş; hiç favori yoksa hepsi boş', () => {
   assert.equal(tepsiMenuPlani(karolar(), { ustSayi: 3 }).ust.length, 3);
 });
 
+test('1.4.0 plan (o-16): "tepsiye sabitle" (tepsi: true) zararsız karoları üst düzeyin başına alır; sıra kendi içinde favori sırasıdır; yıkıcı karo sabitlenemez', () => {
+  const m = yuzeyModeliOlustur({
+    favoriler: [
+      { entity_id: 'light.a', ad: 'A' },
+      { entity_id: 'light.b', ad: 'B', tepsi: true },
+      { entity_id: 'light.c', ad: 'C' },
+      { entity_id: 'light.d', ad: 'D', tepsi: true },
+      { entity_id: 'button.pc_bilgisayari_kapat', ad: 'PC', tepsi: true },
+    ],
+    durumAl: () => undefined,
+  }).gruplar.flatMap((g) => g.karolar);
+  const plan = tepsiMenuPlani(m);
+  assert.deepEqual(plan.ust.map((o) => o.kimlik), ['light.b', 'light.d', 'light.a', 'light.c'], 'sabitlenenler başa, geri kalanlar favori sırasıyla');
+  assert.deepEqual(plan.yikici.map((o) => o.kimlik), ['button.pc_bilgisayari_kapat'], 'yıkıcı eylem "Onaylı eylemler" altında kalır');
+  // üst sayı dolunca sabitlenenler yine önce gelir, sabitlenmeyenler alta düşer
+  const dar = tepsiMenuPlani(m, { ustSayi: 2 });
+  assert.deepEqual(dar.ust.map((o) => o.kimlik), ['light.b', 'light.d']);
+  assert.deepEqual(dar.alt.map((o) => o.kimlik), ['light.a', 'light.c']);
+});
+
 test('menuOgesi: aç/kapa onay kutusu, yüzde, ulaşılamıyor; sahne/düğme tür etiketi', () => {
   const taban = { id: 'light.a', etiket: 'LED', alan: 'light', sinif: 'zararsiz', kullanilabilir: true, ulasilamiyor: false };
   const acik = menuOgesi({ ...taban, durum: 'acik', yuzde: 50 });

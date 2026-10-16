@@ -20,6 +20,9 @@ const SOZLUK_ANA = require('../src/lib/ceviri/ana');
 const KOK = path.join(__dirname, '..');
 const HTML = fs.readFileSync(path.join(KOK, 'src', 'ayarlar.html'), 'utf8');
 const BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar.js'), 'utf8');
+const DUZEN_BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar-duzen.js'), 'utf8'); // 1.4.0 düzen: karo görünümü, sayfalar, geçmiş, onarım
+const KARO_GORUNUM_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'karo-gorunum.js'), 'utf8');
+const DUZEN_ISLEMLERI_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'duzen-islemleri.js'), 'utf8');
 const KISAYOL_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'kisayol.js'), 'utf8');
 const ARAMA_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'arama.js'), 'utf8');
 const DIL_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'dil.js'), 'utf8');
@@ -178,6 +181,8 @@ const ALAN_ADLARI = [
   // 1.4.0 bilgi grubu (src/lib/ayar-alanlari.js): sahte ana süreç yükteki değeri olduğu gibi saklar (doğrulama ana süreçte ve kendi testinde)
   'sensorSeridi', 'sensorGrafik', 'sensorGrafikSaat', 'pilEsigi', 'sensorTepsiIpucu', 'ustKart1', 'ustKart2', 'havaVarligi',
   'saatBicimi', 'tarihBicimi', 'takvimler', 'takvimGunSayisi', 'yapilacakListeleri', 'hizliListe',
+  // 1.4.0 düzen grubu: panel sayfaları
+  'sayfalar',
 ];
 
 /** HTML'deki data-i18n / data-i18n-attr işaretli öğeler (kimliği olmayanlar dahil); sayfayiCevir bunları querySelectorAll ile bulur. */
@@ -213,9 +218,13 @@ function sayfayiKur({
   yedektenDonYaniti = null,
   depo = null,
   dilOlayi = true,
+  gecmis = [],
+  donYaniti = null,
+  onarYaniti = null,
+  gecmisYaniti = null,
 }) {
   const sunucu = duzles(ayar);
-  const durum = { yedekler, sonOdak: null };
+  const durum = { yedekler, sonOdak: null, gecmis };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
     const etiket = new RegExp(`<(\\w+)[^>]*\\bid="${kimlik}"`).exec(HTML)?.[1] ?? 'div';
@@ -232,6 +241,7 @@ function sayfayiKur({
   const belgeDinleyicileri = {};
   const pencereDinleyicileri = {};
   let favoriDegistiGeriCagrisi = null;
+  let favoriyeGitGeriCagrisi = null;
   let kapatmaSayisi = 0;
   let getirSayisi = 0;
   const yerelDepo = new Map(Object.entries(depo ?? {}));
@@ -274,6 +284,15 @@ function sayfayiKur({
         if (kisayol) f.kisayol = kisayol;
         const parlaklik = typeof g.parlaklik === 'boolean' ? g.parlaklik : eski?.parlaklik;
         if (parlaklik) f.parlaklik = parlaklik;
+        // Karo görünümü (o-31): ana süreç gibi '' / 'normal' / false değerleri kaydı temizler, gelmeyen alan eskisini korur.
+        const simge = 'simge' in g ? g.simge : eski?.simge;
+        if (simge) f.simge = simge;
+        const renk = 'renk' in g ? g.renk : eski?.renk;
+        if (renk) f.renk = renk;
+        const boyut = 'boyut' in g ? g.boyut : eski?.boyut;
+        if (boyut && boyut !== 'normal') f.boyut = boyut;
+        const tepsi = 'tepsi' in g ? g.tepsi : eski?.tepsi;
+        if (tepsi === true) f.tepsi = true;
         return f;
       });
   }
@@ -364,6 +383,29 @@ function sayfayiKur({
       dilGeriCagrisi = geriCagri;
       return () => {};
     },
+    // 1.4.0 düzen (o-16, o-28, o-30)
+    duzenGecmisiniGetir: async () => {
+      cagrilar.push(['duzenGecmisiniGetir']);
+      return gecmisYaniti ? gecmisYaniti(durum.gecmis) : { ok: true, noktalar: duzles(durum.gecmis) };
+    },
+    duzeneDon: async (id) => {
+      cagrilar.push(['duzeneDon', id]);
+      if (donYaniti) return donYaniti(id, sunucu);
+      return { ok: true, favoriSayisi: (sunucu.favoriler ?? []).length, sayfaSayisi: (sunucu.sayfalar ?? []).length, atilan: 0 };
+    },
+    favoriyiOnar: async (eski, yeni) => {
+      cagrilar.push(['favoriyiOnar', eski, yeni]);
+      if (onarYaniti) return onarYaniti(eski, yeni, sunucu);
+      // Ana süreç gibi: favori yerinde yeni kimliğe bağlanır, sayfalardaki kimlik de değişir.
+      const bilinenAd = new Map((cihazlar?.cihazlar ?? []).map((c) => [c.entity_id, c.ad]));
+      sunucu.favoriler = (sunucu.favoriler ?? []).map((f) => (f.entity_id === eski ? { ...f, entity_id: yeni, ad: bilinenAd.get(yeni) ?? yeni } : f));
+      sunucu.sayfalar = (sunucu.sayfalar ?? []).map((s) => ({ ...s, varliklar: s.varliklar.map((k) => (k === eski ? yeni : k)) }));
+      return { ok: true, favoriSayisi: sunucu.favoriler.length };
+    },
+    onFavoriyeGit: (geriCagri) => {
+      favoriyeGitGeriCagrisi = geriCagri;
+      return () => {};
+    },
   };
 
   const belge = {
@@ -425,6 +467,9 @@ function sayfayiKur({
   vm.runInContext(SOZLUK_AYARLAR_BETIGI, sandbox, { filename: 'ceviri/ayarlar.js' });
   vm.runInContext(KISAYOL_BETIGI, sandbox, { filename: 'kisayol.js' });
   vm.runInContext(ARAMA_BETIGI, sandbox, { filename: 'arama.js' });
+  vm.runInContext(KARO_GORUNUM_BETIGI, sandbox, { filename: 'karo-gorunum.js' });
+  vm.runInContext(DUZEN_ISLEMLERI_BETIGI, sandbox, { filename: 'duzen-islemleri.js' });
+  vm.runInContext(DUZEN_BETIK, sandbox, { filename: 'ayarlar-duzen.js' });
   vm.runInContext(BETIK, sandbox, { filename: 'ayarlar.js' });
   return {
     oge: (kimlik) => ogeler.get(kimlik),
@@ -472,6 +517,15 @@ function sayfayiKur({
       assert.ok(favoriDegistiGeriCagrisi, 'onFavorilerDegisti kaydedilmemiş');
       favoriDegistiGeriCagrisi();
       await akit();
+    },
+    /** Panel karo menüsünden "Düzenle…" (ana süreç 'ayarlar:favoriye-git' gönderdi). */
+    favoriyeGit: async (kimlik) => {
+      assert.ok(favoriyeGitGeriCagrisi, 'onFavoriyeGit kaydedilmemiş');
+      favoriyeGitGeriCagrisi(kimlik);
+      await akit();
+    },
+    gecmisiDegistir: (liste) => {
+      durum.gecmis = liste;
     },
   };
 }
@@ -576,6 +630,7 @@ function gorunurMetinler(sayfa) {
 module.exports = {
   HTML,
   BETIK,
+  DUZEN_BETIK,
   gorunurMetinler,
   AYAR,
   CIHAZLAR,
