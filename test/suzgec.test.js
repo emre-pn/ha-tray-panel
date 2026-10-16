@@ -357,6 +357,23 @@ test('h-03: yeni sözcükler büyük harf, tam genişlik, görünmez karakter, b
   }
 });
 
+test('1.4.0: "siren" yasak parça: adda ya da kimlikte (büyük harf, tam genişlik, görünmez karakter, bitişik yazım, Türkçe ek) engellenir; siren alanı zaten yasaktı', () => {
+  assert.ok(YASAK_PARCALAR.includes('siren'), 'yasak parça listesinde');
+  const tamGenislik = (k) => [...k].map((c) => (/[a-z]/i.test(c) ? String.fromCodePoint(c.charCodeAt(0) + 0xfee0) : c)).join('');
+  for (const ad of ['Siren', 'SİREN', 'Bahçe sireni', 'Sirenler', 'Ev sirenini çal', 'house siren', 'Si\u00ADren', 'Si\u200Bren', tamGenislik('siren'), 'AlarmSiren', 'sirenTest']) {
+    assert.ok(!guvenliVarlikMi(varlik('switch.anahtar', ad)), JSON.stringify(ad));
+    assert.ok(!adGuvenliMi('light.x', ad), JSON.stringify(ad));
+  }
+  for (const kimlik of ['switch.siren_bahce', 'light.ev_sireni', 'input_boolean.sirenmodu', 'button.siren_test']) {
+    assert.ok(!guvenliVarlikMi(varlik(kimlik, 'Röle')), kimlik);
+  }
+  assert.ok(!guvenliVarlikMi(varlik('siren.bahce', 'Bahçe')), 'siren alanı');
+  // masum adlar etkilenmez
+  for (const ad of ['Salon ışık', 'Ekran', 'Sera nemi', 'Pil durumu', 'Wireless ışık']) {
+    assert.ok(guvenliVarlikMi(varlik('light.x', ad)), ad);
+  }
+});
+
 test('h-03: "giriş" ve "entrance" eklenmedi (masum adlar geçer); örnek envanter yeni sözcüklerin hiçbirini içermez', () => {
   for (const ad of ['Giriş Lambası', 'Entrance Light', 'Giris', 'Hayal Lambası']) {
     assert.ok(guvenliVarlikMi(varlik('light.x', ad)), ad);

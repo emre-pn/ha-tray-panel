@@ -178,7 +178,7 @@ test('Güvenlik kuralı (kapı/kilit) açıklaması İngilizcede de eksiksiz: s�
   assert.match(ingilizce, /tile names follow the same rule/);
   assert.match(ingilizce, /removed automatically when you save/);
   const turkce = AYARLAR.tr['ayar.guvenlik.metin'];
-  assert.match(turkce, /^Kilitler \(lock\), alarm sistemleri ve adında ya da kimliğinde "kapı \/ door \/ kilit \/ lock \/ alarm \/ garaj \/ bariyer \/ gate \/ diafon \/ interkom \/ kepenk \/ deadbolt \/ latch \/ buzzer \/ yale \/ shutter" geçen hiçbir cihaz favorilere eklenemez ve bu listede gösterilmez\. Kapılar yalnızca Home Assistant arayüzü içerisinden açılabilir\./);
+  assert.match(turkce, /^Kilitler \(lock\), alarm sistemleri ve adında ya da kimliğinde "kapı \/ door \/ kilit \/ lock \/ alarm \/ garaj \/ bariyer \/ gate \/ diafon \/ interkom \/ kepenk \/ deadbolt \/ latch \/ buzzer \/ yale \/ shutter \/ siren" geçen hiçbir cihaz favorilere eklenemez ve bu listede gösterilmez\. Kapılar yalnızca Home Assistant arayüzü içerisinden açılabilir\./);
 });
 
 test('yer tutucu sayıları: çoğul çiftlerinde ({n}) .bir metni de {n} içerir; sayı verilen her metinde n var', () => {

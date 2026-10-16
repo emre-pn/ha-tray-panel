@@ -72,7 +72,7 @@ function ustBlok(yml, ad) {
   return blok;
 }
 
-test('o-45: taşınabilir derleme tanımlı (portable bloğu, ayrı dosya adı); varsayılan `npm run dist` yalnız kurucuyu üretir; betik sürüme dokunmaz', () => {
+test('o-45: taşınabilir derleme tanımlı (portable bloğu, ayrı dosya adı); varsayılan `npm run dist` yalnız kurucuyu üretir; betik sürümü değiştirmez', () => {
   const yml = oku('electron-builder.yml');
   const portable = ustBlok(yml, 'portable');
   assert.ok(portable, 'portable bloğu var');
@@ -89,7 +89,7 @@ test('o-45: taşınabilir derleme tanımlı (portable bloğu, ayrı dosya adı);
   const paket = JSON.parse(oku('package.json'));
   assert.equal(paket.scripts.dist, 'electron-builder --win nsis --x64 --publish never');
   assert.equal(paket.scripts['dist:tasinabilir'], 'electron-builder --win portable --x64 --publish never');
-  assert.equal(paket.version, '1.3.0', 'sürüme dokunulmadı');
+  assert.equal(paket.version, '1.4.0', 'sürüm yapi.test.js ile aynı (1.4.0)');
 });
 
 test('o-45: portable bloğu electron-builder şemasına uyar (node_modules kuruluysa); CHANGELOG.md paketlenir', () => {

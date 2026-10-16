@@ -13,14 +13,19 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 - Home Assistant WebSocket API'siyle canlı durum; bağlantı yoksa REST yoklaması.
 - Ev içi ve dış adres: uygulama önce ev adresini dener, ulaşamazsa dış adrese geçer.
 - Stream Deck, Görev Zamanlayıcı ve betikler için komut satırı: `"Ev Paneli.exe" --eylem="masa 40"`.
-- Açık ve koyu tema, Windows 11 mika/akrilik görünüm, Türkçe ve İngilizce arayüz.
-- Ayarları dışa/içe aktarma ve otomatik yedekler.
+- İklimlendirme, medya oynatıcı, süpürge, vantilatör, nem alma, seçim, sayı ve zamanlayıcı kartları; ışıklar için renk ve beyaz ton ayarı.
+- İstersen açılan bilgi kartları: grafikli sensör şeridi, saat ve hava durumu, salt okunur takvim ve yapılacaklar listeleri.
+- Sağ tık menüsü, sayfalar (sekmeler), karo simgesi, rengi ve boyutu, geri alınabilir sıralama ve masaüstüne sabitlenen karolar.
+- Home Assistant iletileri, düşük pil ve güncellemeler için panelde bildirimler; uyarı kuralları ve sessiz saatler. Masaüstü bildirimi isteğe bağlıdır.
+- Açık, koyu ve yüksek karşıtlıklı tema; hazır ya da özel renkler, metin boyutu, Windows 11 mika/akrilik görünüm, Türkçe ve İngilizce arayüz.
+- Ayar araması, ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu ve varsayılan olarak kapalı, isteğe bağlı sürüm denetimi.
+- Kurulum gerektirmeyen taşınabilir sürüm.
 
 ## Güvenlik
 
 Uygulama gerçek cihazları yönettiği için bazı kurallar yerleşik ve değiştirilemez:
 
-- Kilitler, alarm panelleri, kapılar, garaj kapıları, bariyerler, diafonlar ve benzerleri hiçbir zaman listelenmez, favoriye eklenmez, kısayola bağlanmaz ve çalıştırılmaz. Bunları içeren sahneler de engellenir.
+- Kilitler, alarm panelleri, sirenler, kapılar, garaj kapıları, bariyerler, diafonlar, kepenkler ve benzerleri hiçbir zaman listelenmez, favoriye eklenmez, kısayola bağlanmaz ve çalıştırılmaz. Bunları içeren sahneler de engellenir.
 - Bilgisayarı kapatmak gibi eylemler için yaklaşık bir saniye basılı tutmak gerekir.
 - Erişim anahtarı Electron `safeStorage` (Windows DPAPI) ile şifrelenir. Günlüğe ya da dışa aktarılan dosyaya girmez; bir adrese gönderilmeden önce o adres anahtarsız doğrulanır.
 - Home Assistant anahtarı reddederse uygulama tekrar denemek yerine o anahtarı her yerde kullanmayı bırakır; böylece HA'nın IP yasağına takılmazsın.
@@ -66,6 +71,7 @@ npm test           # testleri çalıştırır (Home Assistant gerekmez)
 npm run kontrol    # statik denetim
 npm run ikon       # simgeleri yeniden üretir
 npm run dist       # Windows kurulum dosyasını derler
+npm run dist:tasinabilir   # taşınabilir exe'yi derler (kurulumsuz)
 ```
 
 Kod, yorumlar ve tanımlayıcılar Türkçedir. Testler hiçbir zaman gerçek bir Home Assistant'a bağlanmaz; bütün ağ çağrıları sahtedir. Ayrıntılı kılavuz [docs/KILAVUZ.md](docs/KILAVUZ.md), sürüm notları [CHANGELOG.md](CHANGELOG.md) dosyasında.

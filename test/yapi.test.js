@@ -96,11 +96,11 @@ test('offline.js geri sayım bitince kendi başına "tekrar dene" çağırmıyor
   assert.ok(sayac.length > 50 && !sayac.includes('tekrarDene'));
 });
 
-test('package.json test ve kontrol betiklerini tanımlıyor; sürüm 1.3.0 ve README ile tutarlı', () => {
+test('package.json test ve kontrol betiklerini tanımlıyor; sürüm 1.4.0 ve README ile tutarlı', () => {
   const paket = JSON.parse(oku('package.json'));
   assert.equal(paket.scripts.test, 'node --test');
   assert.equal(paket.scripts.kontrol, 'node araclar/kontrol.js');
-  assert.equal(paket.version, '1.3.0');
+  assert.equal(paket.version, '1.4.0');
   assert.equal(JSON.parse(oku('package-lock.json')).version, paket.version, 'package-lock.json sürümü package.json ile aynı olmalı');
   const readme = belgeler();
   assert.ok(readme.includes(`Ev-Paneli-Kurulum-${paket.version}.exe`), 'README kurulum dosyası adı sürümle uyuşmuyor');
@@ -402,24 +402,12 @@ test('README: "bir defa giriş" iddiası yok; oturumun adres (köken) başına o
   assert.match(readme, /npm run kontrol/);
 });
 
-// 1.4.0: yeni betikler belgelere (README / docs/KILAVUZ.md) birleştirme adımında yazılır; o zamana dek ayrı todo denetiminde izlenir.
-const BELGELENECEK_BETIKLER = ['dist:tasinabilir']; // o-45 taşınabilir derleme
-
 test('README: package.json betiklerinin hepsi belgelenmiş (npm start, dist, ikon, test, kontrol)', () => {
   const readme = belgeler();
   const paket = JSON.parse(oku('package.json'));
-  for (const ad of Object.keys(paket.scripts).filter((a) => !BELGELENECEK_BETIKLER.includes(a))) {
+  for (const ad of Object.keys(paket.scripts)) {
     const komut = ad === 'start' || ad === 'test' ? `npm ${ad}` : `npm run ${ad}`;
     assert.ok(readme.includes(komut), `README'de "${komut}" yok`);
-  }
-});
-
-test('README: 1.4.0 betikleri (taşınabilir derleme) belgelenmiş', { todo: 'birleştirme: belgelerde npm run dist:tasinabilir yazılınca todo kaldırılacak' }, () => {
-  const readme = belgeler();
-  const paket = JSON.parse(oku('package.json'));
-  for (const ad of BELGELENECEK_BETIKLER) {
-    assert.ok(Object.hasOwn(paket.scripts, ad), `package.json'da ${ad} betiği yok`);
-    assert.ok(readme.includes(`npm run ${ad}`), `README'de "npm run ${ad}" yok`);
   }
 });
 
@@ -496,10 +484,8 @@ test('README: Görünüm ayarları (şema 5) ve ayar dosyası alanları koddaki 
   }
 });
 
-// 1.4.0: şema 6'ya geçildi (ayar-alanlari.js); belgeler (README / docs/KILAVUZ.md) birleştirme adımında güncellenecek. Belge
-// "şu an 6)" diyene kadar bu denetim todo olarak çalışır (başarısızlığı raporlanır, çalıştırmayı düşürmez); belge güncellenince
-// todo kaldırılmalıdır.
-test('README: ayar şeması sürümü koddakiyle aynı', { todo: 'birleştirme: belgelerde şema sürümü 6 yazılınca todo kaldırılacak' }, () => {
+// Belgeler şema sürümünü "şu an N)" biçiminde söyler; N koddaki SEMA_SURUMU ile aynı olmalıdır.
+test('README: ayar şeması sürümü koddakiyle aynı', () => {
   const { SEMA_SURUMU } = require('../src/lib/ayar-sema');
   assert.match(belgeler(), new RegExp(`şu an ${SEMA_SURUMU}\\)`), 'README şema sürümünü yanlış söylüyor');
 });

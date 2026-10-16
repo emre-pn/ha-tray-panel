@@ -15,7 +15,7 @@
  *    Tabloda olmayan alan (cover — perde dahil —, camera, valve, lock, alarm_control_panel, siren...) guvenliVarlikMi'den geçmez.
  *    FAVORI_ALANLARI 1.3.0'ın tek tıklamalı favori alanlarıdır ve DEĞİŞMEDİ (tepsi menüsü/son kullanılanlar onu kullanır);
  *    favori/karo olabilirlik için alan-kaydi.js karoAlaniMi kullanılır.
- *  - siren alanı Kapı Kuralı alanlarına eklendi ("siren" sözcüğü yasak parçalara EKLENMEDİ: README ve Ayarlar kural metniyle birlikte, belge güncellemesinde eklenecek).
+ *  - siren alanı Kapı Kuralı alanlarına eklendi ve "siren" sözcüğü yasak parçalara eklendi (README, KILAVUZ ve Ayarlar kural metniyle birlikte).
  *  - Yasak cihaz sınıflarına binary_sensor'ın kapı/pencere/açıklık/kurcalama/güvenlik sınıfları eklendi (opening, window,
  *    tamper, safety; door, garage_door, lock zaten vardı). Sınıflar TÜM alanlarda yasaktır.
  *  - Seçenek listesi (`attributes.options`: input_select, select, enum sensör) varsa her seçenek kapı kuralından geçmelidir;
@@ -72,6 +72,7 @@ const YASAK_PARCALAR = [
   'buzzer',
   'yale',
   'shutter',
+  'siren', // 1.4.0: siren alanı zaten yasaktı; adında/kimliğinde geçen her varlık da engellenir (README ve Ayarlar kural metniyle birlikte)
 ];
 // hata-11: yalnız bu TAM belirteçler "door" engelinden muaftır. frontdoor/doorbell/outdoorlight engelli kalır.
 const DOOR_ISTISNA = new Set(['indoor', 'outdoor', 'indoors', 'outdoors']);

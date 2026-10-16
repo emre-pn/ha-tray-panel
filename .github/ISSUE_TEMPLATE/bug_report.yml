@@ -29,7 +29,7 @@ body:
     attributes:
       label: App version
       description: Windows Settings → Apps → Installed apps
-      placeholder: "1.3.0"
+      placeholder: "1.4.0"
     validations:
       required: true
   - type: input
