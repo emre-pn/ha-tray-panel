@@ -38,6 +38,8 @@ const { alanAl, adGuvenliMi, metinGuvenliMi } = require('./suzgec');
 const { kayitliAlanMi, karoAlaniMi } = require('./alan-kaydi');
 const { kisalt } = require('./metin');
 const { sayfalariDuzelt } = require('./sayfalar');
+const { KONUM_MODLARI, VARSAYILAN_KONUM_MODU, OPAKLIK_SINIRI, konumlariDuzelt, tercihEkranDuzelt } = require('./pencere-yerlesim');
+const { EN_COK_KARO, SABITLENEBILIR_ALANLAR, karoKonumlariniDuzelt } = require('./masaustu-karo');
 
 const GUNCEL_EK_SURUM = 6;
 const KORUNAN_ADLAR = new Set(['__proto__', 'constructor', 'prototype', 'semaSurumu']);
@@ -178,6 +180,26 @@ const AYAR_ALANLARI = Object.freeze([
 
   // --- düzen: panel sayfaları (sekmeler; o-24). Doğrulama src/lib/sayfalar.js'dedir. ---
   nesneAlan('sayfalar', { varsayilan: [], duzelt: (ham) => sayfalariDuzelt(ham) }),
+
+  // --- pencere grubu: o-22 üstte tutma, o-32 konum/ekran/opaklık, o-27 tepsi rozeti, o-33 masaüstü karoları ---
+  // o-22: açıkken panel/palet görünürken 'screen-saver' seviyesinde (tam ekran uygulamaların üstünde) durur. Varsayılan KAPALI (1.3.0 davranışı).
+  mantiksalAlan('panelHerZamanUstte', false),
+  // o-32: ana pencere konumu: 'imlec' = her açılışta imlecin ekranında ortala (1.3.0), 'hatirla' = taşındığı yer hatırlanır.
+  secenekAlan('pencereKonumu', KONUM_MODLARI, VARSAYILAN_KONUM_MODU),
+  // Boyut moduna göre kayıtlı konumlar { hizli?, genis? }: makineye özgüdür, dışa aktarılmaz ve Ayarlar sayfasına gitmez.
+  nesneAlan('pencereKonumlari', { varsayilan: {}, duzelt: (ham) => (ham !== null && typeof ham === 'object' && !Array.isArray(ham) ? konumlariDuzelt(ham) : undefined) }, { aktarilir: false, ozette: false }),
+  // Tercih edilen ekran { id, x, y, genislik, yukseklik } ({} = seçilmedi): makineye özgüdür, dışa aktarılmaz.
+  nesneAlan('tercihEkran', { varsayilan: {}, duzelt: tercihEkranDuzelt }, { aktarilir: false }),
+  // Panel opaklığı (yüzde); yalnız opak malzemede uygulanır (akrilik/mica'da tam opak).
+  tamsayiAlan('panelOpaklik', OPAKLIK_SINIRI.en_az, OPAKLIK_SINIRI.en_cok, OPAKLIK_SINIRI.en_cok),
+  // o-27: tepsi simgesi rozeti: 'kapali' | 'isik' (açık ışık sayısı) | 'sensor' (seçilen sensörün kısa değeri). Rozetin sensörü yalnız 'sensor' alanı olabilir (Kapı Kuralı'ndan geçer).
+  secenekAlan('tepsiRozeti', ['kapali', 'isik', 'sensor'], 'kapali'),
+  kimlikAlan('tepsiRozetSensoru', { alanlar: ['sensor'] }),
+  // o-33: masaüstüne sabitlenen karolar: yalnız FAVORİ olan, sabitlenebilir alandaki kimlikler (çalışma anında ayrıca süzülür); konumları makineye özgüdür.
+  kimlikListesiAlan('masaustuKarolari', { enCok: EN_COK_KARO, alanlar: SABITLENEBILIR_ALANLAR }),
+  nesneAlan('masaustuKaroKonumlari', { varsayilan: {}, duzelt: karoKonumlariniDuzelt }, { aktarilir: false, ozette: false }),
+  // Karolar diğer pencerelerin üstünde mi kalsın (varsayılan KAPALI: masaüstünde, pencerelerin altında durur).
+  mantiksalAlan('masaustuKaroUstte', false),
 ]);
 
 /**

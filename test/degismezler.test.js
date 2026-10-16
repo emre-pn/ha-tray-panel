@@ -299,3 +299,111 @@ test('ayarlar.js kapı/kilit varlığını arayüzde kendi başına seçilebilir
   // Favori yükü yalnız seçili kimlikleri taşır; ana süreç yine süzer (favoriler:kaydet -> favorileriBirlestir).
   assert.match(js, /entity_id:\s*kimlik/);
 });
+
+// ---------------------------------------------------------------------------
+// 1.4.0 pencere grubu: masaüstü karoları (o-33) ve tepsi rozeti (o-27) yeni yüzeylerdir; Kapı Kuralı onlar için de değişmez
+// ---------------------------------------------------------------------------
+
+test('masaüstü karoları ve tepsi rozeti: kapı/kilit/alarm/perde varlıkları karo ya da rozet OLAMAZ (örnek envanter ve kandırmacalarla)', () => {
+  const { sabitlenecekKarolar, sabitlenebilirKimlikMi } = require('../src/lib/masaustu-karo');
+  const { sensorRozeti, sensorIpucuEki } = require('../src/lib/tepsi-simgesi');
+  const kapilar = ENVANTER.filter(kapiMi);
+  assert.ok(kapilar.length >= 5);
+  const t = (anahtar) => anahtar;
+
+  // 1. Envanterdeki her kapı varlığı: favori ve seçili olsa da, canlı durumu varken de karo olmaz.
+  const durumlar = new Map(ENVANTER.map((v) => [v.entity_id, { ...v, state: 'on' }]));
+  const sonuc = sabitlenecekKarolar({
+    secili: kapilar.map((v) => v.entity_id),
+    favoriler: kapilar.map((v) => ({ entity_id: v.entity_id, ad: v.attributes.friendly_name })),
+    durumAl: (kimlik) => durumlar.get(kimlik),
+    t,
+  });
+  assert.deepEqual(sonuc, []);
+
+  // 2. Kandırmacalar: kimliği zararsız alanlarda (ışık/anahtar/sensör/sahne) ama adı kapıyı belli edenler.
+  const kandirmaca = [
+    { entity_id: 'light.salon_lambasi', ad: 'Ön Kapı Lambası' },
+    { entity_id: 'switch.priz', ad: 'Garaj Prizi' },
+    { entity_id: 'sensor.sicaklik', ad: 'Kilit pili' },
+    { entity_id: 'sensor.salon_sicaklik', ad: 'Ga​rage sıcaklığı' },
+    { entity_id: 'scene.gece', ad: 'Alarm kur' },
+  ];
+  const kandirmacaSonucu = sabitlenecekKarolar({
+    secili: kandirmaca.map((k) => k.entity_id),
+    favoriler: kandirmaca,
+    durumAl: (kimlik) => ({ entity_id: kimlik, state: '21', attributes: { friendly_name: kandirmaca.find((k) => k.entity_id === kimlik).ad, unit_of_measurement: '°C' } }),
+    t,
+  });
+  assert.deepEqual(kandirmacaSonucu, [], 'adı kapıyı belli eden hiçbir varlık karo olmaz');
+
+  // Kapı sınıflı binary_sensor (kimlik ve ad masum): canlı durumdaki sınıf süzgeci karoyu düşürür.
+  const siniflar = ['door', 'garage_door', 'opening', 'window', 'lock', 'tamper', 'safety'];
+  const sinifli = siniflar.map((sinif) => ({ entity_id: `binary_sensor.algilayici_${sinif.replace('_', '')}`, sinif }));
+  const sinifSonucu = sabitlenecekKarolar({
+    secili: sinifli.map((s) => s.entity_id),
+    favoriler: sinifli.map((s) => ({ entity_id: s.entity_id, ad: 'Algılayıcı' })),
+    durumAl: (kimlik) => ({ entity_id: kimlik, state: 'off', attributes: { friendly_name: 'Algılayıcı', device_class: sinifli.find((s) => s.entity_id === kimlik).sinif } }),
+    t,
+  });
+  assert.deepEqual(sinifSonucu, [], 'kapı/pencere/açıklık/kilit/kurcalama/güvenlik sınıfları masaüstüne sabitlenmez');
+  for (const kimlik of ['lock.on_kapi', 'cover.garaj', 'alarm_control_panel.ev', 'camera.bahce', 'siren.ic', 'climate.salon', 'script.x', 'button.pc_kapat']) {
+    assert.equal(sabitlenebilirKimlikMi(kimlik), false, `${kimlik} sabitlenemez`);
+  }
+
+  // 3. Rozet: sensör adı kapıyı belli ediyorsa ne rozet ne tepsi ipucu eki üretilir; zararsız sensör üretilir.
+  for (const v of kapilar) {
+    const varlik = { entity_id: `sensor.${v.entity_id.split('.')[1]}`, state: '12', attributes: { friendly_name: v.attributes.friendly_name, unit_of_measurement: '%' } };
+    assert.equal(sensorRozeti(varlik), null, `${varlik.entity_id}: kapı sensörü rozet olmaz`);
+    assert.equal(sensorIpucuEki(varlik), null, `${varlik.entity_id}: kapı sensörü tepsi ipucuna girmez`);
+  }
+  assert.equal(sensorRozeti({ entity_id: 'sensor.pil', state: '12', attributes: { friendly_name: 'Telefon pili', unit_of_measurement: '%' } })?.metin, '12');
+  assert.equal(sensorRozeti({ entity_id: 'sensor.giris_kapisi', state: '1', attributes: { friendly_name: 'Giriş', unit_of_measurement: '%' } }), null);
+  assert.equal(sensorRozeti({ entity_id: 'lock.on_kapi', state: '12', attributes: { friendly_name: 'Ön kapı' } }), null, 'sensör olmayan alan rozet olmaz');
+  assert.equal(sensorRozeti({ entity_id: 'light.salon', state: '12', attributes: {} }), null);
+});
+
+test('masaüstü karosu eylemi tek yoldan geçer: karo sayfası kimlik/servis gönderemez, eylem YALNIZ karo yöneticisinden ve gönderen denetiminden sonra çağrılır', () => {
+  const kaynaklar = kaynaklariTara();
+  assert.deepEqual(
+    kaynaklar.filter(([, icerik]) => /\.masaustundenCalistir\(/.test(icerik)).map(([ad]) => ad),
+    ['src/masaustu-karolari.js'],
+    'eylem.masaustundenCalistir yalnız masaüstü karo yöneticisinden çağrılır (main.js doğrudan çağırmaz)',
+  );
+  const yonetici = oku('src/masaustu-karolari.js');
+  const kanal = yonetici.slice(yonetici.indexOf("ipcMain.handle('karo:calistir'"), yonetici.indexOf("ipcMain.on('karo:kaldir'"));
+  assert.ok(kanal.indexOf('karodanBul(olay)') >= 0 && kanal.indexOf('karodanBul(olay)') < kanal.indexOf('eylem.masaustundenCalistir('), 'gönderen denetimi eylemden ÖNCE');
+  assert.ok(kanal.indexOf('karoYukunuDuzelt(yuk)') < kanal.indexOf('eylem.masaustundenCalistir('), 'yük doğrulaması eylemden ÖNCE');
+  assert.doesNotMatch(kanal, /yuk\.kimlik|duzgun\.kimlik|yuk\.servis|duzgun\.servis/, 'karo kimliği sayfadan alınmaz; yalnız pencere kaydındaki kimlik kullanılır');
+  const cagrilar = [...kanal.matchAll(/eylem\.masaustundenCalistir\(\{([^}]*)\}\)/g)];
+  assert.equal(cagrilar.length, 2);
+  for (const cagri of cagrilar) {
+    assert.match(cagri[1], /^\s*kimlik: e\.kimlik(, parlaklik: duzgun\.parlaklik)?\s*$/, 'eyleme yalnız pencereye bağlı kimlik (ve doğrulanmış parlaklık) gider');
+  }
+  // Karo yöneticisi kendi içinde HA'ya istek göndermez ve servis adı taşımaz.
+  assert.doesNotMatch(yonetici, /\/api\/|yontem:|fetch\(|net\.request/, 'karo yöneticisi ağa çıkmaz');
+  assert.doesNotMatch(yonetici, /light\/toggle|turn_on|turn_off|unlock|open_cover/, 'servis adları eylem hattında kalır');
+  // Eylem tarafı: kaynak "masaustu" yıkıcı eylemi ve yasak sınıfı reddeder; yalnız zararsız çalışır.
+  assert.equal(kaynakIzni(SINIF.YIKICI, 'masaustu').izin, false);
+  assert.equal(kaynakIzni(SINIF.YASAK, 'masaustu').izin, false);
+  assert.equal(kaynakIzni(SINIF.ZARARSIZ, 'masaustu').izin, true);
+  // Ana süreç eylemi karodan başlatmaz (üç kullanıcı giriş noktası değişmedi). kayitKaynagiEkle eylem DEĞİL: yalnız kayıtlı varlık
+  // kaynağı bildirir (bilgi kartlarının seçili varlıkları; bilgi-modeli.js bilgiKaydi).
+  const mainEylemleri = [...oku('src/main.js').matchAll(/\beylem\.(\w+)\(/g)].map((m) => m[1]).filter((ad) => ad !== 'kayitKaynagiEkle');
+  assert.deepEqual(mainEylemleri.sort(), ['komutSatirindan', 'kisayolla', 'tepsiTikla'].sort());
+});
+
+test('masaüstü karosu penceresi: yalnız yerel dosya, sandbox + contextIsolation, CSP satır içi betik yok, innerHTML yok', () => {
+  const html = oku('src/masaustu-karo.html');
+  assert.match(html, /default-src 'none'/);
+  assert.match(html, /connect-src 'none'/);
+  assert.doesNotMatch(html, /unsafe-inline|unsafe-eval/);
+  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)/i, 'satır içi betik yok');
+  const sayfa = oku('src/masaustu-karo-sayfa.js').replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(sayfa, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/, 'karo sayfası yalnız textContent ile yazar');
+  const yerel = oku('src/yerel-pencere.js');
+  assert.match(yerel, /sandbox:\s*true/);
+  assert.match(yerel, /contextIsolation:\s*true/);
+  assert.match(yerel, /nodeIntegration:\s*false/);
+  assert.match(oku('src/masaustu-karolari.js'), /yerelPencereOlustur\(/, 'pencere ortak yerel-pencere kurucusundan çıkar (uzak adres gezinmesi engelli)');
+});

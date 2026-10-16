@@ -5,7 +5,7 @@
  * { tr: {...}, en: {...} }.
  * Her iki dilde aynı anahtar kümesi ve aynı {yer tutucular} olmalıdır (test/dil.test.js). tr metinleri bugünkü Türkçe metnin aynısıdır.
  * Satırlar [anahtar, tr, en] üçlüleridir; iki sözlük aynı listeden türetilir, böylece anahtar kümeleri ayrışamaz.
- * Anahtar önekleri: yuzey.* (panel ve palet), kose.* (köşe bildirimi), offline.* (çevrimdışı / bağlantı sayfası).
+ * Anahtar önekleri: yuzey.* (panel ve palet), kose.* (köşe bildirimi), offline.* (çevrimdışı / bağlantı sayfası), masaustu.* (masaüstü karosu).
  * Hem Node'da (require) hem renderer'da (<script src="lib/ceviri/yuzey.js">, window.EvCeviriYuzey) çalışır.
  */
 (function (kok, fabrika) {
@@ -372,6 +372,14 @@
     ['offline.hata.bilinmeyen',
       'Home Assistant sunucusuna ulaşılamadı ({kod}). Lütfen ağınızı kontrol edin.',
       'Could not reach the Home Assistant server ({kod}). Please check your network.'],
+
+    // --- Masaüstü karosu: masaüstüne sabitlenen küçük pencere (src/masaustu-karo.html, o-33) ---
+    ['masaustu.sayfaBasligi', 'Ev Paneli — Masaüstü Karosu', 'Home Panel — Desktop Tile'],
+    ['masaustu.kaldir', 'Masaüstünden kaldır', 'Remove from desktop'],
+    ['masaustu.onayarlar', 'Parlaklık ön ayarları', 'Brightness presets'],
+    ['masaustu.baglanti.yedek', 'Yedek mod', 'Fallback mode'],
+    ['masaustu.tiklaDegistir', '{etiket} — tıklayarak aç/kapat', '{etiket} — click to switch on/off'],
+    ['masaustu.tiklaCalistir', '{etiket} — tıklayarak çalıştır', '{etiket} — click to run'],
   ];
 
   const tr = {};

@@ -19,6 +19,20 @@ const {
   yakinlastirmaTusu,
   yakinlastirmaDegeri,
   yuzeyBoyutu,
+  KONUM_MODLARI,
+  OPAKLIK_SINIRI,
+  konumDuzelt,
+  konumlariDuzelt,
+  tercihEkranDuzelt,
+  ekranlariOzetle,
+  tercihKaydiOlustur,
+  tercihEkranBul,
+  enCokKesisenEkran,
+  alanaSigdir,
+  yeterinceGorunurMu,
+  anaPencereHedefi,
+  pencereKonumKaydiHesapla,
+  opaklikOrani,
 } = require('../src/lib/pencere-yerlesim');
 
 const icinde = (hedef, alan) =>
@@ -297,4 +311,152 @@ test('yuzeyYuksekligiKirp: ölçek verilmezse eski sınırlar (120..640); ölçe
   assert.equal(yuzeyYuksekligiKirp(2000, alan, 2), 1024);
   assert.equal(yuzeyYuksekligiKirp(900, alan, 0.5), 640, '1\'den küçük ölçek sınırı küçültmez');
   assert.equal(yuzeyYuksekligiKirp(NaN, alan, 2), null);
+});
+
+// ---------------------------------------------------------------------------
+// 1.4.0 (o-32): konum kaydı, tercih edilen ekran, ekrana taşı, opaklık
+// ---------------------------------------------------------------------------
+
+const ekranBirinci = { id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 };
+const ekranSol = { id: 2, bounds: { x: -1280, y: 0, width: 1280, height: 1024 }, workArea: { x: -1280, y: 0, width: 1280, height: 984 }, scaleFactor: 1.25 };
+const ekranlar2 = ekranlariOzetle([ekranSol, ekranBirinci], 1);
+
+test('KONUM_MODLARI: yalnız imlec ve hatirla; OPAKLIK_SINIRI 50..100', () => {
+  assert.deepEqual([...KONUM_MODLARI], ['imlec', 'hatirla']);
+  assert.deepEqual({ ...OPAKLIK_SINIRI }, { en_az: 50, en_cok: 100 });
+});
+
+test('konumDuzelt: tam sayı konum geçerli (negatif de), ondalık yuvarlanır; bozuk değerler null', () => {
+  assert.deepEqual(konumDuzelt({ x: 10, y: 20 }), { x: 10, y: 20 });
+  assert.deepEqual(konumDuzelt({ x: -1280, y: -40 }), { x: -1280, y: -40 }, 'sol/üst monitör negatif konumdur');
+  assert.deepEqual(konumDuzelt({ x: 10.6, y: 20.4 }), { x: 11, y: 20 });
+  for (const kotu of [null, undefined, 5, 'x', [], {}, { x: 1 }, { y: 1 }, { x: '1', y: 2 }, { x: NaN, y: 0 }, { x: Infinity, y: 0 }, { x: 1e9, y: 0 }]) {
+    assert.equal(konumDuzelt(kotu), null, JSON.stringify(kotu));
+  }
+});
+
+test('konumlariDuzelt: yalnız hizli/genis yuvaları, geçersiz yuva ve bilinmeyen anahtar atılır; çıktı yeni nesnedir', () => {
+  assert.deepEqual(konumlariDuzelt({ hizli: { x: 1, y: 2 }, genis: { x: 'a', y: 2 }, baska: { x: 5, y: 5 } }), { hizli: { x: 1, y: 2 } });
+  assert.deepEqual(konumlariDuzelt(null), {});
+  assert.deepEqual(konumlariDuzelt([]), {});
+  const girdi = { genis: { x: 3, y: 4, fazla: 1 } };
+  const cikti = konumlariDuzelt(girdi);
+  assert.deepEqual(cikti, { genis: { x: 3, y: 4 } }, 'yuva içindeki fazladan alan taşınmaz');
+  assert.notEqual(cikti.genis, girdi.genis);
+});
+
+test('tercihEkranDuzelt: boş nesne = tercih yok; tam kayıt korunur; bozuk biçim undefined (ayar alanı reddeder)', () => {
+  assert.deepEqual(tercihEkranDuzelt({}), {});
+  assert.deepEqual(tercihEkranDuzelt({ id: 3, x: -1280, y: 0, genislik: 1280, yukseklik: 1024 }), { id: 3, x: -1280, y: 0, genislik: 1280, yukseklik: 1024 });
+  assert.deepEqual(tercihEkranDuzelt({ id: 3, x: 1.4, y: 2.6, genislik: 800, yukseklik: 600, fazla: 'x' }), { id: 3, x: 1, y: 3, genislik: 800, yukseklik: 600 });
+  for (const kotu of [null, undefined, 3, 'a', [], { id: -1, x: 0, y: 0, genislik: 1, yukseklik: 1 }, { id: 1.5, x: 0, y: 0, genislik: 1, yukseklik: 1 }, { id: '1', x: 0, y: 0, genislik: 1, yukseklik: 1 }, { id: 1, x: 0, y: 0, genislik: 0, yukseklik: 1 }, { id: 1, x: 0, y: 0, genislik: 1, yukseklik: 100001 }, { id: 1, x: 'a', y: 0, genislik: 1, yukseklik: 1 }, { id: 1 }]) {
+    assert.equal(tercihEkranDuzelt(kotu), undefined, JSON.stringify(kotu));
+  }
+});
+
+test('ekranlariOzetle: birincil önce, sonra soldan sağa; bozuk ekran atılır; en çok 16; calismaAlani yoksa sınırlar', () => {
+  assert.deepEqual(
+    ekranlar2.map((e) => [e.id, e.birincil]),
+    [[1, true], [2, false]],
+  );
+  assert.deepEqual(ekranlar2[1].calismaAlani, { x: -1280, y: 0, width: 1280, height: 984 });
+  const bozuk = ekranlariOzetle([null, { id: 'a', bounds: ekranBirinci.bounds }, { id: 4, bounds: { x: 0, y: 0, width: 0, height: 5 } }, { id: -2, bounds: ekranBirinci.bounds }, { id: 7, bounds: ekranBirinci.bounds }], 7);
+  assert.deepEqual(bozuk.map((e) => e.id), [7]);
+  assert.deepEqual(bozuk[0].calismaAlani, ekranBirinci.bounds, 'workArea bozuksa tüm alan');
+  assert.deepEqual(ekranlariOzetle('x'), []);
+  assert.deepEqual(ekranlariOzetle(undefined), []);
+  const cok = Array.from({ length: 30 }, (_, i) => ({ id: i, bounds: { x: i * 100, y: 0, width: 100, height: 100 } }));
+  assert.equal(ekranlariOzetle(cok).length, 16);
+});
+
+test('tercihKaydiOlustur + tercihEkranBul: kimlikle eşleşir; kimlik değişince aynı yer ve boyutla; yoksa null', () => {
+  const sol = ekranlar2.find((e) => e.id === 2);
+  const kayit = tercihKaydiOlustur(sol);
+  assert.deepEqual(kayit, { id: 2, x: -1280, y: 0, genislik: 1280, yukseklik: 1024 });
+  assert.deepEqual(tercihEkranDuzelt(kayit), kayit, 'oluşturulan kayıt doğrulamadan geçer');
+  assert.equal(tercihEkranBul(ekranlar2, kayit).id, 2);
+  assert.equal(tercihEkranBul(ekranlar2, { ...kayit, id: 99 }).id, 2, 'kimlik değişti, sınırlar aynı');
+  assert.equal(tercihEkranBul(ekranlar2, { ...kayit, id: 99, genislik: 1024 }), null, 'sökülmüş ekran');
+  assert.equal(tercihEkranBul(ekranlar2, {}), null);
+  assert.equal(tercihEkranBul(ekranlar2, null), null);
+  assert.equal(tercihEkranBul(null, kayit), null);
+});
+
+test('enCokKesisenEkran / alanaSigdir / yeterinceGorunurMu', () => {
+  assert.equal(enCokKesisenEkran(ekranlar2, { x: -100, y: 0, width: 400, height: 300 }).id, 1, '300 piksel birincilde, 100 solda');
+  assert.equal(enCokKesisenEkran(ekranlar2, { x: -900, y: 10, width: 400, height: 300 }).id, 2);
+  assert.equal(enCokKesisenEkran(ekranlar2, { x: 5000, y: 5000, width: 100, height: 100 }), null);
+  const alan = { x: 0, y: 0, width: 1000, height: 800 };
+  assert.deepEqual(alanaSigdir({ x: 900, y: 700, width: 300, height: 300 }, alan), { x: 700, y: 500, width: 300, height: 300 }, 'taşan pencere içeri kaydırılır');
+  assert.deepEqual(alanaSigdir({ x: -50, y: -50, width: 3000, height: 2000 }, alan), { x: 0, y: 0, width: 1000, height: 800 }, 'büyük pencere alana küçülür');
+  const sol = ekranlar2.find((e) => e.id === 2);
+  assert.equal(yeterinceGorunurMu({ x: -1200, y: 100, width: 400, height: 300 }, sol), true);
+  assert.equal(yeterinceGorunurMu({ x: -10, y: 100, width: 400, height: 300 }, sol), false, 'yalnız 10 piksel girer');
+});
+
+test('anaPencereHedefi: varsayılan (imlec) imleç ekranında ortalar; tercih ekran bağlıysa orada ortalar', () => {
+  const boyut = { width: 560, height: 780 };
+  const imlecAlani = ekranBirinci.workArea;
+  const a = anaPencereHedefi({ boyut, imlecAlani });
+  assert.equal(a.kaynak, 'imlec');
+  assert.deepEqual({ x: a.x, y: a.y, width: a.width, height: a.height }, { ...ortala(imlecAlani, boyut) });
+  const sol = ekranlar2.find((e) => e.id === 2);
+  const b = anaPencereHedefi({ boyut, imlecAlani, tercihEkran: sol, ekranlar: ekranlar2 });
+  assert.equal(b.kaynak, 'tercih');
+  assert.ok(icinde(b, sol.calismaAlani));
+  assert.equal(b.x, Math.round(-1280 + (1280 - 560) / 2));
+});
+
+test('anaPencereHedefi: konum "hatirla" ve kayıt görünürse kayıt kullanılır; imlec modunda kayıt yok sayılır', () => {
+  const boyut = { width: 560, height: 780 };
+  const imlecAlani = ekranBirinci.workArea;
+  const kayitli = anaPencereHedefi({ boyut, konumModu: 'hatirla', konum: { x: 100, y: 50 }, ekranlar: ekranlar2, imlecAlani });
+  assert.deepEqual({ x: kayitli.x, y: kayitli.y, kaynak: kayitli.kaynak }, { x: 100, y: 50, kaynak: 'kayit' });
+  const imlecte = anaPencereHedefi({ boyut, konumModu: 'imlec', konum: { x: 100, y: 50 }, ekranlar: ekranlar2, imlecAlani });
+  assert.equal(imlecte.kaynak, 'imlec');
+  const solda = anaPencereHedefi({ boyut, konumModu: 'hatirla', konum: { x: -1100, y: 20 }, ekranlar: ekranlar2, imlecAlani });
+  assert.equal(solda.kaynak, 'kayit');
+  assert.equal(solda.x, -1100, 'negatif konum (sol monitör) korunur');
+});
+
+test('anaPencereHedefi: kayıtlı konumun ekranı sökülmüşse (ya da çok az görünüyorsa) imleç/tercih ekranına düşer; kayıt taşırsa içeri alınır', () => {
+  const boyut = { width: 560, height: 780 };
+  const imlecAlani = ekranBirinci.workArea;
+  const tekEkran = ekranlariOzetle([ekranBirinci], 1);
+  const dusen = anaPencereHedefi({ boyut, konumModu: 'hatirla', konum: { x: -1100, y: 20 }, ekranlar: tekEkran, imlecAlani });
+  assert.equal(dusen.kaynak, 'imlec', 'sol ekran yok: pencere görünmez bir yerde açılmaz');
+  assert.ok(icinde(dusen, imlecAlani));
+  const azGorunen = anaPencereHedefi({ boyut, konumModu: 'hatirla', konum: { x: 1900, y: 20 }, ekranlar: tekEkran, imlecAlani });
+  assert.equal(azGorunen.kaynak, 'imlec', 'yalnız 20 piksel görünüyor');
+  const tasan = anaPencereHedefi({ boyut, konumModu: 'hatirla', konum: { x: 1700, y: 600 }, ekranlar: tekEkran, imlecAlani });
+  assert.equal(tasan.kaynak, 'kayit');
+  assert.ok(icinde(tasan, imlecAlani), 'çalışma alanına sığdırılır');
+  const sol = ekranlar2.find((e) => e.id === 2);
+  const baskaEkranda = anaPencereHedefi({ boyut, konumModu: 'hatirla', konum: { x: 100, y: 50 }, tercihEkran: sol, ekranlar: ekranlar2, imlecAlani });
+  assert.equal(baskaEkranda.kaynak, 'tercih', 'tercih edilen ekran başkasıysa kayıt yok sayılır');
+});
+
+test('pencereKonumKaydiHesapla: yalnız "hatirla"; kullanıcı taşıdıysa yeni kayıt; hedefte kaldıysa ya da aynıysa null', () => {
+  const temel = { konumModu: 'hatirla', fizikselMod: 'hizli', normalSinirlar: { x: 300, y: 120, width: 560, height: 780 }, hedef: { mod: 'hizli', x: 680, y: 130 }, mevcut: {} };
+  assert.deepEqual(pencereKonumKaydiHesapla(temel), { hizli: { x: 300, y: 120 } });
+  assert.equal(pencereKonumKaydiHesapla({ ...temel, konumModu: 'imlec' }), null);
+  assert.equal(pencereKonumKaydiHesapla({ ...temel, fizikselMod: 'bilinmeyen' }), null);
+  assert.equal(pencereKonumKaydiHesapla({ ...temel, normalSinirlar: { x: 681, y: 129, width: 560, height: 780 } }), null, 'hedefte kaldı (2 piksel tolerans)');
+  assert.equal(pencereKonumKaydiHesapla({ ...temel, mevcut: { hizli: { x: 300, y: 120 } } }), null, 'aynı konum tekrar yazılmaz');
+  assert.equal(pencereKonumKaydiHesapla({ ...temel, normalSinirlar: { x: NaN, y: 1 } }), null);
+  assert.equal(pencereKonumKaydiHesapla({ ...temel, normalSinirlar: null }), null);
+});
+
+test('pencereKonumKaydiHesapla: diğer modun kaydı korunur; hedef başka moddaysa taşıma sayılır; bozuk mevcut yuva atılır', () => {
+  const temel = { konumModu: 'hatirla', fizikselMod: 'genis', normalSinirlar: { x: -900, y: 40, width: 1280, height: 820 }, hedef: { mod: 'hizli', x: -900, y: 40 }, mevcut: { hizli: { x: 5, y: 6 }, genis: { x: 'a', y: 1 } } };
+  assert.deepEqual(pencereKonumKaydiHesapla(temel), { hizli: { x: 5, y: 6 }, genis: { x: -900, y: 40 } });
+  assert.equal(pencereKonumKaydiHesapla({ ...temel, hedef: null }) !== null, true);
+});
+
+test('opaklikOrani: 50..100 yüzde -> oran; aralık dışı ve sayı olmayan tam opak', () => {
+  assert.equal(opaklikOrani(100), 1);
+  assert.equal(opaklikOrani(75), 0.75);
+  assert.equal(opaklikOrani(50), 0.5);
+  assert.equal(opaklikOrani(74.6), 0.75, 'yuvarlanır');
+  for (const kotu of [49, 101, 0, -5, NaN, Infinity, '80', null, undefined]) assert.equal(opaklikOrani(kotu), 1, String(kotu));
 });

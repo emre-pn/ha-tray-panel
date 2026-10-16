@@ -256,6 +256,188 @@ function yuzeyBoyutu(taban, cssYukseklik, olcek, workArea) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// 1.4.0 (o-32): pencere konumu kaydı, tercih edilen ekran, "ekrana taşı" ve panel opaklığı (saf).
+// ---------------------------------------------------------------------------
+
+const KONUM_MODLARI = Object.freeze(['imlec', 'hatirla']);
+const VARSAYILAN_KONUM_MODU = 'imlec';
+const OPAKLIK_SINIRI = Object.freeze({ en_az: 50, en_cok: 100 });
+const EKRAN_GORUNUR_PAYI = 64; // DIP: kayıtlı konumdaki pencerenin bir ekranın çalışma alanına en az bu kadar (en/boy) girmesi gerekir
+const EN_COK_EKRAN_SAYISI = 16;
+
+const duzNesneMi = (d) => !!d && typeof d === 'object' && !Array.isArray(d);
+const tamSayiMi = (d, enAz, enCok) => Number.isInteger(d) && d >= enAz && d <= enCok;
+
+/** Kayıtlı pencere konumunu doğrular: { x, y } (tam sayı, çok büyük değil) ya da null. Negatif değer (sol/üst monitör) geçerlidir. */
+function konumDuzelt(ham) {
+  if (!duzNesneMi(ham) || !sayi(ham.x) || !sayi(ham.y)) return null;
+  return { x: Math.round(ham.x), y: Math.round(ham.y) };
+}
+
+/** Boyut moduna göre kayıtlı konumlar { hizli?: {x,y}, genis?: {x,y} }; geçersiz yuva atılır, bilinmeyen anahtar düşer. */
+function konumlariDuzelt(ham) {
+  const sonuc = {};
+  if (!duzNesneMi(ham)) return sonuc;
+  for (const mod of PENCERE_BOYUTLARI) {
+    const konum = konumDuzelt(ham[mod]);
+    if (konum) sonuc[mod] = konum;
+  }
+  return sonuc;
+}
+
+/**
+ * Tercih edilen ekran kaydı: yok = {} ; var = { id, x, y, genislik, yukseklik } (ekranın kimliği ve sınırları; kimlik değişirse
+ * aynı yerdeki aynı çözünürlüklü ekran eşleşsin diye sınırlar da saklanır). Biçimi bozuk ise undefined (ayar alanı reddeder).
+ */
+function tercihEkranDuzelt(ham) {
+  if (!duzNesneMi(ham)) return undefined;
+  if (Object.keys(ham).length === 0 || ham.id === undefined) return {};
+  if (!tamSayiMi(ham.id, 0, Number.MAX_SAFE_INTEGER)) return undefined;
+  if (!sayi(ham.x) || !sayi(ham.y) || !tamSayiMi(ham.genislik, 1, EN_COK_DEGER) || !tamSayiMi(ham.yukseklik, 1, EN_COK_DEGER)) return undefined;
+  return { id: ham.id, x: Math.round(ham.x), y: Math.round(ham.y), genislik: ham.genislik, yukseklik: ham.yukseklik };
+}
+
+/**
+ * Electron Display listesini sade ekran özetlerine çevirir: { id, sinirlar, calismaAlani, birincil }. Sınırı bozuk ekran atılır.
+ * Sıra: birincil ekran önce, sonra soldan sağa, yukarıdan aşağıya (etiketlerdeki "Ekran N" sırası). En çok 16 ekran.
+ * @param {object[]} ekranlar screen.getAllDisplays()
+ * @param {number|null} [birincilId] screen.getPrimaryDisplay().id
+ */
+function ekranlariOzetle(ekranlar, birincilId = null) {
+  const liste = [];
+  for (const e of Array.isArray(ekranlar) ? ekranlar : []) {
+    if (!e || !sinirlarGecerli(e.bounds) || !Number.isInteger(e.id) || e.id < 0) continue;
+    const calisma = sinirlarGecerli(e.workArea) ? e.workArea : e.bounds;
+    liste.push({
+      id: e.id,
+      sinirlar: { x: e.bounds.x, y: e.bounds.y, width: e.bounds.width, height: e.bounds.height },
+      calismaAlani: { x: calisma.x, y: calisma.y, width: calisma.width, height: calisma.height },
+      birincil: e.id === birincilId,
+    });
+  }
+  liste.sort((a, b) => Number(b.birincil) - Number(a.birincil) || a.sinirlar.x - b.sinirlar.x || a.sinirlar.y - b.sinirlar.y || a.id - b.id);
+  return liste.slice(0, EN_COK_EKRAN_SAYISI);
+}
+
+/** Bir ekran özetinden tercih kaydı (ayara yazılan biçim). */
+function tercihKaydiOlustur(ekran) {
+  return { id: ekran.id, x: ekran.sinirlar.x, y: ekran.sinirlar.y, genislik: ekran.sinirlar.width, yukseklik: ekran.sinirlar.height };
+}
+
+/**
+ * Tercih edilen ekranı bağlı ekranlar arasında bulur: önce kimlik; kimlik değişmişse aynı konumda aynı boyutta olan ekran.
+ * Bulunamazsa (ekran sökülmüş) null: pencere imlecin ekranına düşer.
+ */
+function tercihEkranBul(ekranlar, tercih) {
+  if (!Array.isArray(ekranlar) || !duzNesneMi(tercih) || tercih.id === undefined) return null;
+  const kimlikle = ekranlar.find((e) => e.id === tercih.id);
+  if (kimlikle) return kimlikle;
+  return (
+    ekranlar.find(
+      (e) => e.sinirlar.x === tercih.x && e.sinirlar.y === tercih.y && e.sinirlar.width === tercih.genislik && e.sinirlar.height === tercih.yukseklik,
+    ) ?? null
+  );
+}
+
+/** İki dikdörtgenin kesişim alanı (px²); kesişmiyorsa 0. */
+function kesisimAlani(a, b) {
+  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/** Dikdörtgenle çalışma alanı en çok kesişen ekran; hiçbiriyle kesişmiyorsa null. */
+function enCokKesisenEkran(ekranlar, dikdortgen) {
+  let en = null;
+  let enAlan = 0;
+  for (const ekran of ekranlar) {
+    const alan = kesisimAlani(dikdortgen, ekran.calismaAlani);
+    if (alan > enAlan) {
+      en = ekran;
+      enAlan = alan;
+    }
+  }
+  return en;
+}
+
+/** Dikdörtgeni çalışma alanına sığdırır: alandan büyükse küçültür, taşıyorsa kaydırır (kenar boşluğu bırakmaz). */
+function alanaSigdir(dikdortgen, alan) {
+  const width = Math.max(1, Math.min(Math.round(dikdortgen.width), Math.round(alan.width)));
+  const height = Math.max(1, Math.min(Math.round(dikdortgen.height), Math.round(alan.height)));
+  const x = Math.min(Math.max(Math.round(dikdortgen.x), Math.round(alan.x)), Math.round(alan.x + alan.width) - width);
+  const y = Math.min(Math.max(Math.round(dikdortgen.y), Math.round(alan.y)), Math.round(alan.y + alan.height) - height);
+  return { x, y, width, height };
+}
+
+/** Dikdörtgen bir ekranın çalışma alanında yeterince görünür mü (ekran sökülmüşse ya da çözünürlük düşmüşse görünmez)? */
+function yeterinceGorunurMu(dikdortgen, ekran) {
+  const alan = ekran.calismaAlani;
+  const w = Math.min(dikdortgen.x + dikdortgen.width, alan.x + alan.width) - Math.max(dikdortgen.x, alan.x);
+  const h = Math.min(dikdortgen.y + dikdortgen.height, alan.y + alan.height) - Math.max(dikdortgen.y, alan.y);
+  return w >= Math.min(EKRAN_GORUNUR_PAYI, dikdortgen.width) && h >= Math.min(EKRAN_GORUNUR_PAYI, dikdortgen.height);
+}
+
+/**
+ * Ana pencerenin gösterimdeki hedef sınırları (saf). Karar sırası:
+ *  1. Konum "hatırla" ise ve bu moda ait kayıtlı konum bir ekranda yeterince görünüyorsa (tercih edilen bir ekran varsa kayıt o
+ *     ekrandaysa): kayıtlı konum, çalışma alanına sığdırılarak kullanılır ('kayit').
+ *  2. Tercih edilen ekran bağlıysa: o ekranın çalışma alanında ortalanır ('tercih').
+ *  3. Aksi halde (varsayılan, ya da ekran sökülmüş): imlecin bulunduğu ekranın çalışma alanında ortalanır ('imlec').
+ * Ekran sökülünce kayıt silinmez; ekran geri gelince kayıtlı konum yeniden geçerli olur.
+ * @param {object} g
+ * @param {{width:number,height:number}} g.boyut kayıtlı boyut (pencere[mod])
+ * @param {'imlec'|'hatirla'} [g.konumModu]
+ * @param {{x:number,y:number}|null} [g.konum] bu boyut modunun kayıtlı konumu
+ * @param {object|null} [g.tercihEkran] tercihEkranBul sonucu (bağlı ekran özeti) ya da null
+ * @param {object[]} [g.ekranlar] bağlı ekran özetleri (ekranlariOzetle)
+ * @param {{x:number,y:number,width:number,height:number}} g.imlecAlani imlecin (ya da mevcut pencerenin) ekranının çalışma alanı
+ * @returns {{x:number,y:number,width:number,height:number,kaynak:'kayit'|'tercih'|'imlec'}}
+ */
+function anaPencereHedefi({ boyut, konumModu = VARSAYILAN_KONUM_MODU, konum = null, tercihEkran = null, ekranlar = [], imlecAlani }) {
+  if (konumModu === 'hatirla' && konumDuzelt(konum)) {
+    const aday = { x: konum.x, y: konum.y, width: Math.round(boyut.width), height: Math.round(boyut.height) };
+    const ekran = enCokKesisenEkran(ekranlar, aday);
+    if (ekran && yeterinceGorunurMu(aday, ekran) && (!tercihEkran || tercihEkran.id === ekran.id)) {
+      return { ...alanaSigdir(aday, ekran.calismaAlani), kaynak: 'kayit' };
+    }
+  }
+  if (tercihEkran) return { ...ortala(tercihEkran.calismaAlani, boyut), kaynak: 'tercih' };
+  return { ...ortala(imlecAlani, boyut), kaynak: 'imlec' };
+}
+
+/**
+ * Pencere taşındığında kayıtlı konumlar nasıl güncellenir (saf)? Yalnız konum modu "hatırla" iken; fiziksel pencerenin modunun
+ * yuvasına yazılır. Pencere son yerleştirme hedefinde kaldıysa (kullanıcı taşımadı) ya da konum aynıysa değişiklik yoktur (null):
+ * ekran sökülüp pencere ortalanmışken eski kayıt ezilmez.
+ * @returns {{hizli?:{x:number,y:number},genis?:{x:number,y:number}}|null} yeni kayıt ya da null
+ */
+function pencereKonumKaydiHesapla({ konumModu, fizikselMod, normalSinirlar, hedef = null, mevcut = {} }) {
+  if (konumModu !== 'hatirla' || !PENCERE_BOYUTLARI.includes(fizikselMod)) return null;
+  const konum = konumDuzelt({ x: normalSinirlar?.x, y: normalSinirlar?.y });
+  if (!konum) return null;
+  const hedefteKaldi =
+    !!hedef &&
+    hedef.mod === fizikselMod &&
+    Number.isFinite(hedef.x) &&
+    Number.isFinite(hedef.y) &&
+    Math.abs(konum.x - hedef.x) <= HEDEF_TOLERANSI &&
+    Math.abs(konum.y - hedef.y) <= HEDEF_TOLERANSI;
+  if (hedefteKaldi) return null;
+  const kayitlar = konumlariDuzelt(mevcut);
+  const eski = kayitlar[fizikselMod];
+  if (eski && eski.x === konum.x && eski.y === konum.y) return null;
+  return { ...kayitlar, [fizikselMod]: konum };
+}
+
+/** Panel opaklığı (yüzde, 50-100) -> pencere opaklığı oranı (0,5-1); geçersiz değer tam opak (1). */
+function opaklikOrani(yuzde) {
+  if (!Number.isFinite(yuzde)) return 1;
+  const y = Math.round(yuzde);
+  if (y < OPAKLIK_SINIRI.en_az || y > OPAKLIK_SINIRI.en_cok) return 1;
+  return y / 100;
+}
+
 module.exports = {
   PANEL_BOYUTU,
   PALET_BOYUTU,
@@ -279,4 +461,20 @@ module.exports = {
   varsayilanBoyut,
   ortala,
   pencereKaydiHesapla,
+  KONUM_MODLARI,
+  VARSAYILAN_KONUM_MODU,
+  OPAKLIK_SINIRI,
+  EKRAN_GORUNUR_PAYI,
+  konumDuzelt,
+  konumlariDuzelt,
+  tercihEkranDuzelt,
+  ekranlariOzetle,
+  tercihKaydiOlustur,
+  tercihEkranBul,
+  enCokKesisenEkran,
+  alanaSigdir,
+  yeterinceGorunurMu,
+  anaPencereHedefi,
+  pencereKonumKaydiHesapla,
+  opaklikOrani,
 };

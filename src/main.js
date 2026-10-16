@@ -58,7 +58,7 @@ const { adresSinayiciOlustur } = require('./lib/adres-sina');
 const { sayfaYanitiBozukMu } = require('./lib/yoklama');
 const { bekleSn } = require('./lib/geri-cekilme');
 const { yolGecerliMi, sayfaYolu, gizliKalmaAsildiMi, gecmisOffseti } = require('./lib/gezinti');
-const { PENCERE_BOYUTLARI, ortala, pencereKaydiHesapla } = require('./lib/pencere-yerlesim');
+const { PENCERE_BOYUTLARI, ortala, pencereKaydiHesapla, anaPencereHedefi, pencereKonumKaydiHesapla, tercihEkranBul, tercihKaydiOlustur, opaklikOrani } = require('./lib/pencere-yerlesim');
 const { ODAK_KAYBI_GECIKME_MS, tiklamaKarari, odakKaybiGizlensinMi } = require('./lib/pencere-davranisi');
 const { tusEylemi, yakinlastirmaDegistir } = require('./lib/tus-eylemi');
 const { oturumAcilisiDurumu } = require('./lib/oturum-acilisi');
@@ -75,7 +75,7 @@ const { SINIF, eylemSinifi, adayGizliMi, onayAciklamasi } = require('./lib/eylem
 const { HAZIR_LISTE_SURUMU, favorileriBirlestir, hazirListeUygula, onayiDuzelt } = require('./lib/favoriler');
 const { durumDeposuOlustur } = require('./lib/durum-deposu');
 const { YARDIMCI_VARLIKLAR, karolariOlustur, yuzeyModeliOlustur } = require('./lib/yuzey-modeli');
-const { tepsiMenuPlani, acikIsikSayisi, ipucuMetni } = require('./lib/tepsi-menu');
+const { tepsiMenuPlani, acikIsikSayisi, ipucuMetni, ekranMenuPlani, ekranEtiketi } = require('./lib/tepsi-menu');
 const { bilgiKimlikleri, bilgiKaydi, bilgiModeliOlustur, bilgiBolumunuEkle, bilgiKarolari, sensorUyariSayisi } = require('./lib/bilgi-modeli');
 const { malzemeDestekliMi, pencereMalzemesi } = require('./lib/malzeme');
 const { temaKaynagi } = require('./lib/gorunum');
@@ -105,6 +105,11 @@ const { eylemKatmaniOlustur } = require('./eylem');
 const { yuzeyYoneticisiOlustur } = require('./yuzey-yoneticisi');
 const { duzenGecmisiOlustur } = require('./lib/duzen-gecmisi');
 const { duzenYoneticisiOlustur } = require('./lib/duzen-yoneticisi');
+// 1.4.0 pencere grubu: tepsi rozeti (o-27), masaüstü karoları (o-33), ekran özeti (o-32)
+const { tepsiRozetiOlustur } = require('./tepsi-rozeti');
+const { masaustuKarolariOlustur } = require('./masaustu-karolari');
+const { sabitlenecekKarolar, masaustuKaroModeli, sabitlenebilirKimlikMi } = require('./lib/masaustu-karo');
+const { ekranOzetleriAl } = require('./lib/ekran-ozeti');
 
 // ---------------------------------------------------------------------------
 // Sabitler
@@ -674,9 +679,27 @@ const son = sonKullanilanlarOlustur({ dosyaYolu: path.join(app.getPath('userData
 /** 1.4.0 düzen (o-30): favori + sayfa düzeninin son 20 anlık görüntüsü (<userData>\duzen-gecmisi.json); ayar yedeklerinden (ayar-yedegi.js) ayrıdır. */
 const duzenGecmisi = duzenGecmisiOlustur({ dosyaYolu: path.join(app.getPath('userData'), 'duzen-gecmisi.json'), fs, gunluk });
 
-/** İzlenen varlıklar: favoriler + salt-okunur yardımcı varlıklar (medya çalıyor, ses çıkışı) + bilgi kartlarının varlıkları (sensör şeridi, hava, takvim, yapılacaklar). */
+/**
+ * Tepsi simgesi rozeti (o-27, 1.4.0; src/tepsi-rozeti.js): ayar `tepsiRozeti` 'isik' ise açık ışık sayısı, 'sensor' ise seçilen sensörün
+ * kısa değeri simgeye çizilir. Varsayılan 'kapali' iken simge eskisi gibi dosya simgesidir. Bağlantı yokken (soluk) rozet çizilmez.
+ */
+const tepsiRozeti = tepsiRozetiOlustur({
+  nativeImage,
+  screen,
+  tepsiAl: () => (tepsi && !tepsi.isDestroyed() ? tepsi : null),
+  ayarlarAl: () => ayarlar,
+  durumAl: (kimlik) => depo.al(kimlik),
+  acikIsikAl: () => acikIsikSayisi(favoriKarolari()),
+  solukAl: () => baglantiTuru === null,
+  normalIkon: IKON_ICO,
+  solukIkon: IKON_SOLUK,
+  gunluk,
+});
+
+/** İzlenen varlıklar: favoriler + salt-okunur yardımcı varlıklar (medya çalıyor, ses çıkışı) + bilgi kartlarının varlıkları (sensör şeridi, hava, takvim, yapılacaklar) + (rozet 'sensor' modunda) seçili sensör. */
 function izlenenKimlikler() {
-  return new Set([...(ayarlar?.favoriler ?? []).map((f) => f.entity_id), ...YARDIMCI_VARLIKLAR, ...bilgiKimlikleri(ayarlar)]);
+  const rozetSensoru = tepsiRozeti.izlenenKimlik();
+  return new Set([...(ayarlar?.favoriler ?? []).map((f) => f.entity_id), ...YARDIMCI_VARLIKLAR, ...bilgiKimlikleri(ayarlar), ...(rozetSensoru ? [rozetSensoru] : [])]);
 }
 
 const ws = haWsOlustur({
@@ -689,6 +712,7 @@ const ws = haWsOlustur({
   durumDegisti: (d) => {
     if (d.canli) depo.sonHata = null; // canlı bağlantı kuruldu: eski bir REST hatası ("bağlantı yok") artık geçerli değil
     yuzey.modelDegisti();
+    masaustuKarolari.modelDegisti(); // karolardaki bağlantı durumu (canlı / yedek)
     tepsiyiGuncelle(); // canlı/yedek geçişi ipucundaki "(son bilinen)" notunu değiştirir
     if (!d.canli) durumlariYenile(); // canlı bağlantı yokken REST yedeği hemen devreye girer
   },
@@ -816,15 +840,57 @@ const yuzey = yuzeyYoneticisiOlustur({
   haAc: () => pencereyiGoster(),
   ayarlarAc: () => ayarlarPenceresiniAc(),
   malzemeAl: yeniPencereMalzemesi,
+  ustteAl: () => ayarlar?.panelHerZamanUstte === true, // o-22: görünürken tam ekran uygulamaların da üstünde
+  opaklikAl: () => ayarlar?.panelOpaklik ?? 100, // o-32: yalnız opak malzemede uygulanır
   t,
   dilAl: () => etkinDil,
   gunluk,
   okuma: haOkuma,
   sagTik: (kimlik, pencere) => duzen.karoMenusuAc(kimlik, pencere), // 1.4.0 düzen (o-16): karo bağlam menüsü
 });
-// Durum değişince panel/palet modeli ve tepsi ipucu (açık ışık sayısı) tazelenir.
+
+/**
+ * Masaüstüne sabitlenen karolar (o-33, 1.4.0; src/masaustu-karolari.js): ayar `masaustuKarolari` listesindeki FAVORİLER ayrı küçük
+ * pencereler olarak durur. Hangi karoların açılacağına src/lib/masaustu-karo.js karar verir (favori + sabitlenebilir alan + Kapı
+ * Kuralı + yalnız zararsız eylem); pencere sayfasına yalnız alan beyaz listesi giden bir model gönderilir. Eylemler yine eylem
+ * katmanından (kaynak 'masaustu') tek güvenli hattan geçer.
+ */
+function masaustuKarolariniAl() {
+  return sabitlenecekKarolar({ secili: ayarlar?.masaustuKarolari ?? [], favoriler: ayarlar?.favoriler ?? [], durumAl: (kimlik) => depo.al(kimlik), t });
+}
+const masaustuKarolari = masaustuKarolariOlustur({
+  karolariAl: masaustuKarolariniAl,
+  modelAl: (kimlik) => {
+    const karo = masaustuKarolariniAl().find((k) => k.kimlik === kimlik);
+    if (!karo) return null;
+    const d = ws.durum();
+    return masaustuKaroModeli(karo.karo, { canli: d.canli, baglanti: d.baglanti });
+  },
+  eylem,
+  konumlariAl: () => ayarlar?.masaustuKaroKonumlari ?? {},
+  konumKaydet: (kayitlar) => {
+    ayarlar.masaustuKaroKonumlari = kayitlar;
+    ayarlariYaz();
+  },
+  ustteAl: () => ayarlar?.masaustuKaroUstte === true,
+  ekranlarAl: () => ekranOzetleriAl(screen),
+  kaldir: (kimlik) => {
+    // Karonun × düğmesi / pencerenin kapatılması: sabitleme listeden çıkar (kimlik hiçbir yerde başka biçimde saklanmaz).
+    if (!sabitlenebilirKimlikMi(kimlik)) return;
+    ayarlar.masaustuKarolari = (ayarlar.masaustuKarolari ?? []).filter((k) => k !== kimlik);
+    ayarlariYaz();
+    ayarlaraFavoriDegistiBildir(); // açık Ayarlar sayfası eski listeyle kaydedip karoyu geri getirmesin
+  },
+  malzemeAl: yeniPencereMalzemesi,
+  t,
+  dilAl: () => etkinDil,
+  gunluk,
+});
+
+// Durum değişince panel/palet modeli, tepsi ipucu (açık ışık sayısı) ve masaüstü karoları tazelenir.
 depo.dinle(() => {
   yuzey.modelDegisti();
+  masaustuKarolari.modelDegisti();
   tepsiyiGuncelle();
 });
 
@@ -1062,6 +1128,7 @@ function anaPencereOlustur() {
   };
   anaPencere = new BrowserWindow(secenekler);
   vurguyuUygula(anaPencere);
+  anaPencereOpaklikUygula(); // o-32: yeniden oluşturulan pencere de ayardaki opaklıkla açılır
   const wc = anaPencere.webContents;
 
   haGezinmeKorumalari(wc);
@@ -1287,8 +1354,17 @@ function pencereDurumunuKaydet({ zorla = false } = {}) {
     hedef: yerlesimHedefi,
     mevcut: ayarlar.pencere,
   });
-  if (!sonuc) return;
-  ayarlar.pencere[sonuc.yuva] = sonuc.kayit;
+  // 1.4.0 (o-32): konum modu "hatırla" ise pencerenin konumu da (boyut moduna göre) kaydedilir; yerleştirme hedefinde kalan konum kayıt sayılmaz.
+  const konumlar = pencereKonumKaydiHesapla({
+    konumModu: ayarlar.pencereKonumu,
+    fizikselMod,
+    normalSinirlar: anaPencere.getNormalBounds(),
+    hedef: yerlesimHedefi,
+    mevcut: ayarlar.pencereKonumlari,
+  });
+  if (!sonuc && !konumlar) return;
+  if (sonuc) ayarlar.pencere[sonuc.yuva] = sonuc.kayit;
+  if (konumlar) ayarlar.pencereKonumlari = konumlar;
   ayarlariYaz();
 }
 
@@ -1297,20 +1373,46 @@ function pencereDurumunuGecikmeliKaydet() {
   pencereKayitZamanlayicisi = setTimeout(() => pencereDurumunuKaydet(), 500);
 }
 
-/** Pencereyi etkin boyut modunun boyutunda, `nokta`nın bulunduğu monitörün çalışma alanında ortalar. */
+/**
+ * Pencereyi etkin boyut modunun boyutunda yerleştirir. Karar src/lib/pencere-yerlesim.js anaPencereHedefi'nde (o-32): konum modu
+ * "hatırla" ve kayıtlı konum bağlı bir ekranda görünüyorsa orası; tercih edilen ekran bağlıysa onun çalışma alanında ortalanır;
+ * aksi halde (varsayılan, ya da ekran sökülmüş) `nokta`nın bulunduğu monitörün çalışma alanında ortalanır.
+ */
 function pencereyiYerlestir(nokta) {
   if (!anaPencere || anaPencere.isDestroyed() || anaPencere.isFullScreen()) return;
   const mod = ayarlar.pencereBoyutu;
   const kayit = ayarlar.pencere[mod];
   const alan = screen.getDisplayNearestPoint(nokta).workArea;
-  const hedef = ortala(alan, kayit);
+  const ekranlar = ekranOzetleriAl(screen);
+  const hedef = anaPencereHedefi({
+    boyut: kayit,
+    konumModu: ayarlar.pencereKonumu,
+    konum: ayarlar.pencereKonumlari?.[mod] ?? null,
+    tercihEkran: tercihEkranBul(ekranlar, ayarlar.tercihEkran),
+    ekranlar,
+    imlecAlani: alan,
+  });
   fizikselMod = mod;
-  yerlesimHedefi = { mod, width: hedef.width, height: hedef.height };
+  yerlesimHedefi = { mod, width: hedef.width, height: hedef.height, x: hedef.x, y: hedef.y };
   yerlesimBitisi = Date.now() + YERLESIM_SESSIZ_MS;
   if (anaPencere.isMaximized()) anaPencere.unmaximize();
   anaPencere.setBounds(hedef);
   anaPencere.setBounds(hedef); // karma DPI'da ilk çağrı yanlış ölçeklenebilir, ikincisi düzeltir (denenmedi)
   if (mod === 'genis' && kayit.maximized === true) anaPencere.maximize();
+}
+
+/**
+ * Ana pencerenin opaklığı (o-32, ayar panelOpaklik: yüzde 50-100). Ana pencerede Windows 11 malzemesi yoktur (hep opak zemin), bu
+ * yüzden opaklık akrilik/mica ile üst üste binmez; küçük panel ve palet için aynı kural src/yuzey-yoneticisi.js'tedir. Hata
+ * fırlatmaz (pencere yok olmuş ya da sistem desteklemiyor olabilir).
+ */
+function anaPencereOpaklikUygula() {
+  if (!anaPencere || anaPencere.isDestroyed() || typeof anaPencere.setOpacity !== 'function') return;
+  try {
+    anaPencere.setOpacity(opaklikOrani(ayarlar?.panelOpaklik));
+  } catch {
+    gunluk('Pencere opaklığı uygulanamadı.');
+  }
 }
 
 /** 'hizli' <-> 'genis'. Görünür pencere hemen yeniden boyutlanır; gizliyse bir sonraki gösterimde uygulanır. */
@@ -1556,19 +1658,19 @@ function tepsiyiGuncelle() {
     sensorUyari: sensorUyarisi(), // o-04: yalnız "Tepsi ipucunda sensör uyarısı" açıksa (varsayılan kapalı)
     canli: ws.canliMi() || (baglantiTuru !== null && depo.sonHata === null), // REST yedeği sağlıklıysa sayı en çok 1 dk eski: "son bilinen" denmez
     gelistirme: !app.isPackaged, // kurulu sürümle karışmasın (hata-23)
+    ek: tepsiRozeti.ipucuEki(), // o-27: rozet 'sensor' modunda seçili sensörün kısa değeri
   });
   if (ipucu !== sonTepsiIpucu) {
     sonTepsiIpucu = ipucu;
     tepsi.setToolTip(ipucu);
   }
-  const soluk = baglantiTuru === null;
-  if (soluk !== tepsiSoluk) {
-    tepsiSoluk = soluk;
-    try {
-      tepsi.setImage(soluk ? IKON_SOLUK : IKON_ICO);
-    } catch {
-      gunluk('Tepsi simgesi değiştirilemedi.');
-    }
+  // Simge: bağlantı yokken soluk dosya simgesi; bağlıyken dosya simgesi ya da (ayar açıksa) rozetli simge. Değişmeyen simge yeniden
+  // yazılmaz, rozet değişimleri en çok saniyede bir uygulanır (src/tepsi-rozeti.js).
+  tepsiSoluk = baglantiTuru === null;
+  try {
+    tepsiRozeti.guncelle();
+  } catch {
+    gunluk('Tepsi simgesi değiştirilemedi.');
   }
 }
 
@@ -1845,6 +1947,7 @@ function dilDegistiYay() {
   if (durumSayfasiAcikMi()) dilBildir(anaPencere); // HA sayfasına köprü açılmaz; yalnız yerel durum sayfasına gider
   yuzey.dilDegisti();
   kose.dilDegisti();
+  masaustuKarolari.dilDegisti();
 }
 
 /** Favori listesi arka planda değişti (ör. hazır karoların yeniden denemesi): açık Ayarlar sayfasına haber verilir (h-27). */
@@ -2078,6 +2181,7 @@ function izlenenleriYenile() {
   else ws.yenidenBaglan();
   if (!ws.canliMi()) durumlariYenile({ zorla: true });
   yuzey.modelDegisti();
+  masaustuKarolari.esitle(); // favori listesi değişti: favori olmaktan çıkan ya da eklenen karo pencereleri güncellenir
 }
 
 /**
@@ -2155,8 +2259,8 @@ function komutSatiriEylemiCalistir(ad) {
  * şey yapmaz: depoyu zaten canlı bağlantı günceller. 25'e kadar varlık için varlık başına istek, fazlası için tek /api/states.
  */
 async function durumlariYenile({ zorla = false } = {}) {
-  // Favori yoksa ama bilgi kartları (sensör şeridi, hava, takvim, yapılacaklar) seçiliyse yine okunur.
-  if (!anahtarDeposu.varMi() || !ayarlar || (ayarlar.favoriler.length === 0 && bilgiKimlikleri(ayarlar).size === 0)) {
+  // Favori yoksa ama bilgi kartları (sensör şeridi, hava, takvim, yapılacaklar) ya da tepsi rozeti sensörü seçiliyse yine okunur.
+  if (!anahtarDeposu.varMi() || !ayarlar || (ayarlar.favoriler.length === 0 && bilgiKimlikleri(ayarlar).size === 0 && !tepsiRozeti.izlenenKimlik())) {
     depo.sifirla();
     return undefined;
   }
@@ -2283,8 +2387,50 @@ function favoriMenuOgeleri() {
   return ogeler;
 }
 
+/**
+ * "Ekrana taşı" altmenüsü (o-32): birden çok ekran bağlıysa ana pencerenin açılacağı ekran seçilir (işaretli ekran = tercih); "Tercih yok"
+ * her açılışta imlecin ekranını kullanır. Tek ekranda menü öğesi hiç eklenmez. Planı src/lib/tepsi-menu.js ekranMenuPlani üretir.
+ */
+function ekranaTasiMenusu() {
+  const plan = ekranMenuPlani(ekranOzetleriAl(screen), ayarlar.tercihEkran, t);
+  if (plan.length === 0) return [];
+  return [
+    {
+      label: t('menu.ekranaTasi'),
+      submenu: [
+        ...plan.map((ekran) => ({ label: menuMetni(ekran.label), type: 'radio', checked: ekran.checked, click: () => tercihEkraniAyarla(ekran.id) })),
+        { type: 'separator' },
+        { label: t('menu.ekranTercihiYok'), type: 'radio', checked: !plan.some((ekran) => ekran.checked), click: () => tercihEkraniAyarla(null) },
+      ],
+    },
+  ];
+}
+
+/**
+ * Tercih edilen ekranı kaydeder (tepsi menüsü; `null` = tercih yok) ve ana pencere görünürse hemen o ekrana taşır. Seçilen ekran
+ * bağlı değilse hiçbir şey değişmez. Ekran söküldüğünde tercih silinmez: pencere imlecin ekranında açılır, ekran dönünce tercih geçerli olur.
+ */
+function tercihEkraniAyarla(ekranId) {
+  if (ekranId === null) {
+    ayarlar.tercihEkran = {};
+  } else {
+    const ekran = ekranOzetleriAl(screen).find((e) => e.id === ekranId);
+    if (!ekran) return;
+    ayarlar.tercihEkran = tercihKaydiOlustur(ekran);
+  }
+  ayarlariYaz();
+  anaPencereyiTercihEkranaTasi();
+}
+
+/** Ana pencere görünürse yeni yerleşim kuralıyla yeniden yerleştirilir (gizliyse bir sonraki gösterimde uygulanır). */
+function anaPencereyiTercihEkranaTasi() {
+  if (!anaPencere || anaPencere.isDestroyed() || !anaPencere.isVisible() || anaPencere.isMinimized() || anaPencere.isFullScreen()) return;
+  const s = anaPencere.getBounds();
+  pencereyiYerlestir({ x: Math.round(s.x + s.width / 2), y: Math.round(s.y + s.height / 2) });
+}
+
 function tepsiMenusuOlustur() {
-  const gorunur = !!anaPencere && !anaPencere.isDestroyed() && anaPencere.isVisible() && !anaPencere.isMinimized();
+  const gorunur =!!anaPencere && !anaPencere.isDestroyed() && anaPencere.isVisible() && !anaPencere.isMinimized();
   const oturum = otomatikBaslatDurumu(); // Windows'taki gerçek durum (Görev Yöneticisi'nden kapatılmış olabilir)
   let oturumEtiketi = t('menu.oturum');
   if (!app.isPackaged) oturumEtiketi += t('menu.oturumYalnizKurulu');
@@ -2310,6 +2456,7 @@ function tepsiMenusuOlustur() {
       checked: ayarlar.pencereBoyutu === 'genis',
       click: (oge) => pencereBoyutuDegistir(oge.checked ? 'genis' : 'hizli'),
     },
+    ...ekranaTasiMenusu(),
     {
       label: t('menu.disariTiklayinca'),
       type: 'checkbox',
@@ -2331,6 +2478,7 @@ function tepsiMenusuOlustur() {
 
 function tepsiOlustur() {
   tepsi = new Tray(tepsiSoluk ? IKON_SOLUK : IKON_ICO); // başlangıç "bağlanıyor": soluk; bağlanınca normal simgeye döner
+  tepsiRozeti.baslangic(); // ilk simge dosya simgesi: rozet (varsa) ilk güncellemede gelir
   sonTepsiIpucu = '';
   tepsiyiGuncelle();
   // Sol tık: hızlı panel (ayar: tepsiSolTik 'panel') ya da eskisi gibi geniş pencere ('pencere'); ikisi de aynı tiklamaKarari kuralıyla açar/kapatır.
@@ -2427,6 +2575,8 @@ async function ayarOzeti() {
     favoriler: ayarlar.favoriler.map(({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, tepsi }) => ({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, ...(tepsi === true ? { tepsi: true } : {}) })),
     odakFavori: odakFavoriyiAl(), // panel menüsünden "Düzenle…" ile açıldıysa odaklanılacak favori (bir kez)
     ayarDosyasi: ayarDosyasiYolu(),
+    // o-32: bağlı ekranlar (tercih edilen ekran seçici): kimlik, o dilde etiket ve sınırlar; yalnız sayılar ve kısa metin
+    ekranlar: ekranOzetleriAl(screen).map((e, sira) => ({ id: e.id, etiket: ekranEtiketi(e, sira, t), x: e.sinirlar.x, y: e.sinirlar.y, genislik: e.sinirlar.width, yukseklik: e.sinirlar.height })),
     ...ekAyarOzeti(ayarlar), // 1.4.0: ayar-alanlari.js tablosundaki alanlar (ozette:true)
   };
 }
@@ -2473,6 +2623,25 @@ for (const ad of ['saatBicimi', 'tarihBicimi', 'takvimGunSayisi', 'sensorGrafik'
     tepsiyiGuncelle();
   });
 }
+// --- Pencere grubu (1.4.0: o-22, o-27, o-32, o-33) ayar dinleyicileri ---
+/** Tepsi rozeti ayarı (mod ya da sensör) değişti: izlenen küme ve abonelik yenilenir, simge hemen yeniden hesaplanır. */
+function tepsiRozetiAyariDegisti() {
+  depo.buda(izlenenKimlikler());
+  if (ws.canliMi()) ws.abonelikYenile();
+  else durumlariYenile({ zorla: true });
+  sonTepsiIpucu = ''; // sensör eki ipucunda: aynı metin kalsa bile yeniden yazılsın
+  tepsiyiGuncelle();
+}
+ekAyarDinle('panelHerZamanUstte', () => yuzey.ustteDegisti());
+ekAyarDinle('panelOpaklik', () => {
+  yuzey.opaklikDegisti();
+  anaPencereOpaklikUygula();
+});
+ekAyarDinle('tercihEkran', () => anaPencereyiTercihEkranaTasi());
+ekAyarDinle('tepsiRozeti', tepsiRozetiAyariDegisti);
+ekAyarDinle('tepsiRozetSensoru', tepsiRozetiAyariDegisti);
+ekAyarDinle('masaustuKarolari', () => masaustuKarolari.esitle());
+ekAyarDinle('masaustuKaroUstte', () => masaustuKarolari.ustteDegisti());
 
 function ipcKaydet() {
   // --- offline.html ---
@@ -2587,6 +2756,7 @@ function ipcKaydet() {
       ayarlar.yeniPencereMalzemesi = yeni.yeniPencereMalzemesi;
       yuzey.malzemeyiUygula();
       kose.malzemeyiUygula();
+      masaustuKarolari.malzemeyiUygula();
     }
     const ekDegisenler = ekAyarlariUygula(ayarlar, yeni); // 1.4.0: ayar-alanlari.js tablosundaki alanlar
     const yazildi = ayarlariYaz();
@@ -2893,6 +3063,7 @@ function ipcKaydet() {
   });
 
   yuzey.ipcKaydet(); // panel/palet kanalları (her biri gönderen denetimli)
+  masaustuKarolari.ipcKaydet(); // masaüstü karosu kanalları (karo:*; her biri o karonun penceresinden gelmeli)
 }
 
 // ---------------------------------------------------------------------------
@@ -2996,6 +3167,7 @@ function baslat() {
     son.bosalt();
     yuzey.kapat();
     kose.kapat();
+    masaustuKarolari.kapat(); // bekleyen karo konumları yazılır, karo pencereleri yok edilir
     try {
       session.fromPartition(HA_BOLUMU).flushStorageData(); // HA giriş bilgisi (localStorage) diske yazılsın
     } catch {
@@ -3052,6 +3224,9 @@ function baslat() {
     ws.baslat();
     durumlariYenile();
     yuzey.hazirla();
+    masaustuKarolari.hazirla(); // sabitlenmiş karolar açılıştan biraz sonra arka planda açılır (ana pencere ve tepsi önce gelsin)
+    // Ekran bağlandı/söküldü ya da çözünürlük değişti: görünmez kalan karolar yerine alınır (kayıtlı konum silinmez, ekran dönünce geçerli olur).
+    for (const olay of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(olay, () => masaustuKarolari.ekranDegisti());
     hazirListeyiUygula().finally(() => {
       if (baslangicEylemi) komutSatiriEylemiCalistir(baslangicEylemi.ad); // uygulama `--eylem=<ad>` ile başlatıldı
       else if (baslangicEylemIstendi) komutEylemiIsle(null); // `--eylem` var ama anlaşılamadı: sessiz kalmaz, hata bildirilir (h-22)

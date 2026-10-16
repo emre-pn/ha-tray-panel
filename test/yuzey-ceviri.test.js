@@ -23,6 +23,7 @@ const SAYFALAR = [
   ['src/yuzey.html', 'src/yuzey-duzen.js'], // 1.4.0 düzen: sayfa sekmeleri ve ayrıntı bölmesi (aynı sayfa, ayrı betik)
   ['src/kose-bildirim.html', 'src/kose-sayfa.js'],
   ['src/offline.html', 'src/offline.js'],
+  ['src/masaustu-karo.html', 'src/masaustu-karo-sayfa.js'], // 1.4.0 (o-33): masaüstü karosu
 ];
 // Sayfa betiğinin yanında sözlük kullanan yardımcı renderer betikleri (1.4.0 cihaz kartları; yuzey.html bunları yükler).
 // yuzey-bilgi.js: hızlı panelin bilgi bölümleri (sensörler, yapılacaklar, takvim, grafik).
@@ -44,7 +45,7 @@ test('yüzey sözlüğü: sayfa betiklerinde ve HTML işaretlerinde kullanılan 
     }
   }
   for (const [html, betik] of SAYFALAR) {
-    for (const m of oku(betik).matchAll(/'((?:yuzey|offline|kose)\.[A-Za-z0-9_.]+)'/g)) kullanilan.add(m[1]);
+    for (const m of oku(betik).matchAll(/'((?:yuzey|offline|kose|masaustu)\.[A-Za-z0-9_.]+)'/g)) kullanilan.add(m[1]);
     for (const m of oku(html).matchAll(/\bdata-i18n="([^"]+)"/g)) kullanilan.add(m[1]);
     for (const m of oku(html).matchAll(/\bdata-i18n-attr="([^"]+)"/g)) {
       for (const parca of m[1].split(';')) kullanilan.add(parca.slice(parca.indexOf(':') + 1).trim());
@@ -87,7 +88,7 @@ test('yüzey sözlüğü: tutarlı terimler (Try again, Settings, home/external 
   }
 });
 
-test('üç yerel sayfa lib/dil.js ve lib/ceviri/yuzey.js betiklerini sayfa betiğinden ÖNCE yükler; <title> çevrilir; <html lang> varsayılanı tr', () => {
+test('dört yerel sayfa (çevrimdışı, köşe, hızlı panel, masaüstü karosu) lib/dil.js ve lib/ceviri/yuzey.js betiklerini sayfa betiğinden ÖNCE yükler; <title> çevrilir; <html lang> varsayılanı tr', () => {
   for (const [html, betik] of SAYFALAR) {
     const kaynak = oku(html);
     const sira = [...kaynak.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);

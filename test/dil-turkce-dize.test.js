@@ -36,6 +36,25 @@ const IZINLI = {
   // Yalnız günlüğe giden sabitler.
   'src/lib/bildirim-metni.js': { metinler: ['Ev içi adres http; erişim anahtarı ağda şifresiz gidiyor.'] },
   'src/ha-istemcisi.js': { metinler: ['ev içi adres', 'dış adres'] }, // adresEtiketi: yetkiKesici.duraklat günlük satırı
+  // Masaüstü karosu yöneticisi (o-33): guvenli(is, mesaj) yardımcısının mesaj bağımsız değişkeni yalnız günlüğe gider (kullanıcıya görünmez).
+  'src/masaustu-karolari.js': {
+    metinler: [
+      'Masaüstü karoları belirlenemedi.',
+      'Masaüstü karosu modeli alınamadı.',
+      'Masaüstü karosu malzemesi okunamadı.',
+      'Masaüstü karosu modeli gönderilemedi.',
+      'Masaüstü karosu konumu okunamadı.',
+      'Masaüstü karosu konumu kaydedilemedi.',
+      'Masaüstü karosu penceresi kapatılamadı.',
+      'Ekranlar okunamadı.',
+      'Masaüstü karosu gösterilemedi.',
+      'Masaüstü karosu kaldırılamadı.',
+      'Masaüstü karosu üst durumu okunamadı.',
+      'Masaüstü karosu üst durumu uygulanamadı.',
+      'Masaüstü karosu dili güncellenemedi.',
+      'Masaüstü karosu yeniden yerleştirilemedi.',
+    ],
+  },
 };
 
 /** Dize sabitlerini ve her birinin içinde bulunduğu çağrı adlarını çıkarır (yorumlar atlanır). */

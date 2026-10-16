@@ -22,6 +22,7 @@ const { EventEmitter } = require('node:events');
 const { pathToFileURL } = require('node:url');
 
 const { anahtarParmakIzi } = require('../src/lib/yetki-kesici');
+const { simgePng } = require('../src/lib/tepsi-simgesi');
 const ANA_SOZLUK = require('../src/lib/ceviri/ana');
 const {
   ACILIS_HATASI_BILDIRIMI,
@@ -145,7 +146,7 @@ function sahteElectronOlustur(durum) {
       this.simge = false;
       this.buyuk = false;
       this.tamEkran = false;
-      this.sinirlar = { x: 0, y: 0, width: secenekler.width, height: secenekler.height };
+      this.sinirlar = { x: secenekler.x ?? 0, y: secenekler.y ?? 0, width: secenekler.width, height: secenekler.height };
       this.cagri = { show: 0, hide: 0, focus: 0, showInactive: 0 };
       this.vurgular = []; // setAccentColor çağrıları (gorunum-13)
       this.malzemeler = []; // setBackgroundMaterial çağrıları (gorunum-11)
@@ -260,7 +261,14 @@ function sahteElectronOlustur(durum) {
       this.arkaPlanRenkleri.push(renk);
     }
 
-    setAlwaysOnTop() {}
+    setAlwaysOnTop(deger, seviye) {
+      (this.ustCagrilari ??= []).push([deger, seviye]); // 1.4.0 (o-22, o-33): üstte tutma çağrıları
+    }
+
+    setOpacity(oran) {
+      (this.opakliklar ??= []).push(oran); // 1.4.0 (o-32)
+    }
+
     moveTop() {
       this.cagri.moveTop = (this.cagri.moveTop ?? 0) + 1;
     }
@@ -426,7 +434,10 @@ function sahteElectronOlustur(durum) {
       handle: (kanal, isleyici) => durum.ipc.set(kanal, isleyici),
       on: (kanal, isleyici) => durum.ipc.set(kanal, isleyici),
     },
-    nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
+    nativeImage: {
+      createFromPath: () => ({ isEmpty: () => true }),
+      createFromBuffer: (veri, secenek) => ({ isEmpty: () => false, veri, secenek }), // 1.4.0 (o-27): rozetli tepsi simgesi PNG'si
+    },
     nativeTheme: durum.nativeTheme, // themeSource atamaları gorunum-13 testinde okunur
     net: {
       async fetch(url, secenek = {}) {
@@ -452,6 +463,12 @@ function sahteElectronOlustur(durum) {
     screen: {
       getCursorScreenPoint: () => ({ x: 100, y: 100 }),
       getDisplayNearestPoint: () => ({ workArea: durum.calismaAlani, bounds: durum.calismaAlani }),
+      // 1.4.0 pencere grubu (o-32, o-33): bağlı ekranlar (varsayılan tek ekran) ve ekran olayları
+      getAllDisplays: () => durum.ekranlar ?? [{ id: 1, bounds: durum.calismaAlani, workArea: durum.calismaAlani, scaleFactor: 1 }],
+      getPrimaryDisplay: () => (durum.ekranlar ?? [{ id: 1, bounds: durum.calismaAlani, workArea: durum.calismaAlani, scaleFactor: 1 }])[0],
+      on(olay, dinleyici) {
+        (durum.ekranDinleyicileri[olay] ??= []).push(dinleyici);
+      },
     },
     session: { fromPartition: oturum, defaultSession: oturum() },
     shell: {
@@ -511,7 +528,7 @@ function sahteWebSocketOlustur(durum) {
  *   tohum: ayarlar.json'a önceden yazılacak ham ayar; yoklama: /manifest.json yanıt kodu (null: ağ yok);
  *   ekDosyalar: veri klasörüne önceden yazılacak ek dosyalar ({ ad: metin }); anahtar: sahte (şifreli biçimde) bir erişim anahtarı dosyası yazılsın; hazirBekle: app "ready" olmadan yüklenir (durum.hazirCoz() ile hazır olur)
  */
-async function ortamKur({ tohum = null, ekDosyalar = null, calismaAlani = { x: 0, y: 0, width: 1920, height: 1040 }, yoklama = null, anahtar = false, kisayolReddi = [], ha = null, apiYaniti = null, hazirBekle = false, osSurumu = '10.0.26300', yerelDosyalar = null, acilisArgv = null, oncesi = null } = {}) {
+async function ortamKur({ tohum = null, ekDosyalar = null, calismaAlani = { x: 0, y: 0, width: 1920, height: 1040 }, ekranlar = null, yoklama = null, anahtar = false, kisayolReddi = [], ha = null, apiYaniti = null, hazirBekle = false, osSurumu = '10.0.26300', yerelDosyalar = null, acilisArgv = null, oncesi = null } = {}) {
   const gecici = fs.mkdtempSync(path.join(os.tmpdir(), 'ev-paneli-test-'));
   const oncekiYerelAppData = process.env.LOCALAPPDATA;
   process.env.LOCALAPPDATA = path.join(gecici, 'LocalAppData'); // gerçek %LOCALAPPDATA%'ya hiçbir şey yazılmasın
@@ -529,6 +546,8 @@ async function ortamKur({ tohum = null, ekDosyalar = null, calismaAlani = { x: 0
     kisayollar: new Map(),
     reddedilenKisayollar: new Set(kisayolReddi), // başka uygulamanın aldığı kısayollar (açılıştan itibaren)
     calismaAlani,
+    ekranlar, // 1.4.0 (o-32, o-33): null = tek ekran; ya da screen.getAllDisplays() biçiminde liste
+    ekranDinleyicileri: {}, // screen.on(olay, dinleyici)
     yoklamaDurumu: yoklama, // null: ağ hatası; sayı: /manifest.json yanıt kodu
     // Testler kendi HA yanıtlarını verir (haKur). Varsayılan: yetki kesicinin tek doğrulama isteği (GET /api/) geçer, gerisi 404.
     apiYaniti: (url, secenek) => (new URL(url).pathname === '/api/' && (secenek.method ?? 'GET') === 'GET' ? new Response(JSON.stringify({ message: 'API running.' }), { status: 200 }) : new Response('{}', { status: 404 })),
@@ -4958,4 +4977,397 @@ ortamda('karo bağlam menüsü (o-16): panelden gelen sağ tık menüyü ana sü
   assert.ok(gonderildi || ozet.odakFavori === 'light.salon_lambasi', 'Ayarlar o favoriye yönlendirildi');
   assert.equal(((await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam))).odakFavori ?? null), null, 'odak isteği bir kez verilir');
   assert.deepEqual(postlar(ortam), [], 'menü işlemleri HA’ya hiçbir servis çağrısı göndermez');
+});
+
+// ===========================================================================
+// 1.4.0 pencere grubu: o-22 üstte tutma, o-32 konum/ekran/opaklık, o-27 tepsi rozeti, o-33 masaüstü karoları
+// ===========================================================================
+
+const EKRAN_1 = { id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 };
+const EKRAN_2 = { id: 2, bounds: { x: 1920, y: 0, width: 2560, height: 1440 }, workArea: { x: 1920, y: 0, width: 2560, height: 1400 }, scaleFactor: 1.5 };
+const IKI_EKRAN = [EKRAN_1, EKRAN_2];
+const TERCIH_EKRAN_2 = { id: 2, x: 1920, y: 0, genislik: 2560, yukseklik: 1440 };
+const KARO_HTML = path.join(KOK_DIZIN, 'src', 'masaustu-karo.html');
+const karoPencereleri = (ortam) => ortam.durum.pencereler.filter((p) => /Masaüstü Karosu|Desktop Tile/.test(p.secenekler.title ?? '') && !p.yikik);
+const karoOlayi = (pencere) => ({ sender: pencere.webContents, senderFrame: { url: pathToFileURL(KARO_HTML).href, parent: null } });
+const karoModeli = (pencere) => pencere.webContents.mesajlar.filter((m) => m.kanal === 'karo:durum').at(-1)?.yuk?.model;
+const icinde = (s, alan) => s.x >= alan.x && s.y >= alan.y && s.x + s.width <= alan.x + alan.width && s.y + s.height <= alan.y + alan.height;
+const SENSOR_SICAKLIK = { entity_id: 'sensor.salon_sicaklik', state: '21.5', attributes: { friendly_name: 'Salon sıcaklığı', unit_of_measurement: '°C', device_class: 'temperature' } };
+
+// --- o-32: ekrana taşı, tercih edilen ekran ---
+
+ortamda('o-32: tek ekranda tepsi menüsünde "Ekrana taşı" yoktur (menü eskisi gibi)', undefined, (ortam) => {
+  ortam.ilerle(400);
+  assert.equal(ortam.menuOgesi('Ekrana taşı') ?? ortam.menuOgesi('Move to screen'), undefined);
+});
+
+ortamda('o-32: birden çok ekranda "Ekrana taşı" altmenüsü; seçim ayara yazılır ve görünür ana pencere o ekranın çalışma alanında ortalanır; "Tercih yok" geri alır', { ekranlar: IKI_EKRAN }, (ortam) => {
+  ortam.ilerle(900);
+  const alt = () => ortam.menuOgesi('Ekrana taşı').submenu;
+  const secenekler = () => alt().filter((o) => o.type !== 'separator').map((o) => [o.label, o.checked]);
+  assert.deepEqual(secenekler(), [['Ekran 1  ·  1920×1080  ·  ana ekran', false], ['Ekran 2  ·  2560×1440', false], ['Tercih yok (imlecin ekranı)', true]]);
+  assert.ok(alt().filter((o) => o.type === 'radio').length === 3, 'seçilebilir (radyo) öğeler');
+
+  alt()[1].click();
+  assert.deepEqual(ortam.ayarOku().tercihEkran, TERCIH_EKRAN_2);
+  const s = ortam.pencere.sinirlar;
+  assert.ok(icinde(s, EKRAN_2.workArea), 'ikinci ekranın çalışma alanında');
+  assert.equal(s.x, 1920 + Math.round((2560 - s.width) / 2));
+  assert.equal(s.y, Math.round((1400 - s.height) / 2));
+  assert.deepEqual(secenekler(), [['Ekran 1  ·  1920×1080  ·  ana ekran', false], ['Ekran 2  ·  2560×1440', true], ['Tercih yok (imlecin ekranı)', false]]);
+
+  alt().at(-1).click(); // "Tercih yok"
+  assert.deepEqual(ortam.ayarOku().tercihEkran, {});
+  assert.ok(icinde(ortam.pencere.sinirlar, EKRAN_1.workArea), 'imlecin (birincil) ekranına döndü');
+});
+
+ortamda('o-32: kayıtlı tercih ekranı bağlıysa ana pencere açılışta oradadır; kimliği değişmiş ama aynı yer/boyuttaki ekran da eşleşir', { ekranlar: IKI_EKRAN, tohum: { tercihEkran: TERCIH_EKRAN_2 } }, (ortam) => {
+  assert.ok(icinde(ortam.pencere.sinirlar, EKRAN_2.workArea));
+});
+
+ortamda('o-32: tercih ekranının kimliği değişmişse (aynı konum ve boyut) yine o ekran kullanılır', { ekranlar: IKI_EKRAN, tohum: { tercihEkran: { ...TERCIH_EKRAN_2, id: 77 } } }, (ortam) => {
+  assert.ok(icinde(ortam.pencere.sinirlar, EKRAN_2.workArea));
+});
+
+ortamda('o-32: tercih edilen ekran bağlı değilse pencere imlecin ekranında açılır ve tercih SİLİNMEZ', { ekranlar: [EKRAN_1], tohum: { tercihEkran: TERCIH_EKRAN_2 } }, (ortam) => {
+  assert.ok(icinde(ortam.pencere.sinirlar, EKRAN_1.workArea));
+  ortam.menuOgesi('Geniş pencere').click({ checked: true }); // ayarları diske yazan herhangi bir işlem
+  assert.deepEqual(ortam.ayarOku().tercihEkran, TERCIH_EKRAN_2, 'ekran yeniden takılınca tercih geçerli olur');
+  assert.equal(ortam.menuOgesi('Ekrana taşı'), undefined, 'tek ekranda menü yok');
+});
+
+ortamda('o-32: tercih ekranı olmayan (bağlı olmayan) bir kimlik seçilemez: menü yalnız bağlı ekranları listeler', { ekranlar: IKI_EKRAN }, (ortam) => {
+  ortam.ilerle(900);
+  const etiketler = ortam.menuOgesi('Ekrana taşı').submenu.filter((o) => o.type === 'radio').map((o) => o.label);
+  assert.equal(etiketler.length, 3);
+  assert.ok(etiketler.every((e) => !/undefined|NaN|null/.test(e)));
+});
+
+// --- o-32: konum hatırlama ---
+
+ortamda('o-32: konum modu "imlec" (varsayılan): pencere ortalanır; taşıma kaydedilmez', undefined, (ortam) => {
+  const { pencere } = ortam;
+  assert.equal(pencere.sinirlar.x, Math.round((1920 - pencere.sinirlar.width) / 2));
+  ortam.ilerle(900);
+  pencere.setBounds({ x: 40, y: 50, width: pencere.sinirlar.width, height: pencere.sinirlar.height });
+  pencere.emit('move');
+  ortam.ilerle(600);
+  assert.deepEqual(ortam.ayarOku().pencereKonumlari ?? {}, {});
+});
+
+ortamda('o-32: konum modu "hatirla": kayıtlı konum görünürse pencere orada açılır; taşınınca boyut moduna göre kaydedilir', { tohum: { pencereKonumu: 'hatirla', pencereKonumlari: { hizli: { x: 300, y: 200 } } } }, (ortam) => {
+  const { pencere } = ortam;
+  assert.deepEqual({ x: pencere.sinirlar.x, y: pencere.sinirlar.y }, { x: 300, y: 200 });
+  ortam.ilerle(900);
+  pencere.setBounds({ x: 50, y: 60, width: pencere.sinirlar.width, height: pencere.sinirlar.height });
+  pencere.emit('move');
+  ortam.ilerle(600);
+  assert.deepEqual(ortam.ayarOku().pencereKonumlari, { hizli: { x: 50, y: 60 } });
+  ortam.menuOgesi('Geniş pencere').click({ checked: true });
+  assert.deepEqual(ortam.ayarOku().pencereKonumlari.hizli, { x: 50, y: 60 }, 'mod değişince eski modun konumu durur');
+});
+
+ortamda('o-32: "hatirla" iken kayıtlı konumun ekranı yoksa pencere imlecin ekranında açılır, kayıt silinmez', { tohum: { pencereKonumu: 'hatirla', pencereKonumlari: { hizli: { x: -1500, y: 50 } } } }, (ortam) => {
+  assert.ok(icinde(ortam.pencere.sinirlar, EKRAN_1.workArea));
+  assert.equal(ortam.pencere.sinirlar.x, Math.round((1920 - ortam.pencere.sinirlar.width) / 2), 'ortalandı');
+  ortam.menuOgesi('Geniş pencere').click({ checked: true });
+  assert.deepEqual(ortam.ayarOku().pencereKonumlari.hizli, { x: -1500, y: 50 });
+});
+
+// --- o-32: opaklık, o-22: üstte tutma ---
+
+ortamda('o-32: ana pencere opaklığı ayardan uygulanır (varsayılan tam opak); Ayarlar\'dan değişince hemen güncellenir; geçersiz değer reddedilir', { tohum: { panelOpaklik: 70 } }, async (ortam) => {
+  assert.equal(ortam.pencere.opakliklar.at(-1), 0.7);
+  const sonuc = await ayarlarKaydet(ortam, { panelOpaklik: 55 });
+  assert.equal(sonuc.ok, true);
+  assert.equal(ortam.pencere.opakliklar.at(-1), 0.55);
+  assert.equal(ortam.ayarOku().panelOpaklik, 55);
+  const kotu = await ayarlarKaydet(ortam, { panelOpaklik: 10 });
+  assert.equal(kotu.uyarilar.length, 1);
+  assert.equal(ortam.ayarOku().panelOpaklik, 55, 'geçersiz değer mevcut olanı korur');
+});
+
+ortamda('o-32: varsayılanda ana pencereye opaklık UYGULANMAZ (1 = tam opak)', undefined, (ortam) => {
+  assert.ok((ortam.pencere.opakliklar ?? [1]).every((o) => o === 1));
+});
+
+ortamda('o-32: hızlı panel opaklığı yalnız opak malzemede (yok) uygulanır; akrilikte tam opak kalır', dalga3([SALON], { panelOpaklik: 80, yeniPencereMalzemesi: 'yok' }), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await ortam.akit();
+  const panel = await paneliAc(ortam);
+  assert.equal(panel.opakliklar.at(-1), 0.8);
+  await ayarlarKaydet(ortam, { yeniPencereMalzemesi: 'acrylic' });
+  assert.equal(panel.opakliklar.at(-1), 1, 'akrilik: pencere tam opak');
+});
+
+ortamda('o-22: varsayılanda hızlı panel 1.3.0 gibi "floating" seviyesindedir; ayar açılınca görünür panel "screen-saver" olur ve ayar kalıcıdır', dalga3([SALON]), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await ortam.akit();
+  const panel = await paneliAc(ortam);
+  assert.deepEqual(panel.ustCagrilari.at(-1), [true, 'floating']);
+  const sonuc = await ayarlarKaydet(ortam, { panelHerZamanUstte: true });
+  assert.equal(sonuc.ok, true);
+  assert.equal(ortam.ayarOku().panelHerZamanUstte, true);
+  assert.deepEqual(panel.ustCagrilari.at(-1), [true, 'screen-saver'], 'açık panel hemen güncellenir');
+  ortam.ilerle(600);
+  ortam.tepsi.emit('click'); // kapat
+  assert.deepEqual(panel.ustCagrilari.at(-1), [true, 'floating'], 'gizlenince yüksek seviye bırakılır');
+});
+
+// --- o-27: tepsi rozeti ---
+
+const rozetliMi = (simge, tur, metin) => typeof simge !== 'string' && Buffer.isBuffer(simge.veri) && simge.veri.equals(simgePng({ boyut: 16, rozet: { tur, metin } }));
+
+ortamda('o-27: varsayılan (kapalı) rozetsiz: tepsi simgesi yalnız paketlenmiş dosya simgeleridir', dalga4(D4_FAVORILERI, { canliBaglanti: false }, { ha: ISIK_ACIK_VARLIKLARI }), async (ortam) => {
+  await ortam.akit();
+  ortam.ilerle(2000);
+  await ortam.akit();
+  assert.ok(ortam.tepsi.simgeler.every((s) => typeof s === 'string' && /ikon(-soluk)?\.ico$/.test(s)));
+});
+
+ortamda('o-27: rozet "isik": açık favori ışık sayısı simgeye çizilir (anahtar/priz sayılmaz)', dalga4(D4_FAVORILERI, { canliBaglanti: false, tepsiRozeti: 'isik' }, { ha: ISIK_ACIK_VARLIKLARI }), async (ortam) => {
+  await ortam.akit();
+  ortam.ilerle(2000);
+  await ortam.akit();
+  const son = ortam.tepsi.simgeler.at(-1);
+  assert.ok(rozetliMi(son, 'isik', '2'), 'iki açık ışık');
+  assert.deepEqual(son.secenek, { scaleFactor: 1 });
+});
+
+ortamda('o-27: canlı bağlantıda ışık açılınca rozet değişir, ama simge saniyede en çok bir kez yazılır', dalga4(D4_FAVORILERI, { tepsiRozeti: 'isik' }), async (ortam) => {
+  haKur(ortam.durum, ISIK_ACIK_VARLIKLARI);
+  const { s, aboneId } = await canliYap(ortam, [
+    durumNesnesi('light.salon_lambasi', 'Salon Lambası', 'on'),
+    durumNesnesi('light.smart_multicolor_bulb', 'Ampul', 'off'),
+    durumNesnesi('switch.priz', 'Priz', 'on'),
+  ]);
+  ortam.ilerle(1500);
+  assert.ok(rozetliMi(ortam.tepsi.simgeler.at(-1), 'isik', '1'));
+  const resimSayisi = () => ortam.tepsi.simgeler.filter((x) => typeof x !== 'string').length;
+  const once = resimSayisi();
+  for (const durum of ['on', 'off', 'on']) {
+    s.yayinla({ id: aboneId, type: 'event', event: { variables: { trigger: { platform: 'state', entity_id: 'light.smart_multicolor_bulb', to_state: durumNesnesi('light.smart_multicolor_bulb', 'Ampul', durum) } } } });
+    ortam.ilerle(50);
+  }
+  assert.equal(resimSayisi(), once, 'saniye dolmadan simge yeniden yazılmadı');
+  ortam.ilerle(1000);
+  assert.equal(resimSayisi(), once + 1, 'pencere sonunda tek güncelleme');
+  assert.ok(rozetliMi(ortam.tepsi.simgeler.at(-1), 'isik', '2'), 'son değer yazıldı');
+});
+
+ortamda('o-27: rozet "sensor": seçilen sensörün değeri çizilir ve tepsi ipucuna eklenir', dalga4(D4_FAVORILERI, { canliBaglanti: false, tepsiRozeti: 'sensor', tepsiRozetSensoru: 'sensor.salon_sicaklik' }, { ha: [...ISIK_ACIK_VARLIKLARI, SENSOR_SICAKLIK] }), async (ortam) => {
+  await ortam.akit();
+  ortam.ilerle(2000);
+  await ortam.akit();
+  assert.ok(rozetliMi(ortam.tepsi.simgeler.at(-1), 'sensor', '22'));
+  assert.match(ortam.tepsi.ipuclari.at(-1), /Salon sıcaklığı: 21\.5 °C$/);
+  assert.ok(Array.from(ortam.tepsi.ipuclari.at(-1)).length <= 120);
+});
+
+ortamda('o-27 KAPI KURALI: sensörün HA\'daki adı kapıya dönmüşse rozet çizilmez ve ipucuna girmez', dalga4(D4_FAVORILERI, { canliBaglanti: false, tepsiRozeti: 'sensor', tepsiRozetSensoru: 'sensor.salon_sicaklik' }, { ha: [...ISIK_ACIK_VARLIKLARI, { ...SENSOR_SICAKLIK, attributes: { ...SENSOR_SICAKLIK.attributes, friendly_name: 'Ön kapı sıcaklığı' } }] }), async (ortam) => {
+  await ortam.akit();
+  ortam.ilerle(2000);
+  await ortam.akit();
+  assert.ok(ortam.tepsi.simgeler.every((s) => typeof s === 'string'), 'rozetli resim üretilmedi');
+  assert.doesNotMatch(ortam.tepsi.ipuclari.join('|'), /kapı|21\.5/i);
+});
+
+ortamda('o-27: Ayarlar\'dan rozet açılıp kapatılır; kapı/kilit sensörü ya da sensör olmayan varlık seçimi reddedilir', dalga4(D4_FAVORILERI, { canliBaglanti: false }, { ha: [...ISIK_ACIK_VARLIKLARI, SENSOR_SICAKLIK] }), async (ortam) => {
+  await ortam.akit();
+  ortam.ilerle(2000);
+  await ortam.akit();
+  assert.ok(ortam.tepsi.simgeler.every((s) => typeof s === 'string'));
+  const acik = await ayarlarKaydet(ortam, { tepsiRozeti: 'isik' });
+  assert.equal(acik.ok, true);
+  assert.equal(ortam.ayarOku().tepsiRozeti, 'isik');
+  ortam.ilerle(2000);
+  assert.ok(rozetliMi(ortam.tepsi.simgeler.at(-1), 'isik', '2'));
+  for (const kotu of ['lock.on_kapi', 'light.salon_lambasi', 'sensor.giris_kapisi', 'binary_sensor.hareket']) {
+    const sonuc = await ayarlarKaydet(ortam, { tepsiRozeti: 'sensor', tepsiRozetSensoru: kotu });
+    assert.equal(sonuc.uyarilar.length, 1, kotu);
+    assert.equal(ortam.ayarOku().tepsiRozetSensoru, '', `${kotu} yazılmadı`);
+  }
+  const iyi = await ayarlarKaydet(ortam, { tepsiRozeti: 'sensor', tepsiRozetSensoru: 'sensor.salon_sicaklik' });
+  assert.equal(iyi.ok, true);
+  await ortam.akit();
+  ortam.ilerle(2000);
+  await ortam.akit();
+  assert.ok(rozetliMi(ortam.tepsi.simgeler.at(-1), 'sensor', '22'));
+  await ayarlarKaydet(ortam, { tepsiRozeti: 'kapali' });
+  ortam.ilerle(2000);
+  assert.equal(typeof ortam.tepsi.simgeler.at(-1), 'string', 'kapatınca dosya simgesine dönüldü');
+});
+
+// --- o-33: masaüstü karoları ---
+
+const MASAUSTU_HA = [...ISIK_ACIK_VARLIKLARI, SENSOR_SICAKLIK, durumNesnesi('button.pc_bilgisayari_kapat', 'Bilgisayarı Kapat', 'unknown')];
+const KARO_FAVORILERI = [...D4_FAVORILERI, { entity_id: 'sensor.salon_sicaklik', ad: 'Salon sıcaklığı' }, { entity_id: 'button.pc_bilgisayari_kapat', ad: 'Bilgisayarı Kapat' }];
+const karoAyari = (karolar, ek = {}, secenek = {}) => dalga4(KARO_FAVORILERI, { canliBaglanti: false, masaustuKarolari: karolar, ...ek }, { ha: MASAUSTU_HA, ...secenek });
+async function karolariAc(ortam) {
+  await ortam.akit();
+  ortam.ilerle(2500); // açılıştan 2 sn sonra karolar açılır
+  await ortam.akit();
+  return karoPencereleri(ortam);
+}
+
+ortamda('o-33: varsayılanda hiç karo penceresi yoktur', dalga4(KARO_FAVORILERI, { canliBaglanti: false }, { ha: MASAUSTU_HA }), async (ortam) => {
+  assert.deepEqual(await karolariAc(ortam), []);
+});
+
+ortamda('o-33: sabitlenen favoriler açılıştan sonra küçük çerçevesiz pencereler olarak açılır; güvenli web tercihleri, odak çalınmaz', karoAyari(['light.salon_lambasi', 'sensor.salon_sicaklik']), async (ortam) => {
+  assert.deepEqual(karoPencereleri(ortam), [], 'açılışta hemen değil, ana pencere ve tepsiden sonra');
+  const karolar = await karolariAc(ortam);
+  assert.equal(karolar.length, 2);
+  for (const p of karolar) {
+    assert.equal(p.secenekler.frame, false);
+    assert.equal(p.secenekler.skipTaskbar, true);
+    assert.equal(p.secenekler.alwaysOnTop, false);
+    assert.equal(p.secenekler.webPreferences.sandbox, true);
+    assert.equal(p.secenekler.webPreferences.contextIsolation, true);
+    assert.equal(p.secenekler.webPreferences.nodeIntegration, false);
+    assert.match(p.secenekler.webPreferences.preload, /preload-karo\.js$/);
+    assert.equal(p.cagri.showInactive, 1);
+    assert.equal(p.cagri.focus, 0);
+    assert.equal(p.cagri.show, 0);
+    assert.equal(p.odakta, false);
+  }
+  assert.deepEqual(karolar.map((p) => karoModeli(p)?.id), ['light.salon_lambasi', 'sensor.salon_sicaklik']);
+  assert.equal(karoModeli(karolar[0]).durum, 'acik');
+  assert.equal(karoModeli(karolar[1]).ozellik.deger, '21.5');
+  assert.equal(karoModeli(karolar[1]).tiklanabilir, false, 'sensör salt okunur');
+});
+
+ortamda('o-33 KAPI KURALI: kapı/kilit/alarm/perde, favori olmayan, onaylı (yıkıcı) ve adı kapıya dönmüş varlık masaüstüne sabitlenmez', karoAyari(['lock.on_kapi', 'cover.garaj', 'light.favori_degil', 'button.pc_bilgisayari_kapat', 'switch.priz', 'light.salon_lambasi'], {}, { ha: MASAUSTU_HA.map((v) => (v.entity_id === 'light.salon_lambasi' ? { ...v, attributes: { friendly_name: 'Salon kapı lambası' } } : v)) }), async (ortam) => {
+  const karolar = await karolariAc(ortam);
+  assert.deepEqual(karolar.map((p) => karoModeli(p)?.id), ['switch.priz']);
+  // ayar dosyasına zaten yalnız sabitlenebilir alanlar girer (lock/cover/button elenir); favori olmayan ışık dosyada kalır ama pencere açılmaz
+  assert.deepEqual(ortam.ayarOku().masaustuKarolari, ['light.favori_degil', 'switch.priz', 'light.salon_lambasi']);
+});
+
+ortamda('o-33: karo tıklaması tek güvenli hattan geçer (varsayılan servis); sayfa kimlik/servis gönderemez; sensör ve olmayan karo çalıştırılamaz', karoAyari(['light.salon_lambasi', 'sensor.salon_sicaklik']), async (ortam) => {
+  const [isik, sensor] = await karolariAc(ortam);
+  const calistir = ortam.durum.ipc.get('karo:calistir');
+  assert.deepEqual(postlar(ortam), []);
+  const yanit = await calistir(karoOlayi(isik), { tur: 'tikla' });
+  assert.equal(yanit.ok, true);
+  assert.deepEqual(postlar(ortam).map((p) => new URL(p.url).pathname), ['/api/services/light/toggle']);
+  assert.deepEqual(JSON.parse(postlar(ortam)[0].govde ?? postlar(ortam)[0].body), { entity_id: 'light.salon_lambasi' });
+  for (const yuk of [{ tur: 'tikla', kimlik: 'lock.on_kapi' }, { kimlik: 'lock.on_kapi' }, { servis: 'unlock' }, { parlaklik: 40 }, null, 'tikla']) {
+    assert.deepEqual(await calistir(karoOlayi(isik), yuk), { ok: false, tur: 'gecersiz' }, JSON.stringify(yuk));
+  }
+  assert.deepEqual(await calistir(karoOlayi(sensor), { tur: 'tikla' }), { ok: false, tur: 'gecersiz' });
+  assert.equal(postlar(ortam).length, 1, 'yalnız ilk geçerli tıklama HA\'ya gitti');
+  const uzak = { sender: isik.webContents, senderFrame: { url: 'https://ha.example.com/lovelace', parent: null } };
+  assert.equal((await calistir(uzak, { tur: 'tikla' })).ok, false, 'karo sayfası dışından gelen istek reddedilir');
+  const baska = { sender: ortam.pencere.webContents, senderFrame: { url: pathToFileURL(KARO_HTML).href, parent: null } };
+  assert.equal((await calistir(baska, { tur: 'tikla' })).ok, false, 'başka pencere karo kanalını kullanamaz');
+  assert.equal(postlar(ortam).length, 1);
+});
+
+ortamda('o-33: parlaklık ön ayarı yalnız favoride "parlaklık" açıksa çalışır (sabit liste: 25/50/100)', karoAyari(['light.salon_lambasi', 'light.smart_multicolor_bulb'], {}, {}), async (ortam) => {
+  // salon_lambasi favorisinde parlaklık açık; ampul'de değil
+  const ayarlar = ortam.ayarOku();
+  assert.ok(ayarlar.favoriler.length > 0);
+  const [salon, ampul] = await karolariAc(ortam);
+  assert.deepEqual(karoModeli(ampul).parlaklikOnAyarlari, [], 'parlaklık kapalı favoride ön ayar sunulmaz');
+  const calistir = ortam.durum.ipc.get('karo:calistir');
+  assert.deepEqual(await calistir(karoOlayi(ampul), { parlaklik: 50 }), { ok: false, tur: 'gecersiz' });
+  assert.equal(postlar(ortam).length, 0);
+  assert.equal(karoModeli(salon).id, 'light.salon_lambasi');
+});
+
+ortamda('o-33: Ayarlar\'dan seçim değişince pencereler açılıp kapanır; kapı kimliği seçilemez ve seçim 6 ile sınırlıdır', karoAyari(['light.salon_lambasi']), async (ortam) => {
+  const [ilk] = await karolariAc(ortam);
+  assert.equal(karoModeli(ilk).id, 'light.salon_lambasi');
+  const sonuc = await ayarlarKaydet(ortam, { masaustuKarolari: ['switch.priz', 'lock.on_kapi', 'cover.garaj'] });
+  assert.equal(sonuc.ok, true);
+  assert.deepEqual(ortam.ayarOku().masaustuKarolari, ['switch.priz'], 'kapı kimlikleri ayara yazılmaz');
+  await ortam.akit();
+  assert.equal(ilk.yikik, true, 'seçimden çıkan karo kapandı');
+  assert.deepEqual(karoPencereleri(ortam).map((p) => karoModeli(p)?.id), ['switch.priz']);
+  const bos = await ayarlarKaydet(ortam, { masaustuKarolari: [] });
+  assert.equal(bos.ok, true);
+  assert.deepEqual(karoPencereleri(ortam), []);
+  const cok = await ayarlarKaydet(ortam, { masaustuKarolari: ['light.a', 'light.b', 'light.c', 'light.d', 'light.e', 'light.f', 'light.g', 'light.h'] });
+  assert.equal(cok.ok, true);
+  assert.equal(ortam.ayarOku().masaustuKarolari.length, 6);
+});
+
+ortamda('o-33: × düğmesi sabitlemeyi ayardan kaldırır ve pencereyi hemen kapatır; pencereyi kapatan kullanıcı için de aynısı olur', karoAyari(['light.salon_lambasi', 'switch.priz']), async (ortam) => {
+  const [isik, priz] = await karolariAc(ortam);
+  ortam.durum.ipc.get('karo:kaldir')(karoOlayi(priz), 'light.salon_lambasi');
+  assert.deepEqual(ortam.ayarOku().masaustuKarolari, ['light.salon_lambasi'], 'sayfanın gönderdiği kimlik yok sayıldı');
+  assert.equal(priz.yikik, true);
+  isik.destroy(); // Alt+F4
+  assert.deepEqual(ortam.ayarOku().masaustuKarolari, []);
+  ortam.ilerle(5000);
+  await ortam.akit();
+  assert.deepEqual(karoPencereleri(ortam), [], 'kendiliğinden geri gelmez');
+});
+
+ortamda('o-33: karolar uygulama çıkarken kapanır ve bekleyen konum yazılır; çıkışta "kullanıcı kapattı" sayılmaz (sabitleme korunur)', karoAyari(['light.salon_lambasi']), async (ortam) => {
+  const [p] = await karolariAc(ortam);
+  ortam.ilerle(900);
+  p.setBounds({ x: 700, y: 300, width: 200, height: 130 });
+  p.emit('move');
+  ortam.app.emit('before-quit');
+  assert.equal(p.yikik, true);
+  assert.deepEqual(ortam.ayarOku().masaustuKarolari, ['light.salon_lambasi']);
+  assert.deepEqual(ortam.ayarOku().masaustuKaroKonumlari, { 'light.salon_lambasi': { x: 700, y: 300, width: 200, height: 130 } });
+});
+
+ortamda('o-33: ayardaki konumda açılır; ekran sökülünce görünür alana, geri takılınca kayıtlı konuma döner; kayıt silinmez', karoAyari(['light.salon_lambasi'], { masaustuKaroKonumlari: { 'light.salon_lambasi': { x: 2000, y: 100, width: 176, height: 112 } } }, { ekranlar: IKI_EKRAN }), async (ortam) => {
+  const [p] = await karolariAc(ortam);
+  assert.deepEqual({ x: p.sinirlar.x, y: p.sinirlar.y }, { x: 2000, y: 100 });
+  assert.ok(ortam.durum.ekranDinleyicileri['display-removed']?.length >= 1, 'ekran olayları dinleniyor');
+  assert.ok(ortam.durum.ekranDinleyicileri['display-added']?.length >= 1);
+  assert.ok(ortam.durum.ekranDinleyicileri['display-metrics-changed']?.length >= 1);
+  ortam.durum.ekranlar = [EKRAN_1];
+  for (const dinleyici of ortam.durum.ekranDinleyicileri['display-removed']) dinleyici();
+  assert.ok(icinde(p.sinirlar, EKRAN_1.workArea), 'birincil ekranda');
+  ortam.ilerle(1000);
+  assert.deepEqual(ortam.ayarOku().masaustuKaroKonumlari?.['light.salon_lambasi'], { x: 2000, y: 100, width: 176, height: 112 }, 'kayıtlı konum silinmedi');
+  ortam.durum.ekranlar = IKI_EKRAN;
+  for (const dinleyici of ortam.durum.ekranDinleyicileri['display-added']) dinleyici();
+  assert.deepEqual({ x: p.sinirlar.x, y: p.sinirlar.y }, { x: 2000, y: 100 });
+});
+
+ortamda('o-33: "karolar üstte" ayarı açık karolara hemen uygulanır', karoAyari(['light.salon_lambasi']), async (ortam) => {
+  const [p] = await karolariAc(ortam);
+  assert.equal(p.secenekler.alwaysOnTop, false);
+  const sonuc = await ayarlarKaydet(ortam, { masaustuKaroUstte: true });
+  assert.equal(sonuc.ok, true);
+  assert.equal(ortam.ayarOku().masaustuKaroUstte, true);
+  assert.deepEqual(p.ustCagrilari.at(-1), [true, undefined]);
+  await ayarlarKaydet(ortam, { masaustuKaroUstte: false });
+  assert.deepEqual(p.ustCagrilari.at(-1), [false, undefined]);
+});
+
+ortamda('o-33: favori silinince o favorinin karosu kapanır (favori olmayan sabitlenemez)', karoAyari(['light.salon_lambasi', 'switch.priz']), async (ortam) => {
+  const [isik, priz] = await karolariAc(ortam);
+  const olay = ayarlarOlayi(ortam);
+  await ortam.durum.ipc.get('cihazlar:getir')(olay);
+  const kaydet = ortam.durum.ipc.get('favoriler:kaydet');
+  // kullanıcı Ayarlar'da prizin işaretini kaldırır: yalnız ışık seçili kalır
+  const sonuc = await kaydet(olay, [{ entity_id: 'light.salon_lambasi' }]);
+  assert.equal(sonuc.ok, true);
+  await ortam.akit();
+  assert.equal(isik.yikik, false);
+  assert.equal(priz.yikik, true, 'favori olmaktan çıkan varlığın karosu kapandı');
+});
+
+// --- Ayarlar sayfası özeti ---
+
+ortamda('Ayarlar özeti: bağlı ekran listesi, pencere/rozet/karo seçimleri ve makineye özgü konumlar HARİÇ alanlar (konum kayıtları gitmez)', { ekranlar: IKI_EKRAN, tohum: { panelOpaklik: 80, masaustuKarolari: ['light.a'], masaustuKaroKonumlari: { 'light.a': { x: 1, y: 2, width: 200, height: 100 } }, pencereKonumlari: { hizli: { x: 5, y: 6 } } } }, async (ortam) => {
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.deepEqual(ozet.ekranlar.map((e) => e.id), [1, 2]);
+  assert.deepEqual(ozet.ekranlar[1], { id: 2, etiket: 'Ekran 2  ·  2560×1440', x: 1920, y: 0, genislik: 2560, yukseklik: 1440 });
+  assert.equal(ozet.panelOpaklik, 80);
+  assert.deepEqual(ozet.masaustuKarolari, ['light.a']);
+  assert.equal(ozet.panelHerZamanUstte, false);
+  assert.equal(ozet.pencereKonumu, 'imlec');
+  assert.equal(ozet.tepsiRozeti, 'kapali');
+  assert.equal('masaustuKaroKonumlari' in ozet, false);
+  assert.equal('pencereKonumlari' in ozet, false);
+  assert.doesNotMatch(JSON.stringify(ozet), new RegExp(TEST_ANAHTAR));
 });

@@ -2,7 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { tepsiMenuPlani, menuOgesi, acikIsikSayisi, ipucuMetni, IPUCU_SINIRI, UST_SAYISI } = require('../src/lib/tepsi-menu');
+const { tepsiMenuPlani, menuOgesi, acikIsikSayisi, ipucuMetni, IPUCU_SINIRI, UST_SAYISI, ekranEtiketi, ekranMenuPlani } = require('../src/lib/tepsi-menu');
+const { anaCevirmen } = require('../src/lib/ceviri-varsayilan');
+const { ekranlariOzetle, tercihKaydiOlustur } = require('../src/lib/pencere-yerlesim');
 const { yuzeyModeliOlustur } = require('../src/lib/yuzey-modeli');
 const { HAZIR_LISTE } = require('../src/lib/favoriler');
 
@@ -123,6 +125,46 @@ test('ipucuMetni: Windows sınırına (120 karakter) kırpılır; kod noktası b
   assert.equal(harfler.length, 120);
   assert.ok(harfler.slice(-3).every((c) => c === '😀'), 'son kod noktası bütün (vekil çifti bölünmedi)');
   assert.ok(ipucuMetni({ durum: 'İnternet üzerinden', acikIsik: 99, canli: false, gelistirme: true }).length <= 120, 'normal metinler sınıra takılmaz');
+});
+
+test('ipucuMetni (o-27): sensör rozetinin eki ışık sayısından sonra gelir; boş ek yok sayılır; 120 sınırı eki sondan keser', () => {
+  assert.equal(ipucuMetni({ durum: 'Ev ağı', acikIsik: 2, ek: 'Salon sıcaklığı: 21.5 °C' }), 'Ev Paneli — Ev ağı — 2 ışık açık — Salon sıcaklığı: 21.5 °C');
+  assert.equal(ipucuMetni({ durum: 'Ev ağı', ek: 'Nem: 48 %' }), 'Ev Paneli — Ev ağı — Nem: 48 %');
+  for (const yok of ['', null, undefined, 5, {}]) assert.equal(ipucuMetni({ durum: 'Ev ağı', ek: yok }), 'Ev Paneli — Ev ağı', String(yok));
+  const uzun = ipucuMetni({ durum: 'Ev ağı', acikIsik: 3, ek: 'S'.repeat(300) });
+  assert.equal(Array.from(uzun).length, 120);
+  assert.ok(uzun.startsWith('Ev Paneli — Ev ağı — 3 ışık açık — SSS'), 'baş korunur, ek sondan kısalır');
+});
+
+// --- 1.4.0 (o-32): "Ekrana taşı" altmenüsü -----------------------------------------------
+
+const ekranHam = (id, x, genislik, yukseklik) => ({ id, bounds: { x, y: 0, width: genislik, height: yukseklik }, workArea: { x, y: 0, width: genislik, height: yukseklik - 40 } });
+const ekranlar = ekranlariOzetle([ekranHam(7, 1920, 2560, 1440), ekranHam(3, 0, 1920, 1080)], 3);
+
+test('ekranEtiketi: "Ekran N  ·  GxY" (birincilde "ana ekran" eklenir); İngilizce sözlükle de', () => {
+  assert.equal(ekranEtiketi(ekranlar[0], 0), 'Ekran 1  ·  1920×1080  ·  ana ekran');
+  assert.equal(ekranEtiketi(ekranlar[1], 1), 'Ekran 2  ·  2560×1440');
+  const en = anaCevirmen('en');
+  assert.equal(ekranEtiketi(ekranlar[0], 0, en), 'Screen 1  ·  1920×1080  ·  main screen');
+  assert.equal(ekranEtiketi(ekranlar[1], 1, en), 'Screen 2  ·  2560×1440');
+});
+
+test('ekranMenuPlani: tek ekranda ya da geçersiz girdide boş (menü eklenmez); iki ekranda birincil önce, tercih işaretli', () => {
+  assert.deepEqual(ekranMenuPlani(ekranlar.slice(0, 1), {}), []);
+  assert.deepEqual(ekranMenuPlani([], {}), []);
+  assert.deepEqual(ekranMenuPlani(null, {}), []);
+  assert.deepEqual(ekranMenuPlani(undefined, undefined), []);
+  const plan = ekranMenuPlani(ekranlar, {});
+  assert.deepEqual(plan.map((o) => [o.id, o.checked]), [[3, false], [7, false]], 'tercih yokken hiçbiri işaretli değil');
+  assert.deepEqual(plan.map((o) => o.label), ['Ekran 1  ·  1920×1080  ·  ana ekran', 'Ekran 2  ·  2560×1440']);
+  const secili = ekranMenuPlani(ekranlar, tercihKaydiOlustur(ekranlar[1]));
+  assert.deepEqual(secili.map((o) => [o.id, o.checked]), [[3, false], [7, true]]);
+});
+
+test('ekranMenuPlani: tercih edilen ekranın kimliği değişmiş olsa da aynı yer ve boyuttaki ekran işaretlenir; sökülmüşse hiçbiri', () => {
+  const kayit = { ...tercihKaydiOlustur(ekranlar[1]), id: 99 };
+  assert.deepEqual(ekranMenuPlani(ekranlar, kayit).map((o) => o.checked), [false, true]);
+  assert.deepEqual(ekranMenuPlani(ekranlar, { id: 99, x: 5000, y: 0, genislik: 800, yukseklik: 600 }).map((o) => o.checked), [false, false]);
 });
 
 test('acikIsikSayisi: yalnız favori ışık karolarından AÇIK olanlar sayılır (anahtar, sahne, düğme sayılmaz)', () => {

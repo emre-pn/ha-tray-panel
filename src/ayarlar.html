@@ -1420,6 +1420,82 @@
         </select>
         <div class="ipucu" data-i18n="ayar.pencere.tepsiIpucu">Sağ tık menüsü her iki durumda da aynıdır. Panel zararsız eylemleri tek tıkla çalıştırır; PC kapat gibi onaylı eylemler için düğmeyi yaklaşık 0,8 saniye basılı tutman gerekir (tepsi menüsünde onay penceresi çıkar).</div>
       </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="panelHerZamanUstte">
+          <span data-i18n="ayar.pencere.ustteEtiket">Hızlı panel ve palet tam ekran uygulamaların da üstünde görünsün</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.pencere.ustteIpucu">Açıkken panel ve palet, oyun ya da video gibi tam ekran uygulamaların da üstünde açılır; gizlenince eski düzene döner. Kapalıyken eskisi gibi normal pencerelerin üstünde kalır. Gerçek bir tam ekran uygulamada henüz denenmedi.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="pencereKonumu" data-i18n="ayar.pencere.konumEtiket">Home Assistant penceresinin konumu</label>
+        <select id="pencereKonumu">
+          <option value="imlec" data-i18n="ayar.pencere.konumImlec">Her açılışta imlecin olduğu ekranda ortala</option>
+          <option value="hatirla" data-i18n="ayar.pencere.konumHatirla">Taşıdığım yeri hatırla</option>
+        </select>
+        <div class="ipucu" data-i18n="ayar.pencere.konumIpucu">“Hatırla” seçilirse pencerenin son yeri (hızlı ve geniş boyut için ayrı) saklanır ve ekrana sığdırılarak açılır; ekran sökülmüşse pencere ortalanır ve ekran dönünce eski yer yeniden geçerli olur. Hızlı panel tepsi simgesinin yanında açıldığı için bu ayardan etkilenmez.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="tercihEkran" data-i18n="ayar.pencere.ekranEtiket">Tercih edilen ekran</label>
+        <select id="tercihEkran"></select>
+        <div class="ipucu" data-i18n="ayar.pencere.ekranIpucu">Home Assistant penceresi bu ekranda açılır. Ekran bağlı değilse imlecin olduğu ekranda açılır. Tepsi menüsündeki “Ekrana taşı” aynı tercihi değiştirir.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="panelOpaklik" data-i18n="ayar.pencere.opaklikEtiket">Pencere opaklığı</label>
+        <div class="renk-satiri">
+          <input type="range" id="panelOpaklik" min="50" max="100" step="1" value="100" aria-describedby="panelOpaklikIpucu">
+          <span id="panelOpaklikDegeri" role="status"></span>
+        </div>
+        <div class="ipucu" id="panelOpaklikIpucu" data-i18n="ayar.pencere.opaklikIpucu">Home Assistant penceresi ile hızlı panelin ve paletin opaklığı (yüzde 50-100). Hızlı panel ve palet Windows 11 malzemesi (akrilik, mica) kullanırken tam opak kalır; opaklık yalnız “Düz (opak koyu)” malzemede uygulanır.</div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bolum" id="bolumTepsiRozeti">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.rozet.baslik">Tepsi simgesi rozeti</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.rozet.aciklama">Tepsi simgesinin köşesine küçük bir rakam çizilir; fareyi simgenin üstünde bekletmeden bakarsın.</p>
+
+      <div class="form-grubu">
+        <label for="tepsiRozeti" data-i18n="ayar.rozet.etiket">Rozet</label>
+        <select id="tepsiRozeti">
+          <option value="kapali" data-i18n="ayar.rozet.kapali">Rozet yok</option>
+          <option value="isik" data-i18n="ayar.rozet.isik">Açık ışık sayısı</option>
+          <option value="sensor" data-i18n="ayar.rozet.sensor">Seçtiğim sensörün değeri</option>
+        </select>
+        <div class="ipucu" data-i18n="ayar.rozet.ipucu">Işık sayısı yalnız favori ışıkları sayar; hiç ışık açık değilse rozet çizilmez. Home Assistant’a bağlı değilken rozet çizilmez. Simge en çok saniyede bir değişir. 16 pikselde okunaklılığı ve Windows 11 taşma alanındaki davranışı henüz gerçek ekranda denenmedi.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="tepsiRozetSensoru" data-i18n="ayar.rozet.sensorEtiket">Rozet sensörü</label>
+        <select id="tepsiRozetSensoru"></select>
+        <div class="ipucu" data-i18n="ayar.rozet.sensorIpucu">Yalnız sayısal sensörler (pil yüzdesi, sıcaklık gibi) çizilir; en çok üç karakter sığar, sığmayan değer için rozet çizilmez. Sensörler, Favoriler bölümünde cihazlar listelendiğinde dolar. Değer tepsi ipucuna da eklenir.</div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bolum" id="bolumMasaustu">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.masaustu.baslik">Masaüstü karoları</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.masaustu.aciklama">Seçtiğin favoriler masaüstünde ayrı küçük pencereler olarak durur; taşırsın, boyutlandırırsın, yerleri hatırlanır. Tıklayınca eylem çalışır; ışıklarda parlaklık ön ayarları (favoride parlaklık açıksa) ve bağlantı durumu görünür.</p>
+
+      <div class="form-grubu">
+        <label id="masaustuKaroEtiket" data-i18n="ayar.masaustu.listeEtiket">Masaüstüne sabitlenecek favoriler</label>
+        <div id="masaustuKaroListesi" role="group" aria-labelledby="masaustuKaroEtiket"></div>
+        <div class="ipucu" data-i18n="ayar.masaustu.listeIpucu">En çok 6 karo. Işık, anahtar, vantilatör, sanal anahtar, sahne ve sensör favorileri sabitlenebilir; onay isteyen eylemler sabitlenmez. Karonun üstündeki × düğmesi karoyu kaldırır.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="masaustuKaroUstte">
+          <span data-i18n="ayar.masaustu.ustteEtiket">Karolar diğer pencerelerin üstünde dursun</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.masaustu.ustteIpucu">Kapalıyken karolar sıradan pencereler gibi davranır (başka pencere üstlerini örtebilir). Karolar görev çubuğunda görünmez. Çerçevesiz pencerenin taşınması ve boyutlandırılması henüz gerçek ekranda denenmedi.</div>
+      </div>
     </div>
   </details>
 
