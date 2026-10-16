@@ -37,6 +37,7 @@ const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
 const { alanAl, adGuvenliMi, metinGuvenliMi } = require('./suzgec');
 const { kayitliAlanMi } = require('./alan-kaydi');
 const { kisalt } = require('./metin');
+const { sayfalariDuzelt } = require('./sayfalar');
 
 const GUNCEL_EK_SURUM = 6;
 const KORUNAN_ADLAR = new Set(['__proto__', 'constructor', 'prototype', 'semaSurumu']);
@@ -140,6 +141,9 @@ function nesneAlan(ad, { varsayilan, duzelt, tip = Array.isArray(varsayilan) ? '
  */
 const AYAR_ALANLARI = Object.freeze([
   // --- 1.4.0 özellik grupları satırlarını buraya ekler ---
+
+  // --- düzen: panel sayfaları (sekmeler; o-24). Doğrulama src/lib/sayfalar.js'dedir. ---
+  nesneAlan('sayfalar', { varsayilan: [], duzelt: (ham) => sayfalariDuzelt(ham) }),
 ]);
 
 /**

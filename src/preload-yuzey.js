@@ -36,5 +36,7 @@ if (location.protocol === 'file:') {
     boyut: (yukseklik) => ipcRenderer.send('yuzey:boyut', Number(yukseklik)),
     haAc: () => ipcRenderer.invoke('yuzey:ha-ac'),
     ayarlarAc: () => ipcRenderer.invoke('yuzey:ayarlar-ac'),
+    // 1.4.0 düzen (o-16): karoya sağ tık. Yük yalnız varlık kimliğidir; menüyü ana süreç kurar (Menu.popup), HA'ya bir şey gitmez.
+    sagTik: (kimlik) => ipcRenderer.invoke('yuzey:sag-tik', kimlik),
   });
 }

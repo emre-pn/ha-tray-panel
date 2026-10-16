@@ -21,6 +21,8 @@
   const Dil = window.EvDil;
   const Sozluk = window.EvCeviriYuzey;
   if (!kopru || !Arama || !Kaydirici || !Dil || !Sozluk) return;
+  const KaroGorunum = window.EvKaroGorunum || null; // 1.4.0 düzen (o-31): simge / renk / boyut doğrulaması
+  const DuzenModulu = window.EvYuzeyDuzen || null; // 1.4.0 düzen (o-16, o-24): sayfa sekmeleri, ayrıntı bölmesi, sağ tık; yoksa panel eskisi gibi çalışır
 
   let t = Dil.cevirmen('tr', Sozluk); // HTML varsayılanı Türkçedir; dil durumAl yanıtıyla ya da onDilDegisti ile gelir
 
@@ -30,6 +32,7 @@
     medya: document.getElementById('medya'),
     eski: document.getElementById('eski'),
     serit: document.getElementById('serit'),
+    sekmeler: document.getElementById('sekmeler'),
     arama: document.getElementById('arama'),
     icerik: document.getElementById('icerik'),
     ipucu: document.getElementById('ipucu'),
@@ -59,7 +62,7 @@
   const OK_TUSLARI = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
 
   let mod = 'panel';
-  let model = { gruplar: [], sonlar: [], ust: { canli: false, baglanti: 'kapali', medyaCaliyor: null, aktifCikis: null, hata: null, uyari: null, anahtarYok: false } };
+  let model = { gruplar: [], sonlar: [], sayfalar: [], ust: { canli: false, baglanti: 'kapali', medyaCaliyor: null, aktifCikis: null, hata: null, uyari: null, anahtarYok: false } };
   let sorgu = '';
   let secili = 0;
   let seviyeAcik = false;
@@ -119,6 +122,11 @@
         yikici: k.sinif === 'yikici',
         parlaklikKontrol: k.parlaklikKontrol === true,
         tekrar: k.tekrar === true,
+        varsayilanEylem: k.varsayilanEylem !== false, // 1.4.0 düzen: false ise karonun tek tıklama eylemi yok (iklim, sensör...)
+        // 1.4.0 düzen (o-31): görünüm alanları ana süreçte doğrulanmıştır; renderer yine de aynı tabloyla doğrular (yoksa varsayılan)
+        simge: KaroGorunum ? KaroGorunum.simgeDuzelt(k.simge) || null : null,
+        renk: KaroGorunum ? KaroGorunum.renkDuzelt(k.renk) || null : null,
+        boyut: KaroGorunum ? KaroGorunum.boyutDuzelt(k.boyut) || 'normal' : 'normal',
       };
     };
     const gruplar = ham.gruplar
@@ -133,6 +141,7 @@
     return {
       gruplar: gruplar,
       sonlar: sonlar,
+      sayfalar: DuzenModulu ? DuzenModulu.sayfalariDuzelt(ham.sayfalar) : [],
       ust: {
         canli: u.canli === true,
         baglanti: Object.prototype.hasOwnProperty.call(BAGLANTI_ANAHTARI, u.baglanti) ? u.baglanti : 'kapali',
@@ -464,11 +473,56 @@
     return true;
   }
 
+  // ---------------------------------------------------------------- düzen (1.4.0: sayfa sekmeleri, ayrıntı bölmesi, sağ tık, karo görünümü)
+
+  /**
+   * src/yuzey-duzen.js yüklenmediyse null kalır ve panel bugünkü gibi çalışır. Yardımcılar işlev olarak geçilir; çevirmen ve kip
+   * (dil değişince / kip değişince) her çağrıda güncel değerle okunur.
+   */
+  const duzen = DuzenModulu
+    ? DuzenModulu.kur({
+        belge: document,
+        kopru: kopru,
+        sekmeKabi: el.sekmeler,
+        icerik: el.icerik,
+        cevir: function (anahtar, degiskenler) {
+          return t(anahtar, degiskenler);
+        },
+        dil: function () {
+          return t.dil;
+        },
+        modAl: function () {
+          return mod;
+        },
+        olustur: olustur,
+        durumMetni: durumMetni,
+        karoDugmesi: karoDugmesi,
+        isikKarosu: isikKarosu,
+        odakKaydet: odakKaydet,
+        imlecBirakildi: imlecBirakildi,
+        yenidenCiz: function () {
+          ciz();
+        },
+        simdi: function () {
+          return Date.now();
+        },
+        zaman: {
+          setTimeout: function (islev, ms) {
+            return setTimeout(islev, ms);
+          },
+          clearTimeout: function (sayac) {
+            clearTimeout(sayac);
+          },
+        },
+      })
+    : null;
+
   // ---------------------------------------------------------------- panel
 
   function karoDugmesi(karo) {
     const dugme = olustur('button', 'karo durum-' + karo.durum + (karo.yikici ? ' yikici' : '') + (karo.kullanilabilir ? '' : ' yok'));
     dugme.type = 'button';
+    if (duzen) duzen.gorunumuUygula(karo, dugme); // 1.4.0 düzen (o-31): renk sınıfı ve simge (etiketten önce)
     dugme.appendChild(olustur('span', 'karo-etiket', karo.etiket));
     const durum = durumMetni(karo);
     dugme.appendChild(olustur('span', 'karo-durum', durum));
@@ -524,6 +578,7 @@
       tekrarlayicilar.push(durdur);
     } else {
       dugme.addEventListener('click', function () {
+        if (duzen && duzen.tikiYut(karo.id)) return; // 1.4.0 düzen (o-16): uzun basmayla ayrıntı açıldıysa bırakma tıklaması eylem sayılmaz
         tekIstek(karo, dugme, { kimlik: karo.id });
       });
     }
@@ -540,7 +595,7 @@
     return en;
   }
 
-  function isikKarosu(karo) {
+  function isikKarosu(karo, detaydaMi) {
     const kutu = olustur('div', 'isik-karo');
     const ana = karoDugmesi(karo);
     kutu.appendChild(ana);
@@ -595,6 +650,7 @@
       }
     });
     kutu.appendChild(aralik);
+    if (duzen && detaydaMi !== true) duzen.karoyuBagla(karo, ana, kutu); // 1.4.0 düzen (o-16): uzun basma, Shift+Enter, sağ tık, "⋯" (ayrıntı bölmesinde değil)
     return kutu;
   }
 
@@ -663,6 +719,73 @@
     return kutu;
   }
 
+  /** Bir ızgara satırının (görsel) durumu: aynı görsel satıra düşecek karolar ve doldurulan sütun sayısı. */
+  function izgaraDurumu() {
+    const durum = {
+      bekleyen: [],
+      doluluk: 0,
+      bosalt: function () {
+        if (durum.bekleyen.length > 0) panelSatirlari.push(durum.bekleyen);
+        durum.bekleyen = [];
+        durum.doluluk = 0;
+      },
+    };
+    return durum;
+  }
+
+  /**
+   * Izgaraya TEK karo ekler: yeni bir karo türü ya da kontrolü yalnız burada (ve karoDugmesi / isikKarosu'nda) tanınır; grup görünümü,
+   * sayfa görünümü ve ayrıntı bölmesi aynı yolu kullanır. Işık karosu tam genişliktir (satırı böler); diğerleri boyutuna göre
+   * 1 / 2 / 3 sütun kaplar (düzen modülü yoksa 1) ve sığmazsa sonraki görsel satıra geçer — ok gezintisi bu satırları izler.
+   */
+  function izgarayaKaroEkle(izgara, karo, durum) {
+    if (karo.parlaklikKontrol) {
+      durum.bosalt();
+      izgara.appendChild(isikKarosu(karo));
+      return;
+    }
+    const d = karoDugmesi(karo);
+    const sar = duzen ? duzen.karoyuSar(karo, d) : { kutu: d, dugme: d };
+    const sutun = Math.min(IZGARA_KOLON, duzen ? duzen.sutunSayisi(karo) : 1);
+    if (durum.doluluk + sutun > IZGARA_KOLON) durum.bosalt();
+    izgara.appendChild(sar.kutu);
+    durum.bekleyen.push(sar.dugme);
+    durum.doluluk += sutun;
+    if (durum.doluluk >= IZGARA_KOLON) durum.bosalt();
+  }
+
+  /** Seçili sayfa (o-24): sayfanın karoları SAYFANIN sırasıyla tek ızgarada; karo yoksa kısa bir açıklama. */
+  function sayfaBolumu(sayfa) {
+    const bolum = olustur('section', 'bolum sayfa');
+    if (sayfa.karolar.length === 0) {
+      const bos = olustur('div', 'bos');
+      bos.appendChild(olustur('p', 'bos-metin', t('yuzey.sayfa.bos')));
+      bos.appendChild(olustur('p', 'bos-alt', t('yuzey.sayfa.bosAlt')));
+      bolum.appendChild(bos);
+      return bolum;
+    }
+    const izgara = olustur('div', 'izgara');
+    const durum = izgaraDurumu();
+    sayfa.karolar.forEach(function (karo) {
+      izgarayaKaroEkle(izgara, karo, durum);
+    });
+    durum.bosalt();
+    bolum.appendChild(izgara);
+    return bolum;
+  }
+
+  /** Ayrıntı bölmesi (o-16): ok gezintisi için üst satır (Geri, menü) ve gövdedeki karo bu çizimin satırlarına eklenir. */
+  function ayrintiBolumu(karo) {
+    const bolum = duzen.ayrintiCiz(karo);
+    const ust = [odakHaritasi.get('ayrinti-geri'), odakHaritasi.get('ayrinti-menu')].filter(Boolean);
+    panelSatirlari.unshift(ust);
+    if (!karo.parlaklikKontrol && karo.varsayilanEylem !== false) {
+      const d = odakHaritasi.get('k:' + karo.id);
+      if (d) panelSatirlari.push([d]);
+    }
+    return bolum;
+  }
+
   function panelCiz() {
     const oncekiOdak = odakAnahtari();
     const kaydirma = el.icerik.scrollTop;
@@ -670,38 +793,35 @@
     odakHaritasi = new Map();
     panelSatirlari = [];
     const parcalar = [];
-    const son = sonSatiri();
-    if (son) parcalar.push(son);
-    model.gruplar.forEach(function (g) {
-      const bolum = olustur('section', 'bolum grup-' + g.kod);
-      bolum.appendChild(olustur('h2', 'bolum-baslik', g.etiket));
-      grupSatirlari(g).forEach(function (satir) {
-        const izgara = olustur('div', 'izgara' + (satir.ad ? ' alt-' + satir.ad : ''));
-        let bekleyen = []; // ızgarada aynı görsel satıra düşecek karolar (ışık karosu tam genişlik: satırı böler)
-        const bosalt = function () {
-          if (bekleyen.length > 0) panelSatirlari.push(bekleyen);
-          bekleyen = [];
-        };
-        satir.karolar.forEach(function (karo) {
-          if (karo.parlaklikKontrol) {
-            bosalt();
-            izgara.appendChild(isikKarosu(karo));
-          } else {
-            const d = karoDugmesi(karo);
-            izgara.appendChild(d);
-            bekleyen.push(d);
-            if (bekleyen.length === IZGARA_KOLON) bosalt();
-          }
+    const ayrinti = duzen ? duzen.ayrintiKaro(tumKarolar()) : null;
+    const sayfa = duzen && !ayrinti ? duzen.seciliSayfa(model, tumKarolar()) : null;
+    if (ayrinti) {
+      parcalar.push(ayrintiBolumu(ayrinti));
+    } else if (sayfa) {
+      parcalar.push(sayfaBolumu(sayfa));
+    } else {
+      const son = sonSatiri();
+      if (son) parcalar.push(son);
+      model.gruplar.forEach(function (g) {
+        const bolum = olustur('section', 'bolum grup-' + g.kod);
+        bolum.appendChild(olustur('h2', 'bolum-baslik', g.etiket));
+        grupSatirlari(g).forEach(function (satir) {
+          const izgara = olustur('div', 'izgara' + (satir.ad ? ' alt-' + satir.ad : ''));
+          const durum = izgaraDurumu(); // ızgarada aynı görsel satıra düşecek karolar (ışık karosu tam genişlik: satırı böler)
+          satir.karolar.forEach(function (karo) {
+            izgarayaKaroEkle(izgara, karo, durum);
+          });
+          durum.bosalt();
+          bolum.appendChild(izgara);
         });
-        bosalt();
-        bolum.appendChild(izgara);
+        parcalar.push(bolum);
       });
-      parcalar.push(bolum);
-    });
+    }
     if (parcalar.length === 0) parcalar.push(bosDurum());
     el.icerik.replaceChildren.apply(el.icerik, parcalar);
     if (typeof kaydirma === 'number') el.icerik.scrollTop = kaydirma;
-    odagiGeriVer(oncekiOdak);
+    const istek = duzen ? duzen.odakIstegiAl() : null; // ayrıntı bölmesi açıldı / kapandı: odak ilgili öğeye
+    odagiGeriVer(istek !== null ? istek : oncekiOdak);
   }
 
   // ---------------------------------------------------------------- palet
@@ -1035,6 +1155,7 @@
 
   function ciz() {
     ustuCiz();
+    if (duzen) duzen.sekmeleriCiz(model); // palet kipinde ya da sayfa yokken gizlenir
     if (mod === 'palet') paletCiz();
     else panelCiz();
     setTimeout(boyutBildir, 0);
@@ -1064,6 +1185,7 @@
     t = Dil.cevirmen(yeniDil, Sozluk);
     Dil.sayfayiCevir(document, t);
     seritImzasi = ''; // şerit metni dile bağlı: aynı içerik olsa da yeniden kurulsun
+    if (duzen) duzen.dilDegisti(); // sekme metinleri yeniden yazılsın
     return true;
   }
 
@@ -1116,6 +1238,7 @@
     karoKilitleri.clear();
     odakHaritasi = new Map(); // yeni gösterimde eski gösterimin odağı geri verilmez
     panelSatirlari = [];
+    if (duzen) duzen.sifirla(); // ayrıntı bölmesi kapanır; seçili sayfa korunur
     malzemeAyarla(yuk && yuk.malzeme);
     kipAyarla(yuk && yuk.mod);
     sorgu = '';
@@ -1161,12 +1284,15 @@
 
   document.addEventListener('keydown', function (olay) {
     if (olay.key !== 'Escape') {
-      if (mod === 'panel') panelGezin(olay); // ok tuşlarıyla ızgara gezintisi (k-09)
+      if (mod !== 'panel') return;
+      if (duzen && duzen.sekmeTusu(olay, model)) return; // Ctrl+PageUp / Ctrl+PageDown: sayfalar arasında geç (o-24)
+      panelGezin(olay); // ok tuşlarıyla ızgara gezintisi (k-09)
       return;
     }
     if (mod === 'panel') {
       olay.preventDefault();
-      kopru.kapat();
+      if (duzen && duzen.ayrintiAcikMi()) duzen.ayrintiKapat(); // önce ayrıntı bölmesi kapanır, ikinci Esc paneli kapatır (o-16)
+      else kopru.kapat();
     } else if (olay.target !== el.arama) {
       paletTusu(olay); // odak arama kutusundan kaçtıysa da Esc (önce seviye satırını, sonra paleti) kapatır; arama kutusu kendi keydown'ında işler
     }

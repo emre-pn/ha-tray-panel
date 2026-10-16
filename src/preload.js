@@ -64,5 +64,20 @@ if (location.protocol === 'file:') {
       ipcRenderer.on('ayarlar:favoriler-degisti', dinleyici);
       return () => ipcRenderer.removeListener('ayarlar:favoriler-degisti', dinleyici);
     },
+
+    // --- Düzen (1.4.0 düzen grubu: o-16, o-28, o-30) ---
+    // Düzen geçmişi: son 20 favori + sayfa düzeni anlık görüntüsü (yalnız zaman, neden, sayılar); yanıt { ok, noktalar }
+    duzenGecmisiniGetir: () => ipcRenderer.invoke('duzen:gecmis'),
+    // Geçmiş noktasına dön (id: tam sayı); yanıt { ok, favoriSayisi?, sayfaSayisi?, atilan?, hata? }
+    duzeneDon: (id) => ipcRenderer.invoke('duzen:don', id),
+    // HA'da bulunamayan favoriyi seçilen cihaza bağla (eski ve yeni varlık kimliği); yanıt { ok, favoriSayisi?, neden?, hata? }
+    favoriyiOnar: (eski, yeni) => ipcRenderer.invoke('favoriler:onar', eski, yeni),
+    // Panelde karo menüsünden "Düzenle…": yük varlık kimliği (Ayarlar o favoriye odaklanır)
+    onFavoriyeGit: (callback) => {
+      if (typeof callback !== 'function') return () => {};
+      const dinleyici = (_olay, kimlik) => callback(kimlik);
+      ipcRenderer.on('ayarlar:favoriye-git', dinleyici);
+      return () => ipcRenderer.removeListener('ayarlar:favoriye-git', dinleyici);
+    },
   });
 }

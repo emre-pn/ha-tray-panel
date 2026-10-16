@@ -310,12 +310,13 @@ test('favori satırı: kısayol kutusu yalnız uygun (zararsız) eylemde, parlak
   const onayKutulari = (kimlik) => girdiler(satirBul(sayfa, kimlik)).filter((g) => g.type === 'checkbox');
   const kutular = (kimlik) => metinKutulari(satirBul(sayfa, kimlik));
 
-  assert.equal(kutular('light.salon_lambasi').length, 2, 'ışık: kısayol + karo adı kutusu');
-  assert.equal(onayKutulari('light.salon_lambasi').length, 3, 'ışık: seçim + onay + parlaklık ayarı');
-  assert.equal(kutular('scene.film').length, 2, 'sahne: kısayol + karo adı');
-  assert.equal(onayKutulari('scene.film').length, 2, 'sahne: parlaklık ayarı yok');
-  assert.equal(kutular('button.pc_bilgisayari_kapat').length, 1, 'yıkıcı eylem: kısayol kutusu hiç yok, yalnız karo adı');
-  assert.equal(onayKutulari('button.pc_bilgisayari_kapat').length, 2);
+  // 1.4.0 düzen: her normal satırın sonunda karo görünümü grubu (tepsiye sabitle işaret kutusu ve simge için emoji kutusu) vardır.
+  assert.equal(kutular('light.salon_lambasi').length, 3, 'ışık: kısayol + karo adı + emoji kutusu');
+  assert.equal(onayKutulari('light.salon_lambasi').length, 4, 'ışık: seçim + onay + parlaklık ayarı + tepsiye sabitle');
+  assert.equal(kutular('scene.film').length, 3, 'sahne: kısayol + karo adı + emoji kutusu');
+  assert.equal(onayKutulari('scene.film').length, 3, 'sahne: parlaklık ayarı yok');
+  assert.equal(kutular('button.pc_bilgisayari_kapat').length, 2, 'yıkıcı eylem: kısayol kutusu hiç yok, karo adı + emoji kutusu');
+  assert.equal(onayKutulari('button.pc_bilgisayari_kapat').length, 3);
   assert.equal(kutular('scene.film')[0].disabled, true, 'seçilmemiş satırda pasif');
   assert.equal(kutular('light.salon_lambasi')[0].disabled, false);
 

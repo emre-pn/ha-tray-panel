@@ -19,7 +19,8 @@ const ANA = require('../src/lib/ceviri/ana');
 const { YASAK_PARCALAR, YASAK_KISA_PARCALAR } = require('../src/lib/suzgec');
 const {
   HTML,
-  BETIK,
+  BETIK: ANA_BETIK,
+  DUZEN_BETIK,
   AYAR,
   CIHAZLAR,
   AYAR_D3,
@@ -33,6 +34,8 @@ const {
 } = require('./ayarlar-sahte');
 
 const KOK = path.join(__dirname, '..');
+// Ayarlar'ın metin yazan betikleri: ayarlar.js ve düzen bölümü (ayarlar-duzen.js; 1.4.0). Sözlük taramaları ikisini birlikte görür.
+const BETIK = `${ANA_BETIK}\n${DUZEN_BETIK}`;
 const TURKCE_HARF = /[çğıöşüÇĞİÖŞÜ]/;
 const DIL_ANAHTARI = 'evPaneli.ayarlar.dil';
 const yerTutucular = (metin) => [...String(metin).matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((m) => m[1]).sort();
@@ -96,7 +99,10 @@ test('ayarlar.html: dil seçici Görünüm bölümünde; "Dil / Language" etiket
   assert.ok(!Object.values(AYARLAR.tr).concat(Object.values(AYARLAR.en)).some((m) => m === 'English' || m === 'Türkçe'), 'dil adları çevrilmez');
   // Sözlükler ve dil.js, ayarlar.js'ten ve kisayol.js'ten önce yüklenir
   const betikler = [...HTML.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-  assert.deepEqual(betikler, ['lib/dil.js', 'lib/ceviri/ana.js', 'lib/ceviri/ayarlar.js', 'lib/kisayol.js', 'lib/arama.js', 'ayarlar.js']);
+  assert.deepEqual(betikler, [
+    'lib/dil.js', 'lib/ceviri/ana.js', 'lib/ceviri/ayarlar.js', 'lib/kisayol.js', 'lib/arama.js',
+    'lib/karo-gorunum.js', 'lib/duzen-islemleri.js', 'ayarlar-duzen.js', 'ayarlar.js',
+  ]);
   assert.match(HTML, /<html lang="tr">/);
 });
 

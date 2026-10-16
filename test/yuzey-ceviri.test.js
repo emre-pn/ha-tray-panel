@@ -20,6 +20,7 @@ const oku = (g) => fs.readFileSync(path.join(KOK, g), 'utf8');
 const TURKCE_HARF = /[çğıöşüÇĞİÖŞÜ]/;
 const SAYFALAR = [
   ['src/yuzey.html', 'src/yuzey-sayfa.js'],
+  ['src/yuzey.html', 'src/yuzey-duzen.js'], // 1.4.0 düzen: sayfa sekmeleri ve ayrıntı bölmesi (aynı sayfa, ayrı betik)
   ['src/kose-bildirim.html', 'src/kose-sayfa.js'],
   ['src/offline.html', 'src/offline.js'],
 ];

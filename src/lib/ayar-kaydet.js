@@ -17,6 +17,7 @@ const { TEMA_DEGERLERI, vurguRengiDuzelt } = require('./gorunum');
 const { DIL_AYARLARI, cogul } = require('./dil');
 const { TR } = require('./ceviri-varsayilan');
 const { ekGirdiDogrula } = require('./ayar-alanlari');
+const { adiEngellenenSayisi } = require('./sayfalar');
 
 const TEPSI_SOL_TIK_DEGERLERI = ['panel', 'pencere'];
 
@@ -135,6 +136,11 @@ function ayarGirdisiniDogrula(girdi, mevcut, { t = TR } = {}) {
   const ek = ekGirdiDogrula(girdi, t);
   Object.assign(yeni, ek.yeni);
   uyarilar.push(...ek.uyarilar);
+  // Düzen (o-24): kapı kuralına takılan sayfa adı sayfayı düşürmez, adsız bırakır; kullanıcı bilgilendirilir.
+  if (Array.isArray(girdi.sayfalar) && ek.yeni.sayfalar !== undefined) {
+    const engellenen = adiEngellenenSayisi(girdi.sayfalar, ek.yeni.sayfalar);
+    if (engellenen > 0) uyarilar.push({ alan: 'sayfalar', mesaj: cogul(t, 'kaydet.sayfaAdiEngellendi', engellenen) });
+  }
   return { hatalar, hataAlanlari, uyarilar, yeni };
 }
 

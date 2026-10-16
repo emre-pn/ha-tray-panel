@@ -102,6 +102,8 @@ const { haOkumaOlustur } = require('./lib/ha-okuma');
 const { karoAlaniMi, alanSirasi, varsayilanServis } = require('./lib/alan-kaydi');
 const { eylemKatmaniOlustur } = require('./eylem');
 const { yuzeyYoneticisiOlustur } = require('./yuzey-yoneticisi');
+const { duzenGecmisiOlustur } = require('./lib/duzen-gecmisi');
+const { duzenYoneticisiOlustur } = require('./lib/duzen-yoneticisi');
 
 // ---------------------------------------------------------------------------
 // Sabitler
@@ -668,6 +670,8 @@ const { adresSec, haIstek } = haIstemcisi;
 /** Tek durum kaynağı: canlı bağlantı (src/ha-ws.js) ve REST yedeği AYNI depoya yazar; tepsi, panel ve palet buradan okur. */
 const depo = durumDeposuOlustur();
 const son = sonKullanilanlarOlustur({ dosyaYolu: path.join(app.getPath('userData'), 'son-kullanilanlar.json'), fs, gunluk });
+/** 1.4.0 düzen (o-30): favori + sayfa düzeninin son 20 anlık görüntüsü (<userData>\duzen-gecmisi.json); ayar yedeklerinden (ayar-yedegi.js) ayrıdır. */
+const duzenGecmisi = duzenGecmisiOlustur({ dosyaYolu: path.join(app.getPath('userData'), 'duzen-gecmisi.json'), fs, gunluk });
 
 /** İzlenen varlıklar: favoriler + salt-okunur yardımcı varlıklar (medya çalıyor, ses çıkışı). */
 function izlenenKimlikler() {
@@ -758,6 +762,7 @@ function yuzeyModeli() {
       anahtarYok: !anahtarDeposu.varMi(), // boş panel/palette "anahtar yok" ile "favori yok" ayrılır (k-03)
     },
     t,
+    sayfalar: ayarlar?.sayfalar ?? [], // 1.4.0 düzen (o-24): panel sekmeleri
   });
 }
 
@@ -809,11 +814,86 @@ const yuzey = yuzeyYoneticisiOlustur({
   dilAl: () => etkinDil,
   gunluk,
   okuma: haOkuma,
+  sagTik: (kimlik, pencere) => duzen.karoMenusuAc(kimlik, pencere), // 1.4.0 düzen (o-16): karo bağlam menüsü
 });
 // Durum değişince panel/palet modeli ve tepsi ipucu (açık ışık sayısı) tazelenir.
 depo.dinle(() => {
   yuzey.modelDegisti();
   tepsiyiGuncelle();
+});
+
+// ---------------------------------------------------------------------------
+// Düzen: karo bağlam menüsü, düzen geçmişi, onarım (1.4.0 düzen grubu; src/lib/duzen-yoneticisi.js)
+// ---------------------------------------------------------------------------
+
+let bekleyenOdakFavori = null; // panel menüsünden "Düzenle…": Ayarlar açılınca bu favoriye odaklanır (bir kez okunur)
+
+/** Panel menüsünden "Düzenle…": Ayarlar açılır / öne gelir ve favori satırına odaklanır. */
+function favoriyeGit(kimlik) {
+  bekleyenOdakFavori = kimlik;
+  ayarlarPenceresiniAc();
+  try {
+    if (ayarlarPenceresi && !ayarlarPenceresi.isDestroyed() && !ayarlarPenceresi.webContents.isLoading()) {
+      ayarlarPenceresi.webContents.send('ayarlar:favoriye-git', kimlik);
+      bekleyenOdakFavori = null;
+    }
+  } catch {
+    /* pencere kapanıyor; bekleyen odak ilk ayar özetiyle gider */
+  }
+}
+
+/** Karo menüsü "Favorilerden kaldır": ana sürecin kendi yerel onay penceresi. Açıkken eylem hattı yeni tıklamaları yutmaz, bildirir (onayAcikMi). */
+async function karoKaldirOnayi(ad) {
+  acikOnaySayisi += 1;
+  try {
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      buttons: [t('karoMenu.kaldirDugme'), t('diyalog.vazgec')],
+      defaultId: 1, // Enter'a yanlışlıkla basmak kaldırmasın
+      cancelId: 1,
+      noLink: true,
+      title: uygulamaAdi(),
+      message: t('karoMenu.kaldirMesaj', { ad: kisalt(ad, AD_SINIRI) }),
+      detail: t('karoMenu.kaldirAyrinti'),
+    });
+    return response === 0;
+  } catch {
+    return false;
+  } finally {
+    acikOnaySayisi -= 1;
+  }
+}
+
+/** Menüyü imleç konumunda açar; kapanınca çözülür. Pencere kapanmışsa ya da menü kurulamazsa sessizce çözülür. */
+function karoMenusunuGoster(sablon, pencere) {
+  return new Promise((coz) => {
+    try {
+      Menu.buildFromTemplate(sablon).popup({ window: pencere && !pencere.isDestroyed() ? pencere : undefined, callback: () => coz() });
+    } catch {
+      gunluk('Karo menüsü gösterilemedi.');
+      coz();
+    }
+  });
+}
+
+const duzen = duzenYoneticisiOlustur({
+  ayarlarAl: () => ayarlar,
+  yaz: () => ayarlariYaz(),
+  gecmis: duzenGecmisi,
+  karoAl: (kimlik) => yuzeyModeli().gruplar.flatMap((g) => g.karolar).find((k) => k.id === kimlik),
+  menuAc: karoMenusunuGoster,
+  onayIste: karoKaldirOnayi,
+  duzenleAc: favoriyeGit,
+  degisti: ({ yalnizModel = false, ayarlardan = false } = {}) => {
+    if (yalnizModel) yuzey.modelDegisti();
+    else izlenenleriYenile();
+    if (!ayarlardan) ayarlaraFavoriDegistiBildir(); // açık Ayarlar eski listeyle kaydetmesin
+  },
+  cihazAl: () => cihazOnbellegi,
+  menuMetni,
+  t,
+  gunluk,
+  hataBildir: (metin) => geriBildirim({ tur: 'hata', metin }),
 });
 
 // ---------------------------------------------------------------------------
@@ -2280,6 +2360,13 @@ function izinleriAyarla(oturum) {
 
 const izinYok = () => ({ ok: false, hata: t('ana.izinYok') });
 
+/** Bekleyen "Düzenle…" odağını bir kez verir (sonraki özetlerde null). */
+function odakFavoriyiAl() {
+  const kimlik = bekleyenOdakFavori;
+  bekleyenOdakFavori = null;
+  return kimlik;
+}
+
 async function ayarOzeti() {
   return {
     yerelAdres: ayarlar.yerelAdres,
@@ -2319,7 +2406,8 @@ async function ayarOzeti() {
     anahtarKarantinada: anahtarDeposu.karantinadaMi(), // reddedilen anahtarın kaydı yazılamadığı için dosyası kenara alındı
     yetkiKaydiSorunu: yetkiKesici.kayitSorunu(), // 'yazilamadi' | 'okunamadi' | null: kesici kaydı diske yazılamıyor/okunamıyor (Ayarlar uyarır)
     sifrelemeVar: await anahtarDeposu.kullanilabilirMi(),
-    favoriler: ayarlar.favoriler.map(({ entity_id, ad, onay, etiket, kisayol, parlaklik }) => ({ entity_id, ad, onay, etiket, kisayol, parlaklik })),
+    favoriler: ayarlar.favoriler.map(({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, tepsi }) => ({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, ...(tepsi === true ? { tepsi: true } : {}) })),
+    odakFavori: odakFavoriyiAl(), // panel menüsünden "Düzenle…" ile açıldıysa odaklanılacak favori (bir kez)
     ayarDosyasi: ayarDosyasiYolu(),
     ...ekAyarOzeti(ayarlar), // 1.4.0: ayar-alanlari.js tablosundaki alanlar (ozette:true)
   };
@@ -2492,6 +2580,8 @@ function ipcKaydet() {
   // Erişim anahtarı hiçbir yönde dosyaya girmez ve bu yoldan değişmez.
   async function ayarlariIceAktarUygula(cozum) {
     const a = cozum.ayarlar;
+    const duzenOncesi = duzen.anlik();
+    if (a.favoriler !== undefined || a.sayfalar !== undefined) duzen.noktaAl('aktar'); // içe aktarma / yedekten dönme düzeni değiştirir: önceki düzen geçmişe
     const girdi = { yerelAdres: a.yerelAdres ?? ayarlar.yerelAdres, disAdres: a.disAdres ?? ayarlar.disAdres, kisayol: a.kisayol ?? ayarlar.kisayol };
     for (const alan of ['paletKisayol', 'tepsiSolTik', 'canliBaglanti', 'otomatikBaslat', 'pencereBoyutu', 'odakKaybindaGizle', 'anaPanoyaDonDk', 'koseBildirimi', 'bipSesi', 'temaZorla', 'vurguRengi', 'yeniPencereMalzemesi', 'panolar', ...aktarilanAlanlar()]) {
       if (a[alan] !== undefined) girdi[alan] = a[alan];
@@ -2501,6 +2591,7 @@ function ipcKaydet() {
     let yazildi = true;
     if (a.favoriler !== undefined) {
       ayarlar.favoriler = onayiDuzelt(a.favoriler);
+      duzen.degisimiIsle(duzenOncesi, 'aktar'); // sayfalar yeni favorilere göre budanır
       yazildi = ayarlariYaz();
       izlenenleriYenile();
     }
@@ -2713,7 +2804,8 @@ function ipcKaydet() {
     if (!ayarlardan(olay)) return izinYok();
     if (!Array.isArray(girdi) || girdi.length > 200) return { ok: false, hata: t('ana.gecersizListe') };
     if (!cihazOnbellegi) return { ok: false, hata: t('ana.onceCihazlar') };
-    const { yeni, eksik, engelli, kisayolHatalari, etiketHatalari } = favorileriBirlestir({
+    const duzenOncesi = duzen.anlik(); // 1.4.0 düzen (o-30): değişiklikten önceki favori + sayfa düzeni
+    const { yeni, eksik, engelli, kisayolHatalari, etiketHatalari, gorunumHatalari } = favorileriBirlestir({
       mevcut: ayarlar.favoriler,
       secilen: girdi,
       guvenliListe: cihazOnbellegi.guvenli,
@@ -2726,6 +2818,7 @@ function ipcKaydet() {
       ayarlar.engellenenFavoriler = [...onceki, ...engelli.map((e) => ({ entity_id: e.entity_id, neden: 'guvenlik' }))].slice(-EN_COK_ENGELLENEN);
       gunluk(`${engelli.length} favori güvenlik kuralı nedeniyle çıkarıldı.`);
     }
+    duzen.degisimiIsle(duzenOncesi, 'kaydet', { birlestir: true }); // sayfalar favorilere göre budanır; önceki düzen geçmişe yazılır
     const yazildi = ayarlariYaz();
     izlenenleriYenile();
     if (!yazildi) return { ok: false, hata: t('bildirim.ayarYazilamadi') };
@@ -2736,9 +2829,15 @@ function ipcKaydet() {
       engelli: engelli.length,
       kisayolHatalari,
       etiketHatalari, // karo adı kapı süzgecinden geçmedi (k-06): Ayarlar söyler, önceki ad korunur
+      gorunumHatalari, // simge / renk / boyut geçersizdi (o-31): [{ entity_id, alan }]; önceki değer korunur
       kisayolSorunlari: kisayolSorunlari().map(({ id, tur, kisayol, kimlik, neden, mesaj }) => ({ id, tur, kisayol, kimlik, neden, mesaj })),
     };
   });
+
+  // 1.4.0 düzen (o-28, o-30): düzen geçmişi, geçmiş noktasına dönüş ve HA'da bulunamayan favoriyi onarma. Yalnız Ayarlar'dan.
+  ipcMain.handle('duzen:gecmis', (olay) => (ayarlardan(olay) ? duzen.gecmisListesi() : izinYok()));
+  ipcMain.handle('duzen:don', (olay, id) => (ayarlardan(olay) ? duzen.geriDon(id) : izinYok()));
+  ipcMain.handle('favoriler:onar', (olay, eski, yeni) => (ayarlardan(olay) ? duzen.onar(eski, yeni) : izinYok()));
 
   // Hazır ilk karoları (hiz-07) elle yeniden uygular; eksik olanlar eklenir, mevcutlara dokunulmaz.
   ipcMain.handle('favoriler:hazir-liste', async (olay) => {
@@ -2875,6 +2974,8 @@ function baslat() {
     if (reddedilmisKayit > 0) gunluk(`Yetki kesici: ${reddedilmisKayit} reddedilmiş anahtar kaydı yüklendi.`);
     temayiUygula(); // pencereler oluşmadan önce: koyu tema (gorunum-13)
     son.yukle();
+    duzenGecmisi.yukle();
+    ekAyarDinle('sayfalar', (yeni, eski) => duzen.sayfalarDegisti(yeni, eski)); // 1.4.0 düzen (o-24, o-30)
     izinleriAyarla(session.fromPartition(HA_BOLUMU));
     izinleriAyarla(session.defaultSession);
     ipcKaydet();
