@@ -9,9 +9,17 @@
  *
  * Onay biçimi yüzeye göre değişir (soru-3): panel/palet ~0,8 sn BASILI TUT; tepsi menüsü onay penceresi;
  * kısayol ve komut satırına yıkıcı eylem atanamaz.
+ *
+ * 1.4.0: eylemSinifi(varlik, favori, servis) — servis verilirse src/lib/servis-izinleri.js'teki servis sınıfı da uygulanır:
+ * 'yikici' servis (ör. todo.remove_item) her zaman onay ister (kapatılamaz); 'onayli' servis (ör. climate.set_hvac_mode)
+ * favoride onay:false yoksa onay ister. Alan varsayılanı (onay isteyen alanlar) src/lib/alan-kaydi.js onayVarsayilan
+ * sütunundan gelir: düğme, sanal düğme, script ve 1.4.0'da input_select, select, input_number, number, timer.
+ * Servis sınıfı alan/varlık sınıfını yalnız SIKILAŞTIRIR (zararsızı onaylıya çevirir), hiçbir zaman gevşetmez.
  */
 
-const { FAVORI_ALANLARI, alanAl, guvenliVarlikMi } = require('./suzgec');
+const { alanAl, guvenliVarlikMi } = require('./suzgec');
+const { onayVarsayilanMi } = require('./alan-kaydi');
+const { servisSinifi } = require('./servis-izinleri');
 const { sadelestir } = require('./metin');
 const { TR } = require('./ceviri-varsayilan');
 
@@ -59,7 +67,6 @@ const IPUCU_CIFTLERI = [
   ['power', 'off'],
   ['shut', 'down'],
 ];
-const VARSAYILAN_ONAY_ALANLARI = new Set(['button', 'input_button', 'script']);
 
 // Onay penceresi açıklamaları src/lib/ceviri/ana.js sözlüğündedir ('onay.<kimlik>'); burada yalnız hangi kimliklerin açıklaması olduğu durur.
 const ACIKLAMALI_KIMLIKLER = new Set([
@@ -87,10 +94,21 @@ function ipucuVarMi(kimlik, ad) {
 /**
  * @param {{entity_id:string, attributes?:object}} varlik HA durumu (ya da en az { entity_id, attributes.friendly_name })
  * @param {{onay?:boolean}} [favori] ayardaki favori kaydı
+ * @param {string} [servis] 1.4.0: çağrılacak servis (verilmezse varlığın tek tıklama eylemi sınıflanır)
  * @returns {{ sinif: 'zararsiz'|'yikici'|'yasak', zorunlu: boolean, neden: string }}
- *   zorunlu: onay kapatılamaz (açık liste ya da ipucu belirteci)
+ *   zorunlu: onay kapatılamaz (açık liste, ipucu belirteci ya da 'yikici' servis)
  */
-function eylemSinifi(varlik, favori) {
+function eylemSinifi(varlik, favori, servis) {
+  const temel = varlikSinifi(varlik, favori);
+  if (temel.sinif === SINIF.YASAK || servis === undefined) return temel;
+  const s = servisSinifi(alanAl(varlik.entity_id), servis);
+  if (s === 'yikici') return { sinif: SINIF.YIKICI, zorunlu: true, neden: 'servis' };
+  const onay = favori && typeof favori === 'object' ? favori.onay : undefined;
+  if (s === 'onayli' && temel.sinif === SINIF.ZARARSIZ && onay !== false) return { sinif: SINIF.YIKICI, zorunlu: false, neden: 'servis-varsayilani' };
+  return temel;
+}
+
+function varlikSinifi(varlik, favori) {
   if (!guvenliVarlikMi(varlik)) return { sinif: SINIF.YASAK, zorunlu: true, neden: 'guvenlik' };
   const kimlik = varlik.entity_id;
   const alan = alanAl(kimlik);
@@ -105,8 +123,8 @@ function eylemSinifi(varlik, favori) {
   }
   if (IPUCU_ALANLARI.has(alan) && ipucuVarMi(kimlik, ad)) return { sinif: SINIF.YIKICI, zorunlu: true, neden: 'ipucu' };
   if (onay === true) return { sinif: SINIF.YIKICI, zorunlu: false, neden: 'favori-ayari' };
-  if (VARSAYILAN_ONAY_ALANLARI.has(alan) && Object.hasOwn(FAVORI_ALANLARI, alan)) {
-    // Yeni eklenen düğme ve script'ler varsayılan onaylıdır; kullanıcı açıkça kapatabilir (onay:false).
+  if (onayVarsayilanMi(alan)) {
+    // Yeni eklenen düğme, script ve (1.4.0) seçici/sayı/zamanlayıcı favorileri varsayılan onaylıdır; kullanıcı açıkça kapatabilir (onay:false).
     return onay === false
       ? { sinif: SINIF.ZARARSIZ, zorunlu: false, neden: 'favori-ayari' }
       : { sinif: SINIF.YIKICI, zorunlu: false, neden: 'varsayilan' };

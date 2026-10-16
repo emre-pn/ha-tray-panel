@@ -21,6 +21,21 @@ test('plan: ilk 8 zararsız üstte, kalan zararsızlar "Diğer favoriler"de, yı
   assert.ok(plan.yikici.every((o) => o.yikici && o.checkbox === false && o.label.endsWith('onay ister')));
 });
 
+test('1.4.0 plan: tek tıklama eylemi olmayan karolar (iklim, sensör, seçici) menüye girmez; nem cihazı aç/kapa olarak girer', () => {
+  const m = yuzeyModeliOlustur({
+    favoriler: [
+      { entity_id: 'climate.salon', ad: 'Klima' },
+      { entity_id: 'sensor.sicaklik', ad: 'Sıcaklık' },
+      { entity_id: 'input_select.mod', ad: 'Mod' },
+      { entity_id: 'humidifier.oda', ad: 'Nem' },
+    ],
+    durumAl: (k) => ({ entity_id: k, state: k.startsWith('climate') ? 'heat' : 'on', attributes: {} }),
+  }).gruplar.flatMap((g) => g.karolar);
+  const plan = tepsiMenuPlani(m);
+  assert.deepEqual([...plan.ust, ...plan.alt, ...plan.yikici].map((o) => o.kimlik), ['humidifier.oda']);
+  assert.equal(plan.ust[0].checkbox, true);
+});
+
 test('plan: az favoride alt boş; hiç favori yoksa hepsi boş', () => {
   const plan = tepsiMenuPlani(karolar().slice(0, 3));
   assert.deepEqual([plan.ust.length, plan.alt.length, plan.yikici.length], [3, 0, 0]);

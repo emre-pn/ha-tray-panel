@@ -72,7 +72,7 @@ test('karoOlustur: etiket yoksa canlı ad, o da yoksa kayıtlı ad; uzun etiket 
 
 test('karoOlustur: renderer modelinde yalnız izinli alanlar (anahtar/adres/ham durum yok)', () => {
   const karo = karoOlustur({ entity_id: 'light.a', ad: 'A', kisayol: 'Control+Alt+1' }, { entity_id: 'light.a', state: 'on', attributes: { token: 'gizli', friendly_name: 'A' }, context: { id: 'x' } });
-  assert.deepEqual(Object.keys(karo).sort(), ['ad', 'alan', 'altGrup', 'durum', 'etiket', 'grup', 'grupEtiketi', 'id', 'kullanilabilir', 'parlaklikKontrol', 'sinif', 'tekrar', 'ulasilamiyor', 'yuzde']);
+  assert.deepEqual(Object.keys(karo).sort(), ['ad', 'alan', 'altGrup', 'durum', 'etiket', 'grup', 'grupEtiketi', 'id', 'kullanilabilir', 'onayliServisler', 'ozellik', 'parlaklikKontrol', 'sinif', 'tekrar', 'ulasilamiyor', 'varsayilanEylem', 'yuzde']);
   assert.ok(!JSON.stringify(karo).includes('gizli'));
   assert.ok(!JSON.stringify(karo).toLowerCase().includes('control+alt'));
 });
@@ -228,4 +228,46 @@ test('karolariOlustur: kapı/kilit/alarm/garaj favorileri süzülür, dizi olmay
   assert.deepEqual(karolariOlustur(favoriler, depo()).map((k) => k.id), ['light.ampul']);
   assert.deepEqual(karolariOlustur(null, depo()), []);
   assert.deepEqual(karolariOlustur(undefined, depo()), []);
+});
+
+// --- 1.4.0: yeni alan karoları -----------------------------------------------------------------------------
+
+test('1.4.0 karo: güvenli öznitelik alt kümesi (ozellik), tek tıklama eylemi ve onaylı servisler; renderer\'a resim/ad gitmez', () => {
+  const durumlar = {
+    'climate.salon': { entity_id: 'climate.salon', state: 'heat', attributes: { friendly_name: 'Salon kliması (HA)', hvac_modes: ['off', 'heat'], min_temp: 16, max_temp: 30, entity_picture: '/api/x?token=GIZLI' } },
+    'sensor.sicaklik': { entity_id: 'sensor.sicaklik', state: '21', attributes: { unit_of_measurement: '°C' } },
+    'binary_sensor.on_kapi': { entity_id: 'binary_sensor.on_kapi', state: 'off', attributes: { device_class: 'door' } },
+    'media_player.tv': { entity_id: 'media_player.tv', state: 'playing', attributes: { media_title: 'Garage door', entity_picture: '/api/media_player_proxy/x?token=GIZLI' } },
+    'light.a': { entity_id: 'light.a', state: 'on', attributes: {} },
+  };
+  const m = yuzeyModeliOlustur({
+    favoriler: [
+      { entity_id: 'climate.salon', ad: 'Klima', etiket: 'Klima' }, // etiketsiz favoride 1.3.0'dan beri canlı ad etiket olur (k1 testi)
+      { entity_id: 'sensor.sicaklik', ad: 'Sıcaklık' },
+      { entity_id: 'binary_sensor.on_kapi', ad: 'Sensör' },
+      { entity_id: 'media_player.tv', ad: 'TV' },
+      { entity_id: 'light.a', ad: 'A' },
+      { entity_id: 'todo.alisveris', ad: 'Liste' },
+      { entity_id: 'cover.perde', ad: 'Perde' },
+    ],
+    durumAl: depo(durumlar),
+  });
+  const karolar = m.gruplar.flatMap((g) => g.karolar);
+  assert.deepEqual(karolar.map((k) => k.id).sort(), ['climate.salon', 'light.a', 'media_player.tv', 'sensor.sicaklik'], 'kapı sınıflı sensör, karo olmayan todo ve cover yok');
+  const bul = (id) => karolar.find((k) => k.id === id);
+  assert.equal(bul('climate.salon').varsayilanEylem, false);
+  assert.deepEqual(bul('climate.salon').onayliServisler, ['set_hvac_mode']);
+  assert.deepEqual(bul('climate.salon').ozellik.modlar, ['off', 'heat']);
+  assert.equal(bul('sensor.sicaklik').ozellik.sayi, 21);
+  assert.deepEqual(bul('sensor.sicaklik').onayliServisler, []);
+  assert.equal(bul('media_player.tv').ozellik.baslik, null);
+  assert.equal(bul('light.a').varsayilanEylem, true);
+  const r = rendererModeli(m);
+  const metin = JSON.stringify(r);
+  assert.ok(!metin.includes('GIZLI'));
+  assert.ok(!metin.includes('Salon kliması (HA)'));
+  assert.ok(!metin.includes('entity_picture'));
+  const rKlima = r.gruplar.flatMap((g) => g.karolar).find((k) => k.id === 'climate.salon');
+  rKlima.ozellik.modlar.push('degisti');
+  assert.deepEqual(bul('climate.salon').ozellik.modlar, ['off', 'heat'], 'renderer kopyası ana modeli değiştirmez');
 });

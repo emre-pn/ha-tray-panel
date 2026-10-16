@@ -572,3 +572,118 @@ test('abonelikYenile: canlı değilken yenidenBaglan gibi davranır', async () =
   assert.equal(o.soketler.length, 1, 'soket açıldı');
 });
 
+// --- 1.4.0: okuma komutları (komut) ve okuma abonelikleri (abone) ----------------------------------------------
+
+/** Kopan bağlantının 2 sn sonra açılan yeni soketini canlıya taşır. */
+async function yenidenCanli(o) {
+  o.zaman.ilerle(2000);
+  await akit();
+  const s = o.soketler.at(-1);
+  s.yayinla({ type: 'auth_required' });
+  s.yayinla({ type: 'auth_ok' });
+  s.yayinla({ id: s.gonderilen.find((m) => m.type === 'subscribe_trigger').id, type: 'result', success: true, result: null });
+  s.yayinla({ id: s.gonderilen.find((m) => m.type === 'get_states').id, type: 'result', success: true, result: [] });
+  return s;
+}
+
+test('komut: yalnız canlıyken ve yalnız izinli okuma komutu gönderilir; sonuç id ile eşleşir', async () => {
+  const o = sahteOrtam();
+  assert.deepEqual(await o.ws.komut({ type: 'config/area_registry/list' }), { ok: false, kod: 'baglanti-yok' }, 'canlı değilken ağa çıkmaz');
+  const { s } = await canliYap(o);
+  const kurulumIletisi = s.gonderilen.length;
+  for (const kotu of [
+    { type: 'call_service', domain: 'lock', service: 'unlock' },
+    { type: 'execute_script' },
+    { type: 'auth/current_user', id: 5 },
+    { type: 'todo/item/list', entity_id: { x: 1 } },
+    { type: 'todo/item/list', 'Bad-Key': 1 },
+    { type: 'todo/item/list', entity_id: 'x'.repeat(2000) },
+    { type: 'persistent_notification/subscribe' },
+    null,
+    'auth/current_user',
+  ]) {
+    assert.deepEqual(await o.ws.komut(kotu), { ok: false, kod: 'izinsiz-komut' }, JSON.stringify(kotu)?.slice(0, 60));
+  }
+  assert.equal(s.gonderilen.length, kurulumIletisi, 'izinsiz komut ağa çıkmadı');
+  const soz = o.ws.komut({ type: 'todo/item/list', entity_id: 'todo.alisveris' });
+  const giden = s.gonderilen.at(-1);
+  assert.deepEqual(Object.keys(giden).sort(), ['entity_id', 'id', 'type']);
+  s.yayinla({ id: giden.id + 50, type: 'result', success: true, result: { items: ['yanlis'] } });
+  s.yayinla({ id: giden.id, type: 'result', success: true, result: { items: [] } });
+  assert.deepEqual(await soz, { ok: true, sonuc: { items: [] } });
+  const hata = o.ws.komut({ type: 'config/area_registry/list' });
+  s.yayinla({ id: s.gonderilen.at(-1).id, type: 'result', success: false, error: { code: 'unauthorized', message: 'x' } });
+  assert.deepEqual(await hata, { ok: false, kod: 'unauthorized' });
+  assert.equal(o.ws.canliMi(), true, 'komut hatası bağlantıyı etkilemez');
+  assert.ok(!JSON.stringify(s.gonderilen.filter((m) => m.type !== 'auth')).includes(ANAHTAR));
+});
+
+test('komut: zaman aşımında ve kopuşta söz asılı kalmaz; bekleyen sınırı aşılmaz', async () => {
+  const o = sahteOrtam();
+  const { s } = await canliYap(o);
+  const zaman = o.ws.komut({ type: 'auth/current_user' }, { zamanAsimiMs: 500 });
+  o.zaman.ilerle(600);
+  assert.deepEqual(await zaman, { ok: false, kod: 'zaman-asimi' });
+  const sozler = Array.from({ length: 16 }, () => o.ws.komut({ type: 'auth/current_user' }));
+  assert.deepEqual(await o.ws.komut({ type: 'auth/current_user' }), { ok: false, kod: 'cok-sik' });
+  s.kopar();
+  for (const soz of sozler) assert.deepEqual(await soz, { ok: false, kod: 'koptu' });
+});
+
+test('abone: canlı olunca kurulur, olaylar dinleyiciye gider, yeniden bağlanınca yenilenir; bırakınca silinir', async () => {
+  const o = sahteOrtam();
+  const gelen = [];
+  const birak = o.ws.abone({ type: 'persistent_notification/subscribe' }, (y) => gelen.push(y));
+  assert.equal(typeof birak, 'function');
+  const { s } = await canliYap(o);
+  const abone = s.gonderilen.find((m) => m.type === 'persistent_notification/subscribe');
+  assert.ok(abone, 'canlıya geçince gönderildi');
+  s.yayinla({ id: abone.id, type: 'result', success: true, result: null });
+  s.yayinla({ id: abone.id, type: 'event', event: { type: 'current', notifications: {} } });
+  s.yayinla({ id: abone.id, type: 'event', event: 'bozuk' });
+  assert.deepEqual(gelen, [{ olay: { type: 'current', notifications: {} } }]);
+  s.kopar();
+  const s2 = await yenidenCanli(o);
+  assert.notEqual(s2, s);
+  const abone2 = s2.gonderilen.find((m) => m.type === 'persistent_notification/subscribe');
+  assert.ok(abone2, 'yeniden kuruldu');
+  s2.yayinla({ id: abone2.id, type: 'event', event: { type: 'added', notifications: {} } });
+  assert.equal(gelen.length, 2);
+  birak();
+  const sil = s2.gonderilen.at(-1);
+  assert.deepEqual([sil.type, sil.subscription], ['unsubscribe_events', abone2.id]);
+  s2.yayinla({ id: abone2.id, type: 'event', event: { type: 'added', notifications: {} } });
+  assert.equal(gelen.length, 2, 'bırakılınca olay gelmez');
+  birak();
+});
+
+test('abone: izinsiz tür etkisiz; unknown_command / unauthorized kalıcı olarak düşer ve dinleyiciye hata verir', async () => {
+  const o = sahteOrtam();
+  const { s } = await canliYap(o);
+  const kurulumIletisi = s.gonderilen.length;
+  o.ws.abone({ type: 'subscribe_events', event_type: 'call_service' }, () => {})();
+  o.ws.abone({ type: 'config/area_registry/list' }, () => {});
+  o.ws.abone({ type: 'persistent_notification/subscribe' }, 'dinleyici değil');
+  assert.equal(s.gonderilen.length, kurulumIletisi);
+  const gelen = [];
+  o.ws.abone({ type: 'weather/subscribe_forecast', entity_id: 'weather.ev', forecast_type: 'daily' }, (y) => gelen.push(y));
+  const abone = s.gonderilen.at(-1);
+  assert.equal(abone.type, 'weather/subscribe_forecast');
+  s.yayinla({ id: abone.id, type: 'result', success: false, error: { code: 'unknown_command' } });
+  assert.deepEqual(gelen, [{ hata: 'unknown_command' }]);
+  s.kopar();
+  const s2 = await yenidenCanli(o);
+  assert.equal(s2.gonderilen.some((m) => m.type === 'weather/subscribe_forecast'), false, 'kalıcı ret yeniden denenmez');
+});
+
+test('abone: dinleyici fırlatırsa bağlantı etkilenmez', async () => {
+  const o = sahteOrtam();
+  const { s } = await canliYap(o);
+  o.ws.abone({ type: 'persistent_notification/subscribe' }, () => {
+    throw new Error('dinleyici');
+  });
+  const abone = s.gonderilen.at(-1);
+  s.yayinla({ id: abone.id, type: 'event', event: { type: 'current', notifications: {} } });
+  assert.equal(o.ws.canliMi(), true);
+});
+

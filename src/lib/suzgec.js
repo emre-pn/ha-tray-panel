@@ -8,10 +8,25 @@
  * engelidir ve YALNIZ o tam belirteçler için geçerlidir.
  * 1.2.0 (h-39): varlığın üye listesi (sahne/grup `attributes.entity_id`) varsa her üye de kapı kuralından geçer; kapı/kilit
  * (ya da kepenk/kapı alanı `cover`) içeren sahne güvensizdir. Liste yoksa davranış değişmez.
+ *
+ * 1.4.0 (yalnız sıkılaştırma ve yeni alanların kaydı):
+ *  - Hangi alanın hiçbir yüzeye girebileceği artık src/lib/alan-kaydi.js tablosundadır (climate, media_player, humidifier,
+ *    vacuum, input_select, select, input_number, number, timer, todo, sensor, binary_sensor, weather, calendar eklendi).
+ *    Tabloda olmayan alan (cover — perde dahil —, camera, valve, lock, alarm_control_panel, siren...) guvenliVarlikMi'den geçmez.
+ *    FAVORI_ALANLARI 1.3.0'ın tek tıklamalı favori alanlarıdır ve DEĞİŞMEDİ (tepsi menüsü/son kullanılanlar onu kullanır);
+ *    favori/karo olabilirlik için alan-kaydi.js karoAlaniMi kullanılır.
+ *  - siren alanı Kapı Kuralı alanlarına eklendi ("siren" sözcüğü yasak parçalara EKLENMEDİ: README ve Ayarlar kural metniyle birlikte, belge güncellemesinde eklenecek).
+ *  - Yasak cihaz sınıflarına binary_sensor'ın kapı/pencere/açıklık/kurcalama/güvenlik sınıfları eklendi (opening, window,
+ *    tamper, safety; door, garage_door, lock zaten vardı). Sınıflar TÜM alanlarda yasaktır.
+ *  - Seçenek listesi (`attributes.options`: input_select, select, enum sensör) varsa her seçenek kapı kuralından geçmelidir;
+ *    "Kapıyı aç" seçeneği taşıyan bir seçici bütünüyle güvensizdir (seçmek bir otomasyonla kapı açabilir).
+ *  - Metin öznitelikleri (medya başlığı, kaynak adı, takvim/yapılacaklar başlığı, bildirim metni...) metinGuvenliMi /
+ *    guvenliMetin / metinListesiSuz ile süzülür: geçmeyen metin gösterilmez.
  */
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
-const { sadelestir } = require('./metin');
+const { sadelestir, kisalt } = require('./metin');
+const { kayitliAlanMi } = require('./alan-kaydi');
 
 /** Favori olabilecek alanlar ve tepsiden tıklanınca çağrılacak HA servisi. */
 const FAVORI_ALANLARI = {
@@ -27,8 +42,9 @@ const FAVORI_ALANLARI = {
 const ALAN_SIRASI = Object.keys(FAVORI_ALANLARI);
 
 // GÜVENLİK KURALI — bu varlıklar hiçbir zaman listelenmez, favori olamaz, hiçbir yüzeyden çalıştırılamaz.
-const YASAK_ALANLAR = new Set(['lock', 'alarm_control_panel']);
-const YASAK_CIHAZ_SINIFLARI = new Set(['door', 'garage_door', 'garage', 'gate', 'lock']);
+const YASAK_ALANLAR = new Set(['lock', 'alarm_control_panel', 'siren']);
+// 1.4.0: binary_sensor'ın kapı/pencere/açıklık/kilit/kurcalama/güvenlik sınıfları da (tüm alanlarda) yasaktır.
+const YASAK_CIHAZ_SINIFLARI = new Set(['door', 'garage_door', 'garage', 'gate', 'lock', 'opening', 'window', 'tamper', 'safety']);
 
 // Sözcükler sadeleştirilmiş (küçük harf, aksansız, NFKD, görünmez karakterler silinmiş) metinde ve belirteç (harf/rakam
 // öbeği) bazında aranır; alt çizgi, boşluk ve noktalama ayraçtır.
@@ -131,21 +147,75 @@ function uyelerGuvenliMi(uyeler) {
   return true;
 }
 
-/** GÜVENLİK KURALI'nın tek uygulandığı yer. Liste, kayıt ve çalıştırma — hepsi bunu kullanır. */
+const EN_COK_SECENEK = 200;
+
+/**
+ * 1.4.0: seçenek listesi (input_select/select `options`, enum sensör). Yoksa true. Varsa en çok 200 metin olmalı ve HER biri kapı
+ * kuralından geçmelidir; beklenmeyen biçim güvensizdir.
+ */
+function seceneklerGuvenliMi(secenekler) {
+  if (secenekler === undefined || secenekler === null) return true;
+  if (!Array.isArray(secenekler) || secenekler.length > EN_COK_SECENEK) return false;
+  return secenekler.every((s) => typeof s === 'string' && adGuvenliMi('', s));
+}
+
+/**
+ * GÜVENLİK KURALI'nın tek uygulandığı yer. Liste, kayıt ve çalıştırma — hepsi bunu kullanır.
+ * 1.4.0: alan src/lib/alan-kaydi.js tablosunda olmalıdır (eskiden FAVORI_ALANLARI). Favori/karo olabilirlik ayrıca karoAlaniMi ile,
+ * servis çağrılabilirlik eylemAlaniMi + servis-izinleri.js ile denetlenir.
+ */
 function guvenliVarlikMi(varlik) {
   if (!varlik || typeof varlik.entity_id !== 'string') return false;
   const kimlik = varlik.entity_id;
   if (!VARLIK_KIMLIGI_DESENI.test(kimlik)) return false;
   const alan = alanAl(kimlik);
   if (YASAK_ALANLAR.has(alan)) return false;
-  if (!Object.hasOwn(FAVORI_ALANLARI, alan)) return false;
+  if (!kayitliAlanMi(alan)) return false;
   const nitelikler = varlik.attributes && typeof varlik.attributes === 'object' ? varlik.attributes : {};
   // h-03: cihaz sınıfı büyük/küçük harf (ve tam genişlik, görünmez karakter) duyarsız karşılaştırılır; sınıf metni de sözcük
   // kuralından geçer ("Door", "DOOR", "door_lock" engellenir).
   const sinif = String(nitelikler.device_class ?? '');
   if (YASAK_CIHAZ_SINIFLARI.has(sadelestir(sinif).trim()) || !adGuvenliMi('', sinif)) return false;
   if (!uyelerGuvenliMi(nitelikler.entity_id)) return false; // h-39: kapı/kilit içeren sahne/grup
+  if (!seceneklerGuvenliMi(nitelikler.options)) return false; // 1.4.0: "Kapıyı aç" seçenekli seçici
   return adGuvenliMi(kimlik, nitelikler.friendly_name ?? '');
+}
+
+/** 1.4.0: serbest metin (medya başlığı, takvim/yapılacaklar başlığı, bildirim metni, birim...) kapı kuralından geçer mi? */
+function metinGuvenliMi(metin) {
+  return typeof metin === 'string' && adGuvenliMi('', metin);
+}
+
+/**
+ * 1.4.0: metni kısaltır ve süzer. Metin değilse, boşsa ya da kapı kuralından geçmezse null (gösterilmez).
+ * Kısaltma süzgeçten ÖNCE yapılır: kesilen metin de denetlenir.
+ * @param {unknown} metin
+ * @param {number} [enFazla] kod noktası sınırı (varsayılan 100)
+ * @returns {string|null}
+ */
+function guvenliMetin(metin, enFazla = 100) {
+  if (typeof metin !== 'string') return null;
+  const kisa = kisalt(metin, enFazla);
+  if (!kisa || !adGuvenliMi('', kisa) || !adGuvenliMi('', metin)) return null;
+  return kisa;
+}
+
+/**
+ * 1.4.0: metin listesinden (medya kaynakları, fan ön ayarları...) süzgeçten geçenleri kısaltılmış olarak döner; geçmeyen öğe
+ * sessizce düşer. Dizi değilse boş liste.
+ * @param {unknown} liste
+ * @param {{enCok?: number, enUzun?: number}} [secenek]
+ * @returns {string[]}
+ */
+function metinListesiSuz(liste, { enCok = 50, enUzun = 60 } = {}) {
+  if (!Array.isArray(liste)) return [];
+  const sonuc = [];
+  for (const oge of liste) {
+    if (sonuc.length >= enCok) break;
+    const m = guvenliMetin(oge, enUzun);
+    if (m !== null && !sonuc.includes(m)) sonuc.push(m);
+  }
+  return sonuc;
 }
 
 module.exports = {
@@ -163,5 +233,9 @@ module.exports = {
   alanAl,
   adGuvenliMi,
   uyelerGuvenliMi,
+  seceneklerGuvenliMi,
   guvenliVarlikMi,
+  metinGuvenliMi,
+  guvenliMetin,
+  metinListesiSuz,
 };

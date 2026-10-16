@@ -40,6 +40,50 @@ function abonelikSilMesaji(id, abonelik) {
 }
 
 /**
+ * 1.4.0: canlı bağlantı üzerinden gönderilebilecek YALNIZ OKUYAN komutlar (istek/yanıt). Servis çağrısı (call_service) ve
+ * yazan komutlar bu listede YOKTUR ve olmayacaktır: servisler yalnız eylem hattından (REST, tek POST) gider.
+ */
+const OKUMA_KOMUTLARI = Object.freeze([
+  'config/area_registry/list',
+  'config/entity_registry/list_for_display',
+  'config/device_registry/list',
+  'todo/item/list',
+  'auth/current_user',
+]);
+/** 1.4.0: yalnız okuyan abonelikler (olay akışı). */
+const ABONELIK_KOMUTLARI = Object.freeze(['persistent_notification/subscribe', 'weather/subscribe_forecast']);
+const KOMUT_ALAN_DESENI = /^[a-z_]{1,40}$/;
+const KOMUT_BAYT_SINIRI = 1024;
+
+/**
+ * 1.4.0: izin listesindeki okuma/abonelik komutunu kurar. Tür listede değilse, `id`/`type` dışında beklenmeyen bir alan adı
+ * varsa, değerler düz metin/sayı/mantıksal değilse ya da ileti 1 KB'yi aşıyorsa null.
+ * @param {number} id
+ * @param {{type: string}} ileti ör. { type: 'todo/item/list', entity_id: 'todo.alisveris' }
+ * @param {readonly string[]} [izinli] varsayılan: OKUMA_KOMUTLARI + ABONELIK_KOMUTLARI
+ * @returns {object|null}
+ */
+function komutMesaji(id, ileti, izinli = [...OKUMA_KOMUTLARI, ...ABONELIK_KOMUTLARI]) {
+  if (!Number.isInteger(id) || !ileti || typeof ileti !== 'object' || Array.isArray(ileti)) return null;
+  if (typeof ileti.type !== 'string' || !izinli.includes(ileti.type)) return null;
+  const sonuc = { id, type: ileti.type };
+  for (const [ad, deger] of Object.entries(ileti)) {
+    if (ad === 'type') continue;
+    if (ad === 'id' || !KOMUT_ALAN_DESENI.test(ad)) return null;
+    if (!['string', 'number', 'boolean'].includes(typeof deger)) return null;
+    if (typeof deger === 'number' && !Number.isFinite(deger)) return null;
+    sonuc[ad] = deger;
+  }
+  return JSON.stringify(sonuc).length <= KOMUT_BAYT_SINIRI ? sonuc : null;
+}
+
+/** HA 'result' iletisindeki hata kodu (metin; yoksa 'bilinmeyen'). Hata iletisi (message) bilerek alınmaz. */
+function sonucHataKodu(ham) {
+  const kod = ham?.error?.code;
+  return typeof kod === 'string' && /^[a-z_]{1,40}$/.test(kod) ? kod : 'bilinmeyen';
+}
+
+/**
  * Gelen metni çözer.
  * @returns {{ tur: string, id?: number, ham: object }|null} tur: 'auth_required' | 'auth_ok' | 'auth_invalid' |
  *   'result' | 'event' | 'pong' | 'diger'; geçersiz JSON/şekil için null
@@ -130,6 +174,10 @@ module.exports = {
   durumlarMesaji,
   pingMesaji,
   abonelikSilMesaji,
+  OKUMA_KOMUTLARI,
+  ABONELIK_KOMUTLARI,
+  komutMesaji,
+  sonucHataKodu,
   mesajCoz,
   durumuDuzelt,
   olaydanDurum,

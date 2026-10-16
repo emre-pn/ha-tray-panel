@@ -203,7 +203,10 @@ test('lock ve alarm_control_panel alanları ve kapı/garaj/geçit cihaz sınıfl
 
 test('bilinmeyen alanlar ve geçersiz girdiler engellenir', () => {
   assert.ok(!guvenliVarlikMi(varlik('cover.perde', 'Perde')));
-  assert.ok(!guvenliVarlikMi(varlik('sensor.sicaklik', 'Sıcaklık')));
+  assert.ok(guvenliVarlikMi(varlik('sensor.sicaklik', 'Sıcaklık')), '1.4.0: sensor kayıtlı (yalnız okunur) alan');
+  assert.ok(!guvenliVarlikMi(varlik('camera.salon', 'Salon')));
+  assert.ok(!guvenliVarlikMi(varlik('valve.ana', 'Ana vana')));
+  assert.ok(!guvenliVarlikMi(varlik('siren.ev', 'Ev')));
   assert.ok(!guvenliVarlikMi(varlik('Light.X', 'Büyük harf')));
   assert.ok(!guvenliVarlikMi(varlik('light', 'Noktasız')));
   assert.ok(!guvenliVarlikMi(null));
@@ -406,4 +409,68 @@ test('h-39: üye denetimi kapı kuralını gevşetmez (her yasak alan üye liste
   assert.equal(uyelerGuvenliMi(undefined), true);
   assert.equal(uyelerGuvenliMi(['light.a']), true);
   assert.equal(uyelerGuvenliMi(['lock.a']), false);
+});
+
+// --- 1.4.0: yeni alanlar yalnız sıkılaştırır ----------------------------------------------------------------------
+
+test('1.4.0: binary_sensor kapı/pencere/açıklık/kilit/kurcalama/güvenlik sınıfları (her yazımla) yasak; zararsız sınıflar serbest', () => {
+  const { guvenliVarlikMi, YASAK_CIHAZ_SINIFLARI } = require('../src/lib/suzgec');
+  for (const s of ['door', 'garage_door', 'opening', 'window', 'lock', 'tamper', 'safety']) assert.ok(YASAK_CIHAZ_SINIFLARI.has(s), s);
+  for (const sinif of ['door', 'DOOR', 'Door', 'garage_door', 'Garage_Door', 'opening', 'OPENING', 'window', 'Window', 'lock', 'tamper', 'Tamper', 'safety', 'SAFETY', ' window ', 'ｗｉｎｄｏｗ', 'saf​ety']) {
+    assert.equal(guvenliVarlikMi({ entity_id: 'binary_sensor.x', state: 'off', attributes: { device_class: sinif } }), false, JSON.stringify(sinif));
+    assert.equal(guvenliVarlikMi({ entity_id: 'sensor.x', state: 'off', attributes: { device_class: sinif } }), false, `sensor ${JSON.stringify(sinif)}`);
+  }
+  for (const sinif of ['motion', 'occupancy', 'moisture', 'smoke', 'battery', 'connectivity', 'temperature', undefined]) {
+    assert.equal(guvenliVarlikMi({ entity_id: 'binary_sensor.x', state: 'off', attributes: { device_class: sinif } }), true, String(sinif));
+  }
+});
+
+test('1.4.0: yeni alanlarda da Türkçe/İngilizce kapı adları ve kimlikleri yasak', () => {
+  const { guvenliVarlikMi } = require('../src/lib/suzgec');
+  const alanlar = ['climate', 'media_player', 'humidifier', 'vacuum', 'input_select', 'select', 'input_number', 'number', 'timer', 'todo', 'sensor', 'binary_sensor', 'weather', 'calendar'];
+  for (const alan of alanlar) {
+    assert.equal(guvenliVarlikMi({ entity_id: `${alan}.salon`, state: 'on', attributes: { friendly_name: 'Salon' } }), true, alan);
+    for (const ad of ['Ön kapı', 'Garaj', 'Front door', 'Gate opener', 'Kilidi aç', 'Diafon', 'Intercom', 'Kepengi', 'Alarm', 'Bariyer']) {
+      assert.equal(guvenliVarlikMi({ entity_id: `${alan}.x`, state: 'on', attributes: { friendly_name: ad } }), false, `${alan} ${ad}`);
+    }
+    for (const kimlik of [`${alan}.kapi`, `${alan}.garage_temp`, `${alan}.frontgate`, `${alan}.smartlock_pil`]) {
+      assert.equal(guvenliVarlikMi({ entity_id: kimlik, state: 'on', attributes: {} }), false, kimlik);
+    }
+  }
+  for (const alan of ['cover', 'camera', 'valve', 'siren', 'lock', 'alarm_control_panel', 'lawn_mower', 'automation']) {
+    assert.equal(guvenliVarlikMi({ entity_id: `${alan}.salon`, state: 'on', attributes: { friendly_name: 'Salon' } }), false, alan);
+  }
+  // indoor/outdoor istisnası yeni alanlarda da aynı
+  assert.equal(guvenliVarlikMi({ entity_id: 'sensor.outdoor_temperature', state: '5', attributes: {} }), true);
+  assert.equal(guvenliVarlikMi({ entity_id: 'sensor.frontdoor_temperature', state: '5', attributes: {} }), false);
+});
+
+test('1.4.0: seçenek listesinde kapı seçeneği olan seçici bütünüyle yasak; bozuk ya da dev liste de', () => {
+  const { guvenliVarlikMi, seceneklerGuvenliMi } = require('../src/lib/suzgec');
+  const secici = (options) => ({ entity_id: 'input_select.mod', state: 'Ev', attributes: { options } });
+  assert.equal(guvenliVarlikMi(secici(['Ev', 'Tatil'])), true);
+  for (const kotu of [['Ev', 'Kapıyı aç'], ['Normal', 'Open garage'], ['Ev', 5], 'Ev', Array(201).fill('Ev'), { 0: 'Ev' }]) {
+    assert.equal(guvenliVarlikMi(secici(kotu)), false, JSON.stringify(kotu).slice(0, 40));
+  }
+  assert.equal(seceneklerGuvenliMi(undefined), true);
+  assert.equal(seceneklerGuvenliMi(null), true);
+  assert.equal(seceneklerGuvenliMi([]), true);
+});
+
+test('1.4.0: metin süzgeci (guvenliMetin, metinListesiSuz, metinGuvenliMi)', () => {
+  const { guvenliMetin, metinListesiSuz, metinGuvenliMi } = require('../src/lib/suzgec');
+  assert.equal(guvenliMetin('  Haber bülteni  '), 'Haber bülteni');
+  assert.equal(guvenliMetin('Garaj kapısı açık'), null);
+  assert.equal(guvenliMetin('Front door chime'), null);
+  assert.equal(guvenliMetin('Kаpı'), null, 'Kiril harfli benzer yazım');
+  assert.equal(guvenliMetin(''), null);
+  assert.equal(guvenliMetin(5), null);
+  assert.equal(guvenliMetin('a'.repeat(10) + ' kapı', 5), null, 'kısaltılan kısım temiz olsa da tam metin denetlenir');
+  assert.equal(Array.from(guvenliMetin('ç'.repeat(300))).length, 100);
+  assert.deepEqual(metinListesiSuz(['HDMI', 'Kapı kamerası', 'HDMI', 7, 'Spotify', 'Gate'], { enCok: 5 }), ['HDMI', 'Spotify']);
+  assert.deepEqual(metinListesiSuz('HDMI'), []);
+  assert.deepEqual(metinListesiSuz(['a', 'b', 'c'], { enCok: 2 }), ['a', 'b']);
+  assert.equal(metinGuvenliMi('Salon'), true);
+  assert.equal(metinGuvenliMi('Kilit'), false);
+  assert.equal(metinGuvenliMi(null), false);
 });

@@ -24,6 +24,7 @@ const { constants } = require('node:fs');
 const { SEMA_SURUMU, ayarlariDuzelt, gocGerekliMi, oncekiSemaSurumu, yeniSemaMi } = require('./ayar-sema');
 const { adresNormallestir, anahtarIcinGuvenliAdresMi } = require('./dogrulama');
 const { TR } = require('./ceviri-varsayilan');
+const { aktarilanAlanlar } = require('./ayar-alanlari');
 
 const GUVENLI_HATA_KODU = /^[A-Z0-9_]{1,20}$/;
 
@@ -114,6 +115,7 @@ const AKTARILAN_ALANLAR = Object.freeze([
   'yeniPencereMalzemesi',
   'favoriler',
   'panolar',
+  ...aktarilanAlanlar(), // 1.4.0: ayar-alanlari.js tablosunda aktarilir:true olan alanlar (sır taşıyan alan tabloya girmez)
 ]);
 const GIZLI_DEGER_DESENI = /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/;
 const FAVORI_ALANLARI = ['entity_id', 'ad', 'onay', 'etiket', 'kisayol', 'parlaklik'];

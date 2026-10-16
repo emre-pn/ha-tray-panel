@@ -303,3 +303,121 @@ test('hizSiniriOlustur: temizle sayaçları sıfırlar', () => {
   h.temizle();
   assert.equal(h.dene('x.y'), true);
 });
+
+// --- 1.4.0: genel servis eylemi yolu (aynı hat, aynı tek POST) -------------------------------------------------
+
+const YENI_DURUMLAR = {
+  'climate.salon': { entity_id: 'climate.salon', state: 'heat', attributes: { friendly_name: 'Salon kliması', min_temp: 16, max_temp: 30, target_temp_step: 0.5, hvac_modes: ['off', 'heat', 'cool'] } },
+  'media_player.tv': { entity_id: 'media_player.tv', state: 'playing', attributes: { source_list: ['HDMI 1', 'Kapı kamerası'] } },
+  'input_select.mod': { entity_id: 'input_select.mod', state: 'Ev', attributes: { options: ['Ev', 'Tatil'] } },
+  'input_select.kapi_modu': { entity_id: 'input_select.kapi_modu', state: 'Kapalı', attributes: { options: ['Kapalı', 'Açık'] } },
+  'select.giris': { entity_id: 'select.giris', state: 'Normal', attributes: { options: ['Normal', 'Kapıyı aç'] } },
+  'todo.alisveris': { entity_id: 'todo.alisveris', state: '2', attributes: {} },
+  'sensor.sicaklik': { entity_id: 'sensor.sicaklik', state: '21', attributes: {} },
+  'vacuum.robot': { entity_id: 'vacuum.robot', state: 'docked', attributes: { friendly_name: 'Garage vacuum' } },
+  'timer.firin': { entity_id: 'timer.firin', state: 'idle', attributes: {} },
+};
+const YENI_FAVORILER = [
+  { entity_id: 'climate.salon', ad: 'Klima' },
+  { entity_id: 'media_player.tv', ad: 'TV' },
+  { entity_id: 'input_select.mod', ad: 'Mod' },
+  { entity_id: 'input_select.kapi_modu', ad: 'Mod 2' },
+  { entity_id: 'select.giris', ad: 'Giriş' },
+  { entity_id: 'todo.alisveris', ad: 'Alışveriş' },
+  { entity_id: 'sensor.sicaklik', ad: 'Sıcaklık' },
+  { entity_id: 'vacuum.robot', ad: 'Robot' },
+  { entity_id: 'timer.firin', ad: 'Fırın', onay: false },
+];
+
+function servisOrtami({ basili = () => false, favoriler = YENI_FAVORILER } = {}) {
+  const cagrilar = [];
+  const hat = eylemHattiOlustur({
+    favoriAl: (k) => favoriler.find((f) => f.entity_id === k),
+    guncelDurum: async (k) => YENI_DURUMLAR[k],
+    haIstek: async (yol, secenek) => {
+      cagrilar.push({ yol, ...secenek });
+      return [];
+    },
+    basiliOnayi: basili,
+    hizSiniri: hizSiniriOlustur({ simdi: () => 1000 }),
+  });
+  return { hat, cagrilar };
+}
+
+test('servis eylemi: climate.set_temperature sınırlar HA\'daki güncel öznitelikten; tek POST, doğrulanmış gövde', async () => {
+  const { hat, cagrilar } = servisOrtami();
+  const s = await hat({ kimlik: 'climate.salon', kaynak: 'panel', eylem: { servis: 'set_temperature', veri: { temperature: 22.5 } } });
+  assert.deepEqual([s.ok, s.servis, s.servisEylemi, s.sinif], [true, 'set_temperature', true, 'zararsiz']);
+  assert.deepEqual(cagrilar, [{ yol: '/api/services/climate/set_temperature', yontem: 'POST', govde: { entity_id: 'climate.salon', temperature: 22.5 } }]);
+  for (const [veri, neden] of [
+    [{ temperature: 31 }, 'sinir'],
+    [{ temperature: 22.3 }, 'adim'],
+    [{}, 'eksik'],
+    [{ temperature: 22, entity_id: 'lock.on_kapi' }, 'parametre'],
+  ]) {
+    const r = await hat({ kimlik: 'climate.salon', kaynak: 'panel', eylem: { servis: 'set_temperature', veri } });
+    assert.deepEqual([r.ok, r.tur, r.neden], [false, 'gecersiz', neden], JSON.stringify(veri));
+  }
+  assert.equal(cagrilar.length, 1, 'reddedilenlerde POST yok');
+});
+
+test('servis eylemi: tek tıklama eylemi olmayan alanda servis açıkça verilmeli; izin listesi dışı servis reddedilir', async () => {
+  const { hat, cagrilar } = servisOrtami();
+  assert.deepEqual([(await hat({ kimlik: 'climate.salon', kaynak: 'panel' })).tur], ['gecersiz']);
+  for (const servis of ['unlock', 'open_cover', 'reload', 'set_preset_mode', 'TURN_OFF', 'turn_off/../x', '__proto__']) {
+    const r = await hat({ kimlik: 'climate.salon', kaynak: 'panel', eylem: { servis } });
+    assert.equal(r.ok, false, servis);
+    assert.equal(r.tur, 'gecersiz', servis);
+  }
+  for (const eylem of [{ servis: 'turn_on', veri: [] }, { servis: 'turn_on', veri: null }, { servis: 5 }, { veri: {}, parlaklik: 40 }]) {
+    assert.equal((await hat({ kimlik: 'climate.salon', kaynak: 'panel', eylem })).tur, 'gecersiz', JSON.stringify(eylem));
+  }
+  assert.equal(cagrilar.length, 0);
+});
+
+test('servis eylemi: hvac mod değişimi varsayılan onay ister (panelde basılı tut, kısayolda asla); onay:false favori kapatır', async () => {
+  let { hat, cagrilar } = servisOrtami();
+  const eylem = { servis: 'set_hvac_mode', veri: { hvac_mode: 'cool' } };
+  assert.equal((await hat({ kimlik: 'climate.salon', kaynak: 'panel', eylem })).tur, 'onay-gerekli');
+  assert.equal((await hat({ kimlik: 'climate.salon', kaynak: 'kisayol', eylem })).tur, 'kaynak-izinsiz');
+  assert.equal(cagrilar.length, 0);
+  ({ hat, cagrilar } = servisOrtami({ basili: () => true }));
+  const s = await hat({ kimlik: 'climate.salon', kaynak: 'panel', onay: 'basili', eylem });
+  assert.deepEqual([s.ok, s.sinif], [true, 'yikici']);
+  assert.deepEqual(cagrilar[0].govde, { entity_id: 'climate.salon', hvac_mode: 'cool' });
+  ({ hat, cagrilar } = servisOrtami({ favoriler: [{ entity_id: 'climate.salon', ad: 'Klima', onay: false }] }));
+  assert.equal((await hat({ kimlik: 'climate.salon', kaynak: 'panel', eylem })).ok, true);
+  // aynı karoda sıcaklık ayarı onaysız
+  ({ hat } = servisOrtami());
+  assert.equal((await hat({ kimlik: 'climate.salon', kaynak: 'panel', eylem: { servis: 'set_temperature', veri: { temperature: 20 } } })).ok, true);
+});
+
+test('servis eylemi: seçici ve zamanlayıcı varsayılan onaylı; favoride onay:false ile kapatılabilir', async () => {
+  const { hat, cagrilar } = servisOrtami();
+  assert.equal((await hat({ kimlik: 'input_select.mod', kaynak: 'panel', eylem: { servis: 'select_option', veri: { option: 'Tatil' } } })).tur, 'onay-gerekli');
+  const s = await hat({ kimlik: 'timer.firin', kaynak: 'panel', eylem: { servis: 'start' } });
+  assert.equal(s.ok, true, 'onay:false favori');
+  assert.deepEqual(cagrilar.map((c) => c.yol), ['/api/services/timer/start']);
+});
+
+test('servis eylemi: todo.remove_item zorunlu onaylı (favoride onay:false olsa da); add_item kapı metnini reddeder', async () => {
+  const { hat, cagrilar } = servisOrtami({ favoriler: [{ entity_id: 'todo.alisveris', ad: 'Alışveriş', onay: false }] });
+  assert.equal((await hat({ kimlik: 'todo.alisveris', kaynak: 'panel', eylem: { servis: 'remove_item', veri: { item: 'Süt' } } })).tur, 'onay-gerekli');
+  assert.equal((await hat({ kimlik: 'todo.alisveris', kaynak: 'tepsi-menu', eylem: { servis: 'remove_item', veri: { item: 'Süt' } } })).tur, 'onay-gerekli');
+  const r = await hat({ kimlik: 'todo.alisveris', kaynak: 'panel', eylem: { servis: 'add_item', veri: { item: 'Garaj kapısını kapat' } } });
+  assert.deepEqual([r.tur, r.neden], ['gecersiz', 'guvenlik']);
+  assert.equal((await hat({ kimlik: 'todo.alisveris', kaynak: 'panel', eylem: { servis: 'add_item', veri: { item: 'Süt' } } })).ok, true);
+  assert.equal(cagrilar.length, 1);
+});
+
+test('KAPI KURALI (1.4.0): okunur alanda servis yok; kapı adlı ya da kapı seçenekli yeni alan varlığı çalışmaz; süzgeçten geçmeyen kaynak seçilemez', async () => {
+  const { hat, cagrilar } = servisOrtami();
+  assert.equal((await hat({ kimlik: 'sensor.sicaklik', kaynak: 'panel' })).tur, 'yasak');
+  assert.equal((await hat({ kimlik: 'sensor.sicaklik', kaynak: 'panel', eylem: { servis: 'turn_on' } })).tur, 'yasak');
+  assert.equal((await hat({ kimlik: 'input_select.kapi_modu', kaynak: 'panel', eylem: { servis: 'select_option', veri: { option: 'Açık' } } })).tur, 'yasak');
+  assert.equal((await hat({ kimlik: 'select.giris', kaynak: 'panel', eylem: { servis: 'select_option', veri: { option: 'Normal' } } })).tur, 'yasak');
+  assert.equal((await hat({ kimlik: 'vacuum.robot', kaynak: 'panel', eylem: { servis: 'start' } })).tur, 'yasak', 'HA adı sonradan "garage"');
+  const r = await hat({ kimlik: 'media_player.tv', kaynak: 'panel', eylem: { servis: 'select_source', veri: { source: 'Kapı kamerası' } } });
+  assert.deepEqual([r.tur, r.neden], ['gecersiz', 'parametre']);
+  assert.equal(cagrilar.length, 0);
+});

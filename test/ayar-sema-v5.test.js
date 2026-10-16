@@ -29,8 +29,8 @@ const v4 = (ek = {}) => ({
 });
 
 test('varsayılan ayarlar: şema 5 ve Görünüm alanları (koyu tema, sistem vurgusu, acrylic) var', () => {
-  assert.equal(SEMA_SURUMU, 5);
-  assert.equal(VARSAYILAN.semaSurumu, 5);
+  assert.equal(SEMA_SURUMU, 6); // 1.4.0: şema 6 (ayar-alanlari.js)
+  assert.equal(VARSAYILAN.semaSurumu, 6);
   assert.equal(VARSAYILAN.temaZorla, 'koyu');
   assert.equal(VARSAYILAN.vurguRengi, '');
   assert.equal(VARSAYILAN.yeniPencereMalzemesi, 'acrylic');
@@ -38,7 +38,7 @@ test('varsayılan ayarlar: şema 5 ve Görünüm alanları (koyu tema, sistem vu
 
 test('v4 -> v5 göçü: favoriler ve kullanıcı değerleri DEĞİŞMEZ, yalnız Görünüm alanları varsayılanla gelir', () => {
   const { ayarlar, atilanlar, notlar } = ayarlariDuzelt(v4(), { varsayilan: VARSAYILAN });
-  assert.equal(ayarlar.semaSurumu, 5);
+  assert.equal(ayarlar.semaSurumu, 6);
   assert.deepEqual(ayarlar.favoriler, V4_FAVORILER);
   assert.deepEqual(atilanlar, []);
   assert.ok(notlar.includes('sema-gocu'));

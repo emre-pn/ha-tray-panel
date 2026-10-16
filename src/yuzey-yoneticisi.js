@@ -25,6 +25,7 @@ const { rendererModeli } = require('./lib/yuzey-modeli');
 const { tiklamaKarari } = require('./lib/pencere-davranisi');
 const { cokmeSayilirMi, cokmeNedeniMetni } = require('./lib/cokme-siniri');
 const { TR } = require('./lib/ceviri-varsayilan');
+const { yuzeyOkumasi } = require('./lib/ha-okuma');
 
 const YUZEY_HTML = path.join(__dirname, 'yuzey.html');
 const PRELOAD_YUZEY = path.join(__dirname, 'preload-yuzey.js');
@@ -55,8 +56,9 @@ function varsayilanZaman() {
  * @param {(m: string) => void} [bag.gunluk]
  * @param {() => number} [bag.simdi]
  * @param {{setTimeout: Function, clearTimeout: Function}} [bag.zaman]
+ * @param {object|null} [bag.okuma] 1.4.0 okuma uçları (src/lib/ha-okuma.js haOkumaOlustur); verilmezse yuzey:oku hep boş döner
  */
-function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman() }) {
+function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null }) {
   const izinYok = () => ({ ok: false, hata: t('ana.izinYok') });
   let pencere = null;
   let yuklendi = false;
@@ -342,6 +344,13 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       if (css === yukseklik[kip]) return;
       yukseklik[kip] = css;
       yerlestir(kip);
+    });
+    // 1.4.0 okuma ucu: geçmiş, takvim, hava tahmini, yapılacaklar. Yalnız açık panel/paletten, yalnız KAYITLI (favori ya da
+    // Ayarlar'da seçilmiş) varlıklar için; veri ana süreçte süzülür (src/lib/ha-okuma.js yuzeyOkumasi).
+    ipcMain.handle('yuzey:oku', async (olay, yuk) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (!kaynakKip() || !okuma) return { ok: false, tur: 'gecersiz' };
+      return yuzeyOkumasi(okuma, yuk, (kimlik) => eylem.kayitliMi(kimlik));
     });
     ipcMain.handle('yuzey:ha-ac', (olay) => {
       if (!yuzeydenMi(olay)) return izinYok();

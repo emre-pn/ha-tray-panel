@@ -42,7 +42,7 @@ const DORT_FAVORI_V4 = DORT_FAVORI_V3.map((f) => ({ ...f, ...ETIKETLER[f.entity_
 test('v1 -> v5 göçü: 4 favori ve tüm değerler korunur, hiçbir favori düşmez', () => {
   const { ayarlar, notlar, atilanlar, onayIstenenler } = ayarlariDuzelt(v1(), { varsayilan: VARSAYILAN });
   assert.equal(ayarlar.semaSurumu, SEMA_SURUMU);
-  assert.equal(SEMA_SURUMU, 5);
+  assert.equal(SEMA_SURUMU, 6); // 1.4.0: şema 6 (ayar-alanlari.js)
   assert.deepEqual(ayarlar.favoriler, DORT_FAVORI_V4);
   assert.deepEqual(onayIstenenler, []);
   assert.ok(!notlar.includes('favori-onay-gerekli'));
@@ -63,7 +63,7 @@ test('v2 -> v5 göçü: 4 favori korunur, düğmeler onay:false alır, ışıkla
   assert.deepEqual(ayarlar.favoriler, DORT_FAVORI_V4);
   assert.equal(ayarlar.koseBildirimi, true);
   assert.equal(ayarlar.bipSesi, false);
-  assert.equal(ayarlar.semaSurumu, 5);
+  assert.equal(ayarlar.semaSurumu, 6);
   assert.deepEqual(notlar, ['sema-gocu']);
 });
 

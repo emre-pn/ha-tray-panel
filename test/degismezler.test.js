@@ -110,15 +110,22 @@ test('favori kaydı: kapı varlıkları güvenli listede olmasa da, mevcut favor
   assert.deepEqual(yok.eksik, []);
 });
 
-test('favori alanları kapalı bir küme: kilit, alarm, kepenk/kapı (cover), iklim vb. alan hiçbir zaman favori olamaz', () => {
+test('favori alanları kapalı bir küme: kilit, alarm, siren, kepenk/kapı (cover), kamera, vana hiçbir zaman favori olamaz', () => {
   assert.deepEqual(
     Object.keys(FAVORI_ALANLARI).sort(),
     ['button', 'fan', 'input_boolean', 'input_button', 'light', 'scene', 'script', 'switch'],
   );
   for (const alan of YASAK_ALANLAR) assert.ok(!Object.hasOwn(FAVORI_ALANLARI, alan));
-  for (const alan of ['lock', 'alarm_control_panel', 'cover', 'climate', 'valve', 'siren', 'camera']) {
+  for (const alan of ['lock', 'alarm_control_panel', 'cover', 'valve', 'siren', 'camera', 'automation', 'lawn_mower', 'update']) {
     assert.equal(guvenliVarlikMi({ entity_id: `${alan}.deneme`, attributes: { friendly_name: 'Deneme' } }), false, alan);
   }
+  // 1.4.0: karo/favori alanları alan-kaydi.js tablosunda kapalı bir kümedir (iklim, medya... eklendi; kapı alanları yok).
+  const { KARO_ALAN_SIRASI } = require('../src/lib/alan-kaydi');
+  assert.deepEqual([...KARO_ALAN_SIRASI].sort(), [
+    'binary_sensor', 'button', 'climate', 'fan', 'humidifier', 'input_boolean', 'input_button', 'input_number', 'input_select',
+    'light', 'media_player', 'number', 'scene', 'script', 'select', 'sensor', 'switch', 'timer', 'vacuum', 'weather',
+  ]);
+  assert.equal(guvenliVarlikMi({ entity_id: 'climate.salon', attributes: { friendly_name: 'Salon kliması' } }), true);
   // Servisler: yalnız zararsız üç servis.
   assert.deepEqual([...new Set(Object.values(FAVORI_ALANLARI).map((a) => a.servis))].sort(), ['press', 'toggle', 'turn_on']);
 });
@@ -177,17 +184,17 @@ test('servis çağrısı TEK yerde (src/lib/eylem-hatti.js) yapılır; oradan ö
     'adGuvenliMi(kimlik, ad)',
     'guncelDurum(kimlik)',
     'guvenliVarlikMi(varlik)',
-    'eylemSinifi(varlik, favori)',
+    'eylemSinifi(varlik, favori, istenenServis(eylem))',
     'kaynakIzni(',
     'basiliOnayi(kimlik)',
-    'servisKur(alan, kimlik, favori, eylem)',
+    'servisKur(alan, kimlik, favori, eylem, varlik)',
     'hizSiniri.dene(',
   ]) {
     const yer = govde.indexOf(isaret);
     assert.ok(yer > 0, `${isaret} hatta bulunmalı`);
     assert.ok(yer < servis, `${isaret} servis çağrısından ÖNCE olmalı`);
   }
-  assert.ok(govde.indexOf('guvenliVarlikMi(varlik)') < govde.indexOf('eylemSinifi(varlik, favori)'), 'önce süzgeç, sonra sınıf');
+  assert.ok(govde.indexOf('guvenliVarlikMi(varlik)') < govde.indexOf('eylemSinifi(varlik, favori, istenenServis(eylem))'), 'önce süzgeç, sonra sınıf');
   assert.ok(govde.includes("'onay-gerekli'"));
   // Kapı/kilit servisleri koda hiç yazılmamış.
   for (const [ad, icerik] of kaynaklar) {
@@ -263,7 +270,7 @@ test('hızlı panel/palet/tepsi/kısayol/komut satırı/Son/hazır liste: kapı-
 test('yüzey IPC kanallarının hepsi gönderen denetimli; panel/palet penceresi sandbox + contextIsolation, yalnız yerel dosya', () => {
   const yuzey = oku('src/yuzey-yoneticisi.js');
   const kanallar = [...yuzey.matchAll(/ipcMain\.(?:handle|on)\('(yuzey:[\w-]+)'/g)].map((m) => m[1]);
-  assert.deepEqual(kanallar.sort(), ['yuzey:ayarlar-ac', 'yuzey:basili-basla', 'yuzey:basili-birak', 'yuzey:boyut', 'yuzey:calistir', 'yuzey:durum-al', 'yuzey:ha-ac', 'yuzey:kapat']);
+  assert.deepEqual(kanallar.sort(), ['yuzey:ayarlar-ac', 'yuzey:basili-basla', 'yuzey:basili-birak', 'yuzey:boyut', 'yuzey:calistir', 'yuzey:durum-al', 'yuzey:ha-ac', 'yuzey:kapat', 'yuzey:oku']);
   for (const kanal of kanallar) {
     const yer = yuzey.indexOf(`'${kanal}'`);
     const sonraki = yuzey.indexOf('ipcMain.', yer + 10);

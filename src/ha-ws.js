@@ -23,6 +23,11 @@
  *    auth_invalid gelmeden soket koparsa (kapanış, kurulum zaman aşımı) HA saymış olabilir: 'belirsiz' deneme sayılır (K2).
  *  - Sunucudan gelen her ileti güvenilmez veridir (ha-ws-protokol.js doğrular); iletiler 4 MB ile sınırlıdır.
  *  - Bu dosya servis ÇAĞIRMAZ: yalnız okur. Eylemler src/lib/eylem-hatti.js hattından gider.
+ *  - 1.4.0 okuma komutları (komut) ve okuma abonelikleri (abone): yalnız ha-ws-protokol.js OKUMA_KOMUTLARI /
+ *    ABONELIK_KOMUTLARI listesindeki türler, yalnız bağlantı CANLI iken (auth, yetki kesici ve kimlikli kapıdan geçmiş soket)
+ *    gönderilir. Bağlı değilken komut ağa çıkmaz, { ok:false, kod:'baglanti-yok' } döner. Abonelikler bağlantı her canlıya
+ *    geçtiğinde yeniden kurulur; HA 'unauthorized' / 'unknown_command' derse abonelik kalıcı olarak düşer (özellik sessizce
+ *    kapalı kalır). Bekleyen komutlar kopuşta { ok:false, kod:'koptu' } ile sonuçlanır (asılı söz kalmaz).
  *
  * Electron'a bağlı değildir: WebSocket sınıfı, saat ve adres/anahtar kaynakları dışarıdan verilir (sahte soketle test edilir).
  */
@@ -34,6 +39,10 @@ const p = require('./lib/ha-ws-protokol');
 const PING_ARALIGI_MS = 25_000;
 const PONG_BEKLEME_MS = 10_000;
 const KURULUM_ZAMAN_ASIMI_MS = 15_000; // soket açıldıktan canlı olana kadar tüm kurulum adımları için toplam süre
+const KOMUT_ZAMAN_ASIMI_MS = 10_000; // 1.4.0 okuma komutu yanıt süresi
+const EN_COK_BEKLEYEN_KOMUT = 16; // aynı anda yanıt bekleyen okuma komutu
+const EN_COK_EK_ABONELIK = 16;
+const KALICI_RET_KODLARI = new Set(['unauthorized', 'unknown_command']); // yönetici gerektiren / bu HA sürümünde olmayan komut
 const YEDEGE_GECIS_DENEMESI = 3; // ardışık başarısız bağlantı sayısı: bundan sonra REST yedeği devreye girer (denemeler sürer)
 const ACIK = 1; // WebSocket.OPEN
 
@@ -98,6 +107,40 @@ function haWsOlustur({
   let authBekliyor = false; // auth gönderildi, auth_ok/auth_invalid henüz gelmedi
   let oturumParmakIzi = null; // bu soketin anahtarının parmak izi (belirsiz deneme kaydı için)
   let oturumTaban = null; // bu soketin bağlandığı adres (belirsiz denemenin hata bütçesi kökeni için)
+  const komutlar = new Map(); // 1.4.0: okuma komutu id -> { coz, zamanlayici }
+  const ekAbonelikler = new Map(); // 1.4.0: anahtar -> { ileti, dinleyici, id: number|null }
+  let sonEkAbonelikAnahtari = 0;
+
+  /** Bekleyen okuma komutlarını sonuçlandırır (kopuş/kapanış): hiçbir söz asılı kalmaz. */
+  function komutlariBitir(kod) {
+    for (const [id, k] of komutlar) {
+      zaman.clearTimeout(k.zamanlayici);
+      komutlar.delete(id);
+      k.coz({ ok: false, kod });
+    }
+  }
+
+  function ekAboneligiGonder(s, anahtar, kayit) {
+    const id = yeniId(`ek-abone:${anahtar}`);
+    const ileti = p.komutMesaji(id, kayit.ileti, p.ABONELIK_KOMUTLARI);
+    kayit.id = ileti ? id : null;
+    if (!ileti || !gonder(s, ileti)) {
+      bekleyenler.delete(id);
+      kayit.id = null;
+    }
+  }
+
+  function ekAbonelikleriKur(s) {
+    for (const [anahtar, kayit] of ekAbonelikler) if (kayit.id === null) ekAboneligiGonder(s, anahtar, kayit);
+  }
+
+  function dinleyiciyeVer(kayit, yuk) {
+    try {
+      kayit.dinleyici(yuk);
+    } catch {
+      /* dinleyici hatası bağlantıyı etkilemesin */
+    }
+  }
 
   function durumuAyarla(yeni, neden = null) {
     if (baglanti === yeni && sonNeden === neden) return;
@@ -141,6 +184,8 @@ function haWsOlustur({
     soket = null;
     abonelik = null;
     bekleyenler = new Map();
+    komutlariBitir('koptu');
+    for (const kayit of ekAbonelikler.values()) kayit.id = null; // bir sonraki canlı bağlantıda yeniden kurulur
     if (s) {
       try {
         s.close();
@@ -230,6 +275,24 @@ function haWsOlustur({
     const basarili = m.ham.success === true;
     const s = soket;
     if (!s || !tur) return;
+    if (tur === 'komut') {
+      const k = komutlar.get(m.id);
+      if (!k) return;
+      komutlar.delete(m.id);
+      zaman.clearTimeout(k.zamanlayici);
+      k.coz(basarili ? { ok: true, sonuc: m.ham.result ?? null } : { ok: false, kod: p.sonucHataKodu(m.ham) });
+      return;
+    }
+    if (tur.startsWith('ek-abone:')) {
+      const anahtar = Number(tur.slice('ek-abone:'.length));
+      const kayit = ekAbonelikler.get(anahtar);
+      if (!kayit || kayit.id !== m.id || basarili) return;
+      kayit.id = null;
+      const kod = p.sonucHataKodu(m.ham);
+      if (KALICI_RET_KODLARI.has(kod)) ekAbonelikler.delete(anahtar); // yönetici gerekiyor / komut yok: özellik sessizce kapalı
+      dinleyiciyeVer(kayit, { hata: kod });
+      return;
+    }
     if (tur === 'trigger') {
       if (basarili) {
         abonelik = { id: m.id, tur: 'trigger' };
@@ -261,11 +324,23 @@ function haWsOlustur({
       if (baglanti !== 'canli') gunluk('Canlı bağlantı kuruldu.');
       durumuAyarla('canli');
       pingPlanla(bu);
+      ekAbonelikleriKur(s); // 1.4.0: okuma abonelikleri (bildirimler, hava tahmini) her canlı bağlantıda yeniden kurulur
     }
   }
 
   function olayIsle(m) {
-    if (!abonelik || m.id !== abonelik.id) return;
+    if (abonelik && m.id === abonelik.id) return durumOlayiIsle(m);
+    for (const kayit of ekAbonelikler.values()) {
+      if (kayit.id !== null && kayit.id === m.id) {
+        const olay = m.ham.event;
+        if (olay && typeof olay === 'object' && !Array.isArray(olay)) dinleyiciyeVer(kayit, { olay });
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  function durumOlayiIsle(m) {
     const d = p.olaydanDurum(m);
     if (!d || !izlenenKume.has(d.kimlik)) return;
     if (d.yeni) depo.guncelle(d.yeni);
@@ -507,6 +582,59 @@ function haWsOlustur({
     },
     durum: () => ({ baglanti, canli: baglanti === 'canli', neden: sonNeden }),
     canliMi: () => baglanti === 'canli',
+
+    /**
+     * 1.4.0: yalnız okuyan WS komutu (ha-ws-protokol.js OKUMA_KOMUTLARI). Yalnız canlı bağlantıda gönderilir; HİÇBİR zaman
+     * reddetmez (hata da sonuçtur).
+     * @param {{type: string}} ileti ör. { type: 'config/area_registry/list' }
+     * @param {{zamanAsimiMs?: number}} [secenek]
+     * @returns {Promise<{ok: true, sonuc: unknown} | {ok: false, kod: string}>}
+     *   kod: 'baglanti-yok' | 'izinsiz-komut' | 'cok-sik' | 'gonderilemedi' | 'zaman-asimi' | 'koptu' | HA hata kodu ('unauthorized', 'unknown_command'...)
+     */
+    komut(ileti, { zamanAsimiMs = KOMUT_ZAMAN_ASIMI_MS } = {}) {
+      if (!p.komutMesaji(0, ileti, p.OKUMA_KOMUTLARI)) return Promise.resolve({ ok: false, kod: 'izinsiz-komut' });
+      const s = soket;
+      if (baglanti !== 'canli' || !s) return Promise.resolve({ ok: false, kod: 'baglanti-yok' });
+      if (komutlar.size >= EN_COK_BEKLEYEN_KOMUT) return Promise.resolve({ ok: false, kod: 'cok-sik' });
+      return new Promise((coz) => {
+        const id = yeniId('komut');
+        const zamanlayici = zaman.setTimeout(() => {
+          if (!komutlar.has(id)) return;
+          komutlar.delete(id);
+          bekleyenler.delete(id);
+          coz({ ok: false, kod: 'zaman-asimi' });
+        }, zamanAsimiMs);
+        komutlar.set(id, { coz, zamanlayici });
+        if (!gonder(s, p.komutMesaji(id, ileti, p.OKUMA_KOMUTLARI))) {
+          zaman.clearTimeout(zamanlayici);
+          komutlar.delete(id);
+          bekleyenler.delete(id);
+          coz({ ok: false, kod: 'gonderilemedi' });
+        }
+      });
+    },
+
+    /**
+     * 1.4.0: yalnız okuyan WS aboneliği (ABONELIK_KOMUTLARI). Bağlantı canlıysa hemen, değilse bir sonraki canlı bağlantıda
+     * kurulur ve her yeniden bağlanmada yenilenir. Dinleyici { olay } (HA 'event' iletisinin event alanı; güvenilmez veri:
+     * çağıran doğrular) ya da { hata: kod } alır. 'unauthorized' / 'unknown_command' hatasında abonelik kalıcı olarak düşer.
+     * @returns {() => void} aboneliği bırakır (idempotent); izinsiz türde ya da sınırda etkisiz işlev döner
+     */
+    abone(ileti, dinleyici) {
+      if (typeof dinleyici !== 'function' || !p.komutMesaji(0, ileti, p.ABONELIK_KOMUTLARI)) return () => {};
+      if (ekAbonelikler.size >= EN_COK_EK_ABONELIK) return () => {};
+      sonEkAbonelikAnahtari += 1;
+      const anahtar = sonEkAbonelikAnahtari;
+      const kayit = { ileti: { ...ileti }, dinleyici, id: null };
+      ekAbonelikler.set(anahtar, kayit);
+      if (baglanti === 'canli' && soket) ekAboneligiGonder(soket, anahtar, kayit);
+      return () => {
+        if (ekAbonelikler.get(anahtar) !== kayit) return;
+        ekAbonelikler.delete(anahtar);
+        if (kayit.id !== null && soket && baglanti === 'canli') gonder(soket, p.abonelikSilMesaji(yeniId('abonelik-sil'), kayit.id));
+        kayit.id = null;
+      };
+    },
   };
 }
 

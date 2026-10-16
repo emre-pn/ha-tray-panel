@@ -16,7 +16,7 @@ const UST_SAYISI = 8;
 const IPUCU_SINIRI = 120; // Windows tepsi ipucu ~127 karakterde kesilir
 
 const TUR_ANAHTARLARI = Object.freeze({ scene: 'tepsi.tur.sahne', script: 'tepsi.tur.script', button: 'tepsi.tur.dugme', input_button: 'tepsi.tur.dugme' });
-const ACIK_KAPALI_ALANLARI = new Set(['light', 'switch', 'fan', 'input_boolean']);
+const ACIK_KAPALI_ALANLARI = new Set(['light', 'switch', 'fan', 'input_boolean', 'humidifier']);
 
 /**
  * @param {object} karo yuzey-modeli.js karosu
@@ -44,7 +44,8 @@ function menuOgesi(karo, t = TR) {
  * @returns {{ust: object[], alt: object[], yikici: object[]}}
  */
 function tepsiMenuPlani(karolar, { ustSayi = UST_SAYISI, t = TR } = {}) {
-  const liste = Array.isArray(karolar) ? karolar : [];
+  // 1.4.0: tek tıklama eylemi olmayan karolar (iklim, medya, sensör...; varsayilanEylem:false) menüye girmez.
+  const liste = (Array.isArray(karolar) ? karolar : []).filter((k) => k.varsayilanEylem !== false);
   const zararsiz = liste.filter((k) => k.sinif !== 'yikici').map((k) => menuOgesi(k, t));
   return {
     ust: zararsiz.slice(0, ustSayi),

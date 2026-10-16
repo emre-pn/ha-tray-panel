@@ -16,6 +16,7 @@ const { MALZEME_DEGERLERI } = require('./malzeme');
 const { TEMA_DEGERLERI, vurguRengiDuzelt } = require('./gorunum');
 const { DIL_AYARLARI, cogul } = require('./dil');
 const { TR } = require('./ceviri-varsayilan');
+const { ekGirdiDogrula } = require('./ayar-alanlari');
 
 const TEPSI_SOL_TIK_DEGERLERI = ['panel', 'pencere'];
 
@@ -130,6 +131,10 @@ function ayarGirdisiniDogrula(girdi, mevcut, { t = TR } = {}) {
       yeni.anaPanoyaDonDk = gecerli;
     }
   }
+  // 1.4.0: ayar-alanlari.js tablosundaki alanlar (geçersiz değer mevcut olanı korur, uyarı verir).
+  const ek = ekGirdiDogrula(girdi, t);
+  Object.assign(yeni, ek.yeni);
+  uyarilar.push(...ek.uyarilar);
   return { hatalar, hataAlanlari, uyarilar, yeni };
 }
 

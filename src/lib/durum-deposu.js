@@ -137,7 +137,14 @@ function yuzdeCevir(parlaklik) {
   return Math.max(0, Math.min(100, Math.round((parlaklik / 255) * 100)));
 }
 
-const ACIK_KAPALI_ALANLARI = new Set(['light', 'switch', 'fan', 'input_boolean']);
+const ACIK_KAPALI_ALANLARI = new Set(['light', 'switch', 'fan', 'input_boolean', 'humidifier', 'binary_sensor']);
+// 1.4.0: on/off dışında durum metni olan alanlar: hangi durum "açık" (vurgulu), hangisi "kapalı" sayılır. Listede olmayan durum 'notr'.
+const DURUM_TABLOSU = Object.freeze({
+  climate: { acik: ['heat', 'cool', 'heat_cool', 'auto', 'dry', 'fan_only'], kapali: ['off'] },
+  media_player: { acik: ['playing', 'paused', 'on', 'idle', 'buffering'], kapali: ['off', 'standby'] },
+  vacuum: { acik: ['cleaning', 'returning'], kapali: ['docked', 'idle', 'paused'] },
+  timer: { acik: ['active'], kapali: ['idle'] },
+});
 
 /**
  * Karonun durum rengi için sade durum.
@@ -151,6 +158,12 @@ function karoDurumu(varlik) {
   if (varlik.state === 'unavailable') return { durum: 'yok', yuzde: null };
   const alan = varlik.entity_id.split('.')[0];
   if (alan === 'script') return { durum: varlik.state === 'on' ? 'acik' : 'notr', yuzde: null };
+  if (Object.hasOwn(DURUM_TABLOSU, alan)) {
+    const tablo = DURUM_TABLOSU[alan];
+    if (tablo.acik.includes(varlik.state)) return { durum: 'acik', yuzde: null };
+    if (tablo.kapali.includes(varlik.state)) return { durum: 'kapali', yuzde: null };
+    return { durum: 'notr', yuzde: null };
+  }
   if (!ACIK_KAPALI_ALANLARI.has(alan)) return { durum: 'notr', yuzde: null };
   if (varlik.state === 'on') {
     let yuzde = alan === 'light' ? yuzdeCevir(varlik.attributes?.brightness) : null;

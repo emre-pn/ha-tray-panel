@@ -203,11 +203,18 @@ test('palet "ışık 0" (kapat): yalnız sabit turn_off servisi; renderer başka
   const o = ortam();
   assert.equal((await o.katman.yuzeydenCalistir('palet', { kimlik: 'light.led', kapat: true })).ok, true);
   assert.deepEqual(o.postlar()[0], { yol: '/api/services/light/turn_off', yontem: 'POST', govde: { entity_id: 'light.led' } });
-  // Renderer'ın serbest alanları servis seçemez: "servis" yok sayılır, "kapat" yalnız true kabul edilir.
+  // 1.4.0: renderer servis adı gönderebilir ama yalnız alanın izin listesindeki servis çalışır (servis-izinleri.js); "kapat" yalnız true.
   const once = o.postlar().length;
   await o.katman.yuzeydenCalistir('palet', { kimlik: 'light.ampul', servis: 'turn_on' });
   await o.katman.yuzeydenCalistir('palet', { kimlik: 'light.ampul', kapat: 'turn_on' });
-  assert.deepEqual(o.postlar().slice(once).map((p) => p.yol), ['/api/services/light/toggle', '/api/services/light/toggle']);
+  assert.deepEqual(o.postlar().slice(once).map((p) => p.yol), ['/api/services/light/turn_on', '/api/services/light/toggle']);
+  for (const servis of ['unlock', 'open_cover', 'alarm_disarm', 'turn_on; x', 'TURN_ON', '__proto__']) {
+    const s = await o.katman.yuzeydenCalistir('palet', { kimlik: 'light.ampul', servis });
+    assert.deepEqual([s.ok, s.tur], [false, 'gecersiz'], servis);
+  }
+  const s2 = await o.katman.yuzeydenCalistir('palet', { kimlik: 'light.ampul', servis: 'turn_on', kapat: true });
+  assert.deepEqual([s2.ok, s2.tur], [false, 'gecersiz'], 'servis ile kapat birlikte verilemez');
+  assert.equal(o.postlar().length, once + 2, 'izinsiz servis ağa çıkmaz');
   // Parlaklık verilmişse kapat yok sayılır; parlaklık kuralları değişmez.
   await o.katman.yuzeydenCalistir('palet', { kimlik: 'light.led', parlaklik: 30, kapat: true });
   assert.equal(o.postlar().at(-1).govde.brightness_pct, 30);
@@ -329,4 +336,55 @@ test('(tur5-K10) eylem öncesi durum okuması (REST yedeği) kimlikli kapıda "y
   await o.katman.guncelDurum('light.ampul');
   assert.equal(o.istekler.filter((i) => i.yontem === 'GET').length, 1);
   assert.deepEqual(o.oncelikler, ['yuksek']);
+});
+
+// --- 1.4.0: servisCalistir, kayıt kaynakları, kayitliMi ------------------------------------------------------
+
+test('1.4.0 kayıt kaynağı: favori olmayan ama Ayarlar\'da seçilmiş varlık kayıtlı sayılır; kaynak kaldırılınca sayılmaz', async () => {
+  SUNUCU['todo.alisveris'] = { entity_id: 'todo.alisveris', state: '2', attributes: {} };
+  try {
+    const o = ortam();
+    assert.equal(o.katman.kayitliMi('todo.alisveris'), false);
+    assert.equal(o.katman.kayitliMi('light.ampul'), true, 'favori');
+    assert.equal(o.katman.kayitliMi(5), false);
+    const kaldir = o.katman.kayitKaynagiEkle((k) => (k === 'todo.alisveris' ? { entity_id: k, ad: 'Alışveriş' } : null));
+    o.katman.kayitKaynagiEkle(() => {
+      throw new Error('bozuk kaynak');
+    });
+    o.katman.kayitKaynagiEkle((k) => ({ entity_id: 'baska.kimlik', ad: k }));
+    assert.equal(o.katman.kayitliMi('todo.alisveris'), true);
+    assert.equal(o.katman.kayitliMi('todo.baska'), false, 'kimliği tutmayan kayıt sayılmaz');
+    const s = await o.katman.servisCalistir({ kimlik: 'todo.alisveris', kaynak: 'panel', servis: 'add_item', veri: { item: 'Süt' } });
+    assert.equal(s.ok, true);
+    assert.deepEqual(o.postlar(), [{ yol: '/api/services/todo/add_item', yontem: 'POST', govde: { entity_id: 'todo.alisveris', item: 'Süt' } }]);
+    kaldir();
+    assert.equal(o.katman.kayitliMi('todo.alisveris'), false);
+    assert.equal((await o.katman.servisCalistir({ kimlik: 'todo.alisveris', kaynak: 'panel', servis: 'add_item', veri: { item: 'Ekmek' } })).tur, 'bilinmeyen-favori');
+    assert.equal(o.postlar().length, 1);
+    assert.equal(typeof o.katman.kayitKaynagiEkle('islev degil'), 'function');
+  } finally {
+    delete SUNUCU['todo.alisveris'];
+  }
+});
+
+test('1.4.0 servisCalistir: yük biçimi ana süreçte de denetlenir (servis deseni, en çok 8 anahtar, 2 KB)', async () => {
+  const o = ortam();
+  for (const [servis, veri] of [
+    ['TURN_ON', undefined],
+    ['turn_on;x', undefined],
+    [5, undefined],
+    ['turn_on', []],
+    ['turn_on', null],
+    ['turn_on', Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`a${i}`, 1]))],
+    ['turn_on', { color_temp_kelvin: 'x'.repeat(3000) }],
+  ]) {
+    assert.equal((await o.katman.servisCalistir({ kimlik: 'light.ampul', kaynak: 'panel', servis, veri })).tur, 'gecersiz', String(servis));
+  }
+  const dongusel = {};
+  dongusel.kendi = dongusel;
+  assert.equal((await o.katman.servisCalistir({ kimlik: 'light.ampul', kaynak: 'panel', servis: 'turn_on', veri: dongusel })).tur, 'gecersiz');
+  assert.equal(o.postlar().length, 0);
+  assert.equal((await o.katman.servisCalistir({ kimlik: 'light.ampul', kaynak: 'panel', servis: 'turn_off' })).ok, true);
+  assert.equal((await o.katman.servisCalistir({ kimlik: 'light.kapi_lambasi', kaynak: 'panel', servis: 'turn_off' })).tur, 'yasak');
+  assert.equal(o.postlar().length, 1);
 });

@@ -25,7 +25,7 @@ test('elenenler nedenleriyle geri bildirilir', () => {
     { entity_id: 'LIGHT.b', ad: 'B' },
     { entity_id: 42 },
     null,
-    { entity_id: 'sensor.s', ad: 'S' },
+    { entity_id: 'cover.s', ad: 'S' }, // 1.4.0: sensor artık karo olabilir; cover (perde dahil) bu sürümde yok
     { entity_id: 'lock.k', ad: 'K' },
     { entity_id: 'alarm_control_panel.a', ad: 'A' },
     { entity_id: 'light.kapi', ad: 'Kapı' },

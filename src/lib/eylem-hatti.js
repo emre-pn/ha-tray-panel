@@ -14,13 +14,26 @@
  *   7. POST tam BİR kez (asla yeniden denenmez)                                    -> 'ha-hatasi'
  *
  * Kapı/kilit/alarm/garaj/bariyer/gate/lock varlıkları 3. adımda her zaman durur; bu dosya o kuralı gevşetmez.
+ *
+ * 1.4.0 — genel "servis eylemi" yolu (AYNI hat, AYNI tek POST): istek.eylem = { servis, veri } ile kimlik + servis + parametreler
+ * gelir. Sıra: kayıtlı varlık (2) -> süzgeç (3; alan alan-kaydi.js'te 'eylem' türünde olmalı) -> eylem sınıfı servisle birlikte
+ * (4; eylemSinifi(varlik, favori, servis): climate.set_hvac_mode, seçici/sayı/zamanlayıcı varsayılan onaylı, todo.remove_item
+ * zorunlu onaylı) -> izin listesi + parametre sınırları (5; servis-izinleri.js servisDogrula, sınırlar HA'daki GÜNCEL
+ * öznitelikten) -> hız sınırı (6) -> yetki kesici/kimlikli kapı (haIstek, 7) -> HA. Yalnız okunur alanlarda (sensor,
+ * binary_sensor, weather, calendar) hiçbir servis çağrılmaz ('yasak').
+ * Parametresiz 1.3.0 servisleri (toggle/turn_on/turn_off/press) IZINLI_SERVISLER ile eskisi gibi kurulur.
  */
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
-const { FAVORI_ALANLARI, alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
+const { alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
+const { eylemAlaniMi, varsayilanServis } = require('./alan-kaydi');
+const { servisDogrula } = require('./servis-izinleri');
 const { SINIF, KAYNAKLAR, eylemSinifi, kaynakIzni } = require('./eylem-sinifi');
 
-/** Alan başına çağrılabilecek servisler (sabit izin listesi). İlk eleman varsayılan servistir (FAVORI_ALANLARI ile aynı). */
+/**
+ * 1.3.0'ın PARAMETRESİZ servisleri (sabit izin listesi). İlk eleman varsayılan servistir (alan-kaydi.js varsayilanServis ile aynı).
+ * Parametreli ve 1.4.0 servisleri src/lib/servis-izinleri.js'tedir (SERVIS_IZINLERI); orası bunların üst kümesidir.
+ */
 const IZINLI_SERVISLER = Object.freeze({
   light: ['toggle', 'turn_on', 'turn_off'],
   switch: ['toggle', 'turn_on', 'turn_off'],
@@ -100,27 +113,50 @@ function hizSiniriOlustur({ simdi = () => Date.now() } = {}) {
   };
 }
 
+const SERVIS_ADI_DESENI = /^[a-z_]{1,40}$/;
+
+/** istek.eylem biçim denetimi (1. adım): servis adı kısa düz metin, veri düz nesne, parlaklık ile veri birlikte olmaz. */
+function eylemBicimiGecerliMi(eylem) {
+  if (eylem === undefined) return true;
+  if (eylem === null || typeof eylem !== 'object' || Array.isArray(eylem)) return false;
+  if (eylem.servis !== undefined && (typeof eylem.servis !== 'string' || !SERVIS_ADI_DESENI.test(eylem.servis))) return false;
+  if (eylem.veri !== undefined && (eylem.veri === null || typeof eylem.veri !== 'object' || Array.isArray(eylem.veri))) return false;
+  if (eylem.veri !== undefined && eylem.parlaklik !== undefined) return false;
+  return true;
+}
+
+/** Sınıflama için istenen servis (4. adım): parlaklık turn_on'dur; servis verilmediyse undefined (tek tıklama eylemi). */
+function istenenServis(eylem) {
+  if (!eylem || typeof eylem !== 'object') return undefined;
+  if (eylem.parlaklik !== undefined) return 'turn_on';
+  return typeof eylem.servis === 'string' ? eylem.servis : undefined;
+}
+
 function parlaklikDuzelt(deger) {
   return Number.isInteger(deger) && deger >= 1 && deger <= 100 ? deger : null;
 }
 
 /**
- * Servis ve gövdeyi sabit izin listesinden kurar.
- * @returns {{servis: string, govde: object}|null}
+ * Servis ve gövdeyi sabit izin listesinden kurar. 1.3.0 parametresiz servisler IZINLI_SERVISLER'den; parametreli ve 1.4.0
+ * servisleri servis-izinleri.js servisDogrula ile (alan izin listesi + parametre şeması + HA'daki GÜNCEL sınırlar).
+ * @param {object} varlik HA'daki güncel durum (sınırlar ve seçenek listeleri buradan okunur)
+ * @returns {{servis: string, govde: object, servisEylemi: boolean}|{hata: string}}
  */
-function servisKur(alan, kimlik, favori, eylem) {
-  const izinli = IZINLI_SERVISLER[alan];
-  if (!izinli) return null;
+function servisKur(alan, kimlik, favori, eylem, varlik) {
   const istek = eylem && typeof eylem === 'object' ? eylem : {};
   if (istek.parlaklik !== undefined) {
     const yuzde = parlaklikDuzelt(istek.parlaklik);
     // Yalnız "parlaklık kontrollü" ışık favorisinde; başka alanda ya da kontrolü kapalı ışıkta REDDEDİLİR.
-    if (yuzde === null || alan !== 'light' || favori.parlaklik !== true) return null;
-    return { servis: 'turn_on', govde: { entity_id: kimlik, brightness_pct: yuzde } };
+    if (yuzde === null || alan !== 'light' || favori.parlaklik !== true) return { hata: 'parametre' };
+    return { servis: 'turn_on', govde: { entity_id: kimlik, brightness_pct: yuzde }, servisEylemi: false };
   }
-  const servis = istek.servis === undefined ? FAVORI_ALANLARI[alan].servis : istek.servis;
-  if (typeof servis !== 'string' || !izinli.includes(servis)) return null;
-  return { servis, govde: { entity_id: kimlik } };
+  const servis = istek.servis === undefined ? varsayilanServis(alan) : istek.servis;
+  if (typeof servis !== 'string') return { hata: 'servis' }; // tek tıklama eylemi olmayan alan (iklim, medya...): servis açıkça verilmeli
+  const izinli = IZINLI_SERVISLER[alan];
+  if (istek.veri === undefined && izinli?.includes(servis)) return { servis, govde: { entity_id: kimlik }, servisEylemi: false };
+  const dogrulama = servisDogrula(alan, servis, istek.veri, varlik);
+  if (!dogrulama.ok) return { hata: dogrulama.neden };
+  return { servis, govde: dogrulama.govde, servisEylemi: true };
 }
 
 function hataTuru(hata) {
@@ -144,10 +180,12 @@ function hataSonucu(hata, ad) {
  */
 function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () => false, hizSiniri = hizSiniriOlustur() }) {
   /**
-   * @param {{kimlik: string, kaynak: string, onay?: 'diyalog'|'basili', eylem?: {parlaklik?: number, servis?: string}, sonDeger?: boolean}} istek
+   * @param {{kimlik: string, kaynak: string, onay?: 'diyalog'|'basili', eylem?: {parlaklik?: number, servis?: string, veri?: object}, sonDeger?: boolean}} istek
    *   onay: YALNIZ ana sürecin kendi koduyla verilir ('diyalog': onay penceresi yanıtlandı; 'basili': basılı tutma isteği).
-   * @returns {Promise<{ok: true, ad: string, alan: string, servis: string, sinif: string, onceki: string, yeni?: string, parlaklik?: number}
+   *   eylem.servis + eylem.veri (1.4.0): servis eylemi; veri, servis-izinleri.js şemasıyla doğrulanır.
+   * @returns {Promise<{ok: true, ad: string, alan: string, servis: string, sinif: string, onceki: string, yeni?: string, parlaklik?: number, servisEylemi: boolean}
    *   | {ok: false, tur: string, neden?: string, ad?: string}>}
+   *   'gecersiz' sonucunda neden (5. adımda): 'servis' | 'parametre' | 'eksik' | 'sinir' | 'adim' | 'desteklenmiyor' | 'guvenlik'
    *   tur: 'gecersiz' | 'bilinmeyen-favori' | 'yasak' | 'ulasilamiyor' | 'bulunamadi' | 'kaynak-izinsiz' | 'onay-gerekli' | 'cok-sik' | 'ha-hatasi'
    */
   return async function calistir(istek) {
@@ -156,7 +194,7 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
     if (typeof kimlik !== 'string' || !VARLIK_KIMLIGI_DESENI.test(kimlik)) return { ok: false, tur: 'gecersiz' };
     if (!KAYNAKLAR.includes(kaynak)) return { ok: false, tur: 'gecersiz' };
     if (onay !== undefined && onay !== 'diyalog' && onay !== 'basili') return { ok: false, tur: 'gecersiz' };
-    if (eylem !== undefined && (eylem === null || typeof eylem !== 'object' || Array.isArray(eylem))) return { ok: false, tur: 'gecersiz' };
+    if (!eylemBicimiGecerliMi(eylem)) return { ok: false, tur: 'gecersiz' };
 
     // 2. favori listesinde olmalı
     const favori = favoriAl(kimlik);
@@ -164,7 +202,7 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
 
     // 3. güvenlik: önce kayıtlı adla (ağsız), sonra HA'daki güncel durumla
     const alan = alanAl(kimlik);
-    if (!Object.hasOwn(FAVORI_ALANLARI, alan)) return { ok: false, tur: 'yasak' };
+    if (!eylemAlaniMi(alan)) return { ok: false, tur: 'yasak' }; // alan-kaydi.js: yalnız 'eylem' türü alanlar (okunur alanda servis YOK)
     let ad = typeof favori.ad === 'string' && favori.ad ? favori.ad : kimlik;
     if (!adGuvenliMi(kimlik, ad)) return { ok: false, tur: 'yasak', ad };
     let varlik;
@@ -180,7 +218,7 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
     if (varlik.state === 'unavailable') return { ok: false, tur: 'ulasilamiyor', ad };
 
     // 4. sınıf, yüzey izni, onay
-    const siniflama = eylemSinifi(varlik, favori);
+    const siniflama = eylemSinifi(varlik, favori, istenenServis(eylem));
     const izin = kaynakIzni(siniflama.sinif, kaynak);
     if (!izin.izin) return { ok: false, tur: 'kaynak-izinsiz', ad };
     if (izin.onayTuru) {
@@ -188,9 +226,9 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
       if (!onayli) return { ok: false, tur: 'onay-gerekli', ad };
     }
 
-    // 5. servis (sabit izin listesi)
-    const kurulan = servisKur(alan, kimlik, favori, eylem);
-    if (!kurulan) return { ok: false, tur: 'gecersiz', ad };
+    // 5. servis (sabit izin listesi + parametre sınırları; servis-izinleri.js servisDogrula)
+    const kurulan = servisKur(alan, kimlik, favori, eylem, varlik);
+    if (kurulan.hata) return { ok: false, tur: 'gecersiz', neden: kurulan.hata, ad };
 
     // 6. hız sınırı
     const sinir = alan === 'button' || alan === 'input_button' ? ORAN_SINIRI_DUGME : ORAN_SINIRI;
@@ -204,7 +242,7 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
       return hataSonucu(hata, ad);
     }
     const yeni = Array.isArray(yanit) ? yanit.find((d) => d?.entity_id === kimlik)?.state : undefined;
-    const sonuc = { ok: true, ad, alan, servis: kurulan.servis, sinif: siniflama.sinif === SINIF.YIKICI ? 'yikici' : 'zararsiz', onceki: varlik.state };
+    const sonuc = { ok: true, ad, alan, servis: kurulan.servis, sinif: siniflama.sinif === SINIF.YIKICI ? 'yikici' : 'zararsiz', onceki: varlik.state, servisEylemi: kurulan.servisEylemi };
     if (typeof yeni === 'string') sonuc.yeni = yeni;
     if (kurulan.govde.brightness_pct !== undefined) sonuc.parlaklik = kurulan.govde.brightness_pct;
     return sonuc;

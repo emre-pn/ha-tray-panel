@@ -47,9 +47,10 @@ const {
 } = require('electron');
 
 const { kokenAl } = require('./lib/dogrulama');
-const { ALAN_SIRASI, alanAl, adGuvenliMi, guvenliVarlikMi } = require('./lib/suzgec');
+const { alanAl, adGuvenliMi, guvenliVarlikMi } = require('./lib/suzgec');
 const { VARSAYILAN_KISAYOL, VARSAYILAN_PALET_KISAYOLU, kisayolGoster, kisayolNormallestir, kisayolUyarilari, kisayolPlani } = require('./lib/kisayol');
 const { EN_COK_ENGELLENEN, ayarlariDuzelt } = require('./lib/ayar-sema');
+const { aktarilanAlanlar, ekAyarlariUygula, ekAyarOzeti } = require('./lib/ayar-alanlari');
 const { ayarGirdisiniDogrula, kisayolKaydiSonrasiUyarilar } = require('./lib/ayar-kaydet');
 const { gocOncesiYedegiAl, hataliAlanYedegiAl } = require('./lib/ayar-yedegi');
 const { ayarAktariciOlustur } = require('./lib/ayar-aktar');
@@ -97,6 +98,8 @@ const { HaHatasi, hataMetni, haIstemcisiOlustur, YERELE_DONUS_YOKLAMA_MS } = req
 const { guvenliWebTercihleri, yerelOlaydanMi, yerelPencereOlustur } = require('./yerel-pencere');
 const { koseBildirimiOlustur } = require('./kose-bildirim');
 const { haWsOlustur } = require('./ha-ws');
+const { haOkumaOlustur } = require('./lib/ha-okuma');
+const { karoAlaniMi, alanSirasi, varsayilanServis } = require('./lib/alan-kaydi');
 const { eylemKatmaniOlustur } = require('./eylem');
 const { yuzeyYoneticisiOlustur } = require('./yuzey-yoneticisi');
 
@@ -788,6 +791,13 @@ const eylem = eylemKatmaniOlustur({
   gunluk,
 });
 
+/**
+ * 1.4.0 okuma uçları (src/lib/ha-okuma.js): geçmiş, takvim, hava tahmini, alan (oda) kaydı, yapılacaklar, kalıcı bildirim
+ * aboneliği, yönetici denetimi. Yalnız ana süreçte; REST istekleri korumalı haIstek'ten, WS istekleri canlı bağlantının okuma
+ * komutlarından geçer. Hepsi süzgeçli, hız sınırlı; HA yanıt vermezse boş döner. Panel/palet yalnız yuzey:oku ile okur.
+ */
+const haOkuma = haOkumaOlustur({ haIstek, ws, durumAl: (kimlik) => depo.al(kimlik), gunluk });
+
 const yuzey = yuzeyYoneticisiOlustur({
   modelAl: yuzeyModeli,
   eylem,
@@ -798,6 +808,7 @@ const yuzey = yuzeyYoneticisiOlustur({
   t,
   dilAl: () => etkinDil,
   gunluk,
+  okuma: haOkuma,
 });
 // Durum değişince panel/palet modeli ve tepsi ipucu (açık ışık sayısı) tazelenir.
 depo.dinle(() => {
@@ -2310,7 +2321,31 @@ async function ayarOzeti() {
     sifrelemeVar: await anahtarDeposu.kullanilabilirMi(),
     favoriler: ayarlar.favoriler.map(({ entity_id, ad, onay, etiket, kisayol, parlaklik }) => ({ entity_id, ad, onay, etiket, kisayol, parlaklik })),
     ayarDosyasi: ayarDosyasiYolu(),
+    ...ekAyarOzeti(ayarlar), // 1.4.0: ayar-alanlari.js tablosundaki alanlar (ozette:true)
   };
+}
+
+/**
+ * 1.4.0: ayar-alanlari.js tablosundaki bir alan "Ayarları Kaydet" (ya da içe aktarma) ile DEĞİŞİNCE çağrılacak dinleyiciler.
+ * Kullanım (özellik ajanları): ekAyarDinle('panelHerZamanUstte', (yeni, eski) => yuzey.ustteTut(yeni));
+ * Dinleyici hatası kaydı durdurmaz (günlüğe sabit metin yazılır).
+ */
+const ekAyarDinleyicileri = new Map(); // ad -> Function[]
+function ekAyarDinle(ad, dinleyici) {
+  if (typeof dinleyici !== 'function') return;
+  if (!ekAyarDinleyicileri.has(ad)) ekAyarDinleyicileri.set(ad, []);
+  ekAyarDinleyicileri.get(ad).push(dinleyici);
+}
+function ekAyarDegisimleriniYay(degisenler) {
+  for (const { ad, eski, yeni } of degisenler) {
+    for (const dinleyici of ekAyarDinleyicileri.get(ad) ?? []) {
+      try {
+        dinleyici(yeni, eski);
+      } catch {
+        gunluk(`Ayar değişikliği uygulanamadı (${ad}).`);
+      }
+    }
+  }
 }
 
 function ipcKaydet() {
@@ -2427,7 +2462,9 @@ function ipcKaydet() {
       yuzey.malzemeyiUygula();
       kose.malzemeyiUygula();
     }
+    const ekDegisenler = ekAyarlariUygula(ayarlar, yeni); // 1.4.0: ayar-alanlari.js tablosundaki alanlar
     const yazildi = ayarlariYaz();
+    ekAyarDegisimleriniYay(ekDegisenler);
     otomatikBaslatUygula({ zorla: otomatikZorla });
     if (adresDegisti) {
       haIstemcisi.secimiSifirla();
@@ -2456,7 +2493,7 @@ function ipcKaydet() {
   async function ayarlariIceAktarUygula(cozum) {
     const a = cozum.ayarlar;
     const girdi = { yerelAdres: a.yerelAdres ?? ayarlar.yerelAdres, disAdres: a.disAdres ?? ayarlar.disAdres, kisayol: a.kisayol ?? ayarlar.kisayol };
-    for (const alan of ['paletKisayol', 'tepsiSolTik', 'canliBaglanti', 'otomatikBaslat', 'pencereBoyutu', 'odakKaybindaGizle', 'anaPanoyaDonDk', 'koseBildirimi', 'bipSesi', 'temaZorla', 'vurguRengi', 'yeniPencereMalzemesi', 'panolar']) {
+    for (const alan of ['paletKisayol', 'tepsiSolTik', 'canliBaglanti', 'otomatikBaslat', 'pencereBoyutu', 'odakKaybindaGizle', 'anaPanoyaDonDk', 'koseBildirimi', 'bipSesi', 'temaZorla', 'vurguRengi', 'yeniPencereMalzemesi', 'panolar', ...aktarilanAlanlar()]) {
       if (a[alan] !== undefined) girdi[alan] = a[alan];
     }
     const sonuc = await ayarlariKaydetIsle(girdi);
@@ -2634,7 +2671,9 @@ function ipcKaydet() {
       // hata-14: süzgeçten ÖNCE HA'daki tüm kimlikler alınır; kayıt "HA'da şu an yok" ile "güvenlik engelli"yi ayırt eder.
       const tumKimlikler = new Set(durumlar.map((v) => v?.entity_id).filter((k) => typeof k === 'string'));
       const cihazlar = durumlar
-        .filter(guvenliVarlikMi) // GÜVENLİK KURALI: kilit/alarm/kapı burada elenir, renderer'a hiç gitmez
+        // GÜVENLİK KURALI: kilit/alarm/kapı burada elenir, renderer'a hiç gitmez. 1.4.0: yalnız karo olabilen alanlar
+        // (src/lib/alan-kaydi.js karoAlaniMi; iklim, medya, sensör... dahil; yapılacaklar/takvim kendi ayarlarıyla seçilir).
+        .filter((v) => guvenliVarlikMi(v) && karoAlaniMi(alanAl(v.entity_id)))
         .map((v) => {
           const alan = alanAl(v.entity_id);
           const siniflama = eylemSinifi(v, {}); // favori ayarından bağımsız varsayılan sınıf (hata-04)
@@ -2646,14 +2685,12 @@ function ipcKaydet() {
             durum: durumMetni(v.state),
             onayZorunlu: siniflama.sinif === SINIF.YIKICI && siniflama.zorunlu,
             varsayilanOnay: siniflama.sinif === SINIF.YIKICI,
-            kisayolUygun: siniflama.sinif === SINIF.ZARARSIZ, // yıkıcı eylem kısayola atanamaz
+            // yıkıcı eylem ve tek tıklama eylemi olmayan karo (1.4.0: iklim, sensör...) kısayola atanamaz
+            kisayolUygun: siniflama.sinif === SINIF.ZARARSIZ && varsayilanServis(alan) !== null,
             gizli: adayGizliMi(v), // detay-20: panele/favorilere önerilmez; listede varsayılan gizli (güvenlik kuralı DEĞİLDİR)
           };
         })
-        .sort(
-          (a, b) =>
-            ALAN_SIRASI.indexOf(a.alan) - ALAN_SIRASI.indexOf(b.alan) || a.ad.localeCompare(b.ad, etkinDil),
-        );
+        .sort((a, b) => alanSirasi(a.alan) - alanSirasi(b.alan) || a.ad.localeCompare(b.ad, etkinDil));
       const guvenli = new Map(cihazlar.map((c) => [c.entity_id, c.ad]));
       cihazOnbellegi = { guvenli, tumKimlikler };
       // Kayıtlı favorilerden listede görünmeyenler: HA'da şu an yok (korunur) ya da güvenlik kuralına takılıyor.

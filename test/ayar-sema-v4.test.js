@@ -37,8 +37,8 @@ const v3 = (ek = {}) => ({
 
 test('v3 -> v5 göçü: yeni alanlar varsayılanlarla gelir; favoriler etiket alır, hiçbiri silinmez; kullanıcı değerleri korunur', () => {
   const { ayarlar, notlar, atilanlar } = ayarlariDuzelt(v3(), { varsayilan: VARSAYILAN });
-  assert.equal(SEMA_SURUMU, 5);
-  assert.equal(ayarlar.semaSurumu, 5);
+  assert.equal(SEMA_SURUMU, 6); // 1.4.0: şema 6 (ayar-alanlari.js)
+  assert.equal(ayarlar.semaSurumu, 6);
   assert.deepEqual(ayarlar.favoriler, V4_FAVORILER);
   assert.deepEqual(atilanlar, []);
   assert.ok(notlar.includes('sema-gocu'));

@@ -13,6 +13,9 @@
  *     mevcut favoriler etiketini (hazır listedekiler) ve LED şeridin parlaklık kontrolünü göçle alır; hiçbiri silinmez.
  *  5  Görünüm (Dalga 4): temaZorla ('koyu' | 'sistem'), vurguRengi ('' | '#rrggbb'), yeniPencereMalzemesi ('acrylic' | 'mica' | 'yok').
  *     Yalnız yeni alanlar eklenir; kullanıcının mevcut değerlerine ve favorilerine dokunulmaz.
+ *  6  1.4.0: yeni alanlar src/lib/ayar-alanlari.js tablosundan (AYAR_ALANLARI) gelir; her özellik grubu kendi satırını oraya ekler,
+ *     bu dosyaya alan eklenmez. Göçler ayar-alanlari.js GOCLER'dedir (v6 göçü: yalnız varsayılanlar eklenir). Favori kaydı
+ *     1.4.0 alanlarını (iklim, medya, sensör...) kabul eder (alan-kaydi.js karoAlaniMi); 1.3.0 favorileri aynen kalır.
  *
  * Kullanıcı verisi göçle korunur: hiçbir favori sessizce silinmez (atilanlar ile bildirilir).
  *
@@ -38,8 +41,9 @@ const { yakinlastirmaDuzelt } = require('./tus-eylemi');
 const { malzemeDuzelt } = require('./malzeme');
 const { temaDuzelt, vurguRengiDuzelt } = require('./gorunum');
 const { dilAyariDuzelt } = require('./dil');
+const { AYAR_ALANLARI, alanlariDuzelt, alanTipleri, gocleriUygula } = require('./ayar-alanlari');
 
-const SEMA_SURUMU = 5;
+const SEMA_SURUMU = 6;
 const TEPSI_SOL_TIK_DEGERLERI = ['panel', 'pencere'];
 const ONAY_GOC_ALANLARI = new Set(['button', 'input_button', 'script']); // varsayılan onaylı alanlar (eylem-sinifi)
 const EN_COK_ENGELLENEN = 20;
@@ -50,6 +54,7 @@ const SONRAKI_SEMA_ALANLARI = [
   'koseBildirimi', 'bipSesi', // 3
   'canliBaglanti', 'paletKisayol', 'tepsiSolTik', 'hazirListeSurumu', 'panolar', // 4
   'temaZorla', 'vurguRengi', 'yeniPencereMalzemesi', // 5
+  ...AYAR_ALANLARI.map((a) => a.ad), // 6+ (ayar-alanlari.js)
 ];
 // Tip denetimi (h-33): bu alanlar uygulama tarafından hep aynı tipte yazılır; başka tipte gelirse sessizce varsayılana dönmez,
 // sıfırlananlar listesiyle bildirilir. kisayol ve paletKisayol kendi notlarıyla bildirilir (burada yok).
@@ -59,6 +64,7 @@ const ALAN_TIPLERI = {
   yerelZamanAsimiMs: 'sayi', disZamanAsimiMs: 'sayi', yenidenDenemeSn: 'sayi', anaPanoyaDonDk: 'sayi', yakinlastirma: 'sayi', hazirListeSurumu: 'sayi',
   favoriler: 'dizi', panolar: 'dizi', engellenenFavoriler: 'dizi',
   pencere: 'nesne',
+  ...alanTipleri(), // 6+ (ayar-alanlari.js)
 };
 const TIP_DENETIMLERI = {
   metin: (d) => typeof d === 'string',
@@ -268,7 +274,9 @@ function ayarlariDuzelt(ham, { varsayilan } = {}) {
     engellenenFavoriler: engellenenFavoriler.slice(-EN_COK_ENGELLENEN),
     tepsiIpucuGosterildi: g.tepsiIpucuGosterildi === true,
     httpUyarisiAdresi: adresNormallestir(g.httpUyarisiAdresi) ?? '', // http uyarısı bildirimi hangi ev içi adres için gösterildi
+    ...alanlariDuzelt(g, v), // şema 6+: ayar-alanlari.js tablosundaki alanlar (geçersiz değer varsayılana döner)
   };
+  gocleriUygula(ayarlar, g, oncekiSurum, notlar); // şema 6+ göçleri (ayar-alanlari.js GOCLER)
   // Daha yeni şemadan gelen dosya: bilinmeyen üst düzey alanlar olduğu gibi taşınır (eski sürüm yazınca silinmesin; h-11).
   const bilinmeyenAlanlar = [];
   if (yeniSema) {

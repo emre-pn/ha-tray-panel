@@ -8,9 +8,21 @@
  * karo listesinde durur, ekrana yazılan şey kullanıcının verdiği kısa `etiket`tir.
  * Süzgeçten (GÜVENLİK KURALI) ya da sınıflamadan (YASAK) geçmeyen favoriler modele hiç girmez; kayıtlı ad ve etiket de
  * ayrıca denetlenir.
+ *
+ * 1.4.0: karo olabilen alanlar src/lib/alan-kaydi.js karoAlaniMi'dir (iklim, medya, sensör...). Her karoya üç alan eklendi:
+ *   ozellik          alan türüne göre GÜVENLİ öznitelik alt kümesi (src/lib/varlik-ozellik.js guvenliOzellikler; ham
+ *                    attributes ve entity_picture ASLA gitmez; metinler kapı süzgecinden geçmiştir) ya da null
+ *   varsayilanEylem  tek tıklama eylemi var mı (alan-kaydi varsayilanServis); false ise tepsi menüsü ve komut satırı karoyu
+ *                    atlar, panel düz tıklamada servis göndermez (karo kendi denetimini çizer)
+ *   onayliServisler  bu karoda onay (basılı tut / onay penceresi) isteyen servis adları (eylem-sinifi.js eylemSinifi(varlik,
+ *                    favori, servis)); renderer basılı tutma ipucunu buna göre gösterir, karar yine ana süreçtedir
+ * Renderer'a giden alanların tam listesi RENDERER_KARO_ALANLARI'dır; yeni alan ekleyen ajan oraya ve test/yuzey-modeli.test.js'e ekler.
  */
 
-const { alanAl, adGuvenliMi, guvenliVarlikMi, FAVORI_ALANLARI } = require('./suzgec');
+const { alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
+const { karoAlaniMi, varsayilanServis } = require('./alan-kaydi');
+const { izinliServisler } = require('./servis-izinleri');
+const { guvenliOzellikler } = require('./varlik-ozellik');
 const { SINIF, eylemSinifi } = require('./eylem-sinifi');
 const { GRUPLAR, grupBul, altGrupBul, tekrarliMi } = require('./favoriler');
 const { karoDurumu, aktifCikis } = require('./durum-deposu');
@@ -38,14 +50,16 @@ function karoOlustur(favori, varlik, t = TR) {
   const kimlik = favori?.entity_id;
   if (typeof kimlik !== 'string') return null;
   const alan = alanAl(kimlik);
-  if (!Object.hasOwn(FAVORI_ALANLARI, alan)) return null;
+  if (!karoAlaniMi(alan)) return null;
   const kayitliAd = typeof favori.ad === 'string' ? favori.ad : kimlik;
   if (!adGuvenliMi(kimlik, kayitliAd)) return null;
   if (favori.etiket !== undefined && !adGuvenliMi(kimlik, favori.etiket)) return null;
   const canli = varlik && typeof varlik === 'object' ? varlik : null;
   if (canli && !guvenliVarlikMi(canli)) return null; // HA'daki GÜNCEL ad/sınıf kapı oldu: karo hiç görünmez
-  const siniflama = eylemSinifi(canli ?? { entity_id: kimlik, attributes: { friendly_name: kayitliAd } }, favori);
+  const siniflamaVarligi = canli ?? { entity_id: kimlik, attributes: { friendly_name: kayitliAd } };
+  const siniflama = eylemSinifi(siniflamaVarligi, favori);
   if (siniflama.sinif === SINIF.YASAK) return null;
+  const onayliServisler = izinliServisler(alan).filter((s) => eylemSinifi(siniflamaVarligi, favori, s).sinif === SINIF.YIKICI);
   const durum = karoDurumu(canli);
   const etiket = kisalt(favori.etiket || canliAd(canli) || kayitliAd, ETIKET_SINIRI);
   if (!adGuvenliMi(kimlik, etiket)) return null;
@@ -67,6 +81,9 @@ function karoOlustur(favori, varlik, t = TR) {
     sinif: siniflama.sinif === SINIF.YIKICI ? 'yikici' : 'zararsiz',
     parlaklikKontrol: favori.parlaklik === true && alan === 'light',
     tekrar: tekrarliMi(kimlik),
+    ozellik: canli ? guvenliOzellikler(canli) : null,
+    varsayilanEylem: varsayilanServis(alan) !== null,
+    onayliServisler,
   };
 }
 
@@ -156,11 +173,17 @@ const RENDERER_KARO_ALANLARI = Object.freeze([
   'sinif',
   'parlaklikKontrol',
   'tekrar',
+  'ozellik', // 1.4.0: güvenli öznitelik alt kümesi (varlik-ozellik.js)
+  'varsayilanEylem', // 1.4.0
+  'onayliServisler', // 1.4.0
 ]);
 
 function rendererKaro(karo) {
   const sonuc = {};
-  for (const alan of RENDERER_KARO_ALANLARI) sonuc[alan] = karo?.[alan];
+  for (const alan of RENDERER_KARO_ALANLARI) {
+    const deger = karo?.[alan];
+    sonuc[alan] = deger !== null && typeof deger === 'object' ? structuredClone(deger) : deger; // ana süreç nesnesiyle paylaşılmasın
+  }
   return sonuc;
 }
 

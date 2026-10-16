@@ -29,7 +29,7 @@ function onbellegiTemizle() {
 const akit = () => new Promise((coz) => setImmediate(coz));
 
 /** Sahte Electron + yönetici. `zoomVar`: webContents.setZoomFactor var mı (eski sürüm/sahte ortam davranışı). */
-function kur({ model, zoomVar = true, getBoundsVar = true } = {}) {
+function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {} } = {}) {
   const pencereler = [];
   const ipcIsleyicileri = new Map();
   class SahteWebContents extends EventEmitter {
@@ -124,7 +124,8 @@ function kur({ model, zoomVar = true, getBoundsVar = true } = {}) {
   const gunlukler = [];
   const yonetici = modul.yuzeyYoneticisiOlustur({
     modelAl: () => model ?? { gruplar: [], sonlar: [], ust: {} },
-    eylem: {},
+    eylem,
+    okuma,
     tepsiSinirlariAl: () => TEPSI,
     haAc() {},
     ayarlarAc() {},
@@ -357,5 +358,36 @@ test('g-09: gorunenSinirlar yalnız panel/palet görünürken pencerenin sınır
     assert.equal(getBoundsYok.yonetici.gorunenSinirlar(), null, 'getBounds olmayan sahte pencere');
   } finally {
     getBoundsYok.temizle();
+  }
+});
+
+test('1.4.0 yuzey:oku: yalnız açık yüzeyden ve yalnız kayıtlı varlık için; okuma yoksa ya da yabancı göndericiden reddedilir', async () => {
+  const cagrilar = [];
+  const okuma = {
+    gecmis: async (k, s) => (cagrilar.push(['gecmis', k, s]), { 'sensor.a': [] }),
+    takvimEtkinlikleri: async () => [],
+    havaTahmini: async () => [],
+    yapilacaklar: async () => [],
+  };
+  const o = kur({ okuma, eylem: { kayitliMi: (k) => k === 'sensor.a' } });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:oku');
+    assert.equal(typeof isle, 'function');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await isle(yabanci, { tur: 'gecmis', kimlikler: ['sensor.a'] })).ok, false);
+    const p = await panelAc(o);
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), { tur: 'gecmis', kimlikler: ['sensor.a'], saat: 6 }), { ok: true, veri: { 'sensor.a': [] } });
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), { tur: 'gecmis', kimlikler: ['sensor.b'] }), { ok: false, tur: 'kayitsiz' });
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), { tur: 'servis', kimlik: 'sensor.a' }), { ok: false, tur: 'gecersiz' });
+    assert.deepEqual(cagrilar, [['gecmis', ['sensor.a'], { saat: 6 }]]);
+  } finally {
+    o.temizle();
+  }
+  const okumasiz = kur();
+  try {
+    const p = await panelAc(okumasiz);
+    assert.deepEqual(await okumasiz.ipcIsleyicileri.get('yuzey:oku')(okumasiz.yuzeyOlayi(p), { tur: 'gecmis', kimlikler: ['sensor.a'] }), { ok: false, tur: 'gecersiz' });
+  } finally {
+    okumasiz.temizle();
   }
 });

@@ -1150,7 +1150,7 @@ ortamda('göç: eski ayardaki PC kapat favorisi artık onay ister ve kullanıcı
 }, async (ortam) => {
   await ortam.akit();
   const ayar = ortam.ayarOku();
-  assert.equal(ayar.semaSurumu, 5);
+  assert.equal(ayar.semaSurumu, 6);
   assert.equal(ayar.favoriler.length, 3, 'hiçbir favori silinmez');
   assert.deepEqual(ayar.favoriler.map((f) => f.etiket), ['PC kapat', 'Ekranı kapat', undefined], 'v4 göçü yalnız bilinen eylemlere kısa etiket ekler');
   assert.equal(ayar.favoriler[0].onay, undefined);
@@ -1707,7 +1707,7 @@ ortamda('göç yedeği: 1.0.0 biçimindeki ayar dosyası ayarlar.v1-yedek.json o
     yerelAdres: 'http://192.168.1.50:8123',
     favoriler: [{ entity_id: 'light.salon_lambasi', ad: 'Salon Lambası' }],
   }, 'yedek özgün dosyanın aynısı (şema alanı yok)');
-  assert.equal(ortam.ayarOku().semaSurumu, 5, 'asıl dosya göçle yeni biçime yazıldı');
+  assert.equal(ortam.ayarOku().semaSurumu, 6, 'asıl dosya göçle yeni biçime yazıldı');
   assert.match(ortam.gunlukOku(), /Ayar dosyası göçten önce yedeklendi: ayarlar\.v1-yedek\.json/);
 });
 
@@ -1717,12 +1717,12 @@ ortamda('göç yedeği: yedek zaten varsa üzerine yazılmaz ve göç yine yapı
 }, async (ortam) => {
   const klasor = ortam.durum.yollar.get('userData');
   assert.equal(fs.readFileSync(path.join(klasor, 'ayarlar.v1-yedek.json'), 'utf8'), '{"onceki":"yedek"}');
-  assert.equal(ortam.ayarOku().semaSurumu, 5);
+  assert.equal(ortam.ayarOku().semaSurumu, 6);
   assert.equal(ortam.ayarOku().favoriler.length, 1);
   assert.doesNotMatch(ortam.gunlukOku(), /yedeklendi|yedeği alınamadı/);
 });
 
-ortamda('göç yedeği: şema güncelse yedek dosyası oluşmaz', { tohum: { semaSurumu: 5, favoriler: [] } }, async (ortam) => {
+ortamda('göç yedeği: şema güncelse yedek dosyası oluşmaz', { tohum: { semaSurumu: 6, favoriler: [] } }, async (ortam) => {
   assert.deepEqual(yedekAdlari(ortam), []);
   assert.doesNotMatch(ortam.gunlukOku(), /yedeklendi|yedeği alınamadı/);
 });
@@ -1744,7 +1744,7 @@ test('göç yedeği: kopyalama başarısız olursa açılış sürer, favoriler 
     assert.equal(kopya.mock.calls.length >= 1, true, 'yedek denendi');
     assert.deepEqual(yedekAdlari(ortam), []);
     const ayar = ortam.ayarOku();
-    assert.equal(ayar.semaSurumu, 5, 'göç yedeksiz de tamamlandı');
+    assert.equal(ayar.semaSurumu, 6, 'göç yedeksiz de tamamlandı');
     assert.equal(ayar.favoriler.length, 1, 'favori silinmedi');
     const satirlar = ortam.gunlukOku().split('\n').filter((s) => /yedeği alınamadı/.test(s));
     assert.equal(satirlar.length, 1);
@@ -4029,7 +4029,7 @@ ortamda('ayar dosyası (h-11): yeni şemalı dosyanın yedeği zaten varsa ezilm
   assert.equal(ortam.ayarOku().gelecekAyar.acik, true);
 });
 
-ortamda('ayar dosyası (h-11): güncel şemalı dosyada yeni-şema yedeği ve bildirimi çıkmaz', { tohum: { semaSurumu: 5, favoriler: [] } }, async (ortam) => {
+ortamda('ayar dosyası (h-11): güncel şemalı dosyada yeni-şema yedeği ve bildirimi çıkmaz', { tohum: { semaSurumu: 6, favoriler: [] } }, async (ortam) => {
   assert.deepEqual(klasorAdlari(ortam).filter((ad) => /yedek|hatali/.test(ad)), []);
   assert.equal(bildirimGovdeleri(ortam).some((b) => /daha yeni/.test(b)), false);
 });
@@ -4052,7 +4052,7 @@ ortamda('ayar dosyası (h-33): tipi bozuk alanlar (ör. favoriler dizi değil) v
   assert.equal(bildirim.includes('192.168.1.50'), false, 'bildirim ayar değerlerini taşımaz');
 });
 
-ortamda('ayar dosyası (h-33): geçerli dosyada ".hatali" yedeği ve "geçersiz alan" bildirimi çıkmaz', { tohum: { semaSurumu: 5, favoriler: [] } }, async (ortam) => {
+ortamda('ayar dosyası (h-33): geçerli dosyada ".hatali" yedeği ve "geçersiz alan" bildirimi çıkmaz', { tohum: { semaSurumu: 6, favoriler: [] } }, async (ortam) => {
   assert.deepEqual(klasorAdlari(ortam).filter((ad) => /hatali/.test(ad)), []);
   assert.equal(bildirimGovdeleri(ortam).some((b) => /geçersiz değerli/.test(b)), false);
 });

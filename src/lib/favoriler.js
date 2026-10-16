@@ -13,10 +13,16 @@
  *   etiket   yalnız görünen kısa ad (güvenlik her zaman HA'daki GÜNCEL friendly_name'e bakar; etiket de süzgeçten geçer)
  *   kisayol  eylem kısayolu (hiz-05; yalnız zararsız eylemlerde)
  *   parlaklik yalnız ışıkta: panelde hazır seviyeler ve kaydırıcı (hiz-09)
+ *
+ * 1.4.0: favori olabilen alanlar src/lib/alan-kaydi.js karoAlaniMi ile belirlenir (iklim, medya, nem alıcı, süpürge, seçici,
+ * sayı, zamanlayıcı, sensör, ikili sensör, hava eklendi). Kısayol yalnız tek tıklama eylemi olan (varsayilanServis) alanlarda
+ * saklanır. Favori kaydına yeni alan ekleyen ajan: favoriOlustur'a doğrulamalı satır + ayar-yedegi.js FAVORI_ALANLARI listesi +
+ * main.js ayarOzeti favoriler eşlemesi.
  */
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
-const { FAVORI_ALANLARI, YASAK_ALANLAR, alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
+const { YASAK_ALANLAR, alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
+const { karoAlaniMi, varsayilanServis } = require('./alan-kaydi');
 const { SINIF, eylemSinifi } = require('./eylem-sinifi');
 const { EN_COK_FAVORI_KISAYOLU, kisayolDogrula, kisayolNormallestir } = require('./kisayol');
 const { kisalt } = require('./metin');
@@ -112,6 +118,7 @@ function etiketDuzelt(kimlik, etiket) {
  */
 function kisayolDuzelt(kimlik, ad, onay, kisayol) {
   if (typeof kisayol !== 'string' || kisayol === '' || !kisayolDogrula(kisayol).gecerli) return null;
+  if (varsayilanServis(alanAl(kimlik)) === null) return null; // 1.4.0: tek tıklama eylemi olmayan karo (iklim, sensör...) kısayol alamaz
   const s = eylemSinifi({ entity_id: kimlik, attributes: { friendly_name: ad } }, typeof onay === 'boolean' ? { onay } : {});
   return s.sinif === SINIF.ZARARSIZ ? kisayolNormallestir(kisayol) : null;
 }
@@ -150,7 +157,7 @@ function favorileriDuzelt(liste) {
       continue;
     }
     const alan = alanAl(kimlik);
-    if (!Object.hasOwn(FAVORI_ALANLARI, alan) || YASAK_ALANLAR.has(alan)) {
+    if (!karoAlaniMi(alan) || YASAK_ALANLAR.has(alan)) {
       at('alan');
       continue;
     }

@@ -24,8 +24,11 @@ if (location.protocol === 'file:') {
     onGoster: (callback) => dinle('yuzey:goster', callback),
     // Arayüz dili değişti: yük { dil: 'tr' | 'en' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
     onDilDegisti: (callback) => dinle('dil:degisti', callback),
-    // Yük: { kimlik, parlaklik?, sonDeger?, basili? }; yanıt: { ok, tur?, ad? }
+    // Yük: { kimlik, parlaklik?, kapat?, servis?, veri?, sonDeger?, araDeger?, basili? }; yanıt: { ok, tur?, neden?, ad? }
+    // (1.4.0 servis eylemi: { kimlik, servis, veri } — doğrulama ana süreçteki eylem hattındadır)
     calistir: (yuk) => ipcRenderer.invoke('yuzey:calistir', yuk),
+    // 1.4.0 okuma: { tur: 'gecmis'|'takvim'|'hava'|'yapilacak', ... }; yanıt: { ok, veri } (yalnız kayıtlı varlıklar; src/lib/ha-okuma.js)
+    oku: (istek) => ipcRenderer.invoke('yuzey:oku', istek),
     basiliBasla: (kimlik) => ipcRenderer.invoke('yuzey:basili-basla', kimlik),
     // Basılı tutma süre dolmadan bırakıldı: ana süreçteki başlangıç kaydı silinir (savunma derinliği)
     basiliBirak: (kimlik) => ipcRenderer.invoke('yuzey:basili-birak', kimlik),

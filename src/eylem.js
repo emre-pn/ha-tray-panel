@@ -8,13 +8,23 @@
  *
  * Renderer'dan gelen HİÇBİR değer onay yerine geçmez: panel/palet yıkıcı eylemi yalnız ana sürecin kendi saatiyle doğruladığı
  * "basılı tutma" ile (yuzey:basili-basla) çalıştırabilir; tepsi onayı yalnız bu dosyadaki onay penceresiyle verilir.
+ *
+ * 1.4.0 servis eylemi (ajanlar için API):
+ *  - Panel/palet: yuzey:calistir yükü { kimlik, servis, veri, sonDeger?, basili? } — servis/veri yalnız biçimce süzülür, asıl
+ *    doğrulama hattadır (servis-izinleri.js izin listesi + parametre sınırları). Örnek: { kimlik: 'climate.salon',
+ *    servis: 'set_temperature', veri: { temperature: 22 } }.
+ *  - Ana süreç (palet metni, kısayol, zamanlayıcı yerine kullanıcı hareketi olan yollar): eylem.servisCalistir({ kimlik, kaynak,
+ *    servis, veri, onay?, sonDeger? }); kaynak KAYNAKLAR'dan biri olmalı, onay yalnız ana sürecin kendi onayıdır.
+ *  - Favori olmayan ama kullanıcının Ayarlar'da seçtiği varlıklar (ör. yapılacaklar listesi): eylem.kayitKaynagiEkle((kimlik) =>
+ *    kayit|null) ile kayıt kaynağı eklenir; hattın "kimlik kayıtlı olmalı" adımı favorilere ek olarak bu kaynaklara bakar.
+ *    Kaynak yalnız ayardaki kayıtlı kimlikleri döndürmelidir (serbest metin eylem YOK).
  */
 
 const { eylemHattiOlustur, basiliTutmaDeposu } = require('./lib/eylem-hatti');
 const { SINIF, eylemSinifi } = require('./lib/eylem-sinifi');
 const { eylemAdiniCoz } = require('./lib/komut-satiri');
 const { durumuDuzelt } = require('./lib/ha-ws-protokol');
-const { AD_SINIRI, basariMetni, hataBildirimiMetni } = require('./lib/bildirim-metni');
+const { AD_SINIRI, basariMetni, gonderildiMetni, hataBildirimiMetni } = require('./lib/bildirim-metni');
 const { TR } = require('./lib/ceviri-varsayilan');
 const { tekrarliMi } = require('./lib/favoriler');
 const { kisalt } = require('./lib/metin');
@@ -22,6 +32,21 @@ const { hataMetni } = require('./ha-istemcisi');
 
 const REST_SONRASI_YENILEME_MS = 1000; // canlı bağlantı yokken cihazın durumunu bildirmesi için kısa bekleme
 const YUZEYLER = ['panel', 'palet'];
+
+const SERVIS_ADI_DESENI = /^[a-z_]{1,40}$/;
+const VERI_BAYT_SINIRI = 2048;
+
+/** Servis yükü biçimi (renderer'dan güvenilmez): kısa servis adı; veri yoksa ya da küçük, düz bir nesne (en çok 8 anahtar). */
+function servisYukuGecerliMi(servis, veri) {
+  if (typeof servis !== 'string' || !SERVIS_ADI_DESENI.test(servis)) return false;
+  if (veri === undefined) return true;
+  if (!veri || typeof veri !== 'object' || Array.isArray(veri) || Object.keys(veri).length > 8) return false;
+  try {
+    return JSON.stringify(veri).length <= VERI_BAYT_SINIRI;
+  } catch {
+    return false;
+  }
+}
 
 function varsayilanZaman() {
   return { setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms) };
@@ -42,6 +67,9 @@ function eylemHataMetni(sonuc, t = TR) {
     case 'bilinmeyen-favori':
       return t('sonuc.favoridedegil');
     case 'gecersiz':
+      // 1.4.0 servis eylemi: sınır/adım dışı değer ve cihazın desteklemediği işlem ayrı söylenir (değer/cihaz ayrıntısı yok).
+      if (sonuc.neden === 'sinir' || sonuc.neden === 'adim') return t('sonuc.sinirDisi');
+      if (sonuc.neden === 'desteklenmiyor') return t('sonuc.desteklenmiyor');
       return t('sonuc.gecersizIstek');
     default:
       return hataMetni({}, t);
@@ -87,7 +115,22 @@ function eylemKatmaniOlustur({
 }) {
   const t = tVerilen ?? TR;
   const adAl = () => (tVerilen ? t('uygulama.ad') : uygulamaAdi);
-  const favoriAl = (kimlik) => (ayarlarAl()?.favoriler ?? []).find((f) => f.entity_id === kimlik);
+  const kayitKaynaklari = [];
+  /** Kayıtlı varlık: önce favoriler, sonra (1.4.0) kayitKaynagiEkle ile eklenen kaynaklar. Kayıt { entity_id, ad, onay? } olmalı. */
+  const favoriAl = (kimlik) => {
+    const favori = (ayarlarAl()?.favoriler ?? []).find((f) => f.entity_id === kimlik);
+    if (favori) return favori;
+    for (const kaynak of kayitKaynaklari) {
+      let kayit;
+      try {
+        kayit = kaynak(kimlik);
+      } catch {
+        kayit = null;
+      }
+      if (kayit && typeof kayit === 'object' && kayit.entity_id === kimlik) return kayit;
+    }
+    return undefined;
+  };
   const basili = basiliTutmaDeposu({ simdi });
 
   /** HA'daki GÜNCEL durum: canlı bağlantıda depodan, değilse REST'ten (404 = HA'da yok). Güvenlik süzgeci hatta yeniden uygulanır. */
@@ -118,12 +161,16 @@ function eylemKatmaniOlustur({
   function sessizMi(istek) {
     if (!YUZEYLER.includes(istek.kaynak)) return false;
     if (tekrarliMi(istek.kimlik)) return true; // ses -/+ basılı tutma: her basışta bildirim çıkmasın
+    if (istek.araDeger === true) return true; // 1.4.0: kaydırıcı ara değeri (ses, sıcaklık, sayı...): bildirim yalnız bırakınca
     return istek.eylem?.parlaklik !== undefined && istek.sonDeger !== true; // kaydırıcı ara değerleri
   }
 
   function basariBildir(sonuc, istek) {
     if (sessizMi(istek)) return;
-    const metin = sonuc.parlaklik !== undefined ? t('sonuc.parlaklik', { ad: kisalt(sonuc.ad, AD_SINIRI), yuzde: sonuc.parlaklik }) : basariMetni(sonuc.alan, sonuc.ad, sonuc.onceki, sonuc.yeni, t);
+    let metin;
+    if (sonuc.parlaklik !== undefined) metin = t('sonuc.parlaklik', { ad: kisalt(sonuc.ad, AD_SINIRI), yuzde: sonuc.parlaklik });
+    else if (sonuc.servisEylemi === true) metin = gonderildiMetni(sonuc.ad, t); // 1.4.0 servis eylemi: "komut gönderildi"
+    else metin = basariMetni(sonuc.alan, sonuc.ad, sonuc.onceki, sonuc.yeni, t);
     geriBildirim({ tur: 'ok', metin });
   }
 
@@ -185,19 +232,25 @@ function eylemKatmaniOlustur({
      * Panel/palet penceresinden gelen istek. Yük renderer'dan gelir ve güvenilmez sayılır: tür/aralık doğrulanır, onay
      * yalnız ana sürecin kaydettiği basılı tutmayla verilir.
      * @param {'panel'|'palet'} kaynak gönderen pencereden ana süreç belirler
-     * @param {unknown} yuk { kimlik, parlaklik?, sonDeger?, basili? }
+     * @param {unknown} yuk { kimlik, parlaklik?, kapat?, servis?, veri?, sonDeger?, araDeger?, basili? }
+     *   servis + veri (1.4.0): servis eylemi; burada yalnız biçim (kısa servis adı, küçük düz nesne) denetlenir, izin listesi ve
+     *   parametre sınırları hattadır (servis-izinleri.js). parlaklik/kapat ile birlikte verilemez.
      */
     async yuzeydenCalistir(kaynak, yuk) {
       if (!YUZEYLER.includes(kaynak) || !yuk || typeof yuk !== 'object' || Array.isArray(yuk)) return { ok: false, tur: 'gecersiz' };
       if (typeof yuk.kimlik !== 'string' || yuk.kimlik.length > 120) return { ok: false, tur: 'gecersiz' };
       const istek = { kimlik: yuk.kimlik, kaynak };
-      if (yuk.parlaklik !== undefined) {
+      if (yuk.servis !== undefined) {
+        if (yuk.parlaklik !== undefined || yuk.kapat !== undefined || !servisYukuGecerliMi(yuk.servis, yuk.veri)) return { ok: false, tur: 'gecersiz' };
+        istek.eylem = yuk.veri === undefined ? { servis: yuk.servis } : { servis: yuk.servis, veri: yuk.veri };
+      } else if (yuk.parlaklik !== undefined) {
         if (!Number.isInteger(yuk.parlaklik)) return { ok: false, tur: 'gecersiz' };
         istek.eylem = { parlaklik: yuk.parlaklik };
       } else if (yuk.kapat === true) {
-        istek.eylem = { servis: 'turn_off' }; // palet "ışık 0": yalnız bu sabit servis; başka servis adı renderer'dan KABUL EDİLMEZ
+        istek.eylem = { servis: 'turn_off' }; // palet "ışık 0": yalnız bu sabit servis
       }
       if (yuk.sonDeger === true) istek.sonDeger = true;
+      if (yuk.araDeger === true) istek.araDeger = true;
       if (yuk.basili === true) istek.onay = 'basili';
       return calistir(istek);
     },
@@ -216,9 +269,38 @@ function eylemKatmaniOlustur({
       return calistir({ kimlik, kaynak: 'kisayol' });
     },
 
+    /**
+     * 1.4.0: ana süreçten servis eylemi (palet metni çözümü, eylem kısayolu, oda eylemi...). Aynı hattan geçer; renderer'dan
+     * gelen yük için yuzeydenCalistir kullanılır.
+     * @param {{kimlik: string, kaynak: string, servis: string, veri?: object, onay?: 'diyalog'|'basili', sonDeger?: boolean}} istek
+     */
+    servisCalistir({ kimlik, kaynak, servis, veri, onay, sonDeger } = {}) {
+      if (!servisYukuGecerliMi(servis, veri)) return Promise.resolve({ ok: false, tur: 'gecersiz' });
+      const istek = { kimlik, kaynak, eylem: veri === undefined ? { servis } : { servis, veri } };
+      if (onay !== undefined) istek.onay = onay;
+      if (sonDeger === true) istek.sonDeger = true;
+      return calistir(istek);
+    },
+
+    /** 1.4.0: favori dışı kayıt kaynağı ekler (ör. Ayarlar'da seçilen yapılacaklar listesi). Dönen işlev kaynağı kaldırır. */
+    kayitKaynagiEkle(kaynak) {
+      if (typeof kaynak !== 'function') return () => {};
+      kayitKaynaklari.push(kaynak);
+      return () => {
+        const i = kayitKaynaklari.indexOf(kaynak);
+        if (i >= 0) kayitKaynaklari.splice(i, 1);
+      };
+    },
+
+    /** Kimlik kayıtlı mı (favori ya da kayıt kaynağı)? Okuma uçları (yuzey:oku) izni için. */
+    kayitliMi(kimlik) {
+      return typeof kimlik === 'string' && favoriAl(kimlik) !== undefined;
+    },
+
     /** `--eylem=<ad>` (hiz-05): ad yalnız güvenli favori karoları arasında aranır; belirsizse hiçbir şey çalışmaz. */
     async komutSatirindan(ad) {
-      const cozum = eylemAdiniCoz(ad, karolariAl());
+      // 1.4.0: tek tıklama eylemi olmayan karolar (iklim, sensör...) düz ada eşleşmez.
+      const cozum = eylemAdiniCoz(ad, karolariAl().filter((k) => k.varsayilanEylem !== false));
       if (cozum.hata) {
         gunluk(`Komut satırı eylemi çözülemedi: ${cozum.hata}`);
         geriBildirim({ tur: 'hata', metin: t(cozum.hata === 'belirsiz' ? 'sonuc.komutBelirsiz' : 'sonuc.komutBulunamadi') });
