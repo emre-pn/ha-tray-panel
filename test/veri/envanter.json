@@ -1,0 +1,261 @@
+[
+  {
+    "entity_id": "binary_sensor.pc_medya_caliyor",
+    "friendly_name": "PC Medya Çalıyor",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_bilgisayari_kapat",
+    "friendly_name": "PC bilgisayari_kapat",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_bilgisayari_kilitle",
+    "friendly_name": "PC bilgisayari_kilitle",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_bilgisayari_uyut",
+    "friendly_name": "PC bilgisayari_uyut",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_bilgisayari_yeniden_baslat",
+    "friendly_name": "PC bilgisayari_yeniden_baslat",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_ekran_ac",
+    "friendly_name": "PC ekran_ac",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_ekran_kapat",
+    "friendly_name": "PC ekran_kapat",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_mediamute",
+    "friendly_name": "PC mediamute",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_medianext",
+    "friendly_name": "PC medianext",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_mediaplaypause",
+    "friendly_name": "PC mediaplaypause",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_mediaprevious",
+    "friendly_name": "PC mediaprevious",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_mediavolumedown",
+    "friendly_name": "PC mediavolumedown",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_mediavolumeup",
+    "friendly_name": "PC mediavolumeup",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_powershell",
+    "friendly_name": "PC powershell",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc2_bilgisayari_kapat",
+    "friendly_name": "PC2 bilgisayari_kapat",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc2_bilgisayari_yeniden_baslat",
+    "friendly_name": "PC2 bilgisayari_yeniden_baslat",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_ses_cikis_hoparlor",
+    "friendly_name": "PC ses_cikis_hoparlor",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_ses_cikis_kulaklik",
+    "friendly_name": "PC ses_cikis_kulaklik",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.homeassistant_reload",
+    "friendly_name": "Home Assistant Yeniden yükleme",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.homeassistant_restart",
+    "friendly_name": "Home Assistant Yeniden başlat",
+    "state": "unknown",
+    "device_class": "restart"
+  },
+  {
+    "entity_id": "button.ignore_all_issues",
+    "friendly_name": "Repairs Hepsini yoksay",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.garaj_kapisi_ac",
+    "friendly_name": "Garaj Kapısı Aç",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.garaj_kapisi_led_testi",
+    "friendly_name": "Garaj Kapısı LED Testi",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.garaj_kapisi_yeniden_baslat",
+    "friendly_name": "Garaj Kapısı Yeniden Başlat",
+    "state": "unknown",
+    "device_class": "restart"
+  },
+  {
+    "entity_id": "button.pc_oynat_duraklat",
+    "friendly_name": "PC Oynat/Duraklat",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.pc_sonraki_parca",
+    "friendly_name": "PC Sonraki Parça",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "button.smart_plug_mini_tanimlama",
+    "friendly_name": "Kahve makinası Tanımlama",
+    "state": "unknown",
+    "device_class": "identify"
+  },
+  {
+    "entity_id": "button.unignore_all_issues",
+    "friendly_name": "Repairs Hepsini varsay",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "input_boolean.bildirim_pc_durumu",
+    "friendly_name": "PC Acilinca Haber Ver",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "input_boolean.gun_dogumu_alarmi",
+    "friendly_name": "Gün doğumu alarmı",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "input_boolean.iyi_geceler_otomatik",
+    "friendly_name": "İyi geceler otomatiği",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "input_boolean.kahve_makinesi_zamanlayici_aktif",
+    "friendly_name": "kahve_makinesi_zamanlayici_aktif",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "input_boolean.masa_led_bildirim",
+    "friendly_name": "Masa LED bildirimi",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "light.garaj_kapisi_durum_led",
+    "friendly_name": "Garaj Kapısı Durum LED",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "light.masa_led_serit",
+    "friendly_name": "Masa LED Şerit",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "light.smart_multicolor_bulb",
+    "friendly_name": "Smart Multicolor Bulb",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "scene.aksam",
+    "friendly_name": "Akşam",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "scene.calisma",
+    "friendly_name": "Çalışma",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "scene.film",
+    "friendly_name": "Film",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "scene.gece_lambasi",
+    "friendly_name": "Gece lambası",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "scene.masa_led_onceki",
+    "friendly_name": "masa_led_onceki",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "script.iyi_geceler",
+    "friendly_name": "İyi geceler",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "script.kapi_ac_onayli",
+    "friendly_name": "Kapıyı aç (onaylı)",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "script.masa_led_bildirim",
+    "friendly_name": "Masa LED: bildirim ışığı",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "script.pc_kapat",
+    "friendly_name": "PC: kapat (istemci, yoksa ikinci bilgisayar)",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "script.pc_kilitle_ekran_kapat",
+    "friendly_name": "PC: kilitle + ekranı kapat",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "script.telefonu_bul",
+    "friendly_name": "Telefonu bul",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "sensor.pc_ses_default_device",
+    "friendly_name": "PC Default Device",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "switch.oyun_bilgisayari",
+    "friendly_name": "Oyun Bilgisayari",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "switch.oyun_bilgisayari_akilli",
+    "friendly_name": "Oyun Bilgisayarı Akıllı",
+    "state": "unknown"
+  },
+  {
+    "entity_id": "switch.smart_plug_mini",
+    "friendly_name": "Kahve Makinası",
+    "state": "unknown",
+    "device_class": "outlet"
+  }
+]

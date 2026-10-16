@@ -1,0 +1,739 @@
+/*
+ * Hızlı panel ve komut paleti (yuzey.html). Koyu tema varsayılan; Windows açık temadayken (prefers-color-scheme: light) açık tema
+ * (g-01). Renkler yalnız aşağıdaki değişkenlerden gelir; satır içi stil yoktur (CSP).
+ * Kip sınıfı <body>'de: mod-panel | mod-palet. Yüksekliği içerik belirler; ana süreç pencereyi bu yüksekliğe ayarlar.
+ *
+ * Yükseklik ölçümü (yuzey-sayfa.js dogalYukseklik): .kok pencere yüksekliği kadardır (height:100vh), #icerik ise BÜYÜMEZ
+ * (flex: 0 1 auto): içerik küçükse kendi doğal yüksekliğinde kalır, pencereden büyükse küçülüp kaydırılır. Üst/alt şeritlerin
+ * yüksekliği + #icerik'in scrollHeight'ı içeriğin doğal yüksekliğidir; pencere hem küçülüp hem büyüyebilir. (Kök üzerinde
+ * max-height YOK: o, ölçümü pencere yüksekliğiyle sınırlar ve pencere bir kez küçülünce bir daha büyümezdi.)
+ *
+ * Kontrast (WCAG 4,5:1): metin değişkenleri kendi zeminlerinde (--karo, --bg, --bg-ust; seçili satırda --karo-uzerinde) en az
+ * 4,5'tir; test/yuzey-sayfa.test.js bunu iki temada da hesaplar. Yeni renk eklerken o testi güncelleyin.
+ */
+
+:root {
+  color-scheme: dark;
+  --bg: #1b1f27;
+  --bg-ust: #222733;
+  --karo: #2a3040;
+  --karo-uzerinde: #343c50;
+  --kenar: #39415a;
+  --metin: #f1f5f9;
+  --soluk: #94a3b8;
+  --soluk-eski: #8d9bb1; /* yedek modda durum metni (hafif soluk, kontrast >= 4,5 --karo üzerinde) */
+  --soluk-secili: #a3b1c6; /* seçili palet satırında grup/durum metni (--karo-uzerinde üzerinde >= 4,5) */
+  --acik: #fbbf24;
+  --acik-eski: #e0b038;
+  --canli: #10b981;
+  --yedek: #f59e0b;
+  --hata: #ef4444;
+  --vurgu: #60a5fa;
+  --yikici: #f87171;
+  --vurgu-metin: #93c5fd; /* eşleşen harfler (seçili satırda >= 4,5) */
+  --yikici-metin: #fca5a5; /* yıkıcı etiket ve "basılı tut" alt yazısı */
+  --rozet-metin: #0b1220; /* dolu zemin (vurgu, yıkıcı, hata, yedek, canlı) üzerindeki metin */
+}
+
+/*
+ * Windows 11 malzemesi (gorunum-11): ana süreç pencereyi `backgroundMaterial: acrylic | mica` ile açtığında sayfa
+ * <html data-malzeme="acrylic|mica"> olur ve yüzeyler yarı saydam koyu karta dönüşür (malzeme arkadan görünür). Malzeme "yok"
+ * seçiliyse ya da sistem desteklemiyorsa öznitelik yoktur ve yukarıdaki opak renkler geçerlidir. Görsel sonuç DENENMEDİ (README).
+ */
+:root[data-malzeme] {
+  --bg: rgba(27, 31, 39, 0.6);
+  --bg-ust: rgba(34, 39, 51, 0.5);
+  --karo: rgba(42, 48, 64, 0.6);
+  --karo-uzerinde: rgba(52, 60, 80, 0.75);
+  --kenar: rgba(255, 255, 255, 0.14);
+}
+
+/* Açık tema (g-01): yalnız değişkenler değişir; bileşen kuralları aynıdır. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f3f5f9;
+    --bg-ust: #e7ebf2;
+    --karo: #ffffff;
+    --karo-uzerinde: #e3e9f3;
+    --kenar: #c3cbdb;
+    --metin: #0f172a;
+    --soluk: #475569;
+    --soluk-eski: #58677d;
+    --soluk-secili: #475569;
+    --acik: #9a4a06;
+    --acik-eski: #a35006;
+    --canli: #047857;
+    --yedek: #9a4a06;
+    --hata: #b91c1c;
+    --vurgu: #1d4ed8;
+    --yikici: #b91c1c;
+    --vurgu-metin: #1d4ed8;
+    --yikici-metin: #b91c1c;
+    --rozet-metin: #ffffff;
+  }
+
+  :root[data-malzeme] {
+    --bg: rgba(243, 245, 249, 0.62);
+    --bg-ust: rgba(231, 235, 242, 0.55);
+    --karo: rgba(255, 255, 255, 0.7);
+    --karo-uzerinde: rgba(227, 233, 243, 0.85);
+    --kenar: rgba(15, 23, 42, 0.16);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--metin);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+.icerik:focus-visible {
+  outline: 2px solid var(--vurgu);
+  outline-offset: 1px;
+}
+
+.kok {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Malzeme açıkken tek katman: html ve body şeffaf, yarı saydam renk yalnız .kok'ta (iki kat boyanıp koyulaşmasın) */
+:root[data-malzeme],
+:root[data-malzeme] body {
+  background: transparent;
+}
+
+:root[data-malzeme] .kok {
+  background: var(--bg);
+}
+
+.ust,
+.serit,
+.palet-kutusu,
+.ipucu,
+.palet-serit,
+.alt {
+  flex: 0 0 auto;
+}
+
+/* ---- üst şerit ---- */
+
+.ust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  background: var(--bg-ust);
+  border-bottom: 1px solid var(--kenar);
+}
+
+/* Başlık hiçbir durumda iki satıra kırılmaz (g-03); uzun medya bilgisi kısalır, bağlantı metni yerinde kalır */
+.baslik {
+  flex: none;
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.medya {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--soluk);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.baglanti {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--soluk);
+  white-space: nowrap;
+}
+
+.baglanti::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--soluk);
+}
+
+.baglanti.canli::before {
+  background: var(--canli);
+}
+
+.baglanti.yedek::before,
+.baglanti.baglaniyor::before {
+  background: var(--yedek);
+}
+
+/* Yedek modda durumlar eski olabilir (g-04): başlıkta ikinci satırda ince rozet */
+.eski {
+  flex: 1 0 100%;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--metin);
+  background: var(--karo);
+  border: 1px solid var(--yedek);
+  border-radius: 6px;
+}
+
+/* ---- hata / uyarı şeridi (h-12, g-03): başlığın altında tam genişlik ---- */
+
+.serit {
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--bg-ust);
+  border-bottom: 1px solid var(--kenar);
+}
+
+.serit-satir {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.serit-satir + .serit-satir {
+  margin-top: 4px;
+}
+
+.serit-simge {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  color: var(--rozet-metin);
+  background: var(--yedek);
+  border-radius: 50%;
+}
+
+.serit-satir.hata .serit-simge {
+  background: var(--hata);
+}
+
+.serit-metin {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- içerik ---- */
+
+.icerik {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px 10px;
+}
+
+.bolum {
+  margin-top: 8px;
+}
+
+.bolum-baslik {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--soluk);
+}
+
+/* Grup başına küçük simge (g-08): süs olduğu için CSS ile eklenir (metne ve ekran okuyucuya girmez) */
+.bolum-baslik::before {
+  margin-right: 6px;
+  letter-spacing: 0;
+}
+
+.bolum.son .bolum-baslik::before {
+  content: "🕘";
+  content: "🕘" / "";
+}
+
+.grup-isik .bolum-baslik::before {
+  content: "💡";
+  content: "💡" / "";
+}
+
+.grup-sahne .bolum-baslik::before {
+  content: "🎬";
+  content: "🎬" / "";
+}
+
+.grup-pc .bolum-baslik::before {
+  content: "🖥";
+  content: "🖥" / "";
+}
+
+.grup-medya .bolum-baslik::before {
+  content: "🔊";
+  content: "🔊" / "";
+}
+
+.grup-diger .bolum-baslik::before {
+  content: "▪";
+  content: "▪" / "";
+}
+
+.grup-onayli .bolum-baslik::before {
+  content: "🔒";
+  content: "🔒" / "";
+}
+
+.izgara {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+/* Medya grubunda alt gruplar (ses çıkışı | ses | oynat) ayrı satırlarda */
+.izgara + .izgara {
+  margin-top: 6px;
+}
+
+.karo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 52px;
+  padding: 8px 9px;
+  overflow: hidden;
+  text-align: left;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 8px;
+  transition: background 100ms ease-out;
+}
+
+.karo:hover {
+  background: var(--karo-uzerinde);
+}
+
+/* Tıklama anında görsel geri bildirim (durum rengi HA'dan gelince değişir) */
+.karo:active,
+.hazir:active,
+.son-oge:active {
+  background: var(--karo-uzerinde);
+  border-color: var(--vurgu);
+}
+
+/* Hata: karoda kısa süreli kırmızı çerçeve (gorunum-12) */
+.karo.hata,
+.hazir.hata,
+.son-oge.hata,
+.kaydirici.hata {
+  border-color: var(--hata);
+  outline: 2px solid var(--hata);
+  outline-offset: -1px;
+}
+
+/* Başarı: karoda 1 sn yeşil çerçeve ve onay işareti (g-08); işaret renge ek olarak şekil verir */
+.karo.basari,
+.hazir.basari,
+.son-oge.basari {
+  border-color: var(--canli);
+  outline: 2px solid var(--canli);
+  outline-offset: -1px;
+}
+
+.karo.basari::before {
+  content: "✓";
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--canli);
+}
+
+/*
+ * Bağlantı koptu (yedek mod / yeniden bağlanıyor): karolar çalışmaya devam eder, soluklaşmaz (g-04); yalnız durum metni hafif
+ * solar ve eğik olur, "Durumlar eski olabilir" rozeti başlıkta durur. Renk kontrastı >= 4,5 kalır.
+ */
+.kok.soluk .karo-durum {
+  font-style: italic;
+  color: var(--soluk-eski);
+}
+
+.kok.soluk .karo.durum-acik .karo-durum {
+  color: var(--acik-eski);
+}
+
+.karo-etiket {
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.karo-durum {
+  font-size: 11px;
+  color: var(--soluk);
+}
+
+.karo.durum-acik {
+  border-color: var(--acik);
+}
+
+.karo.durum-acik .karo-durum {
+  color: var(--acik);
+}
+
+.karo.yok {
+  opacity: 0.55;
+}
+
+.karo.yikici {
+  border-style: dashed;
+  border-color: var(--yikici);
+}
+
+/* Yıkıcı karoda kalıcı "basılı tut" alt yazısı (g-08); yalnız fareyle üstüne gelince görünen title'a bağlı kalmaz */
+.karo-ipucu {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--yikici-metin);
+}
+
+/* Basılı tutma ilerlemesi: 0,8 sn'lik dolum (lib/kaydirici.js BASILI_TUTMA_MS ile aynı) */
+.karo.basili::after,
+.palet-satir.basili::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 100%;
+  background: var(--yikici);
+  transform-origin: left center;
+  animation: dolum 800ms linear forwards;
+}
+
+@keyframes dolum {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Işık karosu: tam genişlik; hazır seviyeler ve kaydırıcı */
+.isik-karo {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 6px;
+  background: var(--bg-ust);
+  border: 1px solid var(--kenar);
+  border-radius: 8px;
+}
+
+.isik-karo .karo {
+  min-height: 40px;
+  flex-direction: row;
+  align-items: center;
+}
+
+.hazirlar {
+  display: flex;
+  gap: 6px;
+}
+
+.hazir {
+  flex: 1;
+  padding: 5px 0;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.hazir:hover {
+  background: var(--karo-uzerinde);
+}
+
+/* Işığın o anki seviyesine en yakın hazır düğme (g-02) */
+.hazir.vurgu {
+  border-color: var(--acik);
+  color: var(--acik);
+  font-weight: 600;
+}
+
+/* "Sık kullanılan" (%20) işareti: seviye vurgusundan ayrı, silik küçük nokta */
+.hazir.sik::after {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 5px;
+  vertical-align: middle;
+  background: var(--soluk);
+  border-radius: 50%;
+  opacity: 0.55;
+}
+
+.kaydirici {
+  width: 100%;
+  accent-color: var(--acik);
+}
+
+/* Son kullanılanlar */
+.son-sira {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.son-oge {
+  padding: 5px 10px;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 999px;
+}
+
+.son-oge:hover {
+  background: var(--karo-uzerinde);
+}
+
+/* Boş durum (k-03): "anahtar yok" ya da "favori yok" + Ayarlar'ı aç */
+.bos {
+  padding: 18px 4px;
+  color: var(--soluk);
+  text-align: center;
+}
+
+.bos-metin {
+  font-weight: 600;
+}
+
+.bos-alt {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.bos-dugme {
+  margin-top: 10px;
+  padding: 7px 14px;
+  color: var(--metin);
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.bos-dugme:hover {
+  background: var(--karo-uzerinde);
+}
+
+.ipucu {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--acik);
+}
+
+.ipucu:empty {
+  display: none;
+}
+
+/* Palet altı kısayol ipucu şeridi (k-08); panelde gizli */
+.palet-serit {
+  padding: 6px 12px 8px;
+  font-size: 11px;
+  color: var(--soluk);
+  border-top: 1px solid var(--kenar);
+}
+
+.alt {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--kenar);
+}
+
+.alt-dugme {
+  flex: 1;
+  padding: 7px 0;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.alt-dugme:hover {
+  background: var(--karo-uzerinde);
+}
+
+/* ---- palet kipi ---- */
+
+.palet-kutusu {
+  padding: 10px 12px 6px;
+}
+
+.arama {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--metin);
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 8px;
+}
+
+.arama::placeholder {
+  color: var(--soluk);
+}
+
+.palet-baslik {
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--soluk);
+}
+
+.palet-satir {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Seçili satır (g-05): zemin farkına ek olarak sol vurgu şeridi ve ince çerçeve */
+.palet-satir.secili {
+  background: var(--karo-uzerinde);
+  box-shadow: inset 3px 0 0 var(--vurgu), inset 0 0 0 1px var(--vurgu);
+}
+
+.palet-satir.secili .palet-grup,
+.palet-satir.secili .palet-durum {
+  color: var(--soluk-secili);
+}
+
+.palet-satir.yikici .palet-etiket {
+  color: var(--yikici-metin);
+}
+
+.palet-satir.hata {
+  box-shadow: inset 3px 0 0 var(--hata), inset 0 0 0 1px var(--hata);
+}
+
+.palet-etiket {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palet-etiket mark {
+  color: var(--vurgu-metin);
+  background: none;
+  font-weight: 700;
+}
+
+.palet-grup {
+  font-size: 11px;
+  color: var(--soluk);
+}
+
+.palet-durum {
+  min-width: 56px;
+  font-size: 11px;
+  text-align: right;
+  color: var(--soluk);
+}
+
+.rozet {
+  padding: 1px 7px;
+  font-size: 11px;
+  background: var(--vurgu);
+  color: var(--rozet-metin);
+  border-radius: 999px;
+}
+
+.rozet.uyari {
+  background: var(--yikici);
+}
+
+/* Parlaklık sayısı bu eşleşmede uygulanamıyor (arama sonucundan gelir) */
+.rozet.sessiz {
+  color: var(--metin);
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+}
+
+.seviye {
+  display: flex;
+  gap: 6px;
+  padding: 4px 10px 8px;
+}
+
+.seviye-oge {
+  flex: 1;
+  padding: 6px 0;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.seviye-oge.secili {
+  border-color: var(--vurgu);
+  background: var(--karo-uzerinde);
+}
+
+/* Kip düzeni: panelde arama kutusu ve palet ipucu şeridi yok; paletle üst şerit, hata şeridi ve alt düğmeler yok */
+.mod-panel .palet-kutusu,
+.mod-panel .palet-serit {
+  display: none;
+}
+
+.mod-palet .ust,
+.mod-palet .serit,
+.mod-palet .alt {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .karo {
+    transition: none;
+  }
+}

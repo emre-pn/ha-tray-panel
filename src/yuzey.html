@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title data-i18n="yuzey.sayfaBasligi">Ev Paneli — Hızlı Panel</title>
+  <link rel="stylesheet" href="yuzey.css">
+</head>
+<body class="mod-panel">
+  <div id="kok" class="kok">
+    <header id="ust" class="ust">
+      <span id="baslik" class="baslik" data-i18n="yuzey.uygulamaAdi">Ev Paneli</span>
+      <span id="medya" class="medya" hidden></span>
+      <span id="baglanti" class="baglanti" role="status"></span>
+      <span id="eski" class="eski" data-i18n="yuzey.eskiRozeti" hidden>Durumlar eski olabilir</span>
+    </header>
+
+    <div id="serit" class="serit" role="status" aria-live="polite" hidden></div>
+
+    <div id="paletKutusu" class="palet-kutusu">
+      <input id="arama" class="arama" type="text" data-i18n-attr="placeholder:yuzey.arama.ipucu;aria-label:yuzey.arama.etiket" placeholder="Eylem ara…  (örn. “ışık 40”)" autocomplete="off" spellcheck="false" aria-label="Eylem ara" maxlength="60" role="combobox" aria-expanded="true" aria-controls="icerik" aria-autocomplete="list" aria-describedby="paletSerit">
+    </div>
+
+    <main id="icerik" class="icerik" tabindex="-1"></main>
+
+    <div id="ipucu" class="ipucu" role="status" aria-live="polite"></div>
+
+    <div id="paletSerit" class="palet-serit" data-i18n="yuzey.paletSerit">Enter çalıştır · Shift+Enter seviye · Enter’ı basılı tut onay</div>
+
+    <footer id="alt" class="alt">
+      <button id="haAc" class="alt-dugme" type="button" data-i18n="yuzey.alt.haAc">HA’yı aç</button>
+      <button id="ayarlarAc" class="alt-dugme" type="button" data-i18n="yuzey.alt.ayarlar">Ayarlar</button>
+    </footer>
+  </div>
+  <script src="lib/dil.js"></script>
+  <script src="lib/ceviri/yuzey.js"></script>
+  <script src="lib/arama.js"></script>
+  <script src="lib/kaydirici.js"></script>
+  <script src="yuzey-sayfa.js"></script>
+</body>
+</html>

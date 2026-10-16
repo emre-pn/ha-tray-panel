@@ -1,0 +1,50 @@
+# Ev Paneli — electron-builder ayarı
+# Komut: npm run dist  ->  dist\Ev-Paneli-Kurulum-<sürüm>.exe
+
+appId: io.github.emre-pn.evpaneli          # src/main.js içindeki UYGULAMA_KIMLIGI ile aynı olmalı
+productName: Ev Paneli
+copyright: Copyright © 2026 Emre Sav
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - assets/**/*
+  - varsayilan-ayarlar.json
+  - package.json
+
+asar: true
+
+# Electron sertleştirme anahtarları (fuse; 1.2.0, k-21). electron-builder 26 `electronFuses` ile paketlerken @electron/fuses'a
+# iletir; YALNIZ yazılan anahtarlar değiştirilir, gerisi Electron varsayılanında kalır. Uygulama ELECTRON_RUN_AS_NODE, NODE_OPTIONS
+# ve --inspect kullanmaz: bu üç kapı kapatılır (kurulu exe başka bir program tarafından Node yorumlayıcısı ya da hata ayıklanabilir
+# süreç olarak kullanılamaz). Çerez şifreleme, asar bütünlüğü, OnlyLoadAppFromAsar ve GrantFileProtocolExtraPrivileges bilerek
+# ayarlanmadı (ayrı karar ve deneme gerekir). Yalnız `npm run dist` çıktısını etkiler; `npm start` (geliştirme) değişmez.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/ikon.ico
+  artifactName: Ev-Paneli-Kurulum-${version}.${ext}
+
+nsis:
+  # Tek tıkla, kullanıcı başına kurulum: %LOCALAPPDATA%\Programs\ altına kurar, yönetici izni istemez.
+  oneClick: true
+  perMachine: false
+  createStartMenuShortcut: true
+  createDesktopShortcut: false
+  shortcutName: Ev Paneli
+  menuCategory: false
+  runAfterFinish: true
+  # Kaldırırken ayarlar ve HA oturumu silinmez (yeniden kurulumda giriş korunur). README'ye bakın.
+  deleteAppDataOnUninstall: false
+  # Gerçek kaldırmada Windows otomatik başlatma kaydını da temizler; güncellemede dokunmaz (build/installer.nsh).
+  include: build/installer.nsh

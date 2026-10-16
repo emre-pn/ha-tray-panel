@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/emre-pn/ha-tray-panel/security/advisories/new
+    about: Please report security problems privately, not as a public issue.
+  - name: Home Assistant help
+    url: https://community.home-assistant.io/
+    about: Questions about Home Assistant itself belong in the Home Assistant community.

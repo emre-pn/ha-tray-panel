@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="offline.sayfaBasligi">Ev Paneli — Bağlantı</title>
+  <style>
+    /* Koyu tema varsayılandır; Windows açık temadaysa (prefers-color-scheme: light) açık tema geçerli (g-01). */
+    :root {
+      color-scheme: dark light;
+      --bg: #0f1117;
+      --card-bg: #181b24;
+      --border: #292d3e;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --on-primary: #ffffff;
+      --danger: #ef4444;
+      --danger-zemin: rgba(239, 68, 68, 0.12);
+      --vurgu: #60a5fa;
+      --vurgu-zemin: rgba(59, 130, 246, 0.12);
+      --sayac-metin: #93c5fd;
+      --sayac-zemin: rgba(59, 130, 246, 0.08);
+      --sayac-kenar: rgba(59, 130, 246, 0.2);
+      --kutu-zemin: rgba(0, 0, 0, 0.25);
+      --adres-metin: #cbd5e1;
+      --hover-zemin: rgba(255, 255, 255, 0.05);
+      --hover-kenar: #475569;
+      --golge: 0 20px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f1f5f9;
+        --card-bg: #ffffff;
+        --border: #e2e8f0;
+        --text-main: #0f172a;
+        --text-muted: #475569;
+        --danger: #dc2626;
+        --danger-zemin: rgba(220, 38, 38, 0.1);
+        --vurgu: #1d4ed8;
+        --vurgu-zemin: rgba(37, 99, 235, 0.1);
+        --sayac-metin: #1e40af;
+        --sayac-zemin: rgba(37, 99, 235, 0.08);
+        --sayac-kenar: rgba(37, 99, 235, 0.25);
+        --kutu-zemin: rgba(15, 23, 42, 0.04);
+        --adres-metin: #334155;
+        --hover-zemin: rgba(15, 23, 42, 0.05);
+        --hover-kenar: #94a3b8;
+        --golge: 0 12px 28px rgba(15, 23, 42, 0.12);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .kart {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+      box-shadow: var(--golge);
+      animation: belirme 0.3s ease-out;
+    }
+
+    @keyframes belirme {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .ikon-alani {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      background: var(--danger-zemin);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--danger);
+    }
+
+    .ikon-alani.baglaniyor {
+      background: var(--vurgu-zemin);
+      color: var(--vurgu);
+    }
+
+    .ikon-alani svg {
+      width: 44px;
+      height: 44px;
+      stroke-width: 2;
+    }
+
+    .donen-cember {
+      animation: dondur 1.4s linear infinite;
+    }
+
+    @keyframes dondur {
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Hareketi azalt ayarı açıksa giriş canlandırması ve dönen simge durur (g-11). */
+    @media (prefers-reduced-motion: reduce) {
+      .kart,
+      .donen-cember {
+        animation: none;
+      }
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--text-main);
+    }
+
+    p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    /* Açıklama metni (çevirisi olmayan ham kod dahil) kopyalanabilir (g-11). */
+    #aciklama {
+      user-select: text;
+    }
+
+    /* Ham hata kodu: küçük, kopyalanabilir (user-select açık) satır (g-11). */
+    .hata-kodu {
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      margin: -12px 0 24px;
+      word-break: break-all;
+      user-select: text;
+    }
+
+    .adres-kutusu {
+      background: var(--kutu-zemin);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 24px;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    .adres-satir {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .adres-satir:last-child {
+      margin-bottom: 0;
+    }
+
+    .adres-etiket {
+      color: var(--text-muted);
+      font-weight: 500;
+      white-space: nowrap; /* uzun adres etiketi sıkıştırmasın ("External address:") */
+    }
+
+    .adres-deger {
+      color: var(--adres-metin);
+      font-family: monospace;
+      word-break: break-all;
+      margin-left: 12px;
+    }
+
+    .sayac-kutusu {
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: var(--sayac-metin);
+      background: var(--sayac-zemin);
+      border: 1px solid var(--sayac-kenar);
+      border-radius: 8px;
+      padding: 10px 16px;
+      display: inline-block;
+    }
+
+    .sayac-vurgu {
+      font-weight: 700;
+    }
+
+    .butonlar {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    button {
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button:focus-visible {
+      outline: 2px solid var(--vurgu);
+      outline-offset: 2px;
+    }
+
+    /* Beyaz yazı ile birincil düğme: en az 4,5:1 kontrast (g-06). */
+    .btn-birincil {
+      background: var(--primary);
+      color: var(--on-primary);
+    }
+
+    .btn-birincil:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+
+    .btn-birincil:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-ikincil {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ikincil:hover {
+      background: var(--hover-zemin);
+      color: var(--text-main);
+      border-color: var(--hover-kenar);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="kart" id="anaKart">
+    <div class="ikon-alani" id="ikonKapsayici">
+      <!-- Bağlantı yok ikonu -->
+      <svg id="ikonHata" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 4.243a9 9 0 01-2.829-2.829m0 0L3 21m2.636-15.364a9 9 0 0112.728 0M3 3l18 18M12 12h.01" />
+      </svg>
+      <!-- Bağlanıyor çember ikonu -->
+      <svg id="ikonYukleniyor" class="donen-cember" style="display: none;" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
+        <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
+      </svg>
+    </div>
+
+    <h1 id="baslik" data-i18n="offline.baslik.cevrimdisi">Ev sunucusuna bağlanılamadı</h1>
+    <p id="aciklama" data-i18n="offline.aciklama.varsayilan">Home Assistant sunucunuzun açık olduğundan ve ağ bağlantınızın çalıştığından emin olun.</p>
+    <p class="hata-kodu" id="hataKodu" hidden></p>
+
+    <div class="adres-kutusu" id="adresKutusu" style="display: none;">
+      <div class="adres-satir">
+        <span class="adres-etiket" data-i18n="offline.adres.evIci">Ev İçi:</span>
+        <span class="adres-deger" id="yerelAdresDeger">-</span>
+      </div>
+      <div class="adres-satir">
+        <span class="adres-etiket" data-i18n="offline.adres.dis">Dış Adres:</span>
+        <span class="adres-deger" id="disAdresDeger">-</span>
+      </div>
+    </div>
+
+    <!-- Geri sayım cümlesi offline.js'te sözlükteki "{n} saniye içinde yeniden denenecek…" şablonundan kurulur ({n} yerine vurgulu sayı) -->
+    <div class="sayac-kutusu" id="sayacKutusu"><span id="sayacOn"></span><span class="sayac-vurgu" id="kalanSaniye">30</span><span id="sayacSon"></span></div>
+
+    <div class="butonlar">
+      <button class="btn-birincil" id="btnDene">
+        <svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span id="btnDeneMetin" data-i18n="offline.tekrarDene">Tekrar Dene</span>
+      </button>
+      <button class="btn-ikincil" id="btnAyarlar" data-i18n="offline.ayarlar">Ayarlar</button>
+    </div>
+  </div>
+
+  <script src="lib/dil.js"></script>
+  <script src="lib/ceviri/yuzey.js"></script>
+  <script src="offline.js"></script>
+</body>
+</html>

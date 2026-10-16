@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+
+# Yerel araç ve döküm dosyaları
+.claude/
+repomix*.xml
+.env
+.env.*

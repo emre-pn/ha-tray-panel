@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title data-i18n="uygulama.ayarlarBaslik">Ev Paneli — Ayarlar</title>
+  <style>
+    /* Koyu tema varsayılandır ("Her zaman koyu" ya da Windows koyuysa). "Windows temasını izle" seçiliyken ve Windows açık temadaysa
+       prefers-color-scheme: light devreye girer (g-01). Metin renkleri en az 4,5:1 kontrasttadır (g-06). */
+    :root {
+      color-scheme: dark light;
+      --bg: #101216;
+      --card-bg: #181b22;
+      --card-border: #262a36;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #9ca3af;
+      --label: #d1d5db;
+      --primary: #3b82f6;
+      --primary-btn: #2563eb;
+      --primary-btn-hover: #1d4ed8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --input-bg: #0d0f14;
+      --input-border: #2e3444;
+      --input-focus: #3b82f6;
+      --btn2-bg: #232834;
+      --btn2-text: #e2e8f0;
+      --btn2-hover: #2c3342;
+      --btn2-border-hover: #475569;
+      --danger-text: #fca5a5;
+      --danger-bg: rgba(239, 68, 68, 0.15);
+      --danger-border: rgba(239, 68, 68, 0.3);
+      --warn-text: #fcd34d;
+      --warn-bg: rgba(245, 158, 11, 0.1);
+      --warn-border: rgba(245, 158, 11, 0.3);
+      --err-text: #fca5a5;
+      --err-bg: rgba(239, 68, 68, 0.1);
+      --err-border: rgba(239, 68, 68, 0.3);
+      --err-line: #f87171;
+      --ok-text: #6ee7b7;
+      --ok-bg: rgba(16, 185, 129, 0.1);
+      --ok-border: rgba(16, 185, 129, 0.3);
+      --chip-bg: #1e2430;
+      --chip-text: #cbd5e1;
+      --hover-row: rgba(255, 255, 255, 0.04);
+      --rule-text: #fef08a;
+      --rule-bg: rgba(245, 158, 11, 0.08);
+      --bar-bg: rgba(16, 18, 22, 0.97);
+      --kod-text: #94a3b8;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f3f5f9;
+        --card-bg: #ffffff;
+        --card-border: #d5dbe5;
+        --text-main: #111827;
+        --text-muted: #4b5563;
+        --text-dim: #5b6472;
+        --label: #1f2937;
+        --primary: #2563eb;
+        --input-bg: #ffffff;
+        --input-border: #aab4c5;
+        --input-focus: #2563eb;
+        --btn2-bg: #eef1f6;
+        --btn2-text: #1f2937;
+        --btn2-hover: #e1e6ef;
+        --btn2-border-hover: #8a97ad;
+        --danger-text: #b91c1c;
+        --danger-bg: rgba(239, 68, 68, 0.1);
+        --danger-border: rgba(185, 28, 28, 0.4);
+        --warn-text: #92400e;
+        --warn-bg: rgba(245, 158, 11, 0.14);
+        --warn-border: rgba(180, 83, 9, 0.4);
+        --err-text: #b91c1c;
+        --err-bg: rgba(239, 68, 68, 0.1);
+        --err-border: rgba(185, 28, 28, 0.4);
+        --err-line: #dc2626;
+        --ok-text: #047857;
+        --ok-bg: rgba(16, 185, 129, 0.12);
+        --ok-border: rgba(4, 120, 87, 0.4);
+        --chip-bg: #e8ecf3;
+        --chip-text: #374151;
+        --hover-row: rgba(0, 0, 0, 0.04);
+        --rule-text: #713f12;
+        --rule-bg: rgba(245, 158, 11, 0.14);
+        --bar-bg: rgba(243, 245, 249, 0.97);
+        --kod-text: #475569;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.5;
+      padding: 0 24px;
+      overflow-y: auto;
+    }
+
+    .sayfa {
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    /* Üst şerit: başlık, bölüm bağlantıları ve bildirim ekranın üstüne yapışık kalır (h-01, g-10). */
+    .ust-serit {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: var(--bg);
+      padding: 14px 0 8px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 18px;
+    }
+
+    .sayfa-baslik {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .sayfa-baslik h1 {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .bolum-gezinti {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .bolum-gezinti a {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--btn2-text);
+      background: var(--btn2-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 9999px;
+      padding: 3px 12px;
+      text-decoration: none;
+    }
+
+    .bolum-gezinti a:hover {
+      background: var(--btn2-hover);
+      border-color: var(--btn2-border-hover);
+    }
+
+    .bildirim-seridi {
+      display: none;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .bildirim-seridi .bildirim-kutusu {
+      flex: 1;
+    }
+
+    .bildirim-kutusu {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      border: 1px solid transparent;
+    }
+
+    .bildirim-basarili {
+      background: var(--ok-bg);
+      border-color: var(--ok-border);
+      color: var(--ok-text);
+    }
+
+    .bildirim-hata {
+      background: var(--err-bg);
+      border-color: var(--err-border);
+      color: var(--err-text);
+      font-weight: 500;
+    }
+
+    .bildirim-uyari {
+      background: var(--warn-bg);
+      border-color: var(--warn-border);
+      color: var(--warn-text);
+    }
+
+    .bolum {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      scroll-margin-top: 130px;
+    }
+
+    .bolum-baslik {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    h2.bolum-baslik:focus,
+    h3.bolum-baslik:focus {
+      outline: none;
+    }
+
+    .bolum-aciklama {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .grup-baslik {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: none;
+      margin: 8px 0 10px;
+      scroll-margin-top: 130px;
+    }
+
+    /* Nadir bölümler katlanır (g-10). */
+    details.bolum {
+      padding: 0;
+    }
+
+    details.bolum > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    details.bolum > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.bolum > summary::before {
+      content: "▸";
+      color: var(--text-muted);
+      font-size: 12px;
+      transition: transform 0.15s;
+    }
+
+    details.bolum[open] > summary::before {
+      transform: rotate(90deg);
+    }
+
+    details.bolum > summary .bolum-baslik {
+      margin-bottom: 0;
+    }
+
+    details.bolum > .bolum-icerik {
+      padding: 0 20px 20px;
+    }
+
+    .form-grubu {
+      margin-bottom: 14px;
+    }
+
+    .form-grubu:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--label);
+      margin-bottom: 6px;
+    }
+
+    .ipucu {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--text-main);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      border-color: var(--input-focus);
+      box-shadow: 0 0 0 1px var(--input-focus);
+    }
+
+    /* Hatalı alan kırmızı çerçeveyle işaretlenir (h-01). */
+    input.gecersiz,
+    select.gecersiz {
+      border-color: var(--err-line);
+      box-shadow: 0 0 0 1px var(--err-line);
+    }
+
+    .alan-hata {
+      color: var(--err-text);
+      font-size: 12px;
+      font-weight: 500;
+      margin-top: 4px;
+    }
+
+    .alan-sonuc {
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .alan-sonuc-tamam {
+      color: var(--ok-text);
+    }
+
+    .alan-sonuc-sorun {
+      color: var(--warn-text);
+    }
+
+    .ipucu-uyari {
+      color: var(--warn-text);
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .ipucu-uyari div + div {
+      margin-top: 2px;
+    }
+
+    .checkbox-etiket {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 13px;
+      color: var(--text-main);
+    }
+
+    .checkbox-etiket input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    .buton {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .buton:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .buton-birincil {
+      background: var(--primary-btn);
+      color: #ffffff;
+    }
+
+    .buton-birincil:hover:not(:disabled) {
+      background: var(--primary-btn-hover);
+    }
+
+    .buton-ikincil {
+      background: var(--btn2-bg);
+      color: var(--btn2-text);
+      border: 1px solid var(--input-border);
+    }
+
+    .buton-ikincil:hover:not(:disabled) {
+      background: var(--btn2-hover);
+      border-color: var(--btn2-border-hover);
+    }
+
+    .buton-kucuk {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+
+    .buton-tehlike {
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      border: 1px solid var(--danger-border);
+    }
+
+    .buton-tehlike:hover:not(:disabled) {
+      background: var(--danger);
+      color: #ffffff;
+    }
+
+    .buton-satiri {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .rozet {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 9999px;
+    }
+
+    .rozet-basarili {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+      border: 1px solid var(--ok-border);
+    }
+
+    .rozet-uyari {
+      background: var(--warn-bg);
+      color: var(--warn-text);
+      border: 1px solid var(--warn-border);
+    }
+
+    /* İlk kurulum listesi (k-03). */
+    .kurulum-listesi {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+
+    .kurulum-listesi ol {
+      list-style: none;
+      margin-top: 8px;
+    }
+
+    .kurulum-listesi li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      padding: 3px 0;
+    }
+
+    .kurulum-listesi a {
+      color: var(--text-main);
+    }
+
+    .adim-durum {
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 9999px;
+      padding: 1px 8px;
+      background: var(--chip-bg);
+      color: var(--chip-text);
+    }
+
+    .adim-tamam .adim-durum {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+      border: 1px solid var(--ok-border);
+    }
+
+    .guvenlik-kurali {
+      background: var(--rule-bg);
+      border: 1px solid var(--warn-border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--rule-text);
+      margin-bottom: 16px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .cihaz-filtre {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .cihaz-filtre input {
+      flex: 1;
+    }
+
+    /* İç içe kaydırma yok: liste sayfanın kendi kaydırmasıyla akar (g-10); uzun listeler "Daha fazla göster" ile sayfalanır. */
+    .cihaz-listesi {
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      background: var(--input-bg);
+      padding: 4px;
+    }
+
+    .cihaz-satir {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+
+    .cihaz-satir:hover {
+      background: var(--hover-row);
+    }
+
+    .cihaz-sol {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .cihaz-ad {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cihaz-kimlik {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cihaz-sag {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 10px;
+    }
+
+    .cihaz-turu {
+      font-size: 11px;
+      color: var(--chip-text);
+      background: var(--chip-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .cihaz-durum {
+      font-size: 11px;
+      color: var(--text-muted);
+      min-width: 48px;
+      text-align: right;
+    }
+
+    .cihaz-metin {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .cihaz-not {
+      font-size: 11px;
+      color: var(--warn-text);
+      margin-top: 2px;
+    }
+
+    .satir-bulunamadi {
+      background: rgba(148, 163, 184, 0.1);
+    }
+
+    .satir-bulunamadi .cihaz-ad {
+      color: var(--text-muted);
+    }
+
+    .satir-engelli {
+      background: var(--err-bg);
+      cursor: not-allowed;
+    }
+
+    .satir-engelli .cihaz-ad,
+    .satir-engelli .cihaz-not {
+      color: var(--err-text);
+    }
+
+    .onay-etiket {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--chip-text);
+      cursor: pointer;
+      white-space: nowrap;
+      margin-bottom: 0;
+      font-weight: 400;
+    }
+
+    .onay-etiket input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--warning);
+    }
+
+    .liste-baslik {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 8px 10px 4px;
+      text-transform: none;
+    }
+
+    .liste-bos {
+      padding: 30px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .liste-hata {
+      color: var(--err-text);
+    }
+
+    /* Favori satırının ikinci çizgisi: kısayol, karo adı, parlaklık ayarı ve kısayol durumu */
+    .cihaz-ek {
+      flex-basis: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 14px;
+      padding: 4px 0 2px 26px;
+    }
+
+    .cihaz-ek input[type="text"] {
+      width: 190px;
+      padding: 5px 8px;
+      font-size: 12px;
+    }
+
+    .cihaz-ek input.kisayol-girdisi {
+      font-family: monospace;
+    }
+
+    .cihaz-ek .cihaz-not {
+      flex-basis: 100%;
+      margin-top: 0;
+    }
+
+    /* Seçili favorilerin sırası (k-05). */
+    .favori-sirasi {
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+    }
+
+    .favori-sirasi h3 {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .sira-satir {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 0;
+      font-size: 13px;
+    }
+
+    .sira-no {
+      min-width: 24px;
+      color: var(--text-dim);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .sira-ad {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sira-konum {
+      font-size: 11px;
+      color: var(--chip-text);
+      background: var(--chip-bg);
+      border-radius: 9999px;
+      padding: 1px 8px;
+      white-space: nowrap;
+    }
+
+    .sira-konum-tepsi {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+      border: 1px solid var(--ok-border);
+    }
+
+    .pano-satir {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .pano-not {
+      grid-column: 1 / -1;
+      font-size: 11px;
+      color: var(--warn-text);
+    }
+
+    .pano-hata {
+      grid-column: 1 / -1;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--err-text);
+    }
+
+    .pano-satir input.kisayol-girdisi,
+    .kisayol-kutusu input {
+      font-family: monospace;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .kisayol-kutusu {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .girdi-yani {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .girdi-yani input[type="text"],
+    .girdi-yani input[type="password"] {
+      flex: 1;
+    }
+
+    /* Vurgu rengi: renk seçici ve önizleme (g-12). */
+    .renk-satiri {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .renk-satiri input[type="text"] {
+      flex: 1;
+      font-family: monospace;
+    }
+
+    input[type="color"] {
+      width: 40px;
+      height: 34px;
+      padding: 2px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .renk-onizleme {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 96px;
+      height: 34px;
+      border-radius: 6px;
+      border: 3px solid var(--input-border);
+      background: var(--input-bg);
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .yedek-satir {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--card-border);
+      font-size: 13px;
+    }
+
+    .yedek-satir:last-child {
+      border-bottom: none;
+    }
+
+    .yedek-bilgi {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .alt-bilgi {
+      font-size: 12px;
+      color: var(--text-dim);
+      text-align: center;
+      margin: 24px 0 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .alt-bilgi code {
+      font-family: monospace;
+      color: var(--kod-text);
+    }
+
+    /* Altta yapışık tek Kaydet çubuğu (g-10, k-02). */
+    .kaydet-cubugu {
+      position: sticky;
+      bottom: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      background: var(--bar-bg);
+      border-top: 1px solid var(--card-border);
+      padding: 10px 0 12px;
+    }
+
+    .kaydet-sol {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .kirli-gosterge {
+      color: var(--warn-text);
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .gorunmez {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 0 12px;
+      }
+
+      .pano-satir {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="sayfa">
+
+  <header class="ust-serit" id="ustSerit">
+    <div class="sayfa-baslik">
+      <svg aria-hidden="true" focusable="false" style="width:24px;height:24px;color:var(--primary);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
+      <h1 data-i18n="ayar.baslik">Ev Paneli Ayarları</h1>
+    </div>
+    <nav class="bolum-gezinti" aria-label="Ayar bölümleri" data-i18n-attr="aria-label:ayar.gezin.etiket">
+      <a id="gezinBaglanti" href="#bolumBaglanti"><span data-i18n="ayar.gezin.baglanti">Bağlantı</span></a>
+      <a id="gezinFavoriler" href="#bolumFavoriler"><span data-i18n="ayar.gezin.favoriler">Favoriler</span></a>
+      <a id="gezinKisayollar" href="#bolumKisayollar"><span data-i18n="ayar.gezin.kisayollar">Kısayollar</span></a>
+      <a id="gezinGorunum" href="#bolumGorunum"><span data-i18n="ayar.gezin.gorunum">Görünüm</span></a>
+      <a id="gezinAnahtar" href="#bolumAnahtar"><span data-i18n="ayar.gezin.anahtar">Anahtar</span></a>
+      <a id="gezinDiger" href="#bolumDiger"><span data-i18n="ayar.gezin.diger">Diğer</span></a>
+    </nav>
+    <div id="bildirimSeridi" class="bildirim-seridi">
+      <div id="genelBildirim" class="bildirim-kutusu" role="status" aria-live="polite" aria-atomic="true"></div>
+      <button class="buton buton-ikincil buton-kucuk" id="btnBildirimKapat" type="button" aria-label="Bildirimi kapat" data-i18n="ayar.bildirim.kapat" data-i18n-attr="aria-label:ayar.bildirim.kapatEtiket">Kapat</button>
+    </div>
+  </header>
+
+  <main>
+
+  <!-- İLK KURULUM: anahtar ya da favori yoksa üç adımlık liste (k-03) -->
+  <section class="kurulum-listesi" id="kurulumListesi" aria-labelledby="kurulumBaslik" style="display: none;">
+    <h2 class="bolum-baslik" id="kurulumBaslik" data-i18n="ayar.kurulum.baslik">İlk kurulum: üç adım</h2>
+    <ol>
+      <li id="adimAdres"><span class="adim-durum" id="adimAdresDurum" data-i18n="ayar.kurulum.bekliyor">Bekliyor</span> <a id="kurulumAdresLink" href="#bolumBaglanti" data-i18n="ayar.kurulum.adim1">1. Ev içi adresi yaz</a></li>
+      <li id="adimAnahtar"><span class="adim-durum" id="adimAnahtarDurum" data-i18n="ayar.kurulum.bekliyor">Bekliyor</span> <a id="kurulumAnahtarLink" href="#bolumAnahtar" data-i18n="ayar.kurulum.adim2">2. Erişim anahtarını ekle</a></li>
+      <li id="adimFavori"><span class="adim-durum" id="adimFavoriDurum" data-i18n="ayar.kurulum.bekliyor">Bekliyor</span> <a id="kurulumFavoriLink" href="#bolumFavoriler" data-i18n="ayar.kurulum.adim3">3. Favorilerini seç</a></li>
+    </ol>
+  </section>
+
+  <!-- BÖLÜM 1: BAĞLANTI -->
+  <section class="bolum" id="bolumBaglanti" aria-labelledby="baglantiBaslik">
+    <h2 class="bolum-baslik" id="baglantiBaslik" tabindex="-1" data-i18n="ayar.baglanti.baslik">Bağlantı</h2>
+    <p class="bolum-aciklama" data-i18n="ayar.baglanti.aciklama">Uygulama açılırken önce ev içi adrese bağlanmayı dener; 3 saniyede yanıt alamazsa dış adrese bağlanır.</p>
+
+    <div class="form-grubu">
+      <label for="yerelAdres" data-i18n="ayar.baglanti.yerelEtiket">Ev İçi Adres (Öncelikli)</label>
+      <div class="girdi-yani">
+        <input type="text" id="yerelAdres" placeholder="http://192.168.1.10:8123" spellcheck="false" autocomplete="off" aria-describedby="yerelAdresIpucu yerelAdresHata">
+        <button class="buton buton-ikincil" id="btnYerelSina" type="button" data-i18n="ayar.baglanti.sina">Bağlantıyı Sına</button>
+      </div>
+      <div class="ipucu" id="yerelAdresIpucu" data-i18n="ayar.baglanti.yerelIpucu">Ev ağındaki Home Assistant adresi. http:// ya da https:// ile başlayabilir; https kullanırsan sertifika normal şekilde doğrulanır. http:// yalnız ev ağı adreslerinde (192.168.x.x, 10.x.x.x, .local, .lan) olabilir; internet üzerindeki adresler için https:// gerekir.</div>
+      <div class="alan-hata" id="yerelAdresHata" style="display: none;"></div>
+      <div class="alan-sonuc" id="yerelAdresSonuc" role="status" aria-live="polite" style="display: none;"></div>
+      <div class="ipucu-uyari" id="yerelAdresUyari" style="display: none;"></div>
+    </div>
+
+    <div class="form-grubu">
+      <label for="disAdres" data-i18n="ayar.baglanti.disEtiket">Dış Adres (Yedek)</label>
+      <div class="girdi-yani">
+        <input type="text" id="disAdres" placeholder="https://ha.example.com" spellcheck="false" autocomplete="off" aria-describedby="disAdresIpucu disAdresHata">
+        <button class="buton buton-ikincil" id="btnDisSina" type="button" data-i18n="ayar.baglanti.sina">Bağlantıyı Sına</button>
+      </div>
+      <div class="ipucu" id="disAdresIpucu" data-i18n="ayar.baglanti.disIpucu">Dışarıdayken kullanılacak HTTPS alan adı. “Bağlantıyı Sına” adresin Home Assistant olup olmadığına erişim anahtarı göndermeden bakar.</div>
+      <div class="alan-hata" id="disAdresHata" style="display: none;"></div>
+      <div class="alan-sonuc" id="disAdresSonuc" role="status" aria-live="polite" style="display: none;"></div>
+    </div>
+
+    <div class="form-grubu">
+      <label class="checkbox-etiket">
+        <input type="checkbox" id="canliBaglanti">
+        <span data-i18n="ayar.baglanti.canliEtiket">Canlı durum bağlantısı (WebSocket) kullan</span>
+      </label>
+      <div class="ipucu" data-i18n="ayar.baglanti.canliIpucu">Açıkken panel ve menü durumları Home Assistant’tan anında gelir; kapalıyken ya da bağlantı kurulamazsa durumlar 60 saniyede bir yenilenir. Erişim anahtarı yalnız bu bağlantının kimlik doğrulama iletisinde gönderilir.</div>
+      <div class="ipucu" id="canliDurumMetni"></div>
+    </div>
+  </section>
+
+  <!-- BÖLÜM 2: FAVORİLER -->
+  <section class="bolum" id="bolumFavoriler" aria-labelledby="favorilerBaslik">
+    <div class="bolum-baslik">
+      <h2 id="favorilerBaslik" tabindex="-1" style="font-size: inherit; font-weight: inherit;" data-i18n="ayar.favori.baslik">Favoriler (Tepsi, Panel, Palet)</h2>
+      <span>
+        <button class="buton buton-ikincil" id="btnHazirListe" type="button" data-i18n="ayar.favori.hazirListe">Hazır Listeyi Yeniden Uygula</button>
+        <button class="buton buton-ikincil" id="btnCihazlariYukle" type="button" data-i18n="ayar.favori.cihazlariListele">Cihazları Listele</button>
+      </span>
+    </div>
+    <p class="bolum-aciklama" data-i18n="ayar.favori.aciklama">Seçtiğin varlıklar tepsi menüsünün en üstünde (ilk 8 zararsız eylem), hızlı panelde ve komut paletinde görünür; onay isteyenler “Onaylı eylemler” altında yer alır. İstersen bir eylemi genel kısayola bağlayabilir, ışıklarda parlaklık ayarını açabilir, karoya kısa bir ad verebilirsin. Yıkıcı (onay isteyen) eylemler kısayola ve komut satırına atanamaz.</p>
+    <div class="ipucu" id="hazirListeDurum" style="margin-bottom: 10px;"></div>
+
+    <div class="guvenlik-kurali">
+      <svg aria-hidden="true" focusable="false" style="width:20px;height:20px;flex-shrink:0;color:var(--warning);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+      <div>
+        <strong data-i18n="ayar.guvenlik.baslik">Güvenlik Kuralı:</strong> <span data-i18n="ayar.guvenlik.metin">Kilitler (lock), alarm sistemleri ve adında ya da kimliğinde "kapı / door / kilit / lock / alarm / garaj / bariyer / gate / diafon / interkom / kepenk / deadbolt / latch / buzzer / yale / shutter" geçen hiçbir cihaz favorilere eklenemez ve bu listede gösterilmez. Kapılar yalnızca Home Assistant arayüzü içerisinden açılabilir. Karo adları da aynı kurala uyar. Kayıtlı bir favori sonradan bu kurala takılırsa kaydettiğinde otomatik çıkarılır.</span>
+      </div>
+    </div>
+
+    <div class="favori-sirasi" id="favoriSirasi" style="display: none;">
+      <h3 data-i18n="ayar.sira.baslik">Sıra ve tepsi</h3>
+      <div class="ipucu" data-i18n="ayar.sira.ipucu">Tepsi menüsünün üstünde sıradaki ilk 8 zararsız favori görünür; geri kalanlar “Diğer favoriler”, onay isteyenler “Onaylı eylemler” altında yer alır. Sırayı ↑ ↓ düğmeleriyle değiştirebilirsin.</div>
+      <div id="favoriSirasiListesi" role="list" aria-label="Seçili favorilerin sırası" data-i18n-attr="aria-label:ayar.sira.listeEtiket"></div>
+    </div>
+
+    <div class="cihaz-filtre">
+      <input type="text" id="cihazAra" placeholder="Cihaz adına veya türüne göre filtrele…" aria-label="Cihaz filtresi" spellcheck="false" data-i18n-attr="placeholder:ayar.favori.ara;aria-label:ayar.favori.araEtiket">
+    </div>
+    <div class="form-grubu">
+      <label class="checkbox-etiket">
+        <input type="checkbox" id="gizlileriGoster">
+        <span id="gizlileriGosterMetin" data-i18n="ayar.favori.gizlileriGoster">Gizlenenleri göster</span>
+      </label>
+      <div class="ipucu" data-i18n="ayar.favori.gizliIpucu">Sensör benzeri, tekrar eden ya da panele yakışmayan adaylar varsayılan olarak gizlenir (güvenlik kuralından bağımsız bir öneridir). Seçili olanlar her zaman görünür.</div>
+    </div>
+
+    <div class="cihaz-listesi" id="cihazListesi" role="group" aria-label="Cihaz listesi" data-i18n-attr="aria-label:ayar.favori.listeEtiket">
+      <div class="liste-bos" data-i18n="ayar.favori.listeBos">Cihazları listelemek için yukarıdaki “Cihazları Listele” düğmesine tıkla.</div>
+    </div>
+    <div class="buton-satiri" style="justify-content: space-between; align-items: center;">
+      <span id="secilenSayisi" style="font-size: 13px; color: var(--text-muted);" data-i18n="ayar.favori.seciliBaslangic">0 favori seçili</span>
+      <button class="buton buton-ikincil" id="btnDahaFazla" type="button" style="display: none;" data-i18n="ayar.favori.dahaFazla">Daha fazla göster</button>
+    </div>
+  </section>
+
+  <!-- BÖLÜM 3: KISAYOLLAR -->
+  <section class="bolum" id="bolumKisayollar" aria-labelledby="kisayollarBaslik">
+    <h2 class="bolum-baslik" id="kisayollarBaslik" tabindex="-1" data-i18n="ayar.kisayol.baslik">Kısayollar</h2>
+    <p class="bolum-aciklama" data-i18n="ayar.kisayol.aciklama">Tüm Windows pencerelerinden geçerli genel kısayollar. Kutuya tıklayıp tuşlara bas ya da elle yaz: Ctrl+Alt+K, ctrl alt k ve Win+H gibi yazımların hepsi olur.</p>
+
+    <div class="form-grubu">
+      <label for="kisayol" data-i18n="ayar.kisayol.anaEtiket">Pencereyi Göster / Gizle Kısayolu</label>
+      <div class="kisayol-kutusu">
+        <input type="text" id="kisayol" class="kisayol-girdisi" placeholder="Ctrl+Alt+H" spellcheck="false" autocomplete="off" aria-describedby="kisayolIpucu kisayolUyarilari">
+        <button class="buton buton-ikincil" id="btnKisayolVarsayilan" type="button" data-i18n="ayar.kisayol.varsayilanYap">Varsayılan Yap</button>
+      </div>
+      <div class="ipucu" id="kisayolIpucu" data-i18n="ayar.kisayol.anaIpucu">Örnek: Ctrl+Alt+H, Ctrl+Shift+H. En az bir Ctrl, Alt veya Win tuşu gerekir; yalnız Shift veya tek bir F tuşu kabul edilmez. Kopyala/yapıştır gibi Windows’a ayrılmış birleşimler (Ctrl+C, Ctrl+V, Alt+F4…) kullanılamaz.</div>
+      <div class="ipucu-uyari" id="kisayolUyarilari" style="display: none;"></div>
+    </div>
+
+    <div class="form-grubu">
+      <label for="paletKisayol" data-i18n="ayar.kisayol.paletEtiket">Komut Paleti Kısayolu</label>
+      <div class="kisayol-kutusu">
+        <input type="text" id="paletKisayol" class="kisayol-girdisi" placeholder="Ctrl+Alt+P" spellcheck="false" autocomplete="off" aria-describedby="paletKisayolIpucu paletKisayolUyarilari">
+        <button class="buton buton-ikincil" id="btnPaletKisayolVarsayilan" type="button" data-i18n="ayar.kisayol.varsayilanYap">Varsayılan Yap</button>
+      </div>
+      <div class="ipucu" id="paletKisayolIpucu" data-i18n="ayar.kisayol.paletIpucu">Boş bırakırsan palet kısayolu kapanır (panel yine tepsiden açılır). Palette yazarak ara; “ışık 40” gibi bir komutla parlaklık seviyesi de verebilirsin.</div>
+      <div class="ipucu-uyari" id="paletKisayolUyarilari" style="display: none;"></div>
+    </div>
+
+    <div class="form-grubu" role="group" aria-labelledby="panolarEtiketi">
+      <label id="panolarEtiketi" data-i18n="ayar.kisayol.panolarEtiket">HA panosu kısayolları (en çok 6)</label>
+      <div id="panolarListesi"></div>
+      <div class="buton-satiri" style="margin-top: 6px;">
+        <button class="buton buton-ikincil" id="btnPanoEkle" type="button" data-i18n="ayar.kisayol.panoEkle">HA Panosu Ekle</button>
+        <button class="buton buton-ikincil" id="btnAcikSayfaEkle" type="button" data-i18n="ayar.kisayol.acikSayfaEkle">Açık sayfayı ekle</button>
+      </div>
+      <div class="ipucu" data-i18n="ayar.kisayol.panoIpucu">HA panosunun adı, Home Assistant yolu (örn. /lovelace/ev ya da /energy) ve isteğe bağlı genel kısayol. Tepsi menüsünde de listelenir; kısayol Home Assistant penceresini açıp o panoya gider. “Açık sayfayı ekle” ana pencerede şu an açık olan Home Assistant sayfasını yeni bir satır olarak alır. Kısayollar “Kaydet” ile uygulanır.</div>
+      <div class="ipucu-uyari" id="panoUyarilari" style="display: none;"></div>
+    </div>
+  </section>
+
+  <!-- BÖLÜM 4: GÖRÜNÜM -->
+  <section class="bolum" id="bolumGorunum" aria-labelledby="gorunumBaslik">
+    <h2 class="bolum-baslik" id="gorunumBaslik" tabindex="-1" data-i18n="ayar.gorunum.baslik">Görünüm</h2>
+    <p class="bolum-aciklama" data-i18n="ayar.gorunum.aciklama">Hızlı panel, komut paleti ve köşe bildiriminin Windows 11 malzemesi; koyu tema ve pencere vurgu rengi. Home Assistant sayfasının kendi görünümü değişmez.</p>
+
+    <!-- Dil seçimi: etiket ve dil adları bilerek çevrilmez ("Dil / Language", Türkçe, English), yanlış dilde kalan kullanıcı da seçimi bulabilsin. -->
+    <div class="form-grubu">
+      <label for="dilSecimi">Dil / Language</label>
+      <select id="dilSecimi">
+        <option value="sistem" data-i18n="ayar.dil.sistem">Sistem dili</option>
+        <option value="tr">T&uuml;rk&ccedil;e</option>
+        <option value="en">English</option>
+      </select>
+      <div class="ipucu" data-i18n="ayar.dil.ipucu">Uygulamanın dili. “Sistem dili” Windows’un ekran dilini izler (Türkçe değilse İngilizce kullanılır). Değişiklik “Kaydet” ile uygulanır; tepsi menüsü, panel ve bildirimler de yeni dile geçer.</div>
+    </div>
+
+    <div class="form-grubu">
+      <label for="yeniPencereMalzemesi" data-i18n="ayar.malzeme.etiket">Panel, palet ve bildirim penceresi malzemesi</label>
+      <select id="yeniPencereMalzemesi">
+        <option value="acrylic" data-i18n="ayar.malzeme.acrylic">Akrilik (yarı saydam, bulanık)</option>
+        <option value="mica" data-i18n="ayar.malzeme.mica">Mica (masaüstü duvar kâğıdı tonlu)</option>
+        <option value="yok" data-i18n="ayar.malzeme.yok">Düz (opak koyu)</option>
+      </select>
+      <div class="ipucu" data-i18n="ayar.malzeme.ipucu">Yalnız yeni küçük pencereler için; Windows 11 22H2 ve üstü gerekir, eski sürümlerde pencereler kendiliğinden düz olur. Pencere opak ya da siyah görünürse “Düz” seç. Bu görünüm henüz gerçek ekranda denenmedi. Değişiklik paneli ya da paleti bir sonraki açışında görünür.</div>
+      <div class="ipucu-uyari" id="malzemeUyari" style="display: none;"></div>
+    </div>
+
+    <div class="form-grubu">
+      <label for="temaZorla" data-i18n="ayar.tema.etiket">Tema</label>
+      <select id="temaZorla">
+        <option value="koyu" data-i18n="ayar.tema.koyu">Her zaman koyu (önerilen)</option>
+        <option value="sistem" data-i18n="ayar.tema.sistem">Windows temasını izle</option>
+      </select>
+      <div class="ipucu" data-i18n="ayar.tema.ipucu">“Her zaman koyu” seçilirse Windows başlık çubuğu, bu Ayarlar penceresi ve Home Assistant koyu çizilmeye çalışılır. “Windows temasını izle” seçilirse Home Assistant, başlık çubuğu, bu Ayarlar penceresi, hızlı panel, palet ve köşe bildirimi pencereleri Windows’un açık ya da koyu temasını izler. Home Assistant profilinde tema “otomatik” ise Home Assistant da bu seçimi izler. Başlık çubuğunun gerçekten renk değiştirip değiştirmediği Windows sürümüne göre değişebilir.</div>
+    </div>
+
+    <div class="form-grubu">
+      <label for="vurguRengi" data-i18n="ayar.vurgu.etiket">Pencere vurgu rengi</label>
+      <div class="renk-satiri">
+        <input type="color" id="vurguRengiSecici" value="#0f75e0" aria-label="Vurgu rengi seçici" data-i18n-attr="aria-label:ayar.vurgu.seciciEtiket">
+        <input type="text" id="vurguRengi" placeholder="#0f75e0  (boş = Windows vurgu rengi)" maxlength="7" spellcheck="false" autocomplete="off" aria-describedby="vurguIpucu vurguHata" data-i18n-attr="placeholder:ayar.vurgu.yerTutucu">
+        <span class="renk-onizleme" id="vurguOnizleme" aria-hidden="true" data-i18n="ayar.vurgu.onizleme">Önizleme</span>
+        <button class="buton buton-ikincil" id="btnVurguSifirla" type="button" data-i18n="ayar.vurgu.sistemRengi">Sistem Rengi</button>
+      </div>
+      <div class="ipucu" id="vurguIpucu" data-i18n="ayar.vurgu.ipucu">Ana pencerenin kenarlık rengi, #rrggbb biçiminde (örn. #0f75e0). Renk kutusundan seçebilir ya da elle yazabilirsin. Boş bırakırsan Windows’un vurgu rengi kullanılır. Geçersiz bir değer kaydedilmez, önceki renk korunur.</div>
+      <div class="alan-hata" id="vurguHata" style="display: none;"></div>
+    </div>
+  </section>
+
+  <!-- BÖLÜM 5: HOME ASSISTANT ERİŞİM ANAHTARI -->
+  <section class="bolum" id="bolumAnahtar" aria-labelledby="anahtarBaslik">
+    <div class="bolum-baslik">
+      <h2 id="anahtarBaslik" tabindex="-1" style="font-size: inherit; font-weight: inherit;" data-i18n="ayar.anahtar.baslik">Home Assistant Erişim Anahtarı</h2>
+      <span id="anahtarRozet" class="rozet rozet-uyari" role="status" data-i18n="ayar.rozet.eklenmedi">Henüz Eklenmedi</span>
+    </div>
+    <p class="bolum-aciklama">
+      <span data-i18n="ayar.anahtar.aciklama1">Tepsi menüsünden cihazları açıp kapatmak için Home Assistant’ta üretilen “Uzun Ömürlü Erişim Anahtarı” gereklidir.</span>
+      <span data-i18n="ayar.anahtar.aciklama2a">Anahtarın Windows </span><strong>safeStorage (DPAPI)</strong><span data-i18n="ayar.anahtar.aciklama2b"> ile şifrelenir; kodda veya düz metin olarak asla tutulmaz.</span>
+    </p>
+
+    <div id="yetkiKaydiUyari" class="bolum-aciklama" style="display: none; color: var(--warn-text);" role="alert"></div>
+
+    <div id="anahtarReddedildiUyari" class="bolum-aciklama" style="display: none; color: var(--warn-text);" role="alert" data-i18n="ayar.anahtar.reddedildiUyari">Home Assistant kayıtlı erişim anahtarını reddetti (geçersiz ya da silinmiş). Home Assistant’ın IP’ni engellemesini önlemek için bu anahtarla hiçbir istek gönderilmiyor. Home Assistant’ta yeni bir anahtar oluşturup aşağıya yapıştır; aynı anahtarı yeniden kaydetmek engeli kaldırmaz.</div>
+
+    <div class="form-grubu">
+      <label for="anahtarGirdisi" data-i18n="ayar.anahtar.etiket">Yeni Erişim Anahtarı</label>
+      <div class="girdi-yani">
+        <input type="password" id="anahtarGirdisi" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." spellcheck="false" autocomplete="off" aria-describedby="anahtarIpucu anahtarUzunluk">
+        <button class="buton buton-ikincil" id="btnAnahtarGoster" type="button" aria-pressed="false" aria-controls="anahtarGirdisi" data-i18n="ayar.anahtar.goster">Göster</button>
+      </div>
+      <div class="ipucu" id="anahtarIpucu" data-i18n="ayar.anahtar.ipucu">HA Arayüzü &gt; Profilin &gt; Güvenlik &gt; “Uzun Ömürlü Erişim Anahtarları” bölümünden oluştur. Yapıştırdıktan sonra “Göster” ile kontrol edebilir, Enter ile kaydedebilirsin.</div>
+      <div class="ipucu" id="anahtarUzunluk" aria-live="polite"></div>
+    </div>
+
+    <div id="anahtarKarantinaUyari" class="bolum-aciklama" style="display: none; color: var(--warn-text);" role="alert" data-i18n="ayar.anahtar.karantinaUyari">Reddedilen erişim anahtarının kaydı diske yazılamadığı için anahtar dosyası güvenlik amacıyla kenara alındı; böylece uygulama yeniden açılınca Home Assistant’a aynı geçersiz anahtarla bir daha istek gitmez. Home Assistant’ta yeni bir anahtar oluşturup aşağıya yapıştır.</div>
+
+    <div id="yetkiDurumUyari" class="bolum-aciklama" style="display: none; color: var(--warn-text);" role="alert"></div>
+
+    <!-- Açık ikinci onay (tur 3): hata bütçesi dolu (>= 2 hatalı deneme) ya da güvenlik kaydı güvenilmez; onaysız Home Assistant'a hiç istek gitmez. -->
+    <div id="ikinciOnayKutusu" class="bolum-aciklama" style="display: none; color: var(--warn-text);" role="alert">
+      <div id="ikinciOnayMetni"></div>
+      <label class="checkbox-etiket">
+        <input type="checkbox" id="chkIkinciOnay">
+        <span data-i18n="ayar.anahtar.ikinciOnayEtiket">Anladım, yine de doğrula</span>
+      </label>
+    </div>
+
+    <div class="buton-satiri">
+      <button class="buton buton-ikincil" id="btnYetkiYenidenDene" type="button" style="display: none;" data-i18n="ayar.anahtar.yenidenDene">Yeniden Dene</button>
+      <button class="buton buton-birincil" id="btnAnahtarKaydet" type="button" data-i18n="ayar.anahtar.dogrulaKaydet">Anahtarı Doğrula ve Kaydet</button>
+      <button class="buton buton-tehlike" id="btnAnahtarSil" type="button" style="display: none;" data-i18n="ayar.anahtar.sil">Anahtarı Bu Bilgisayardan Sil</button>
+    </div>
+  </section>
+
+  <!-- DİĞER AYARLAR: nadir kullanılan bölümler katlanır -->
+  <h2 class="grup-baslik" id="bolumDiger" tabindex="-1" data-i18n="ayar.diger.baslik">Diğer ayarlar</h2>
+
+  <details class="bolum" id="bolumPencere">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.pencere.baslik">Pencere ve panel davranışı</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.pencere.aciklama">Kısayolla açılan pencerenin boyutu ve ne zaman kaybolacağı. Pencere her açılışta fare imlecinin bulunduğu monitörde ortalanır.</p>
+
+      <div class="form-grubu">
+        <label for="pencereBoyutu" data-i18n="ayar.pencere.boyutEtiket">Pencere boyutu</label>
+        <select id="pencereBoyutu">
+          <option value="hizli" data-i18n="ayar.pencere.hizli">Hızlı (dar; Home Assistant kendiliğinden dar düzene geçer)</option>
+          <option value="genis" data-i18n="ayar.pencere.genis">Geniş</option>
+        </select>
+        <div class="ipucu" data-i18n="ayar.pencere.boyutIpucu">Her boyutun son kullandığın ölçüsü ayrı hatırlanır. Pencerede Ctrl+Shift+G ile de değiştirebilirsin.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="odakKaybindaGizle">
+          <span data-i18n="ayar.pencere.odakEtiket">Başka bir yere tıklayınca pencere gizlensin</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.pencere.odakIpucu">Ayarlar penceresi ya da Home Assistant’ın açtığı bir alt pencere öndeyken gizlenmez. Ctrl+W de pencereyi gizler.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="anaPanoyaDonDk" data-i18n="ayar.pencere.anaPanoEtiket">Uzun süre gizli kalırsa Home Assistant ana sayfasına dön (dakika)</label>
+        <input type="number" id="anaPanoyaDonDk" min="0" max="1440" step="1" inputmode="numeric" aria-describedby="anaPanoyaDonIpucu anaPanoyaDonHata">
+        <div class="ipucu" id="anaPanoyaDonIpucu" data-i18n="ayar.pencere.anaPanoIpucu">Pencere bu süreden uzun gizli kaldıysa gösterilirken ana sayfadan başlar. 0 = hiç dönme.</div>
+        <div class="alan-hata" id="anaPanoyaDonHata" style="display: none;"></div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="tepsiSolTik" data-i18n="ayar.pencere.tepsiEtiket">Tepsi simgesine sol tık</label>
+        <select id="tepsiSolTik">
+          <option value="panel" data-i18n="ayar.pencere.tepsiPanel">Hızlı paneli aç (favoriler, tek tık)</option>
+          <option value="pencere" data-i18n="ayar.pencere.tepsiPencere">Eskisi gibi Home Assistant penceresini aç</option>
+        </select>
+        <div class="ipucu" data-i18n="ayar.pencere.tepsiIpucu">Sağ tık menüsü her iki durumda da aynıdır. Panel zararsız eylemleri tek tıkla çalıştırır; PC kapat gibi onaylı eylemler için düğmeyi yaklaşık 0,8 saniye basılı tutman gerekir (tepsi menüsünde onay penceresi çıkar).</div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bolum" id="bolumGeriBildirim">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.geri.baslik">Geri bildirim</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.geri.aciklama">Tepsiden ya da panelden bir favori çalıştırdığında sonucu nasıl öğrenmek istediğin.</p>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="koseBildirimi">
+          <span data-i18n="ayar.geri.kose">Köşede kısa bildirim göster</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.geri.koseIpucu">Ekranın sağ altında, odağı çalmayan küçük bir onay görünür. Windows bildirimi yalnızca bir hata olduğunda gönderilir.</div>
+      </div>
+
+      <div class="form-grubu" style="margin-top: 14px;">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="bipSesi">
+          <span data-i18n="ayar.geri.bip">Başarılı olunca kısa bip sesi çal</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.geri.bipIpucu">Varsayılan olarak kapalıdır.</div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bolum" id="bolumBaslangic">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.baslangic.baslik">Windows ile başlat</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.baslangic.aciklama">Sistem başlangıç davranışı.</p>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="otomatikBaslat">
+          <span data-i18n="ayar.baslangic.otomatik">Windows açılınca otomatik ve gizli (tepside) başlasın</span>
+        </label>
+        <div class="ipucu-uyari" id="otomatikBaslatDurum" style="display: none;"></div>
+        <div class="buton-satiri" style="margin-top: 8px;">
+          <button class="buton buton-ikincil" id="btnOtomatikBaslatEtkinlestir" type="button" style="display: none;" data-i18n="ayar.baslangic.etkinlestir">Yeniden etkinleştir</button>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bolum" id="bolumYedek">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.yedek.baslik">Yedekleme ve geri dönme</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.yedek.aciklama">Ayarlarını bir dosyaya aktarabilir, başka bir dosyadan alabilir ya da uygulamanın aldığı yedeklere dönebilirsin. Erişim anahtarı dosyaya yazılmaz ve içe aktarmayla değişmez; yeni bilgisayarda anahtarı yeniden eklemen gerekir. İçe aktarılan dosya ayar kurallarından ve güvenlik kuralından geçirilir.</p>
+      <div class="buton-satiri" style="margin-top: 0;">
+        <button class="buton buton-ikincil" id="btnDisaAktar" type="button" data-i18n="ayar.yedek.disaAktar">Dışa Aktar…</button>
+        <button class="buton buton-ikincil" id="btnIceAktar" type="button" data-i18n="ayar.yedek.iceAktar">İçe Aktar…</button>
+      </div>
+      <div class="form-grubu" style="margin-top: 16px;">
+        <label id="yedeklerEtiketi" data-i18n="ayar.yedek.mevcut">Mevcut yedekler</label>
+        <div id="yedekListesi" role="list" aria-labelledby="yedeklerEtiketi"></div>
+        <div class="ipucu" id="yedekDurum"></div>
+      </div>
+    </div>
+  </details>
+
+  <div class="alt-bilgi">
+    <span data-i18n="ayar.altBilgi.dosya">Ayar dosyası:</span> <code id="ayarDosyasiYolu">%APPDATA%\Ev Paneli\ayarlar.json</code>
+  </div>
+
+  </main>
+
+  <!-- Altta yapışık tek Kaydet çubuğu: genel ayarlar ve favoriler birlikte kaydedilir (anahtar kaydı ayrı) -->
+  <div class="kaydet-cubugu" id="kaydetCubugu">
+    <div class="kaydet-sol">
+      <span class="kirli-gosterge" id="kirliGosterge" role="status" style="display: none;" data-i18n="ayar.kirli">Kaydedilmemiş değişiklik var</span>
+      <span data-i18n="ayar.kisayolIpucu">Ctrl+S kaydeder · Esc kapatır · Ctrl + / Ctrl − / Ctrl 0 yakınlaştırır</span>
+    </div>
+    <button class="buton buton-birincil" id="btnAyarlariKaydet" type="button" data-i18n="ayar.kaydet.dugme">Kaydet</button>
+  </div>
+
+  </div>
+
+  <script src="lib/dil.js"></script>
+  <script src="lib/ceviri/ana.js"></script>
+  <script src="lib/ceviri/ayarlar.js"></script>
+  <script src="lib/kisayol.js"></script>
+  <script src="lib/arama.js"></script>
+  <script src="ayarlar.js"></script>
+</body>
+</html>

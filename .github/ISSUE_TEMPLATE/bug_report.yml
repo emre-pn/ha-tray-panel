@@ -1,0 +1,59 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please remove access tokens, addresses and device names from anything you paste here.
+        Security problems go through private reporting instead (Security tab → Report a vulnerability).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the palette
+        2. Type ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Windows Settings → Apps → Installed apps
+      placeholder: "1.3.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: ha
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.10"
+  - type: dropdown
+    id: language
+    attributes:
+      label: Interface language
+      options:
+        - English
+        - Türkçe
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: "Optional. The log is at %APPDATA%\\Ev Paneli\\logs\\ev-paneli.log. It never contains your token, but check it for addresses before pasting."
+      render: text

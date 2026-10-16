@@ -1,0 +1,111 @@
+/* Koyu tema varsayılan; Windows açık temadayken (prefers-color-scheme: light) açık tema (g-01). Renkler yalnız değişkenlerdendir. */
+:root {
+  color-scheme: dark;
+  --bg: #1b1f27;
+  --metin: #f1f5f9;
+  --basari: #10b981;
+  --hata: #ef4444;
+  --isaret-metin: #0b1220; /* ✓ / ! simgesi, dolu --basari / --hata zemini üzerinde (kontrast >= 4,5) */
+}
+
+/*
+ * Windows 11 malzemesi (gorunum-11): pencere `backgroundMaterial: acrylic | mica` ile açılınca sayfa <html data-malzeme="...">
+ * olur ve kart yarı saydam koyu olur. Malzeme "yok" ya da sistem desteklemiyorsa öznitelik yoktur: opak renk geçerlidir.
+ */
+:root[data-malzeme] {
+  --bg: rgba(27, 31, 39, 0.62);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f3f5f9;
+    --metin: #0f172a;
+    --basari: #047857;
+    --hata: #b91c1c;
+    --isaret-metin: #ffffff;
+  }
+
+  :root[data-malzeme] {
+    --bg: rgba(243, 245, 249, 0.7);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--metin);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+:root[data-malzeme],
+:root[data-malzeme] body {
+  background: transparent;
+}
+
+:root[data-malzeme] .bildirim {
+  background: var(--bg);
+}
+
+.bildirim {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 0 16px;
+  border-left: 4px solid var(--basari);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.bildirim.gorunur {
+  opacity: 1;
+}
+
+.bildirim.hata {
+  border-left-color: var(--hata);
+}
+
+/* Başarı ✓, hata ! (g-09): renk körlüğünde de ayırt edilir; simgeyi kose-sayfa.js yazar */
+.isaret {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  color: var(--isaret-metin);
+  border-radius: 50%;
+  background: var(--basari);
+}
+
+.hata .isaret {
+  background: var(--hata);
+}
+
+.metin {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bildirim {
+    transition: none;
+  }
+}

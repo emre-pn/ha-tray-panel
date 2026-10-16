@@ -1,0 +1,30 @@
+{
+  "semaSurumu": 5,
+  "yerelAdres": "http://192.168.1.10:8123",
+  "disAdres": "https://ha.example.com",
+  "yerelZamanAsimiMs": 3000,
+  "disZamanAsimiMs": 10000,
+  "yenidenDenemeSn": 30,
+  "kisayol": "Control+Alt+H",
+  "paletKisayol": "Control+Alt+P",
+  "tepsiSolTik": "panel",
+  "canliBaglanti": true,
+  "otomatikBaslat": true,
+  "pencereBoyutu": "hizli",
+  "pencere": {
+    "hizli": { "width": 560, "height": 780 },
+    "genis": { "width": 1280, "height": 820, "maximized": false }
+  },
+  "odakKaybindaGizle": true,
+  "koseBildirimi": true,
+  "bipSesi": false,
+  "anaPanoyaDonDk": 5,
+  "yakinlastirma": 0,
+  "temaZorla": "koyu",
+  "vurguRengi": "",
+  "yeniPencereMalzemesi": "acrylic",
+  "dil": "sistem",
+  "favoriler": [],
+  "panolar": [],
+  "hazirListeSurumu": 0
+}

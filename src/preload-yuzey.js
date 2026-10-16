@@ -1,0 +1,37 @@
+'use strict';
+
+/**
+ * Hızlı panel / palet köprüsü (window.evYuzey): yalnız yuzey.html'in ihtiyaç duyduğu kanallar. Anahtarı, adresi ya da
+ * başka bir IPC kanalını görmez; sandbox'ta yerel dosya require etmez. Köprü yalnız yerel (file:) sayfaya açılır; ana
+ * süreçteki her işleyici ayrıca gönderenin yuzey.html olduğunu denetler (src/yuzey-yoneticisi.js).
+ */
+
+const { contextBridge, ipcRenderer } = require('electron');
+
+function dinle(kanal, callback) {
+  if (typeof callback !== 'function') return () => {};
+  const dinleyici = (_olay, yuk) => callback(yuk);
+  ipcRenderer.on(kanal, dinleyici);
+  return () => ipcRenderer.removeListener(kanal, dinleyici);
+}
+
+if (location.protocol === 'file:') {
+  contextBridge.exposeInMainWorld('evYuzey', {
+    // Ana süreç modeli: { ok, mod, model } (model: gruplar, sonlar, ust; src/lib/yuzey-modeli.js)
+    durumAl: () => ipcRenderer.invoke('yuzey:durum-al'),
+    onDurum: (callback) => dinle('yuzey:durum', callback),
+    // Yük: { mod: 'panel' | 'palet' } (pencere her gösterildiğinde)
+    onGoster: (callback) => dinle('yuzey:goster', callback),
+    // Arayüz dili değişti: yük { dil: 'tr' | 'en' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
+    onDilDegisti: (callback) => dinle('dil:degisti', callback),
+    // Yük: { kimlik, parlaklik?, sonDeger?, basili? }; yanıt: { ok, tur?, ad? }
+    calistir: (yuk) => ipcRenderer.invoke('yuzey:calistir', yuk),
+    basiliBasla: (kimlik) => ipcRenderer.invoke('yuzey:basili-basla', kimlik),
+    // Basılı tutma süre dolmadan bırakıldı: ana süreçteki başlangıç kaydı silinir (savunma derinliği)
+    basiliBirak: (kimlik) => ipcRenderer.invoke('yuzey:basili-birak', kimlik),
+    kapat: () => ipcRenderer.send('yuzey:kapat'),
+    boyut: (yukseklik) => ipcRenderer.send('yuzey:boyut', Number(yukseklik)),
+    haAc: () => ipcRenderer.invoke('yuzey:ha-ac'),
+    ayarlarAc: () => ipcRenderer.invoke('yuzey:ayarlar-ac'),
+  });
+}
