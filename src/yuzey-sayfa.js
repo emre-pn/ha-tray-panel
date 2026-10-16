@@ -20,6 +20,7 @@
   const Kaydirici = window.EvKaydirici;
   const Dil = window.EvDil;
   const Sozluk = window.EvCeviriYuzey;
+  const Kartlar = window.EvKartlar; // 1.4.0 cihaz kartları (yuzey-kartlar.js); yoksa kartlar düz karo olarak çizilir
   if (!kopru || !Arama || !Kaydirici || !Dil || !Sozluk) return;
 
   let t = Dil.cevirmen('tr', Sozluk); // HTML varsayılanı Türkçedir; dil durumAl yanıtıyla ya da onDilDegisti ile gelir
@@ -119,6 +120,9 @@
         yikici: k.sinif === 'yikici',
         parlaklikKontrol: k.parlaklikKontrol === true,
         tekrar: k.tekrar === true,
+        ozellik: Kartlar ? Kartlar.ozellikDuzelt(k.ozellik) : null, // 1.4.0: güvenli öznitelik alt kümesi (bilinmeyen anahtar atılır)
+        varsayilanEylem: k.varsayilanEylem !== false, // false: tek tıklama eylemi yok (iklim, medya...): düz tıklama servis göndermez
+        onayliServisler: Kartlar ? Kartlar.servisListesiDuzelt(k.onayliServisler) : [],
       };
     };
     const gruplar = ham.gruplar
@@ -157,6 +161,10 @@
 
   function durumMetni(karo) {
     if (karo.ulasilamiyor) return t('yuzey.durum.ulasilamiyor');
+    if (karo.varsayilanEylem === false && kartlar) {
+      const ozet = kartlar.ozet(karo); // iklim "Isıtma · 22°", medya başlığı, seçici değeri, zamanlayıcı kalanı...
+      if (ozet !== '') return ozet;
+    }
     if (karo.durum === 'acik') return karo.yuzde !== null ? t('yuzey.yuzde', { n: karo.yuzde }) : t('yuzey.durum.acik');
     if (karo.durum === 'kapali') return t('yuzey.durum.kapali');
     return '';
@@ -195,6 +203,7 @@
   /** Kaydırıcının ara değerleri ve basılı tutulan ses -/+ her seferinde "başarı" yanıp sönmesin. */
   function basariGosterilmeli(karo, yuk) {
     if (!karo || karo.tekrar) return false;
+    if (yuk && yuk.araDeger === true) return false; // 1.4.0: kaydırıcı / ± ara değerleri (ses, sıcaklık, sayı)
     return !(yuk && yuk.parlaklik !== undefined && yuk.sonDeger !== true);
   }
 
@@ -235,12 +244,14 @@
    * tıklama (çift tık) yok sayılır; aksi halde çift tık ışığı açıp hemen kapatırdı. Yok sayılırsa null döner.
    * Kilit çizimden bağımsızdır (karo öğesi yeniden kurulsa da kimliğe bağlıdır).
    */
-  function tekIstek(karo, oge, yuk) {
+  function tekIstek(karo, oge, yuk, anahtar) {
     const simdi = Date.now();
-    const kilit = karoKilitleri.get(karo.id);
+    // 1.4.0 kartlarda her düğmenin kilidi ayrıdır (anahtar): bir kartta farklı iki düğmeye art arda basış birbirini yok saymaz.
+    const kilitAnahtari = anahtar ? karo.id + '|' + anahtar : karo.id;
+    const kilit = karoKilitleri.get(kilitAnahtari);
     if (kilit && (simdi < kilit.bitis || (kilit.bekliyor && simdi - kilit.basla < KILIT_YEDEK_MS))) return null;
     const yeni = { basla: simdi, bitis: simdi + KARO_KILIT_MS, bekliyor: true };
-    karoKilitleri.set(karo.id, yeni);
+    karoKilitleri.set(kilitAnahtari, yeni);
     const bitir = function () {
       yeni.bekliyor = false;
     };
@@ -292,8 +303,10 @@
    * Yıkıcı eylem: ~0,8 sn basılı tutma. Yalnız "başladı" bilgisi ana sürece gider; süre dolunca eylem istenir ve onay ana
    * sürecin kendi saatiyle doğrulanır. `gorsel`: ilerleme sınıfının (dolum çubuğu) ve başarı/hata işaretinin ekleneceği öğe.
    * `bitti(sonucSozu)`: eylem istendikten sonra çağrılır (palet, yanıta göre kapanır ya da uyarıyı gösterir).
+   * `yukEk` (1.4.0): servis eylemi yükü ({servis, veri?, sonDeger?}) ya da onu üreten işlev; tutma tamamlanınca isteğe eklenir.
+   * Onayı yine yalnız ana sürecin saati verir: yük renderer'ın seçtiği servisi taşır, hattın izin listesi ve sınırları geçerlidir.
    */
-  function basiliTutmaOlustur(karo, gorsel, bitti) {
+  function basiliTutmaOlustur(karo, gorsel, bitti, yukEk) {
     let aktif = false;
     const tutma = Kaydirici.basiliTutma({
       sureMs: Kaydirici.BASILI_TUTMA_MS,
@@ -306,7 +319,9 @@
       },
       tamam: function () {
         sonlandir();
-        const sonuc = calistir({ kimlik: karo.id, basili: true }, karo, gorsel);
+        const ek = typeof yukEk === 'function' ? yukEk() : yukEk;
+        const yuk = Object.assign({}, ek && typeof ek === 'object' ? ek : {}, { kimlik: karo.id, basili: true });
+        const sonuc = calistir(yuk, karo, gorsel);
         if (bitti) bitti(sonuc);
       },
       iptal: function () {
@@ -466,21 +481,60 @@
 
   // ---------------------------------------------------------------- panel
 
+  // 1.4.0 cihaz kartları (iklim, medya, süpürge, seçici, sayı, zamanlayıcı, vantilatör, nem alıcı, ışık rengi): yuzey-kartlar.js.
+  // Kartlar bu işlevlerle konuşur; köprüye (kopru) doğrudan erişimi yoktur.
+  const kartlar = Kartlar
+    ? Kartlar.kur({
+        olustur: olustur,
+        ceviri: function () {
+          return t;
+        },
+        calistir: calistir,
+        tekIstek: tekIstek,
+        basiliTutmaOlustur: basiliTutmaOlustur,
+        odakKaydet: odakKaydet,
+        satirEkle: function (ogeler) {
+          if (ogeler.length > 0) panelSatirlari.push(ogeler);
+        },
+        donukBaslat: donukBaslat,
+        donukBitir: donukBitir,
+        temizlikEkle: function (islev) {
+          tekrarlayicilar.push(islev);
+        },
+        karoDugmesi: karoDugmesi,
+      })
+    : null;
+
+  /**
+   * Tek tıklama eylemi olmayan karoya düz tıklamada gösterilen ipucu (örnek komutla: "klima 24"). Komut sözlüğü olmayan
+   * (salt okunur) karoda ipucu yoktur: orada yazılacak komut da yoktur.
+   */
+  function eylemYokIpucusu(karo) {
+    if (!kartlar || !kartlar.komutluMu(karo)) return;
+    ipucuGoster(t('yuzey.ipucu.eylemYok', { ornek: kartlar.ornek(karo) }));
+  }
+
   function karoDugmesi(karo) {
     const dugme = olustur('button', 'karo durum-' + karo.durum + (karo.yikici ? ' yikici' : '') + (karo.kullanilabilir ? '' : ' yok'));
     dugme.type = 'button';
     dugme.appendChild(olustur('span', 'karo-etiket', karo.etiket));
     const durum = durumMetni(karo);
     dugme.appendChild(olustur('span', 'karo-durum', durum));
-    if (karo.yikici) dugme.appendChild(olustur('span', 'karo-ipucu', t('yuzey.karo.basiliTut'))); // g-08: kalıcı alt yazı (title yalnız fareyle görünür)
-    dugme.title = karo.yikici ? t('yuzey.karo.basiliBaslik', { etiket: karo.etiket }) : karo.etiket;
+    const tutmaGerekli = karo.yikici && karo.varsayilanEylem !== false; // eylemi olmayan karoda "basılı tut" demenin anlamı yok
+    if (tutmaGerekli) dugme.appendChild(olustur('span', 'karo-ipucu', t('yuzey.karo.basiliTut'))); // g-08: kalıcı alt yazı (title yalnız fareyle görünür)
+    dugme.title = tutmaGerekli ? t('yuzey.karo.basiliBaslik', { etiket: karo.etiket }) : karo.etiket;
     // Açık/kapalı karolar ekran okuyucuya düğme durumu olarak duyurulur (k-16); sahne/düğme/yıkıcı karolarda durum yoktur.
     if (!karo.yikici && !karo.tekrar && (karo.durum === 'acik' || karo.durum === 'kapali')) {
       dugme.setAttribute('aria-pressed', karo.durum === 'acik' ? 'true' : 'false');
     }
     odakKaydet('k:' + karo.id, dugme);
 
-    if (karo.yikici) {
+    if (karo.varsayilanEylem === false) {
+      // Tek tıklama eylemi yok (kart olarak çizilmeyen iklim / medya / sensör...): düz tıklama servis göndermez, ipucu verir.
+      dugme.addEventListener('click', function () {
+        eylemYokIpucusu(karo);
+      });
+    } else if (karo.yikici) {
       const tutma = basiliTutmaOlustur(karo, dugme);
       dugme.addEventListener('pointerdown', function (olay) {
         if (olay.button === 0 || olay.button === undefined) tutma.basla();
@@ -595,16 +649,22 @@
       }
     });
     kutu.appendChild(aralik);
+    const renkler = kartlar ? kartlar.isikRengi(karo) : null; // 1.4.0 (o-02): beyaz tonu + renk paleti; cihaz renk desteklemiyorsa null
+    if (renkler) kutu.appendChild(renkler);
     return kutu;
   }
 
   function sonSatiri() {
-    if (model.sonlar.length === 0) return null;
+    // Tek tıklama eylemi olmayan karo (iklim, medya...) "Son" listesinde düz tıklamayla çalışamaz: listeye alınmaz.
+    const sonlar = model.sonlar.filter(function (karo) {
+      return karo.varsayilanEylem !== false;
+    });
+    if (sonlar.length === 0) return null;
     const bolum = olustur('section', 'bolum son');
     bolum.appendChild(olustur('h2', 'bolum-baslik', t('yuzey.bolum.son')));
     const sira = olustur('div', 'son-sira');
     const dugmeler = [];
-    model.sonlar.slice(0, PANEL_SON_SAYISI).forEach(function (karo) {
+    sonlar.slice(0, PANEL_SON_SAYISI).forEach(function (karo) {
       const d = olustur('button', 'son-oge', karo.etiket);
       d.type = 'button';
       d.title = karo.etiket;
@@ -686,6 +746,10 @@
           if (karo.parlaklikKontrol) {
             bosalt();
             izgara.appendChild(isikKarosu(karo));
+          } else if (kartlar && kartlar.kartMi(karo)) {
+            bosalt(); // kart tam genişliktedir: satırı böler (ışık karosu gibi)
+            const kart = kartlar.kartCiz(karo);
+            if (kart) izgara.appendChild(kart);
           } else {
             const d = karoDugmesi(karo);
             izgara.appendChild(d);
@@ -711,8 +775,39 @@
       const sonSira = model.sonlar.findIndex(function (s) {
         return s.id === karo.id;
       });
-      return { etiket: karo.etiket, grupEtiketi: karo.grupEtiketi, parlaklikKontrol: karo.parlaklikKontrol, sonSira: sonSira, karo: karo };
+      // alan + ozellik: servis komutları ("klima 24", "masa sicak", "tv ses 30") cihazın kendi listelerine / aralığına göre çözülür (lib/arama.js alanKomutu)
+      return { etiket: karo.etiket, grupEtiketi: karo.grupEtiketi, parlaklikKontrol: karo.parlaklikKontrol, sonSira: sonSira, alan: karo.alan, ozellik: karo.ozellik, karo: karo };
     });
+  }
+
+  /** Palet satırının komutu cihazda geçerli değil mi? Komut tanındı ama aralık dışı ('sinir') ya da cihaz desteklemiyor ('desteklenmiyor'). */
+  function satirKomutHatasi(satir) {
+    return satir.komutHatasi === 'sinir' || satir.komutHatasi === 'desteklenmiyor' ? satir.komutHatasi : null;
+  }
+
+  /** Satırın çalıştıracağı servis komutu (`eylem`), karonun onay isteyen servisleri arasında mı? */
+  function servisOnayliMi(karo, servis) {
+    return karo.onayliServisler.indexOf(servis) >= 0;
+  }
+
+  /**
+   * Bu satırın eylemi basılı tutma (onay) ister mi? Servis komutunda yalnız o servis onaylıysa (ör. klima modu, TV kapatma, seçici /
+   * sayı / zamanlayıcı); tek tıklama eylemi olmayan karoda (komut yoksa) hiç eylem yoktur; diğerlerinde karonun sınıfı.
+   */
+  function satirOnayliMi(satir) {
+    const karo = satir.karo;
+    if (satirKomutHatasi(satir)) return false; // geçersiz komut hiçbir şey göndermez
+    if (satir.eylem) return servisOnayliMi(karo, satir.eylem.servis);
+    if (karo.varsayilanEylem === false) return false;
+    return karo.yikici;
+  }
+
+  /** Satırın çalıştıracağı servis yükü (basılı tutma tamamlanınca isteğe eklenir); servis komutu yoksa boş (karonun kendi eylemi). */
+  function satirServisYuku(satir) {
+    if (!satir.eylem) return {};
+    const yuk = { servis: satir.eylem.servis };
+    if (satir.eylem.veri) yuk.veri = satir.eylem.veri;
+    return yuk;
   }
 
   /** Boş sorguda son kullanılanlar (en çok 5) ve altında kalan bütün favoriler; her bölümün ilk satırı başlık taşır. Aksi halde arama sonuçları. */
@@ -726,7 +821,7 @@
         satirlar: Arama.bosSorguListesi(paletOgeleri(), { sonSayisi: PALET_SON_SAYISI }).map(function (r) {
           const bolumBasligi = r.bolum !== oncekiBolum ? BOLUM_BASLIGI[r.bolum] : null;
           oncekiBolum = r.bolum;
-          return { karo: r.oge.karo, konumlar: [], parlaklik: null, kapat: false, desteklenmiyor: false, bolumBasligi: bolumBasligi };
+          return { karo: r.oge.karo, konumlar: [], parlaklik: null, kapat: false, desteklenmiyor: false, eylem: null, komutHatasi: null, bolumBasligi: bolumBasligi };
         }),
       };
     }
@@ -742,6 +837,9 @@
           parlaklik: r.parlaklik !== undefined ? r.parlaklik : i === 0 ? s.parlaklik : null,
           kapat: r.kapat === true,
           desteklenmiyor: r.parlaklikDesteklenmiyor === true || (i === 0 && s.parlaklikDesteklenmiyor === true),
+          // 1.4.0 servis komutu ("klima 24"): eylem {servis, veri, tur, deger}; tanınıp cihazda geçersizse komutHatasi ('sinir' | 'desteklenmiyor')
+          eylem: r.eylem && typeof r.eylem === 'object' ? r.eylem : null,
+          komutHatasi: r.komutHatasi === 'sinir' || r.komutHatasi === 'desteklenmiyor' ? r.komutHatasi : null,
         };
       }),
     };
@@ -785,9 +883,21 @@
   function paletCalistir(satir, seviye) {
     const karo = satir.karo;
     const yuk = { kimlik: karo.id };
+    const hata = satirKomutHatasi(satir);
+    if (hata && (seviye === undefined || seviye === null)) {
+      // Komut tanındı ama bu cihazda geçerli değil: hiçbir şey gönderilmez, nedeni söylenir.
+      ipucuGoster(t(hata === 'sinir' ? 'yuzey.ipucu.komutSinirDisi' : 'yuzey.ipucu.komutDesteklenmiyor', { etiket: karo.etiket }));
+      return;
+    }
     if (seviye !== undefined && seviye !== null) {
       yuk.parlaklik = seviye;
       yuk.sonDeger = true;
+    } else if (satir.eylem) {
+      Object.assign(yuk, satirServisYuku(satir)); // "klima 24": servis + veri; sınır / izin denetimi ana süreçte (servis-izinleri.js)
+      yuk.sonDeger = true;
+    } else if (karo.varsayilanEylem === false) {
+      eylemYokIpucusu(karo); // "klima" yazıp Enter: tek tıklama eylemi yok; örnek komut gösterilir
+      return;
     } else if (satir.kapat && karo.parlaklikKontrol) {
       yuk.kapat = true; // "ışık 0"
     } else if (satir.parlaklik !== null && karo.parlaklikKontrol) {
@@ -822,7 +932,9 @@
         bolumBasligi.setAttribute('aria-hidden', 'true'); // liste adı aria-label'dadır
         parcalar.push(bolumBasligi);
       }
-      const kutu = olustur('div', 'palet-satir' + (i === secili ? ' secili' : '') + (karo.yikici ? ' yikici' : ''));
+      const onayli = satirOnayliMi(satir); // bu satırın eylemi ~0,8 sn basılı tutma ister
+      const komutHatasi = satirKomutHatasi(satir);
+      const kutu = olustur('div', 'palet-satir' + (i === secili ? ' secili' : '') + (onayli ? ' yikici' : ''));
       kutu.id = 'palet-satir-' + i;
       kutu.setAttribute('role', 'option');
       kutu.setAttribute('aria-selected', i === secili ? 'true' : 'false');
@@ -833,8 +945,15 @@
       kutu.appendChild(vurguluEtiket(karo.etiket, satir.konumlar));
       if (satir.parlaklik !== null && karo.parlaklikKontrol) kutu.appendChild(olustur('span', 'rozet', t('yuzey.yuzde', { n: satir.parlaklik })));
       if (satir.kapat && karo.parlaklikKontrol) kutu.appendChild(olustur('span', 'rozet', t('yuzey.rozet.kapat')));
-      if (satir.desteklenmiyor) kutu.appendChild(olustur('span', 'rozet sessiz', t('yuzey.rozet.desteklenmiyor')));
-      if (karo.yikici) kutu.appendChild(olustur('span', 'rozet uyari', t('yuzey.rozet.basiliTut')));
+      // 1.4.0 servis komutu: rozet ne yapılacağını söyler ("24°", "Sıcak beyaz · 2700 K", "Ses %30"); geçersizse nedenini
+      const komutRozeti = satir.eylem && kartlar ? kartlar.rozetMetni(satir.eylem) : '';
+      if (komutRozeti !== '') kutu.appendChild(olustur('span', 'rozet', komutRozeti));
+      if (komutHatasi) kutu.appendChild(olustur('span', 'rozet sessiz', t(komutHatasi === 'sinir' ? 'yuzey.rozet.sinirDisi' : 'yuzey.rozet.desteklenmiyor')));
+      else if (satir.desteklenmiyor) kutu.appendChild(olustur('span', 'rozet sessiz', t('yuzey.rozet.desteklenmiyor')));
+      if (!satir.eylem && !komutHatasi && karo.varsayilanEylem === false && kartlar && kartlar.komutluMu(karo) && satir.parlaklik === null && !satir.kapat) {
+        kutu.appendChild(olustur('span', 'rozet sessiz', kartlar.ornek(karo))); // eylemi olmayan karo: nasıl komut verileceği
+      }
+      if (onayli) kutu.appendChild(olustur('span', 'rozet uyari', t('yuzey.rozet.basiliTut')));
       kutu.appendChild(olustur('span', 'palet-grup', karo.grupEtiketi));
       kutu.appendChild(olustur('span', 'palet-durum', durumMetni(karo)));
       kutu.addEventListener('mousemove', function () {
@@ -845,8 +964,8 @@
           paletCiz();
         }
       });
-      if (karo.yikici) {
-        const tutma = basiliTutmaOlustur(karo, kutu, paletYanitiniBekle);
+      if (onayli && !komutHatasi) {
+        const tutma = basiliTutmaOlustur(karo, kutu, paletYanitiniBekle, satirServisYuku(satir));
         kutu.addEventListener('pointerdown', function (olay) {
           if (olay.button === 0 || olay.button === undefined) tutma.basla();
         });
@@ -947,11 +1066,12 @@
         }
         // Yazılan sayı bu öğede anlamsız ("ampul 40"): sessizce aç/kapat yapılmasın; sayı silinene kadar Enter bu satırda
         // eylem çalıştırmaz (yıkıcı satır dahil). Satıra fareyle tıklamak bilinçli bir seçimdir ve değişmez (h-13).
+        if (satirKomutHatasi(satir)) return paletCalistir(satir); // tanınan ama geçersiz komut: yalnız nedenini söyler
         if (satir.desteklenmiyor) return;
         if (seviyeAcik) return paletCalistir(satir, SEVIYELER[seviyeSecili]);
-        if (satir.karo.yikici) {
+        if (satirOnayliMi(satir)) {
           // seçili satırda dolum çubuğu görünür (h-31); satır yeniden çizilirse tutma zaten bırakılır
-          paletTutmasi = basiliTutmaOlustur(satir.karo, seciliSatirKutusu, paletYanitiniBekle);
+          paletTutmasi = basiliTutmaOlustur(satir.karo, seciliSatirKutusu, paletYanitiniBekle, satirServisYuku(satir));
           paletTutmasi.basla();
           return;
         }
@@ -1034,6 +1154,7 @@
   }
 
   function ciz() {
+    if (kartlar) kartlar.sifirla(); // önceki çizimin saniyelik sayaçları (zamanlayıcı, medya ilerlemesi) bırakılır
     ustuCiz();
     if (mod === 'palet') paletCiz();
     else panelCiz();

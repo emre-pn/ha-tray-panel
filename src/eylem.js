@@ -182,7 +182,8 @@ function eylemKatmaniOlustur({
     const sonuc = await hat(istek);
     if (sonuc.ok) {
       basariBildir(sonuc, istek);
-      if (YUZEYLER.includes(istek.kaynak) && sonuc.sinif === 'zararsiz') son.ekle(istek.kimlik);
+      // "Son kullanılanlar" tek tıklamayla yinelenebilen eylemleri tutar; servis eylemi (klima 24, ışık rengi, ses 30) yinelenemez.
+      if (YUZEYLER.includes(istek.kaynak) && sonuc.sinif === 'zararsiz' && sonuc.servisEylemi !== true) son.ekle(istek.kimlik);
       if (!canliMi()) zaman.setTimeout(() => Promise.resolve(durumlariYenile()).catch(() => {}), REST_SONRASI_YENILEME_MS);
       return { ok: true, ad: sonuc.ad };
     }
@@ -297,18 +298,23 @@ function eylemKatmaniOlustur({
       return typeof kimlik === 'string' && favoriAl(kimlik) !== undefined;
     },
 
-    /** `--eylem=<ad>` (hiz-05): ad yalnız güvenli favori karoları arasında aranır; belirsizse hiçbir şey çalışmaz. */
+    /**
+     * `--eylem=<ad>` (hiz-05): ad yalnız güvenli favori karoları arasında aranır; belirsizse hiçbir şey çalışmaz.
+     * 1.4.0: "klima 24", "masa sicak", "tv ses 30" gibi servis komutları da çözülür (src/lib/komut-satiri.js); düz ad ise
+     * tek tıklama eylemi olan karolarda aranır. Çıkan servis eylem hattından geçer (izin listesi, sınırlar, onay sınıfı).
+     */
     async komutSatirindan(ad) {
-      // 1.4.0: tek tıklama eylemi olmayan karolar (iklim, sensör...) düz ada eşleşmez.
-      const cozum = eylemAdiniCoz(ad, karolariAl().filter((k) => k.varsayilanEylem !== false));
+      const cozum = eylemAdiniCoz(ad, karolariAl());
       if (cozum.hata) {
         gunluk(`Komut satırı eylemi çözülemedi: ${cozum.hata}`);
-        geriBildirim({ tur: 'hata', metin: t(cozum.hata === 'belirsiz' ? 'sonuc.komutBelirsiz' : 'sonuc.komutBulunamadi') });
+        const anahtar = { belirsiz: 'sonuc.komutBelirsiz', sinir: 'sonuc.komutSinirDisi', desteklenmiyor: 'sonuc.komutDesteklenmiyor', komutGerekli: 'sonuc.komutGerekli' }[cozum.hata] ?? 'sonuc.komutBulunamadi';
+        geriBildirim({ tur: 'hata', metin: t(anahtar) });
         return { ok: false, tur: cozum.hata };
       }
-      let eylemYuku; // "led 40" -> parlaklık, "led 0" -> kapat (turn_off); düz ad -> varlığın kendi eylemi
+      let eylemYuku; // "led 40" -> parlaklık, "led 0" -> kapat (turn_off); "klima 24" -> servis; düz ad -> varlığın kendi eylemi
       if (cozum.parlaklik !== undefined) eylemYuku = { parlaklik: cozum.parlaklik };
       else if (cozum.kapat === true) eylemYuku = { servis: 'turn_off' };
+      else if (typeof cozum.servis === 'string') eylemYuku = cozum.veri === undefined ? { servis: cozum.servis } : { servis: cozum.servis, veri: cozum.veri };
       return calistir({ kimlik: cozum.id, kaynak: 'komut-satiri', eylem: eylemYuku });
     },
   };

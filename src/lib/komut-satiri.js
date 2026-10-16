@@ -12,7 +12,7 @@
  */
 
 const { anahtarKatla, adAnahtari } = require('./metin');
-const { sorguCoz } = require('./arama');
+const { sorguCoz, alanKomutu, komutluAlanMi, kuyrukBolumleri } = require('./arama');
 
 const EYLEM_ARGI = '--eylem';
 const EYLEM_ONEKI = '--eylem=';
@@ -96,15 +96,42 @@ function adiEsle(metin, liste, onek) {
 }
 
 /**
+ * 1.4.0 servis komutu: "klima 24", "masa sicak", "tv ses 30", "ev modu uyku" (arama.js alanKomutu — palette AYNI sözlük).
+ * Sorgunun sonundaki 1-4 sözcük (en kısa önce) eşleşen karonun kendi alanında bir komutsa, kalan baş kısım o komutu kabul
+ * eden karolar arasında ada çözülür. Birden çok karo eşleşirse HİÇBİRİ seçilmez (belirsiz). Komut tanınıp cihaz desteklemiyorsa
+ * ya da değer cihazın aralığı dışındaysa 'desteklenmiyor' / 'sinir' hatası döner. Çıkan servis yine eylem hattından geçer;
+ * onay isteyen servisler (iklim modu gibi) komut satırından çalışmaz ('kaynak-izinsiz').
+ * @returns {{id: string, servis: string, veri?: object}|{hata: 'belirsiz'|'sinir'|'desteklenmiyor'}|null}
+ */
+function servisKomutunuCoz(ad, karolar) {
+  const adaylar = karolar.filter((k) => komutluAlanMi(k?.alan));
+  if (adaylar.length === 0) return null;
+  for (const { bas, kuyruk } of kuyrukBolumleri(ad)) {
+    const komutlular = adaylar.filter((k) => alanKomutu(k, kuyruk) !== null);
+    if (komutlular.length === 0) continue;
+    const s = adiEsle(bas, komutlular, true);
+    if (s.hata === 'belirsiz') return { hata: 'belirsiz' };
+    if (!s.karo) continue;
+    const komut = alanKomutu(s.karo, kuyruk);
+    if (komut.hata) return { hata: komut.hata };
+    return komut.veri === undefined ? { id: s.karo.id, servis: komut.servis } : { id: s.karo.id, servis: komut.servis, veri: komut.veri };
+  }
+  return null;
+}
+
+/**
  * Adı favori karolardan birine çözer. Sıra: tam etiket eşleşmesi, tam nesne kimliği / kimlik, etiket öneki (en az 2 harf).
  * Sondaki sayıdan ÖNCE tam ad denenir ("salon 2" adlı karo varsa o seçilir; h-23). Sonra "led 40", "led 40%", "led %40"
  * sondaki 1-100 sayısı yalnız eşleşen karo parlaklık kontrollü bir ışıksa parlaklık sayılır; "led 0" aynı ışığı kapatır.
+ * Sonra 1.4.0 servis komutları (servisKomutunuCoz). Düz ad ve parlaklık yalnız tek tıklama eylemi olan karolarda aranır
+ * (`varsayilanEylem: false` olan iklim, medya, seçici... karoları yalnız komutla çalışır).
  * @param {string} ad
- * @param {{id: string, etiket: string, parlaklikKontrol?: boolean}[]} karolar zaten güvenli süzülmüş favori karoları
- * @returns {{id: string, parlaklik?: number, kapat?: true}|{hata: 'bulunamadi'|'belirsiz'}}
+ * @param {{id: string, etiket: string, parlaklikKontrol?: boolean, alan?: string, ozellik?: object|null, varsayilanEylem?: boolean}[]} karolar zaten güvenli süzülmüş favori karoları
+ * @returns {{id: string, parlaklik?: number, kapat?: true, servis?: string, veri?: object}|{hata: 'bulunamadi'|'belirsiz'|'sinir'|'desteklenmiyor'|'komutGerekli'}}
  */
 function eylemAdiniCoz(ad, karolar) {
-  const liste = Array.isArray(karolar) ? karolar : [];
+  const tumu = Array.isArray(karolar) ? karolar : [];
+  const liste = tumu.filter((k) => k?.varsayilanEylem !== false);
   const tam = adiEsle(ad, liste, false);
   if (tam.karo) return { id: tam.karo.id };
   if (tam.hata === 'belirsiz') return { hata: 'belirsiz' };
@@ -114,8 +141,16 @@ function eylemAdiniCoz(ad, karolar) {
     if (s.karo?.parlaklikKontrol === true) return kapat === true ? { id: s.karo.id, kapat: true } : { id: s.karo.id, parlaklik };
     if (s.hata === 'belirsiz') return { hata: 'belirsiz' };
   }
+  const komutlu = servisKomutunuCoz(ad, tumu);
+  if (komutlu) return komutlu;
   const s = adiEsle(ad, liste, true);
-  return s.karo ? { id: s.karo.id } : { hata: s.hata };
+  if (s.karo) return { id: s.karo.id };
+  if (s.hata === 'bulunamadi') {
+    // Ad, tek tıklama eylemi olmayan bir karoya (iklim, medya, seçici...) uyuyor ama komut yok: "favoride yok" demek yanıltır.
+    const komutsuz = adiEsle(ad, tumu.filter((k) => k?.varsayilanEylem === false && komutluAlanMi(k.alan)), true);
+    if (komutsuz.karo || komutsuz.hata === 'belirsiz') return { hata: 'komutGerekli' };
+  }
+  return { hata: s.hata };
 }
 
 module.exports = { EYLEM_ARGI, EYLEM_ONEKI, EN_COK_AD, EN_AZ_ONEK_HARFI, eylemIstendiMi, komutSatiriEylemi, eylemAdiniCoz };

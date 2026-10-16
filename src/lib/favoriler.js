@@ -34,9 +34,11 @@ const ETIKET_SINIRI = 40;
 /** Panel grupları: sabit sıra (kullanım dağılımına göre: ışık, sahne, PC, medya, diğer). */
 const GRUPLAR = Object.freeze([
   { kod: 'isik', etiket: 'Işık' },
+  { kod: 'iklim', etiket: 'İklim' }, // 1.4.0: klima, nem alıcı, vantilatör
   { kod: 'sahne', etiket: 'Sahne' },
   { kod: 'pc', etiket: 'PC' },
   { kod: 'medya', etiket: 'Medya' },
+  { kod: 'yardimci', etiket: 'Yardımcılar' }, // 1.4.0: seçici, sayı, zamanlayıcı
   { kod: 'diger', etiket: 'Diğer' },
 ]);
 
@@ -70,14 +72,26 @@ const HAZIR_LISTE = Object.freeze([
 const HAZIR_LISTE_SURUMU = 1;
 const HAZIR_HARITA = new Map(HAZIR_LISTE.map((h) => [h.kimlik, h]));
 
-/** Kimliğin panel grubu: hazır listedeki açık tablo, yoksa alan varsayılanı (light -> isik, scene -> sahne, gerisi diger). */
+/** 1.4.0 alan -> panel grubu (hazır listede olmayan kimlikler için). */
+const ALAN_GRUPLARI = Object.freeze({
+  light: 'isik',
+  scene: 'sahne',
+  climate: 'iklim',
+  humidifier: 'iklim',
+  fan: 'iklim',
+  media_player: 'medya',
+  input_select: 'yardimci',
+  select: 'yardimci',
+  input_number: 'yardimci',
+  number: 'yardimci',
+  timer: 'yardimci',
+});
+
+/** Kimliğin panel grubu: hazır listedeki açık tablo, yoksa alan varsayılanı (ALAN_GRUPLARI; gerisi diger). */
 function grupBul(kimlik) {
   const hazir = HAZIR_HARITA.get(kimlik);
   if (hazir) return hazir.grup;
-  const alan = alanAl(kimlik);
-  if (alan === 'light') return 'isik';
-  if (alan === 'scene') return 'sahne';
-  return 'diger';
+  return ALAN_GRUPLARI[alanAl(kimlik)] ?? 'diger';
 }
 
 /** Medya satırındaki yeri: 'cikis' (ses çıkışı), 'ses' (-/+/sessiz), 'oynat' (oynat/duraklat/sonraki). Medya dışı için null. */

@@ -33,6 +33,15 @@
   --vurgu-metin: #93c5fd; /* eşleşen harfler (seçili satırda >= 4,5) */
   --yikici-metin: #fca5a5; /* yıkıcı etiket ve "basılı tut" alt yazısı */
   --rozet-metin: #0b1220; /* dolu zemin (vurgu, yıkıcı, hata, yedek, canlı) üzerindeki metin */
+  /* Işık renk paleti düğmeleri (lib/arama.js RENK_PALETI ile aynı renkler; metin değil, dolgu): iki temada da aynı */
+  --renk-kirmizi: #ff0000;
+  --renk-turuncu: #ff8c00;
+  --renk-sari: #ffd700;
+  --renk-yesil: #00c83c;
+  --renk-turkuaz: #00d2d2;
+  --renk-mavi: #1e5aff;
+  --renk-mor: #963cff;
+  --renk-pembe: #ff69b4;
 }
 
 /*
@@ -71,6 +80,14 @@
     --vurgu-metin: #1d4ed8;
     --yikici-metin: #b91c1c;
     --rozet-metin: #ffffff;
+    --renk-kirmizi: #ff0000;
+    --renk-turuncu: #ff8c00;
+    --renk-sari: #ffd700;
+    --renk-yesil: #00c83c;
+    --renk-turkuaz: #00d2d2;
+    --renk-mavi: #1e5aff;
+    --renk-mor: #963cff;
+    --renk-pembe: #ff69b4;
   }
 
   :root[data-malzeme] {
@@ -284,6 +301,16 @@ input:focus-visible,
 .grup-isik .bolum-baslik::before {
   content: "💡";
   content: "💡" / "";
+}
+
+.grup-iklim .bolum-baslik::before {
+  content: "🌡";
+  content: "🌡" / "";
+}
+
+.grup-yardimci .bolum-baslik::before {
+  content: "⚙";
+  content: "⚙" / "";
 }
 
 .grup-sahne .bolum-baslik::before {
@@ -509,6 +536,243 @@ input:focus-visible,
 .kaydirici {
   width: 100%;
   accent-color: var(--acik);
+}
+
+/*
+ * 1.4.0 cihaz kartları (yuzey-kartlar.js): iklim, medya, süpürge, seçici, sayı, zamanlayıcı, vantilatör, nem alıcı ve ışığın renk bölümü.
+ * Kart tam genişliktedir (ışık karosu gibi satırı böler). Onay isteyen düğme kesikli kırmızı çerçeveli ve basılı tutulur
+ * (.onayli); renk yalnız değişkenlerden gelir.
+ */
+.kart {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-ust);
+  border: 1px solid var(--kenar);
+  border-radius: 8px;
+}
+
+.kart.yok {
+  opacity: 0.55;
+}
+
+.kart-baslik {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kart-etiket {
+  flex: none;
+  max-width: 55%;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.kart-durum {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  text-align: right;
+  color: var(--soluk);
+  overflow-wrap: anywhere;
+}
+
+.kart-bilgi {
+  font-size: 11px;
+  color: var(--soluk);
+  overflow-wrap: anywhere;
+}
+
+.kart-calan {
+  color: var(--metin);
+  font-size: 12px;
+}
+
+.kart-satir {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.kart-dugme {
+  position: relative;
+  min-width: 34px;
+  padding: 5px 10px;
+  overflow: hidden;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.kart-dugme:hover:not(:disabled) {
+  background: var(--karo-uzerinde);
+}
+
+.kart-dugme:active:not(:disabled) {
+  border-color: var(--vurgu);
+}
+
+.kart-dugme:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Etkin mod / çalan / açık olan düğme: renge ek olarak kalın yazı */
+.kart-dugme.vurgu {
+  border-color: var(--acik);
+  color: var(--acik);
+  font-weight: 600;
+}
+
+.kart-dugme.onayli {
+  border-style: dashed;
+  border-color: var(--yikici);
+}
+
+.kart-dugme.hata {
+  border-color: var(--hata);
+  outline: 2px solid var(--hata);
+  outline-offset: -1px;
+}
+
+.kart-dugme.basari {
+  border-color: var(--canli);
+  outline: 2px solid var(--canli);
+  outline-offset: -1px;
+}
+
+.kart-dugme.basili::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 100%;
+  background: var(--yikici);
+  transform-origin: left center;
+  animation: dolum 800ms linear forwards;
+}
+
+.kart-dugme.guc {
+  margin-left: auto;
+}
+
+.kart-dugme.adim {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.kart-sayisal {
+  flex-wrap: nowrap;
+}
+
+.kart-deger {
+  min-width: 56px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.kart-deger.buyuk {
+  min-width: 72px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.kart-kaydirici {
+  flex: 1;
+  min-width: 60px;
+}
+
+.kart-secici {
+  flex-wrap: nowrap;
+}
+
+.kart-liste {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--metin);
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.kart-liste:focus-visible {
+  outline: 2px solid var(--vurgu);
+  outline-offset: 1px;
+}
+
+.kart-ilerleme {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--vurgu);
+}
+
+/* Işık rengi (o-02): beyaz tonu düğmeleri ve renk paleti (dolgu rengi yalnız değişkenlerden) */
+.kart-renkler {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kart-tonlar .kart-dugme {
+  flex: 1;
+  font-size: 12px;
+}
+
+.kart-dugme.renk {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.renk-kirmizi {
+  background: var(--renk-kirmizi);
+}
+
+.renk-turuncu {
+  background: var(--renk-turuncu);
+}
+
+.renk-sari {
+  background: var(--renk-sari);
+}
+
+.renk-yesil {
+  background: var(--renk-yesil);
+}
+
+.renk-turkuaz {
+  background: var(--renk-turkuaz);
+}
+
+.renk-mavi {
+  background: var(--renk-mavi);
+}
+
+.renk-mor {
+  background: var(--renk-mor);
+}
+
+.renk-pembe {
+  background: var(--renk-pembe);
+}
+
+.kart-dugme.renk:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+/* Işık karosunun içinde renk bölümü ışık karosunun kendi boşluğunu kullanır */
+.isik-karo .kart-renkler {
+  margin-top: 2px;
 }
 
 /* Son kullanılanlar */

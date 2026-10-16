@@ -94,10 +94,13 @@ function karoOlustur(favori, varlik, t = TR) {
  * @returns {{ kod: string, etiket: string, karolar: object[] }[]}
  */
 function karolariGrupla(karolar, t = TR) {
-  const onayli = karolar.filter((k) => k.sinif === 'yikici');
+  // 1.4.0: tek tıklama eylemi olmayan karo (seçici, sayı, zamanlayıcı...) kendi kartında servis başına basılı tutmayla onay ister;
+  // "Onaylı" satırına taşınmaz, kendi grubunda (Yardımcılar...) kalır.
+  const onayliMi = (k) => k.sinif === 'yikici' && k.varsayilanEylem !== false;
+  const onayli = karolar.filter(onayliMi);
   const sonuc = [];
   for (const g of GRUPLAR) {
-    const uyeler = karolar.filter((k) => k.grup === g.kod && k.sinif !== 'yikici');
+    const uyeler = karolar.filter((k) => k.grup === g.kod && !onayliMi(k));
     if (uyeler.length > 0) sonuc.push({ kod: g.kod, etiket: t(`grup.${g.kod}`), karolar: uyeler });
   }
   if (onayli.length > 0) sonuc.push({ kod: 'onayli', etiket: t('grup.onayli'), karolar: onayli });

@@ -1026,6 +1026,17 @@
     siraCiz();
   }
 
+  // 1.4.0: yardımcı değişkenler HA tarafında otomasyon tetikleyebilir ve uygulama bunu göremez (o-06); bu alanlar varsayılan onaylıdır.
+  const YARDIMCI_ALANLAR = ['input_select', 'select', 'input_number', 'number', 'timer'];
+
+  /** Cihaz satırının altındaki kalıcı not (uyarı ya da nerede görüneceği). */
+  function cihazNotu(cihaz) {
+    if (cihaz.alan === 'script' || cihaz.alan === 'scene') return t('ayar.cihaz.scriptSahneUyari');
+    if (YARDIMCI_ALANLAR.indexOf(cihaz.alan) >= 0) return t('ayar.cihaz.yardimciUyari');
+    if (cihaz.tekTiklama === false) return t('ayar.cihaz.yalnizPanelNotu');
+    return '';
+  }
+
   // Onay kutusunun görünen değeri: zorunluysa işaretli; sonra bu oturumdaki değişiklik, ayardaki değer, varsayılan.
   function etkinOnay(kimlik, cihaz) {
     if (cihaz && cihaz.onayZorunlu) return true;
@@ -1081,7 +1092,10 @@
       satir.appendChild(el('span', 'sira-ad', gorunenAd(kimlik)));
       let konum;
       let tepside = false;
-      if (onayliMi(kimlik)) {
+      const satirCihazi = cihazHaritasi.get(kimlik);
+      if (satirCihazi && satirCihazi.tekTiklama === false) {
+        konum = t('ayar.sira.yalnizPanel'); // 1.4.0: tek tıklama eylemi olmayan karo (klima, medya, seçici...) tepsi menüsüne girmez
+      } else if (onayliMi(kimlik)) {
         konum = t('ayar.sira.onayli');
       } else {
         zararsiz += 1;
@@ -1424,7 +1438,7 @@
           durum: cihaz.durum || '',
           secili: secili.has(cihaz.entity_id),
           secilebilir: true,
-          notMetni: cihaz.alan === 'script' || cihaz.alan === 'scene' ? t('ayar.cihaz.scriptSahneUyari') : '',
+          notMetni: cihazNotu(cihaz),
           cihaz: cihaz,
         }),
       );
