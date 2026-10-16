@@ -92,6 +92,7 @@ function butunKullaniciMetinleri() {
     ['ayarDosyasiBozukMetni(bak)', metinler.ayarDosyasiBozukMetni('ayarlar.bozuk-1.json', true)],
     ['alanlarSifirlandiMetni', metinler.alanlarSifirlandiMetni(['favoriler', 'panolar'], 'ayarlar.hatali-1.json')],
     ['semaDahaYeniMetni', metinler.semaDahaYeniMetni(9, 'ayarlar.v9-yedek.json')],
+    ['eskiSurumYedegiMetni', metinler.eskiSurumYedegiMetni('ayarlar.v6-yedek-1760000000123.json')],
     ['kisayolSifirlandiMetni(ana)', metinler.kisayolSifirlandiMetni('ana', 'Ctrl+Alt+H')],
     ['kisayolSifirlandiMetni(palet)', metinler.kisayolSifirlandiMetni('palet', 'Ctrl+Alt+P')],
     ['anaKisayolAlinamadiMetni', metinler.anaKisayolAlinamadiMetni('Ctrl+Alt+H')],
@@ -167,6 +168,23 @@ test('h-11: daha yeni şema metni sürümü, korunan ayarları ve yedek adını 
   assert.match(m, /korunuyor/);
   assert.match(m, /"ayarlar\.v9-yedek\.json"/);
   assert.doesNotMatch(metinler.semaDahaYeniMetni(9), /adıyla/);
+});
+
+test('eski sürüm yedeği metni: ne olduğunu, geri alındığını, yedeğin adını ve istemediklerini Ayarlar\'dan kaldırabileceğini söyler; beş dilde yer tutucu kalmaz', () => {
+  const m = metinler.eskiSurumYedegiMetni('ayarlar.v6-yedek-1760000000123.json');
+  assert.match(m, /daha eski bir sürümü/);
+  assert.match(m, /favoriler ve ayarlar/);
+  assert.match(m, /yedekten geri alındı/);
+  assert.match(m, /"ayarlar\.v6-yedek-1760000000123\.json" adıyla saklandı/);
+  assert.match(m, /Ayarlar’dan kaldırabilirsin/);
+  assert.doesNotMatch(metinler.eskiSurumYedegiMetni(), /adıyla/, 'yedek adı yoksa iddia edilmez');
+  const ANA = require('../src/lib/ceviri/ana');
+  for (const dil of ['tr', 'en', 'de', 'fr', 'es']) {
+    const t = (anahtar, degiskenler) => ANA[dil][anahtar].replace(/\{(\w+)\}/g, (_, a) => degiskenler?.[a] ?? `{${a}}`);
+    const metin = metinler.eskiSurumYedegiMetni('ayarlar.v6-yedek-1760000000123.json', t);
+    assert.doesNotMatch(metin, /\{\w+\}/, `${dil}: doldurulmamış yer tutucu`);
+    assert.ok(metin.includes('ayarlar.v6-yedek-1760000000123.json'), `${dil}: yedek adı`);
+  }
 });
 
 test('h-33: kısayol sıfırlama metni ana ve palet için ayrı söylenir ve yeni değeri gösterir', () => {

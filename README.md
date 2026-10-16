@@ -19,7 +19,7 @@ English | [Türkçe](README.tr.md)
 - Notifications in the panel for Home Assistant messages, low batteries and updates, with alert rules and quiet hours. Desktop notifications are optional.
 - Light, dark and high-contrast themes with preset or custom colours, text size, Windows 11 mica/acrylic, and an interface in English, Turkish, German, French and Spanish.
 - Settings search, settings export/import with automatic backups, a diagnostics report without secrets, and an opt-in update check (off by default).
-- A portable build that needs no installation.
+- A portable build that needs no installation. It shares its settings folder with the installed app, so avoid running 1.3.0 or older next to this version: they rewrite the settings file without the newer fields (favorites, tile fields, language). The app restores them from the saved older-version backup on its next start.
 
 ## Safety
 

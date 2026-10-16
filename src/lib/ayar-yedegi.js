@@ -15,6 +15,10 @@
  * Kurallar
  *  - Şema güncelse (ya da dosya boşsa) hiçbir şey yapılmaz.
  *  - Aynı sürümün yedeği zaten varsa ona DOKUNULMAZ (COPYFILE_EXCL: var olan dosya asla ezilmez).
+ *  - Daha yeni şemalı dosyada (2) var olan yedeğin içeriği şimdiki dosyadan FARKLIysa (ör. ileri sürüme dönülüp yeni favoriler eklendi,
+ *    sonra yine eski sürüme geçildi) şimdiki dosya ayrıca zaman damgalı bir kopyaya alınır: ayarlar.v6-yedek-<zaman>.json. Aynı içerik
+ *    bir yedekte zaten varsa yeni kopya açılmaz; her şema için en yeni EN_COK_ZAMANLI_YEDEK kopya tutulur, gerisi silinir.
+ *    (Eski sürümler bu kuralı bilmez: onların aldığı ayarlar.v<N>-yedek.json'u yeni sürüm yedek-kurtarma.js ile devralır.)
  *  - Kopyalama başarısız olursa göç DURMAZ; günlüğe sırsız tek satır yazılır (yalnız hata kodu, yol/ileti yok).
  *  - Bozuk dosya buradan geçmez: ana süreçteki 'ayarlar.bozuk-<zaman>.json' yolu aynen kalır.
  */
@@ -28,8 +32,19 @@ const { aktarilanAlanlar } = require('./ayar-alanlari');
 
 const GUVENLI_HATA_KODU = /^[A-Z0-9_]{1,20}$/;
 
-/** Örn. 1 -> 'ayarlar.v1-yedek.json'. */
-const yedekDosyaAdi = (surum) => `ayarlar.v${surum}-yedek.json`;
+/** Her şema sürümü için tutulan zaman damgalı yedek sayısı (en yeniler). */
+const EN_COK_ZAMANLI_YEDEK = 5;
+
+/** Örn. 1 -> 'ayarlar.v1-yedek.json'; zaman verilirse 'ayarlar.v1-yedek-<zaman>.json' (zaman: ms, 13 haneye sıfırla tamamlanır). */
+const yedekDosyaAdi = (surum, zaman) => (zaman === undefined ? `ayarlar.v${surum}-yedek.json` : `ayarlar.v${surum}-yedek-${String(zaman).padStart(13, '0')}.json`);
+
+/** 'ayarlar.v<surum>-yedek-<zaman>.json' adının zamanı (ms); bu şemanın zaman damgalı yedeği değilse null. */
+function zamanliYedekZamani(ad, surum) {
+  const bas = `ayarlar.v${surum}-yedek-`;
+  if (typeof ad !== 'string' || !ad.startsWith(bas) || !ad.endsWith('.json')) return null;
+  const zaman = ad.slice(bas.length, -'.json'.length);
+  return /^\d{10,15}$/.test(zaman) ? Number(zaman) : null;
+}
 
 /** Alan tipi hatası yedeğinin adı: 'ayarlar.hatali-<zaman>.json' (aynı saniyede ikinci çağrı da ezmez; zaman ms). */
 const hataliYedekDosyaAdi = (zaman) => `ayarlar.hatali-${zaman}.json`;
@@ -47,6 +62,69 @@ function gunlugeYaz(gunluk, mesaj) {
 }
 
 /**
+ * Bu şemanın zaman damgalı yedeklerinden en yeni `koru` tanesi kalır, gerisi silinir. Yalnız uygulamanın kendi yedek adlarına dokunur
+ * (ayarlar.v<N>-yedek-<zaman>.json); kanonik ayarlar.v<N>-yedek.json ve başka dosyalar silinmez. koruAdlar: ne olursa olsun silinmeyecek adlar
+ * (yeni alınan yedek, saat geriye alınmış olsa da budanmasın). Hata fırlatmaz.
+ * @returns {string[]} silinen dosya adları
+ */
+function zamanliYedekleriBud({ dizin, surum, fs = require('node:fs'), koru = EN_COK_ZAMANLI_YEDEK, koruAdlar = [] } = {}) {
+  const silinen = [];
+  try {
+    const yedekler = fs
+      .readdirSync(dizin)
+      .map((ad) => ({ ad, zaman: zamanliYedekZamani(ad, surum) }))
+      .filter((y) => y.zaman !== null)
+      .sort((a, b) => b.zaman - a.zaman);
+    for (const y of yedekler.slice(koru)) {
+      if (koruAdlar.includes(y.ad)) continue;
+      try {
+        fs.unlinkSync(path.join(dizin, y.ad));
+        silinen.push(y.ad);
+      } catch {
+        /* silinemeyen yedek bir sonraki açılışta yeniden denenir */
+      }
+    }
+  } catch {
+    /* klasör okunamadı: budama atlanır */
+  }
+  return silinen;
+}
+
+/**
+ * Daha yeni şemalı dosyanın kanonik yedeği zaten varken (ayarlar.v<N>-yedek.json, EEXIST): şimdiki dosya var olan yedeklerin hiçbiriyle
+ * aynı değilse zaman damgalı yeni bir kopya alınır. Karşılaştırma yapılamıyorsa (dosya okunamadı) null döner ve eski davranış sürer.
+ * @returns {{ durum: 'alindi'|'zaten-var', yedek: string }|null}
+ */
+function yeniSemaEkYedegiAl({ dosya, surum, fs, gunluk, zaman = Date.now() }) {
+  const dizin = path.dirname(dosya);
+  let simdiki;
+  let adlar;
+  try {
+    simdiki = Buffer.from(fs.readFileSync(dosya));
+    adlar = fs.readdirSync(dizin);
+  } catch {
+    return null;
+  }
+  for (const aday of [yedekDosyaAdi(surum), ...adlar.filter((ad) => zamanliYedekZamani(ad, surum) !== null)]) {
+    try {
+      if (Buffer.from(fs.readFileSync(path.join(dizin, aday))).equals(simdiki)) return { durum: 'zaten-var', yedek: aday };
+    } catch {
+      /* okunamayan aday atlanır */
+    }
+  }
+  const ad = yedekDosyaAdi(surum, zaman);
+  try {
+    fs.copyFileSync(dosya, path.join(dizin, ad), constants.COPYFILE_EXCL);
+  } catch (hata) {
+    if (hata?.code !== 'EEXIST') gunlugeYaz(gunluk, `Daha yeni şemalı ayar dosyasının ek yedeği alınamadı (${hataKodu(hata)}); açılış yine de sürüyor.`);
+    return null;
+  }
+  zamanliYedekleriBud({ dizin, surum, fs, koruAdlar: [ad] });
+  gunlugeYaz(gunluk, `Daha yeni şemalı ayar dosyası var olan yedekten farklı; ayrıca yedeklendi: ${ad}`);
+  return { durum: 'alindi', yedek: ad };
+}
+
+/**
  * @param {{ dosya: string, ham: unknown, fs?: { copyFileSync: Function }, gunluk?: (mesaj: string) => void }} girdi
  *   dosya: ayarlar.json yolu; ham: dosyadan okunup ayrıştırılmış içerik (bozuk dosya için çağrılmaz)
  * @returns {{ durum: 'gerekmedi'|'alindi'|'zaten-var'|'alinamadi', yedek: string|null }}
@@ -59,7 +137,10 @@ function gocOncesiYedegiAl({ dosya, ham, fs = require('node:fs'), gunluk = () =>
   try {
     fs.copyFileSync(dosya, path.join(path.dirname(dosya), ad), constants.COPYFILE_EXCL);
   } catch (hata) {
-    if (hata?.code === 'EEXIST') return { durum: 'zaten-var', yedek: ad };
+    if (hata?.code === 'EEXIST') {
+      // Yalnız daha YENİ şemalı dosyada: var olan yedek şimdiki dosyadan farklıysa ek (zaman damgalı) kopya alınır.
+      return (yeni ? yeniSemaEkYedegiAl({ dosya, surum: oncekiSemaSurumu(ham), fs, gunluk }) : null) ?? { durum: 'zaten-var', yedek: ad };
+    }
     gunlugeYaz(gunluk, `${yeni ? 'Daha yeni şemalı ayar dosyasının yedeği' : 'Göç öncesi ayar yedeği'} alınamadı (${hataKodu(hata)}); ${yeni ? 'açılış' : 'göç'} yine de sürüyor.`);
     return { durum: 'alinamadi', yedek: null };
   }
@@ -93,7 +174,8 @@ const AKTARIM_BICIMI = 'ev-paneli-ayar-yedegi';
 const AKTARIM_SURUMU = 1;
 const AKTARIM_BAYT_SINIRI = 512 * 1024; // içe aktarılan/geri dönülen dosya için üst sınır
 // Yedek listesinde yalnız bu adlar görünür ve geri dönülebilir: göç yedeği ve bozuk dosya kopyası (main.js ayarlariYukle).
-const YEDEK_DOSYA_DESENI = /^ayarlar\.(?:v(\d{1,3})-yedek|bozuk-(\d{10,15}))\.json$/;
+// (1: şema sürümü, 2: zaman damgalı göç yedeğinin zamanı, 3: bozuk dosya kopyasının zamanı)
+const YEDEK_DOSYA_DESENI = /^ayarlar\.(?:v(\d{1,3})-yedek(?:-(\d{10,15}))?|bozuk-(\d{10,15}))\.json$/;
 // Kullanıcının seçtiği ayarlar. Pencere ölçüleri, hazır liste sürümü, engellenen favoriler vb. aktarılmaz.
 // Erişim anahtarı ayrı şifreli dosyada durur ve ASLA aktarılmaz: ayar nesnesine yanlışlıkla gizli bir alan girse bile
 // bu BEYAZ LİSTE dışında kaldığı için dosyaya yazılmaz (ayrıca metin, JWT benzeri değer için taranır).
@@ -260,7 +342,7 @@ function yedekleriListele({ dizin, fs = require('node:fs') } = {}) {
       ad,
       tur: goc ? 'goc' : 'bozuk',
       surum: goc ? Number(e[1]) : null,
-      zaman: goc ? Math.round(bilgi.mtimeMs) : Number(e[2]),
+      zaman: goc ? (e[2] !== undefined ? Number(e[2]) : Math.round(bilgi.mtimeMs)) : Number(e[3]),
       bayt: bilgi.size,
       okunabilir: okunan.ok && !!duzNesne(okunan.ham),
     });
@@ -273,7 +355,12 @@ module.exports = {
   AKTARIM_SURUMU,
   AKTARIM_BAYT_SINIRI,
   AKTARILAN_ALANLAR,
+  EN_COK_ZAMANLI_YEDEK,
   yedekDosyaAdi,
+  zamanliYedekZamani,
+  zamanliYedekleriBud,
+  hataKodu,
+  gunlugeYaz,
   hataliYedekDosyaAdi,
   gocOncesiYedegiAl,
   hataliAlanYedegiAl,

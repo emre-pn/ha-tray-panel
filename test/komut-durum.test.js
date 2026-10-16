@@ -147,7 +147,7 @@ test('durumDosyasiYaz: JSON yazar (geçici dosya kalmaz), var olan dosyayı değ
     assert.deepEqual(JSON.parse(fs.readFileSync(yol, 'utf8')), JSON.parse(JSON.stringify(belge)));
     assert.ok(fs.readFileSync(yol, 'utf8').endsWith('\n'));
     assert.deepEqual(fs.readdirSync(path.join(g.ev, 'Belgeler')), ['durum.json'], 'geçici dosya kalmadı');
-    fs.writeFileSync(yol, 'eski', 'utf8');
+    fs.writeFileSync(yol, JSON.stringify(durumBelgesiOlustur({ simdi: SIMDI, karolar: [] })), 'utf8'); // önceki durum belgesi
     assert.equal(durumDosyasiYaz(yol, belge, { ev: g.ev }).ok, true);
     assert.equal(JSON.parse(fs.readFileSync(yol, 'utf8')).favoriSayisi, 1);
     assert.deepEqual(durumDosyasiYaz(path.join(g.ev, 'yokKlasor', 'd.json'), belge, { ev: g.ev }), { ok: false, neden: 'yazilamadi' });
@@ -170,6 +170,42 @@ test('durumDosyasiYaz: hedef klasör ya da düz olmayan dosyaysa, ya da yasak kl
       assert.equal(durumDosyasiYaz(path.join(baskaKok, 'x.json'), belge, { ev: g.ev }).ok, false, 'kullanıcı klasörü dışına yazılmaz');
     } finally {
       fs.rmSync(baskaKok, { recursive: true, force: true });
+    }
+  } finally {
+    g.temizle();
+  }
+});
+
+test('durumDosyasiYaz: kullanıcı klasöründeki başka bir .json dosyasının üzerine yazılmaz; yalnız boş dosya ve önceki durum belgesi ezilir', () => {
+  const g = gecici();
+  try {
+    const belge = durumBelgesiOlustur({ simdi: SIMDI, karolar: [karo('light.masa', 'Masa')] });
+    const yol = path.join(g.ev, 'Belgeler', 'durum.json');
+    const baskalari = {
+      'baska json nesnesi': JSON.stringify({ 'editor.fontSize': 14, bicim: 'baska-bicim' }),
+      'json dizisi': '[1,2,3]',
+      'json null': 'null',
+      'json metni': '"ev-paneli-durum"',
+      'json olmayan metin': 'önemli notlarım',
+      'bicim alanı iç içe': JSON.stringify({ ayrinti: { bicim: BELGE_BICIMI } }),
+      'yarım durum belgesi': `{ "bicim": "${BELGE_BICIMI}", "tur": `,
+      'uygulamanın ayar yedeği': JSON.stringify({ sema: 6, ayarlar: { favoriler: ['light.masa'] } }),
+    };
+    for (const [ad, icerik] of Object.entries(baskalari)) {
+      fs.writeFileSync(yol, icerik, 'utf8');
+      assert.deepEqual(durumDosyasiYaz(yol, belge, { ev: g.ev }), { ok: false, neden: 'baska-dosya' }, ad);
+      assert.equal(fs.readFileSync(yol, 'utf8'), icerik, `${ad}: dosya değişmedi`);
+      assert.deepEqual(fs.readdirSync(path.join(g.ev, 'Belgeler')), ['durum.json'], `${ad}: geçici dosya bırakılmadı`);
+    }
+    // çok büyük hedef okunmadan reddedilir
+    const buyuk = JSON.stringify({ bicim: BELGE_BICIMI, dolgu: 'x'.repeat(1024 * 1024 + 10) });
+    fs.writeFileSync(yol, buyuk, 'utf8');
+    assert.deepEqual(durumDosyasiYaz(yol, belge, { ev: g.ev }), { ok: false, neden: 'baska-dosya' }, 'büyük dosya');
+    // izin verilenler: boş dosya, önceki durum belgesi (BOM'lu da), önceki --liste belgesi
+    for (const icerik of ['', JSON.stringify(durumBelgesiOlustur({ simdi: SIMDI })), `﻿${JSON.stringify(durumBelgesiOlustur({ simdi: SIMDI }))}`, JSON.stringify(durumBelgesiOlustur({ simdi: SIMDI, liste: true, karolar: [karo('light.masa', 'Masa')] }), null, 2)]) {
+      fs.writeFileSync(yol, icerik, 'utf8');
+      assert.deepEqual(durumDosyasiYaz(yol, belge, { ev: g.ev }), { ok: true }, `izinli: ${icerik.slice(0, 20)}`);
+      assert.equal(JSON.parse(fs.readFileSync(yol, 'utf8')).bicim, BELGE_BICIMI);
     }
   } finally {
     g.temizle();

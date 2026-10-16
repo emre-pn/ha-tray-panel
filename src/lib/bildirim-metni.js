@@ -171,6 +171,15 @@ function semaDahaYeniMetni(surum, yedekAdi = '', t = TR) {
   return t('bildirim.semaDahaYeni', { surum, yedek });
 }
 
+/**
+ * Daha eski bir Ev Paneli sürümü (aynı ayar klasörünü kullanan kurulu ya da taşınabilir sürüm) ayar dosyasını yazarken düşürdüğü
+ * favoriler ve ayarlar, onun bıraktığı yedekten geri alındı (src/lib/yedek-kurtarma.js). yedekAdi: yedeğin saklandığı dosya adı.
+ */
+function eskiSurumYedegiMetni(yedekAdi = '', t = TR) {
+  const yedek = yedekAdi ? t('bildirim.ozgunSaklandi', { ad: yedekAdi }) : '';
+  return t('bildirim.eskiSurumYedegi', { yedek });
+}
+
 /** Kayıtlı ana kısayol / palet kısayolu geçersizdi ve varsayılana döndürüldü (h-33: palet için de bildirilir). */
 function kisayolSifirlandiMetni(tur, gosterilen, t = TR) {
   return t(tur === 'palet' ? 'bildirim.kisayolSifirlandi.palet' : 'bildirim.kisayolSifirlandi.ana', { gosterilen });
@@ -237,6 +246,7 @@ module.exports = {
   ikinciOnayMetni,
   kisayolSifirlandiMetni,
   semaDahaYeniMetni,
+  eskiSurumYedegiMetni,
   YEREL_YASAK_BILDIRIMI,
   YEREL_YASAK_KISA_METNI,
   YEREL_YASAK_MENU_METNI,

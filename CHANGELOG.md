@@ -17,6 +17,9 @@ Update by running `Ev-Paneli-Kurulum-1.4.0.exe` over the installed version. The 
 - **Portable build:** `npm run dist:tasinabilir` makes `Ev-Paneli-Tasinabilir-<version>.exe`. It uses the same settings as the installed app and has no "start with Windows".
 - **Update check:** Off by default. When you turn it on, the app asks GitHub for the latest release at most once a day. Your address and token are never sent, nothing is downloaded and the release page opens only when you click.
 - **Safety rule:** "siren" is now a blocked word, as the siren domain already was. Anything with it in the name or id is never listed, run or added to favorites.
+- **Safety rule in German, French and Spanish:** The door rule now also blocks door, gate, lock, shutter and intercom words in these languages (for example `Türöffner`, `portail`, `cerradura`). Before, these names could be run from the tray, a hotkey or the command line without a confirmation. The rule text in Settings now lists them.
+- **Older version on the same settings folder:** If 1.3.0 or older runs on the same folder and drops newer favorites, tile fields or the interface language, the next start restores them from the saved older-version backup and says so. The app now keeps up to 5 such backups instead of one.
+- **Smaller fixes:** `--durum` and `--liste` only overwrite an empty file or an earlier status file, never another `.json` file. The diagnostics report also masks any host name, your Windows user name and the hosts from your settings in log lines. A top card can only be a sensor or binary sensor (other types were never shown) and is no longer registered as an entity the panel can run.
 
 ### 1.3.0 — 2026-10-16
 

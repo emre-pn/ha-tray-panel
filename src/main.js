@@ -54,6 +54,7 @@ const { EN_COK_ENGELLENEN, ayarlariDuzelt } = require('./lib/ayar-sema');
 const { aktarilanAlanlar, ekAyarlariUygula, ekAyarOzeti } = require('./lib/ayar-alanlari');
 const { ayarGirdisiniDogrula, kisayolKaydiSonrasiUyarilar } = require('./lib/ayar-kaydet');
 const { gocOncesiYedegiAl, hataliAlanYedegiAl } = require('./lib/ayar-yedegi');
+const { eskiSurumYedeginiDevral } = require('./lib/yedek-kurtarma');
 const { ayarAktariciOlustur } = require('./lib/ayar-aktar');
 const { adresSinayiciOlustur } = require('./lib/adres-sina');
 const { sayfaYanitiBozukMu } = require('./lib/yoklama');
@@ -98,6 +99,7 @@ const {
   ekKisayollarUygulanamadiMetni,
   kisayolSifirlandiMetni,
   semaDahaYeniMetni,
+  eskiSurumYedegiMetni,
   HTTP_ANAHTAR_GUNLUK_SATIRI,
   ayarDosyasiBozukMetni,
   ikinciOnayMetni,
@@ -448,13 +450,19 @@ function ayarlariYukle() {
   }
   // Şema düzeltme ve göç (src/lib/ayar-sema.js): bilinmeyen/bozuk alanlar düzelir, eski pencere biçimi taşınır.
   // Süzgeçten elenen favoriler sessiz silinmez: açılışta tek bildirim + günlük (acilisBildirimleriniGoster).
-  const { ayarlar: sonuc, notlar, atilanlar, onayIstenenler, sifirlananlar } = ayarlariDuzelt(bakHam ?? ham ?? {}, { varsayilan: varsayilanlariOku() });
+  const varsayilan = varsayilanlariOku();
+  const { ayarlar: duzeltilen, notlar, atilanlar, onayIstenenler, sifirlananlar } = ayarlariDuzelt(bakHam ?? ham ?? {}, { varsayilan });
   // Eski (ya da kendinden YENİ) şemadan gelen dosya, aşağıda yeni biçimiyle üzerine yazılmadan ÖNCE aynı klasöre
   // ayarlar.v<sürüm>-yedek.json olarak kopyalanır (src/lib/ayar-yedegi.js; var olan yedek ezilmez, kopyalama başarısızsa göç
   // durmaz). Bozuk dosyada ham null'dır: o yol yukarıdaki 'bozuk' yedeğiyle zaten ele alındı.
   const semaYedegi = gocOncesiYedegiAl({ dosya, ham, fs, gunluk });
   // Tipi bozuk alanlar varsayılana döndüyse (h-33) özgün dosya zaman damgalı bir kopyaya alınır.
   const hataliYedek = ham !== null && sifirlananlar.length > 0 ? hataliAlanYedegiAl({ dosya, fs, gunluk }).yedek : null;
+  // Aynı klasörü kullanan daha eski bir sürüm (1.3.0; taşınabilir derleme dahil) bu dosyayı açıp üzerine yazdıysa, düşürdüğü bilgiler
+  // (iklim/medya/sensör favorileri, simge-renk-boyut, dil seçimi) onun aldığı ayarlar.v<şema>-yedek.json'dan geri alınır
+  // (src/lib/yedek-kurtarma.js). Yalnız gerçekten okunan bir ayar dosyasında çalışır (ham null değilse).
+  const devir = eskiSurumYedeginiDevral({ dizin: path.dirname(dosya), ayarlar: duzeltilen, ham: ayarYazimiEngelli ? null : ham, varsayilan, fs, gunluk });
+  const sonuc = devir.ayarlar;
   // Bozuk dosya sessizce sıfırlanmaz: açılışta yedek dosya adıyla bildirilir (acilisBildirimleriniGoster).
   acilisBildirimleri = {
     notlar: [...notlar, ...(bozukDosyaYedegi === null ? [] : ['ayar-dosyasi-bozuk']), ...(okunamadi ? ['ayar-dosyasi-okunamadi'] : [])],
@@ -466,7 +474,15 @@ function ayarlariYukle() {
     hataliYedek,
     semaYedegi: semaYedegi.yedek,
   };
-  ayarlariYaz(sonuc); // ayarYazimiEngelli iken yazmaz (dosya okunamadıysa ya da bozuk dosya saklanamadıysa)
+  // ayarYazimiEngelli iken yazmaz (dosya okunamadıysa ya da bozuk dosya saklanamadıysa)
+  if (ayarlariYaz(sonuc)) {
+    // Geri alınanlar artık kayıtlı: eski sürümün yedeği kenara alınır (bir sonraki gidişte yeniden yedek alabilsin) ve kullanıcıya söylenir.
+    const kenar = devir.tuket();
+    if (devir.geriAlindi) {
+      acilisBildirimleri.notlar.push('eski-surum-yedegi');
+      acilisBildirimleri.eskiSurumYedegi = kenar ?? devir.yedek;
+    }
+  }
   return sonuc;
 }
 
@@ -487,8 +503,8 @@ function httpAnahtarUyarisiniGoster() {
 
 /** Ayar yüklenirken bulunan düzeltmeleri kullanıcıya bir kez bildirir (sessiz değişiklik yok). */
 function acilisBildirimleriniGoster() {
-  const { notlar, atilanlar, onayIstenenler, bozukDosyaYedegi, bakTenGeriYuklendi, sifirlananlar, hataliYedek, semaYedegi } = acilisBildirimleri;
-  acilisBildirimleri = { notlar: [], atilanlar: [], onayIstenenler: [], bozukDosyaYedegi: null, bakTenGeriYuklendi: false, sifirlananlar: [], hataliYedek: null, semaYedegi: null };
+  const { notlar, atilanlar, onayIstenenler, bozukDosyaYedegi, bakTenGeriYuklendi, sifirlananlar, hataliYedek, semaYedegi, eskiSurumYedegi } = acilisBildirimleri;
+  acilisBildirimleri = { notlar: [], atilanlar: [], onayIstenenler: [], bozukDosyaYedegi: null, bakTenGeriYuklendi: false, sifirlananlar: [], hataliYedek: null, semaYedegi: null, eskiSurumYedegi: null };
   if (notlar.includes('ayar-dosyasi-okunamadi')) {
     bildir(t('bildirim.ayarOkunamadi')); // günlük satırı okuma anında yazıldı (ayarlariYukle)
   }
@@ -514,6 +530,10 @@ function acilisBildirimleriniGoster() {
     // h-11: dosya bu sürümden daha yeni bir Ev Paneli ile kaydedilmiş; bilinmeyen ayarlar korundu, özgün dosya yedeklendi.
     gunluk('Ayar dosyası daha yeni bir şemada; bilinmeyen alanlar korundu.');
     bildir(semaDahaYeniMetni(ayarlar.semaSurumu, semaYedegi ?? '', t));
+  }
+  if (notlar.includes('eski-surum-yedegi')) {
+    // Daha eski bir sürüm ayar dosyasını yazarken düşürdüğü favoriler ve ayarlar yedekten geri alındı (günlük satırı yedek-kurtarma.js'de).
+    bildir(eskiSurumYedegiMetni(eskiSurumYedegi ?? '', t));
   }
   const elenen = atilanlar.filter((a) => a.neden !== 'tekrar').length;
   if (elenen > 0) {
@@ -2450,7 +2470,7 @@ async function durumKomutuCalistir(komut) {
   const yazim = durumDosyasiYaz(cikti.yol, belge, { ev: app.getPath('home'), yasakKlasorler: ciktiYasakKlasorleri() });
   if (!yazim.ok) {
     gunluk(`Durum dosyası yazılamadı (${yazim.neden}).`);
-    geriBildirim({ tur: 'hata', metin: t('sonuc.durumYazilamadi') });
+    geriBildirim({ tur: 'hata', metin: t(yazim.neden === 'baska-dosya' ? 'sonuc.durumDosyaBaska' : 'sonuc.durumYazilamadi') });
     return { ok: false, tur: yazim.neden };
   }
   gunluk(`Durum dosyası yazıldı (${belge.tur}, ${belge.favoriSayisi} favori).`); // yol günlüğe yazılmaz (kişisel klasör adı içerebilir)
@@ -2576,7 +2596,19 @@ function yenilikleriGetir() {
  * Metin her çağrıda ana süreçte kurulur (renderer metin yollamaz); kopyalama da aynı metni panoya yazar.
  */
 function tanilamaRaporu() {
+  const kullaniciAdlari = [];
+  try {
+    kullaniciAdlari.push(os.userInfo().username);
+  } catch {
+    // kullanıcı bilgisi okunamazsa yalnız klasör adıyla yetinilir
+  }
+  try {
+    kullaniciAdlari.push(path.basename(app.getPath('home')));
+  } catch {
+    // kullanıcı klasörü bilinmiyorsa genel kurallar (C:\Users\<ad>) yine çalışır
+  }
   return raporOlustur({
+    kullaniciAdlari,
     simdi: new Date(),
     uygulamaSurumu: uygulamaSurumu(),
     paketTuru: tasinabilirMi() ? 'tasinabilir' : app.isPackaged ? 'kurulu' : 'gelistirme',

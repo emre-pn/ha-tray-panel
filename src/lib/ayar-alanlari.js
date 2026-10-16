@@ -35,7 +35,7 @@
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
 const { alanAl, adGuvenliMi, metinGuvenliMi } = require('./suzgec');
-const { kayitliAlanMi, karoAlaniMi } = require('./alan-kaydi');
+const { kayitliAlanMi } = require('./alan-kaydi');
 const { kisalt } = require('./metin');
 const { sayfalariDuzelt } = require('./sayfalar');
 const { KONUM_MODLARI, VARSAYILAN_KONUM_MODU, OPAKLIK_SINIRI, konumlariDuzelt, tercihEkranDuzelt } = require('./pencere-yerlesim');
@@ -44,6 +44,7 @@ const { METIN_OLCEKLERI, VARSAYILAN_METIN_OLCEGI, HAZIR_TEMA_ADLARI, HAVA_EFEKTI
 const { kurallariDuzelt } = require('./uyari-kurallari');
 
 const GUNCEL_EK_SURUM = 6;
+const KART_VARLIK_ALANLARI = Object.freeze(['sensor', 'binary_sensor']); // üst kartta gösterilebilen (salt okunur) varlık alanları
 const KORUNAN_ADLAR = new Set(['__proto__', 'constructor', 'prototype', 'semaSurumu']);
 const AD_DESENI = /^[a-z][A-Za-z0-9]{1,40}$/;
 
@@ -163,8 +164,10 @@ const TEMA_ALANLARI = [
 ];
 
 /**
- * Panelin üst kart yuvası (o-08): 'yok' | 'saat' (saat ve tarih) | 'hava' (havaVarligi) | karo olabilen herhangi bir varlık kimliği
- * (yalnız durumu gösterilir; karttan eylem çalıştırılmaz). Kimlik Kapı Kuralı'ndan ve alan kaydından geçmelidir.
+ * Panelin üst kart yuvası (o-08): 'yok' | 'saat' (saat ve tarih) | 'hava' (havaVarligi) | bir sensor / binary_sensor kimliği
+ * (yalnız durumu gösterilir; karttan eylem çalıştırılmaz). Kimlik Kapı Kuralı'ndan geçmelidir. Işık, anahtar, script gibi eylem
+ * alanları kabul edilmez: kart onları göstermez ve salt okunur kart eylem hattına kayıtlı varlık olarak girmemelidir
+ * (src/lib/bilgi-modeli.js bilgiKimlikleri).
  */
 function kartYuvasiAlan(ad) {
   return nesneAlan(ad, {
@@ -174,7 +177,7 @@ function kartYuvasiAlan(ad) {
       if (typeof ham !== 'string') return undefined;
       const m = ham.trim();
       if (m === 'yok' || m === 'saat' || m === 'hava') return m;
-      if (!VARLIK_KIMLIGI_DESENI.test(m) || !karoAlaniMi(alanAl(m))) return undefined;
+      if (!VARLIK_KIMLIGI_DESENI.test(m) || !KART_VARLIK_ALANLARI.includes(alanAl(m))) return undefined;
       return adGuvenliMi(m, '') ? m : undefined;
     },
   });

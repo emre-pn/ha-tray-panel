@@ -36,6 +36,7 @@ const {
   TARAYICIDA_ACILDI_METNI,
   ayarDosyasiBozukMetni,
   semaDahaYeniMetni,
+  eskiSurumYedegiMetni,
   ANAHTAR_DOGRULANAMADI_BILDIRIMI,
   ANAHTAR_DOGRULANAMADI_KISA_METNI,
   ANAHTAR_KAYIT_ONAYI_KISA_METNI,
@@ -4972,6 +4973,100 @@ ortamda('ayar dosyası (h-11): yeni şemalı dosyanın yedeği zaten varsa ezilm
 ortamda('ayar dosyası (h-11): güncel şemalı dosyada yeni-şema yedeği ve bildirimi çıkmaz', { tohum: { semaSurumu: 6, favoriler: [] } }, async (ortam) => {
   assert.deepEqual(klasorAdlari(ortam).filter((ad) => /yedek|hatali/.test(ad)), []);
   assert.equal(bildirimGovdeleri(ortam).some((b) => /daha yeni/.test(b)), false);
+});
+
+ortamda('ayar dosyası: yeni şemalı dosyanın yedeği var ve içerik FARKLIYSA ek (zaman damgalı) yedek alınır, kanonik yedek ezilmez, bildirim ek yedeğin adını söyler', {
+  tohum: GELECEK_TOHUM,
+  ekDosyalar: { 'ayarlar.v9-yedek.json': '{"onceki":"yedek"}' },
+}, async (ortam) => {
+  const userData = ortam.durum.yollar.get('userData');
+  assert.equal(gercekOku(path.join(userData, 'ayarlar.v9-yedek.json'), 'utf8'), '{"onceki":"yedek"}', 'kanonik yedek ezilmedi');
+  const ek = klasorAdlari(ortam).filter((ad) => /^ayarlar\.v9-yedek-\d{13}\.json$/.test(ad));
+  assert.equal(ek.length, 1, 'yeni durum için ek yedek');
+  assert.deepEqual(JSON.parse(gercekOku(path.join(userData, ek[0]), 'utf8')), GELECEK_TOHUM, 'ek yedek özgün dosyanın aynısı');
+  assert.ok(bildirimGovdeleri(ortam).includes(semaDahaYeniMetni(9, ek[0])));
+});
+
+// --- Eski sürüm (1.3.0) gidiş-dönüşü: aynı klasörü kullanan eski sürüm yeni şemalı dosyayı yedekleyip düşürdükten sonra geri alma ---
+
+const DONUS_YEDEGI = {
+  semaSurumu: 6,
+  yerelAdres: 'http://192.168.1.50:8123',
+  dil: 'sistem',
+  favoriler: [
+    { entity_id: 'light.salon', ad: 'Salon', simge: 'ikon:isik', renk: 'sari', tepsi: true },
+    { entity_id: 'climate.salon', ad: 'Klima', renk: 'mavi' },
+    { entity_id: 'sensor.sicaklik', ad: 'Sıcaklık' },
+  ],
+};
+// 1.3.0'ın o dosyayı açıp yazdığı hal: iklim ve sensör favorileri düştü, ışığın yeni alanları silindi
+const DONUS_SONRASI = {
+  semaSurumu: 6,
+  yerelAdres: 'http://192.168.1.50:8123',
+  dil: 'sistem',
+  favoriler: [{ entity_id: 'light.salon', ad: 'Salon' }, { entity_id: 'light.mutfak', ad: 'Mutfak' }],
+  engellenenFavoriler: [{ entity_id: 'climate.salon', neden: 'alan' }, { entity_id: 'sensor.sicaklik', neden: 'alan' }],
+};
+
+ortamda('eski sürüm gidiş-dönüşü: düşen favoriler ve görünüm alanları yedekten ayarlar.json\'a geri yazılır, yedek zaman damgalı adla saklanır, kullanıcıya söylenir', {
+  tohum: DONUS_SONRASI,
+  ekDosyalar: { 'ayarlar.v6-yedek.json': JSON.stringify(DONUS_YEDEGI) },
+}, async (ortam) => {
+  const userData = ortam.durum.yollar.get('userData');
+  const asil = ortam.ayarOku();
+  assert.deepEqual(asil.favoriler.map((f) => f.entity_id), ['light.salon', 'climate.salon', 'sensor.sicaklik', 'light.mutfak']);
+  const salon = asil.favoriler[0];
+  assert.deepEqual({ simge: salon.simge, renk: salon.renk, tepsi: salon.tepsi }, { simge: 'ikon:isik', renk: 'sari', tepsi: true });
+  assert.equal(asil.favoriler[1].renk, 'mavi');
+  assert.deepEqual(asil.engellenenFavoriler, [], 'eski sürümün "alan" engel kayıtları temizlendi');
+  // yedek kenara alındı: kanonik ad boş (eski sürüm bir sonraki gidişte yeniden yedek alabilir), içerik zaman damgalı adda duruyor
+  assert.equal(fs.existsSync(path.join(userData, 'ayarlar.v6-yedek.json')), false);
+  const saklanan = klasorAdlari(ortam).filter((ad) => /^ayarlar\.v6-yedek-\d{13}\.json$/.test(ad));
+  assert.equal(saklanan.length, 1);
+  assert.deepEqual(JSON.parse(gercekOku(path.join(userData, saklanan[0]), 'utf8')), DONUS_YEDEGI, 'yedek içeriği aynen saklandı');
+  assert.ok(bildirimGovdeleri(ortam).includes(eskiSurumYedegiMetni(saklanan[0])), 'kullanıcıya söylendi (yedek adıyla)');
+  assert.match(ortam.gunlukOku(), /Eski sürümün bıraktığı yedekten geri alındı: 2 favori, 1 favorinin görünüm alanları\./);
+  assert.equal(ortam.gunlukOku().includes('192.168.1.50'), false, 'günlükte adres yok');
+});
+
+ortamda('eski sürüm gidiş-dönüşü: yedekte geri alınacak bir şey yoksa ayarlar değişmez, bildirim çıkmaz, ama yedek yine kenara alınır (bir sonraki gidişte yeniden yedek alınabilsin)', {
+  tohum: { ...DONUS_YEDEGI, engellenenFavoriler: [] },
+  ekDosyalar: { 'ayarlar.v6-yedek.json': JSON.stringify(DONUS_YEDEGI) },
+}, async (ortam) => {
+  assert.deepEqual(ortam.ayarOku().favoriler.map((f) => f.entity_id), ['light.salon', 'climate.salon', 'sensor.sicaklik']);
+  assert.equal(bildirimGovdeleri(ortam).some((b) => b.includes('yedekten geri alındı')), false);
+  assert.equal(klasorAdlari(ortam).filter((ad) => /^ayarlar\.v6-yedek\.json$/.test(ad)).length, 0);
+  assert.equal(klasorAdlari(ortam).filter((ad) => /^ayarlar\.v6-yedek-\d{13}\.json$/.test(ad)).length, 1);
+});
+
+ortamda('eski sürüm gidiş-dönüşü: kullanıcının eski sürümde bilerek sildiği (eski sürümün tanıdığı alandaki) favori geri gelmez; dil yalnız eski sürümün tanımadığı değerse ve "sistem" iken geri alınır', {
+  tohum: { ...DONUS_SONRASI, favoriler: [{ entity_id: 'light.salon', ad: 'Salon' }] },
+  ekDosyalar: { 'ayarlar.v6-yedek.json': JSON.stringify({ ...DONUS_YEDEGI, dil: 'de', favoriler: [...DONUS_YEDEGI.favoriler, { entity_id: 'switch.silinen_priz', ad: 'Silinen priz' }] }) },
+}, async (ortam) => {
+  const asil = ortam.ayarOku();
+  assert.deepEqual(asil.favoriler.map((f) => f.entity_id), ['light.salon', 'climate.salon', 'sensor.sicaklik']);
+  assert.equal(asil.dil, 'de');
+  // arayüz dili geri alınan dil: bildirim Almanca
+  assert.ok(bildirimGovdeleri(ortam).includes(eskiSurumYedegiMetni(klasorAdlari(ortam).find((ad) => /^ayarlar\.v6-yedek-\d{13}\.json$/.test(ad)), (anahtar, degiskenler) => ANA_SOZLUK.de[anahtar].replace(/\{(\w+)\}/g, (_, a) => degiskenler?.[a] ?? ''))), 'bildirim geri alınan dilde');
+});
+
+ortamda('eski sürüm gidiş-dönüşü: şema eskiyse (göç sürüyor) yedek okunmaz, ayarlara karışmaz ve kenara alınmaz', {
+  tohum: { semaSurumu: 5, yerelAdres: 'http://192.168.1.50:8123', favoriler: [{ entity_id: 'light.salon', ad: 'Salon' }] },
+  ekDosyalar: { 'ayarlar.v6-yedek.json': JSON.stringify(DONUS_YEDEGI) },
+}, async (ortam) => {
+  assert.deepEqual(ortam.ayarOku().favoriler.map((f) => f.entity_id), ['light.salon']);
+  assert.equal(fs.existsSync(path.join(ortam.durum.yollar.get('userData'), 'ayarlar.v6-yedek.json')), true);
+  assert.equal(bildirimGovdeleri(ortam).some((b) => b.includes('yedekten geri alındı')), false);
+});
+
+ortamda('eski sürüm gidiş-dönüşü: ayar dosyası bozuksa ya da kilitliyse (ham yok) yedekten HİÇBİR şey alınmaz ve yedek kenara alınmaz', {
+  tohum: DONUS_SONRASI,
+  ekDosyalar: { 'ayarlar.v6-yedek.json': JSON.stringify(DONUS_YEDEGI) },
+  oncesi: () => ayarOkumaSahtesi(() => kilitHatasi('EBUSY')),
+}, async (ortam) => {
+  assert.equal(fs.existsSync(path.join(ortam.durum.yollar.get('userData'), 'ayarlar.v6-yedek.json')), true, 'yedek yerinde');
+  assert.equal(bildirimGovdeleri(ortam).some((b) => b.includes('yedekten geri alındı')), false);
+  assert.deepEqual(JSON.parse(gercekOku(ayarDosyasi(ortam), 'utf8')).favoriler.map((f) => f.entity_id), ['light.salon', 'light.mutfak'], 'dosyaya hiç yazılmadı');
 });
 
 // --- h-33: tipi bozuk alanlar, kısayol sıfırlama bildirimi ----------------------------------------

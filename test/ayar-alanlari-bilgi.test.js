@@ -98,6 +98,20 @@ test('geçerli değerler korunur; sınır dışı ve yanlış türde değerler v
   assert.equal(kotu.hizliListe, '');
 });
 
+test('üst kart yuvası salt okunur: yalnız yok / saat / hava ya da sensor ve binary_sensor kimliği; ışık, anahtar, script, düğme, iklim, doğrudan weather kabul edilmez', () => {
+  const s = A.alanlariDuzelt({ ustKart1: 'sensor.dis_sicaklik', ustKart2: 'binary_sensor.salon_hareket' }, {});
+  assert.equal(s.ustKart1, 'sensor.dis_sicaklik');
+  assert.equal(s.ustKart2, 'binary_sensor.salon_hareket');
+  for (const eylemKimligi of ['light.salon', 'switch.priz', 'script.film', 'scene.gece', 'button.pc_kapat', 'input_button.x', 'input_boolean.x', 'fan.salon', 'climate.salon', 'media_player.tv', 'select.mod', 'number.x', 'timer.t', 'weather.ev', 'todo.l', 'calendar.ev']) {
+    const d = A.alanlariDuzelt({ ustKart1: eylemKimligi, ustKart2: eylemKimligi }, {});
+    assert.equal(d.ustKart1, 'yok', `${eylemKimligi} üst kart olamaz`);
+    assert.equal(d.ustKart2, 'yok');
+  }
+  // içe aktarma yolu: reddedilen üst kart uyarı olarak söylenir, ayar değişmez
+  const { yeni } = A.ekGirdiDogrula({ ustKart1: 'light.salon', ustKart2: 'sensor.dis_sicaklik' }, TR);
+  assert.deepEqual(yeni, { ustKart2: 'sensor.dis_sicaklik' });
+});
+
 test('seçilebilir alanlar sınırlıdır: şerit en çok 6, takvim ve liste en çok 4; alan türü zorunludur', () => {
   const s = A.alanlariDuzelt({
     sensorSeridi: Array.from({ length: 9 }, (_, i) => `sensor.s${i}`),

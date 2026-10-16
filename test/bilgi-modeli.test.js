@@ -77,6 +77,35 @@ test('bilgiKaydi: ayardaki kimlik { entity_id, ad } döner, diğerleri (kapı ki
   assert.equal(kaynak('todo.alisveris'), null, 'ayar yoksa kayıt yok');
 });
 
+test('bilgiKimlikleri / bilgiKaydi: salt okunur üst kart ışık, anahtar, script, düğme gibi eylem alanlarını eylem hattına kayıtlı yapmaz; her kalem yalnız kendi alanıyla sınırlıdır', () => {
+  // Ayar doğrulaması atlanmış (elle düzenlenmiş / içe aktarılmış / yeni bir hata) kötü durum: kayıt kaynağı yine de sınırlı kalmalı.
+  const kotu = {
+    ustKart1: 'light.salon',
+    ustKart2: 'button.pc_kapat',
+    sensorSeridi: ['switch.priz', 'script.film', 'scene.gece', 'sensor.salon_sicaklik'],
+    takvimler: ['light.mutfak', 'calendar.ev'],
+    yapilacakListeleri: ['input_boolean.x', 'todo.alisveris'],
+    havaVarligi: 'climate.salon',
+    hizliListe: 'media_player.tv',
+  };
+  assert.deepEqual([...M.bilgiKimlikleri(kotu)].sort(), ['calendar.ev', 'sensor.salon_sicaklik', 'todo.alisveris']);
+  const kaynak = M.bilgiKaydi(() => kotu);
+  for (const eylemKimligi of ['light.salon', 'button.pc_kapat', 'switch.priz', 'script.film', 'scene.gece', 'light.mutfak', 'input_boolean.x', 'climate.salon', 'media_player.tv']) {
+    assert.equal(kaynak(eylemKimligi), null, `${eylemKimligi} eylem hattına kayıtlı olmamalı`);
+  }
+  assert.deepEqual(kaynak('todo.alisveris'), { entity_id: 'todo.alisveris', ad: 'alisveris' });
+  // hava kartı varken bile hava varlığı yalnız weather olabilir; hava kartı yoksa hiç girmez
+  assert.deepEqual([...M.bilgiKimlikleri({ ustKart1: 'hava', havaVarligi: 'climate.salon' })], []);
+  assert.deepEqual([...M.bilgiKimlikleri({ ustKart1: 'hava', havaVarligi: 'weather.ev' })], ['weather.ev']);
+  // doğru alanlar etkilenmez: sensör ve ikili sensör üst kartı kayıtlı kalır (grafik/geçmiş için)
+  assert.deepEqual([...M.bilgiKimlikleri({ ustKart1: 'sensor.dis_sicaklik', ustKart2: 'binary_sensor.hareket' })], ['sensor.dis_sicaklik', 'binary_sensor.hareket']);
+  // hızlı liste todo dışı olamaz; todo ise (ilk liste yedeği dahil) kayıtlı
+  assert.deepEqual([...M.bilgiKimlikleri({ hizliListe: 'scene.gece' })], []);
+  assert.deepEqual([...M.bilgiKimlikleri({ hizliListe: 'todo.market' })], ['todo.market']);
+  // üst kart weather.* doğrudan seçilemez (model göstermez): kayıt dışı
+  assert.deepEqual([...M.bilgiKimlikleri({ ustKart1: 'weather.ev' })], []);
+});
+
 test('bilgiModeliOlustur: şerit, kartlar, takvim, liste ve ayar; sayısal değerler güvenli öznitelikten gelir', () => {
   const m = M.bilgiModeliOlustur({ ayarlar: AYAR, durumAl, t: TR });
   assert.deepEqual(m.serit.map((k) => k.id), ['sensor.salon_sicaklik', 'sensor.kumanda_pil', 'binary_sensor.salon_hareket']);

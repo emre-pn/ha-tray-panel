@@ -65,19 +65,30 @@ function yapilandirma(ayarlar) {
   };
 }
 
+/** Kimlik, bilgi kaleminin kullandığı alanlardan birinde mi? (Ayar doğrulaması atlansa bile kayıt kaynağı başka alana yol açmaz.) */
+const alandaMi = (kimlik, alanlar) => typeof kimlik === 'string' && alanlar.includes(alanAl(kimlik));
+const SENSOR_ALANLARI = Object.freeze(['sensor', 'binary_sensor']);
+
 /**
  * Bilgi bölümünün izlediği ve okuttuğu TÜM kimlikler (durum deposu aboneliği ve kayıt kaynağı için). Yalnız ayardaki kimlikler:
  * sensör şeridi, üst kartların varlıkları, kullanılan hava varlığı, takvimler, yapılacaklar listeleri ve hızlı liste.
+ * Her kalem yalnız modelin gerçekten gösterdiği alanla sınırlıdır: şerit ve üst kart varlığı sensor / binary_sensor, hava weather,
+ * takvim calendar, liste ve hızlı liste todo. Üst kart salt okunur olduğu için ışık, anahtar, script gibi eylem alanı kayıt kaynağına
+ * (eylem hattına) hiçbir yoldan girmez; öyle bir varlık kayıtlı sayılsaydı panel, palet ya da basılı tutma onu çalıştırabilirdi.
  * @returns {Set<string>}
  */
 function bilgiKimlikleri(ayarlar) {
   const y = yapilandirma(ayarlar);
-  const kimlikler = new Set([...y.serit, ...y.takvimler, ...y.listeler]);
+  const kimlikler = new Set([
+    ...y.serit.filter((k) => alandaMi(k, SENSOR_ALANLARI)),
+    ...y.takvimler.filter((k) => alandaMi(k, ['calendar'])),
+    ...y.listeler.filter((k) => alandaMi(k, ['todo'])),
+  ]);
   for (const k of y.kartlar) {
-    if (!KART_DEGERLERI_OZEL.includes(k.deger)) kimlikler.add(k.deger);
+    if (!KART_DEGERLERI_OZEL.includes(k.deger) && alandaMi(k.deger, SENSOR_ALANLARI)) kimlikler.add(k.deger);
   }
-  if (y.kartlar.some((k) => k.deger === 'hava') && y.hava) kimlikler.add(y.hava);
-  if (y.hizliHedef) kimlikler.add(y.hizliHedef);
+  if (y.kartlar.some((k) => k.deger === 'hava') && alandaMi(y.hava, ['weather'])) kimlikler.add(y.hava);
+  if (alandaMi(y.hizliHedef, ['todo'])) kimlikler.add(y.hizliHedef);
   return kimlikler;
 }
 

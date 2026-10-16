@@ -22,6 +22,11 @@
  *    "Kapıyı aç" seçeneği taşıyan bir seçici bütünüyle güvensizdir (seçmek bir otomasyonla kapı açabilir).
  *  - Metin öznitelikleri (medya başlığı, kaynak adı, takvim/yapılacaklar başlığı, bildirim metni...) metinGuvenliMi /
  *    guvenliMetin / metinListesiSuz ile süzülür: geçmeyen metin gösterilmez.
+ *
+ * 1.4.0 sonrası (yalnız sıkılaştırma): arayüz Almanca, Fransızca ve İspanyolcaya da açıldığı için bu dillerdeki kapı/kilit/geçit/diafon
+ * adları da (Türöffner, Haustür, Tor, Schloss, Klingel, porte, portail, serrure, sonnette, puerta, cerradura, cancela, timbre...) aynı
+ * süzgeçten geçer; ayrıntı ve kısa sözcüklerin ("tor", "tur", "porte") neden yalnız tam belirteç / belirteç başı olarak arandığı
+ * YASAK_EK_PARCALAR'ın üstündeki açıklamadadır. TR/EN kuralları değişmedi.
  */
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
@@ -98,6 +103,62 @@ const MASUM_SOZCUKLER = [
 ];
 const MASUM_DESENI = new RegExp(MASUM_SOZCUKLER.join('|'), 'g');
 const YASAK_KELIMELER = [...YASAK_PARCALAR, ...YASAK_KISA_PARCALAR];
+
+// Almanca, Fransızca ve İspanyolca kapı/kilit/geçit/diafon adları (YALNIZ sıkılaştırma; 1.4.0 arayüzü bu dilleri de açtı, kapı açıcılarının
+// adları da bu dillerde olur: "Türöffner", "Haustür öffnen", "Ouvrir le portail", "Abrir puerta", switch.hoftor...). Yukarıdaki TR/EN
+// listelerine DOKUNMAZ; kimlikte ya da adda ek olarak şu üç kural uygulanır. Sözcükler sadeleştirilmiş biçimdedir (ü -> u, ö -> o, ß -> ss,
+// é -> e, ñ -> n, ó -> o); "ue/oe" yazımları da ayrıca listelidir ("Haustuer", "Tueroeffner").
+//  1) Belirtecin HERHANGİ bir yerinde aranan, masum sözcüğün içinde geçmesi beklenmeyen uzun kökler (YASAK_EK_PARCALAR).
+//  2) Belirtecin BAŞINDA aranan kökler (YASAK_EK_BELIRTEC_BASLARI): "porte" (porte, portes, portero...) "reporter / importer / portable"
+//     gibi sözcükleri engellemez; "portier" "importieren / transportieren" içinde de geçtiği için yalnız başta aranır.
+//  3) Yalnız TAM belirteç olarak engellenen kısa sözcükler (YASAK_EK_TAM_BELIRTECLER): "tor" ve "tur" (Tür) "monitor, motor, ventilator,
+//     detektor, interruptor, temperatur, natur" gibi sözcüklerin içinde geçtiği için ASLA parça olarak aranmaz; "garagentor / hoftor /
+//     rolltor / haustur" gibi bileşikler ise bilinen baş sözcüklerle üretilen kendi listesindedir (aşağıda). Bilinmeyen bir bileşik
+//     ("...tür" ya da "...tor" ile biten yeni bir ad) bu listelerde yoksa geçer: kural sözlüktür, çeviri değildir.
+const DE_TUR_BASLARI = [
+  'haus', 'wohnung', 'wohnungs', 'eingang', 'eingangs', 'keller', 'garten', 'terrasse', 'terrassen', 'balkon', 'hinter', 'vorder', 'neben',
+  'seiten', 'schiebe', 'glas', 'zimmer', 'kuchen', 'laden', 'haupt', 'flucht', 'brandschutz', 'stall', 'scheunen', 'katzen', 'aussen', 'innen',
+  'verbindungs', 'pendel', 'falt', 'dreh', 'flugel', 'hof', 'dachboden', 'praxis',
+];
+const DE_TUR_SONLARI = ['offn', 'oeffn', 'summer', 'kontakt', 'sensor', 'status', 'melder', 'griff', 'station', 'antrieb', 'kamera', 'code'];
+const DE_TOR_BASLARI = [
+  'hof', 'roll', 'garten', 'einfahrts', 'eingangs', 'zufahrts', 'schiebe', 'sektional', 'dreh', 'flugel', 'kipp', 'haupt', 'seiten', 'hub',
+  'falt', 'werks', 'stadt', 'park', 'tiefgaragen', 'carport',
+];
+const DE_TOR_SONLARI = ['offn', 'oeffn', 'antrieb', 'steuerung', 'sensor', 'kontakt', 'status', 'kamera'];
+const DE_TUR_TOR_PARCALARI = [
+  ...DE_TUR_BASLARI.flatMap((b) => [`${b}tur`, `${b}tuer`]),
+  ...DE_TUR_SONLARI.flatMap((s) => [`tur${s}`, `tuer${s}`]),
+  ...DE_TOR_BASLARI.map((b) => `${b}tor`),
+  ...DE_TOR_SONLARI.map((s) => `tor${s}`),
+];
+const YASAK_EK_PARCALAR = [
+  ...new Set([
+    // Almanca: kilit, zil, diafon, bariyer, kepenk
+    'schloss', 'riegel', 'klingel', 'gegensprech', 'sprechanlage', 'schranke', 'schlagbaum', 'rolladen', 'rollladen',
+    // Fransızca: kilit, kapı kolu/kapı, diafon, zil, bariyer, kepenk
+    'serrur', 'verrou', 'portail', 'portillo', 'interphone', 'visiophone', 'digicode', 'sonnette', 'barrier', 'volet',
+    // İspanyolca: kapı, kilit, diafon, bariyer, kepenk
+    'puerta', 'cerradura', 'cerrojo', 'candado', 'videoportero', 'interfon', 'telefonillo', 'barrera', 'persiana',
+    // Yaygın akıllı kilit markaları (adı kilit sözcüğü taşımayanlar)
+    'nuki', 'kwikset', 'ttlock', 'tedee', 'ultraloq',
+    ...DE_TUR_TOR_PARCALARI,
+  ]),
+];
+const YASAK_EK_BELIRTEC_BASLARI = ['porte', 'porton', 'portier', 'timbre'];
+// "porte" başında aranırken İngilizce "porter" (taşıyıcı; bira adı) kapı sözcüğü değildir: yalnız bu TAM belirteçler muaftır.
+const YASAK_EK_BAS_ISTISNASI = new Set(['porter', 'porters']);
+const YASAK_EK_TAM_BELIRTECLER = new Set([
+  'tor', 'tore', 'toren', 'tur', 'turen', 'tuer', 'tueren', // Almanca Tor / Tür
+  'cancela', 'cancelas', 'verja', 'verjas', 'cadenas', // İspanyolca / Fransızca: "cancelar", "cadena" gibi sözcükleri engellemesin
+]);
+const YASAK_EK_PARCA_DESENI = new RegExp(YASAK_EK_PARCALAR.join('|'));
+// Arayüzde (Ayarlar > Güvenlik Kuralı) her dil için gösterilen örnek sözcükler: ayar.guvenlik.metin ile aynı olmalıdır (test denetler).
+const EK_DIL_ORNEKLERI = Object.freeze({
+  de: Object.freeze(['Tür', 'Tor', 'Schloss', 'Klingel', 'Gegensprechanlage', 'Schranke', 'Rollladen']),
+  fr: Object.freeze(['porte', 'portail', 'serrure', 'verrou', 'interphone', 'sonnette', 'barrière', 'volet']),
+  es: Object.freeze(['puerta', 'portón', 'cerradura', 'cerrojo', 'cancela', 'portero', 'timbre', 'barrera', 'persiana']),
+});
 // Sadeleştirmeden sonra a-z dışında HARF (Kiril "а", Yunan "α", CJK...) kalan metin güvensizdir: Türkçe ve Latin harfleri
 // ASCII'ye iner, bu yüzden kalan bir harf, benzer-harfle (homoglif) gizlenmiş "kapı"/"gate" olabilir. Kapıyı kapalı tutar.
 const YABANCI_HARF = /(?![a-z])\p{L}/u;
@@ -108,6 +169,13 @@ function alanAl(varlikKimligi) {
 
 function belirteclereAyir(sade) {
   return sade.split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+/** Almanca/Fransızca/İspanyolca kapı adı (yukarıdaki üç kural). Belirteç sadeleştirilmiş olmalıdır. */
+function ekDilBelirteciYasakliMi(belirtec) {
+  if (YASAK_EK_TAM_BELIRTECLER.has(belirtec)) return true;
+  if (!YASAK_EK_BAS_ISTISNASI.has(belirtec) && YASAK_EK_BELIRTEC_BASLARI.some((bas) => belirtec.startsWith(bas))) return true;
+  return YASAK_EK_PARCA_DESENI.test(belirtec);
 }
 
 function adGuvenliMi(varlikKimligi, ad) {
@@ -121,6 +189,7 @@ function adGuvenliMi(varlikKimligi, ad) {
     }
     const kalan = b.replace(MASUM_DESENI, ' ');
     if (YASAK_KISA_PARCALAR.some((parca) => kalan.includes(parca))) return false;
+    if (ekDilBelirteciYasakliMi(b)) return false;
   }
   return true;
 }
@@ -227,6 +296,11 @@ module.exports = {
   YASAK_KISA_PARCALAR,
   MASUM_SOZCUKLER,
   YASAK_KELIMELER,
+  YASAK_EK_PARCALAR,
+  YASAK_EK_BELIRTEC_BASLARI,
+  YASAK_EK_BAS_ISTISNASI,
+  YASAK_EK_TAM_BELIRTECLER,
+  EK_DIL_ORNEKLERI,
   DOOR_ISTISNA,
   YASAK_CIHAZ_SINIFLARI,
   UYE_YASAK_ALANLARI,

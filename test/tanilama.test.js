@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { SINIRLAR, adresSinifi, adresSinifiMetni, satiriTemizle, sonSatirlar, gunlukSonSatirlari, raporOlustur } = require('../src/lib/tanilama');
+const { SINIRLAR, adresSinifi, adresSinifiMetni, maskeKur, satiriTemizle, sonSatirlar, gunlukSonSatirlari, raporOlustur } = require('../src/lib/tanilama');
 const { gunlukOlustur } = require('../src/lib/gunluk');
 
 // Gerçek biçimde ama sahte değerler (testte gerçek anahtar yok): çalışma zamanında kurulur.
@@ -95,6 +95,57 @@ test('satiriTemizle: satır tek satırdır, kontrol karakteri yoktur, uzun satı
   assert.doesNotMatch(s, /[\r\n\u0000]/);
   assert.ok(s.length <= SINIRLAR.satirUzunlugu + 1);
   for (const girdi of [null, undefined, 5, {}, []]) assert.equal(satiriTemizle(girdi), '');
+});
+
+test('satiriTemizle: URL olmayan genel ana bilgisayar adları (FQDN) da maskelenir; dosya adları, sürümler ve saat damgası okunur kalır', () => {
+  for (const host of ['ha.ornek-alan.com', 'homeassistant.duckdns.org', 'abc123.ui.nabu.casa', 'www.ornek.co.uk', 'evim.ornek-alan.com.tr']) {
+    const satir = satiriTemizle(`getaddrinfo ENOTFOUND ${host} bağlantı kurulamadı`);
+    assert.equal(satir, 'getaddrinfo ENOTFOUND [host] bağlantı kurulamadı', host);
+    assert.equal(satiriTemizle(`${host}:8123 yanıt vermedi`), '[host] yanıt vermedi', `${host}: port da gider`);
+  }
+  assert.equal(satiriTemizle('ENOTFOUND HA.Ornek-Alan.COM'), 'ENOTFOUND [host]', 'büyük harf fark etmez');
+  const korunan = [
+    '2026-10-16T09:00:02.123Z Ayarlar yazıldı: ayarlar.json',
+    'Yedek alındı: ayarlar.v6-yedek-1760000000123.json',
+    'Günlük döndü: ev-paneli.log ve ev-paneli.log.1'.replace('.log.1', '.tmp'),
+    'Ev Paneli 1.4.0 (Electron 41.0.0, Node 24.1.0, Windows 10.0.26300) main.js ve Ev Paneli.exe',
+    'Işık 3.5 saniye bekledi, sürüm v1.4.0-beta.2',
+  ];
+  for (const satir of korunan) assert.equal(satiriTemizle(satir), satir, 'dosya adı/sürüm bozulmamalı');
+  // Varlık kimliği hâlâ [entity], FQDN değil
+  assert.equal(satiriTemizle('light.masa ha.ornek-alan.com'), 'light.[entity] [host]');
+});
+
+test('maskeKur + satiriTemizle: Windows kullanıcı adı (boşluklu olsa da) tam eşleşmeyle maskelenir; yol kuralı tek başına boşluktan sonrasını bırakırdı', () => {
+  const satir = 'Ayarlar okunamadı: C:\\Users\\Emre Sav\\AppData\\Roaming\\x.json (hesap: Emre Sav, emre   sav)';
+  const eski = satiriTemizle(satir); // maskesiz: yol kuralı "Emre"yi alır, " Sav" kalır
+  assert.match(eski, /Sav/, 'maskesiz hâlde boşluklu ad sızıyordu');
+  const maske = maskeKur({ kullaniciAdlari: ['Emre Sav', 'emres'] });
+  const temiz = satiriTemizle(satir, maske);
+  assert.equal(temiz, 'Ayarlar okunamadı: C:\\Users\\[user]\\AppData\\Roaming\\x.json (hesap: [user], [user])');
+  assert.equal(/emre|sav/i.test(temiz), false);
+  // büyük/küçük harf ve ikinci ad (klasör adı) da maskelenir
+  assert.equal(satiriTemizle('Oturum: EMRES ve emres.', maske), 'Oturum: [user] ve [user].');
+  // tam sözcük eşleşmesi: ad başka bir sözcüğün parçasıysa dokunulmaz
+  assert.equal(satiriTemizle('emresin emresiz Memres', maske), 'emresin emresiz Memres');
+  // Türkçe harfli ad
+  assert.equal(satiriTemizle('Kullanıcı Şükrü Çelik girdi', maskeKur({ kullaniciAdlari: ['Şükrü Çelik'] })), 'Kullanıcı [user] girdi');
+  // regex özel karakterleri düz metindir
+  assert.equal(satiriTemizle('ad a.b+c(1) ve axb+c(1)', maskeKur({ kullaniciAdlari: ['a.b+c(1)'] })), 'ad [user] ve axb+c(1)');
+});
+
+test('maskeKur: çok kısa adlar, maske etiketi adları, metin olmayan girdiler ve bozuk adresler güvenle yok sayılır', () => {
+  assert.equal(satiriTemizle('al ve ab sıradan sözcük', maskeKur({ kullaniciAdlari: ['al', 'ab', ' '] })), 'al ve ab sıradan sözcük', '3 harften kısa ad serbest metinde aranmaz');
+  const etiket = maskeKur({ kullaniciAdlari: ['user', 'HOST', 'url'], adresler: ['http://url:8123'] });
+  assert.equal(etiket.kullanici, null);
+  assert.equal(etiket.anaBilgisayar, null);
+  assert.equal(satiriTemizle('C:\\Users\\emre\\x [host] [url]', etiket), 'C:\\Users\\[user]\\x [host] [url]', 'etiketler yeniden maskelenip bozulmaz');
+  assert.doesNotThrow(() => maskeKur());
+  assert.doesNotThrow(() => maskeKur({ kullaniciAdlari: 'metin', adresler: 'metin' }));
+  const bozuk = maskeKur({ kullaniciAdlari: [5, null, {}, undefined, 'Geçerli Ad'], adresler: [5, null, '', 'saçma', 'ftp://ftp.ornek.com', 'http://[fe80::1]:8123', 'http://192.168.1.10:8123'] });
+  assert.equal(satiriTemizle('Geçerli Ad girdi', bozuk), '[user] girdi');
+  assert.ok(bozuk.anaBilgisayar === null || !bozuk.anaBilgisayar.test('ftp.ornek.com'), 'ftp adresi ayar ana bilgisayarı sayılmaz');
+  assert.equal(satiriTemizle('192.168.1.10 ve fe80::1', bozuk), '[ip] ve [ip6]', 'IP adresleri kendi kurallarıyla maskelenir');
 });
 
 test('sonSatirlar: boş satırlar atılır, yalnız son N satır kalır; metin olmayan girdi boş liste', () => {
@@ -229,6 +280,31 @@ test('raporOlustur: günlük satırları rapora girmeden maskelenir; en çok SIN
   assert.match(metin, /olay 60 \[url\]/);
   assert.equal(metin.includes(SAHTE_ANAHTAR), false);
   assert.equal(/10\.0\.0\./.test(metin), false);
+});
+
+test('raporOlustur: ayarlardaki ana bilgisayar adları (tek etiketli olsa da) ve Windows kullanıcı adı günlük satırlarından maskelenir', () => {
+  const { metin } = raporOlustur({
+    ...TEMEL,
+    yerelAdres: 'http://nas:8123',
+    disAdres: 'https://Evim.Ornek-Alan.com',
+    kullaniciAdlari: ['Emre Sav', 'emres'],
+    gunlukSatirlari: [
+      '2026-10-16T09:00:01.000Z nas bağlantısı koptu (nas:8123)',
+      '2026-10-16T09:00:02.000Z Dış adres evim.ornek-alan.com yanıt vermedi',
+      '2026-10-16T09:00:03.000Z Dosya C:\\Users\\Emre Sav\\AppData\\Roaming\\Ev Paneli\\ayarlar.json okunamadı (Emre Sav)',
+      '2026-10-16T09:00:04.000Z Yerel adres nasıl bulunur? Nashville değişmez',
+    ],
+  });
+  for (const sizinti of ['nas:', 'ornek-alan', 'Evim', 'Emre', 'Sav', 'emres']) assert.equal(metin.includes(sizinti), false, `${sizinti} rapora girdi:\n${metin}`);
+  assert.match(metin, /\[host\] bağlantısı koptu \(\[host\]\)/);
+  assert.match(metin, /Dış adres \[host\] yanıt vermedi/);
+  assert.match(metin, /C:\\Users\\\[user\]\\AppData\\Roaming\\Ev Paneli\\ayarlar\.json okunamadı \(\[user\]\)/);
+  assert.match(metin, /Yerel adres nasıl bulunur\? Nashville değişmez/, 'ad başka sözcüğün parçasıysa dokunulmaz');
+});
+
+test('raporOlustur: kullaniciAdlari verilmese de genel kurallar çalışır (eski çağrılar bozulmaz)', () => {
+  const { metin } = raporOlustur({ ...TEMEL, gunlukSatirlari: ['2026-10-16T09:00:01.000Z ENOTFOUND ha.ornek-alan.com C:\\Users\\emres\\x'] });
+  assert.match(metin, /ENOTFOUND \[host\] C:\\Users\\\[user\]\\x/);
 });
 
 test('raporOlustur: erişim anahtarı değeri hiçbir girdiden rapora geçmez; modül anahtar alanı kabul etmez', () => {

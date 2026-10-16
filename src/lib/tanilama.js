@@ -12,6 +12,8 @@
  *    genel IP) ve http/https bilgisi eklenir.
  *  - Günlük satırları sirTemizle'den (anahtar, JWT, Bearer, webhook kimliği...) geçer; ayrıca URL, IPv4/IPv6, yerel ağ adları, Windows kullanıcı
  *    klasörü, HA varlık kimlikleri ve anahtar parmak izi öneki maskelenir (savunma derinliği; uygulama günlüğe zaten yalnız güvenli metin yazar).
+ *    Ayrıca her ana bilgisayar adı (FQDN; dosya adı uzantıları hariç), ayarlardaki adreslerin ana bilgisayar adları ve çağıranın verdiği Windows
+ *    kullanıcı adı (boşluklu da) tam eşleşmeyle maskelenir.
  *  - Günlük dosyasının yolu rapora girmez.
  * Rapor dili sabit İngilizcedir (sorun kaydı dili; arayüz diline göre değişmez).
  */
@@ -89,20 +91,70 @@ function adresSinifiMetni(adres) {
 
 const HA_ALANLARI = 'light|switch|scene|script|button|input_boolean|input_button|input_number|input_select|input_text|media_player|cover|fan|climate|lock|alarm_control_panel|automation|sensor|binary_sensor|camera|vacuum|humidifier|water_heater|valve|siren|remote|number|select|group|sun|weather|person|zone|device_tracker|update|event|todo|calendar|notify|tts|text|datetime|time|date|image|lawn_mower|air_quality|schedule|timer|counter';
 
+// Genel ana bilgisayar adı (FQDN): en az bir nokta, son etiket yalnız harf (sürüm numaraları ve IP sanılmaz). Dosya adı uzantıları hariç tutulur
+// (ayarlar.json, main.js...): günlükte uygulamanın kendi dosya adları okunur kalsın. Aşırı maskeleme güvenli taraftır.
+const FQDN_DESENI = /\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+([A-Za-z]{2,24})\b(?::\d{1,5})?/g;
+const DOSYA_UZANTILARI = new Set(['json', 'js', 'mjs', 'cjs', 'log', 'tmp', 'txt', 'exe', 'dll', 'node', 'asar', 'md', 'png', 'ico', 'svg', 'jpg', 'html', 'css', 'bak', 'lock', 'yml']);
+const EN_AZ_MASKE_UZUNLUGU = 3; // 1-2 harflik ad ("ha", "al") sıradan sözcükleri bozacağından serbest metinde aranmaz
+const MASKE_ETIKETLERI = new Set(['url', 'host', 'user', 'entity', 'masked', 'ip6']); // "[user]" adlı bir kullanıcı maske etiketini yeniden maskelemesin
+
+const regexKacis = (m) => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Adres ayarındaki ana bilgisayar adı (http/https değilse ya da adres geçersizse boş). */
+function adresAnaBilgisayari(adres) {
+  if (typeof adres !== 'string' || adres.trim() === '') return '';
+  try {
+    const u = new URL(adres.trim());
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.hostname.toLowerCase() : '';
+  } catch {
+    return '';
+  }
+}
+
 /**
- * Tek günlük satırını rapora girecek hale getirir: sır temizliği (sirTemizle) + adres, ağ adı, kullanıcı klasörü ve varlık kimliği maskesi.
- * Sıra önemlidir: URL önce, IP ve ad sonra.
+ * Bu bilgisayara ve ayarlara özgü maskeyi (kullanıcı adları, ayardaki ana bilgisayar adları) tek sefer derler.
+ * @param {{ kullaniciAdlari?: unknown[], adresler?: unknown[] }} g
+ * @returns {{ kullanici: RegExp|null, anaBilgisayar: RegExp|null }}
  */
-function satiriTemizle(satir) {
+function maskeKur({ kullaniciAdlari = [], adresler = [] } = {}) {
+  const tekil = (liste) => [...new Set(liste)].sort((a, b) => b.length - a.length); // uzun ad önce: "emre sav" "emre"den önce
+  const adlar = tekil(
+    (Array.isArray(kullaniciAdlari) ? kullaniciAdlari : [])
+      .filter((a) => typeof a === 'string')
+      .map((a) => a.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ').trim().replace(/\s+/g, ' '))
+      .filter((a) => a.length >= EN_AZ_MASKE_UZUNLUGU && !MASKE_ETIKETLERI.has(a.toLowerCase())),
+  );
+  const bilgisayarlar = tekil(
+    (Array.isArray(adresler) ? adresler : [])
+      .map(adresAnaBilgisayari)
+      .filter((h) => h.length >= EN_AZ_MASKE_UZUNLUGU && !h.startsWith('[') && !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(h) && !MASKE_ETIKETLERI.has(h)), // IP'ler kendi kuralıyla ([ip], [ip6]) maskelenir
+  );
+  return {
+    // Harf/rakam/alt çizgi sınırı: "emre" adı "emresin" içinde değil, yalnız tek başına eşleşir. Addaki boşluk, satırdaki boşluk grubuyla eşleşir.
+    kullanici: adlar.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}_])(?:${adlar.map((a) => regexKacis(a).replace(/ /g, '\\s+')).join('|')})(?![\\p{L}\\p{N}_])`, 'giu') : null,
+    anaBilgisayar: bilgisayarlar.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}_-])(?:${bilgisayarlar.map(regexKacis).join('|')})(?![\\p{L}\\p{N}_-])(?::\\d{1,5})?`, 'giu') : null,
+  };
+}
+
+/**
+ * Tek günlük satırını rapora girecek hale getirir: sır temizliği (sirTemizle) + adres, ağ adı, kullanıcı adı/klasörü ve varlık kimliği maskesi.
+ * Sıra önemlidir: URL önce, ayara özgü adlar sonra (boşluklu kullanıcı adı yol maskesinden önce bütün yakalanmalı), IP ve genel ad en sonda.
+ * @param {unknown} satir
+ * @param {{ kullanici?: RegExp|null, anaBilgisayar?: RegExp|null }} [maske] maskeKur() sonucu (verilmezse yalnız genel kurallar)
+ */
+function satiriTemizle(satir, maske = {}) {
   let s = sirTemizle(typeof satir === 'string' ? satir : '');
   s = s.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ');
   s = s.replace(/\bhttps?:\/\/[^\s)'"<>]+/gi, '[url]');
+  if (maske?.anaBilgisayar) s = s.replace(maske.anaBilgisayar, '[host]');
+  if (maske?.kullanici) s = s.replace(maske.kullanici, '[user]');
   s = s.replace(/\b(?:[A-Za-z0-9_-]+\.)+(?:local|lan|home\.arpa|localhost)\b/gi, '[host]');
   s = s.replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b/g, '[ip]');
   s = s.replace(/\[?(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}\]?/gi, (e) => (/^\d{1,2}:\d{2}(:\d{2})?$/.test(e) ? e : '[ip6]'));
   s = s.replace(/([A-Za-z]:[\\/]+Users[\\/]+)[^\\/\s]+/gi, '$1[user]');
   s = s.replace(/(\/(?:Users|home)\/)[^/\s]+/g, '$1[user]');
   s = s.replace(new RegExp(`\\b(${HA_ALANLARI})\\.[a-z0-9_]+\\b`, 'g'), '$1.[entity]');
+  s = s.replace(FQDN_DESENI, (eslesme, uzanti) => (DOSYA_UZANTILARI.has(uzanti.toLowerCase()) ? eslesme : '[host]'));
   s = s.replace(/(parmak izi=)[0-9a-f]+/gi, '$1[masked]');
   s = s.replace(/\s{2,}/g, ' ').trim();
   return s.length > SINIRLAR.satirUzunlugu ? `${s.slice(0, SINIRLAR.satirUzunlugu)}…` : s;
@@ -167,6 +219,8 @@ function sonBasariMetni(sonBasari, simdi) {
  * @param {string|null} g.yetkiKaydiSorunu 'yazilamadi' | 'okunamadi' | null
  * @param {number|null} g.sonBasari son başarılı HA yanıtının zamanı (ms)
  * @param {string[]} g.gunlukSatirlari ham günlük satırları
+ * @param {string[]} [g.kullaniciAdlari] bu bilgisayardaki Windows kullanıcı adı (os.userInfo().username) ve kullanıcı klasörü adı; günlükte
+ *   (boşluklu adlar dahil) görünürse [user] olur. yerelAdres/disAdres'in ana bilgisayar adları da günlükte [host] olur.
  * @returns {{ metin: string, gunlukSatiri: number }}
  */
 function raporOlustur({
@@ -185,11 +239,13 @@ function raporOlustur({
   yetkiKaydiSorunu = null,
   sonBasari = null,
   gunlukSatirlari = [],
+  kullaniciAdlari = [],
 }) {
   const an = simdi instanceof Date ? simdi : new Date();
+  const maske = maskeKur({ kullaniciAdlari, adresler: [yerelAdres, disAdres] });
   const satirlar = (Array.isArray(gunlukSatirlari) ? gunlukSatirlari : [])
     .slice(-SINIRLAR.gunlukSatiri)
-    .map(satiriTemizle)
+    .map((satir) => satiriTemizle(satir, maske))
     .filter((s) => s !== '');
   const platform = sinirliMetin(isletimSistemi.platform, 20);
   const os = platform === 'win32' ? 'Windows' : platform;
@@ -219,4 +275,4 @@ function raporOlustur({
   return { metin, gunlukSatiri: satirlar.length };
 }
 
-module.exports = { SINIRLAR, adresSinifi, adresSinifiMetni, satiriTemizle, sonSatirlar, gunlukSonSatirlari, raporOlustur };
+module.exports = { SINIRLAR, adresSinifi, adresSinifiMetni, maskeKur, satiriTemizle, sonSatirlar, gunlukSonSatirlari, raporOlustur };
