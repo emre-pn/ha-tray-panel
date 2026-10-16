@@ -9,18 +9,27 @@
  *
  * Kabul edilen biçimler: `--eylem=Salon`, `--eylem="led 40"`, tırnaksız `--eylem=led 40` (ardışık argümanlar ada eklenir),
  * eşittirsiz `--eylem Salon` (h-22).
+ *
+ * 1.4.0 (o-19) pencere ve durum komutları (aşağıda pencereDurumKomutu): `--goster` / `--gizle` / `--degistir` (isteğe bağlı
+ * `--hedef=ana|panel|palet`, varsayılan ana pencere) ve `--durum` / `--liste` ile `--cikti=<dosya.json>`. Bu komutlar HİÇBİR servis
+ * çağrısı yapmaz; yalnız pencere gösterir/gizler ya da durumu bir JSON dosyasına yazar. `--eylem` ile birlikte verilemez.
  */
 
 const { anahtarKatla, adAnahtari } = require('./metin');
 const { sorguCoz, alanKomutu, komutluAlanMi, kuyrukBolumleri } = require('./arama');
+const { yonluAdCoz, yonDestekleniyorMu } = require('./yonlu-eylem');
 
 const EYLEM_ARGI = '--eylem';
 const EYLEM_ONEKI = '--eylem=';
 const EN_COK_AD = 60;
 const EN_AZ_ONEK_HARFI = 2; // önek eşleşmesi için en az harf/rakam ("f" Film'i çalıştırmasın; h-22)
 
-/** `-` ile başlayıp en az bir karakter daha taşıyan argüman başka bir seçenektir ("-" tek başına "Ses -" adının parçasıdır). */
-const secenekMi = (a) => typeof a !== 'string' || /^-./.test(a);
+/**
+ * `-` ile başlayıp en az bir karakter daha taşıyan argüman başka bir seçenektir ("-" tek başına "Ses -" adının parçasıdır).
+ * İstisna (o-13): "-10" / "-10%" bir eksi adımıdır, seçenek değil. Tırnaksız `--eylem=led -10` böyle bölünür; seçenek sayılsaydı
+ * "-10" sessizce düşer ve "led" aç-kapa çalışırdı.
+ */
+const secenekMi = (a) => typeof a !== 'string' || (/^-./.test(a) && !/^-\d{1,3}%?$/.test(a));
 
 /**
  * argv içinde `--eylem...` ile başlayan bir argüman var mı? Ayrıştırılamasa bile (eşittirsiz, boş, bozuk) kullanıcı bir
@@ -125,9 +134,13 @@ function servisKomutunuCoz(ad, karolar) {
  * sondaki 1-100 sayısı yalnız eşleşen karo parlaklık kontrollü bir ışıksa parlaklık sayılır; "led 0" aynı ışığı kapatır.
  * Sonra 1.4.0 servis komutları (servisKomutunuCoz). Düz ad ve parlaklık yalnız tek tıklama eylemi olan karolarda aranır
  * (`varsayilanEylem: false` olan iklim, medya, seçici... karoları yalnız komutla çalışır).
+ * 1.4.0 (o-13) kesin yön: tam ad bulunamazsa sondaki işaretli adım ("led +10", "led -10", "fan +20") ya da fiil ("salon ac", "salon kapat",
+ * "salon degistir") ayrılır ve kalan ad YALNIZ bu yönü destekleyen karolar arasında aranır (aç/kapat: ışık, priz, vantilatör,
+ * input_boolean, nem alıcı; adım: parlaklık kontrollü ışık ve vantilatör). Böylece "ekran kapat" bir düğmeyi çalıştırmaz, "led +10"
+ * parlaklık kontrolü kapalı bir ışığa uygulanmaz. Yön çözülemezse (hiç eşleşme yok) eski çözümleme sürer.
  * @param {string} ad
  * @param {{id: string, etiket: string, parlaklikKontrol?: boolean, alan?: string, ozellik?: object|null, varsayilanEylem?: boolean}[]} karolar zaten güvenli süzülmüş favori karoları
- * @returns {{id: string, parlaklik?: number, kapat?: true, servis?: string, veri?: object}|{hata: 'bulunamadi'|'belirsiz'|'sinir'|'desteklenmiyor'|'komutGerekli'}}
+ * @returns {{id: string, parlaklik?: number, kapat?: true, yon?: {tur: 'ac'|'kapat'|'degistir'}|{tur: 'goreli', delta: number}, servis?: string, veri?: object}|{hata: 'bulunamadi'|'belirsiz'|'sinir'|'desteklenmiyor'|'komutGerekli'}}
  */
 function eylemAdiniCoz(ad, karolar) {
   const tumu = Array.isArray(karolar) ? karolar : [];
@@ -135,6 +148,12 @@ function eylemAdiniCoz(ad, karolar) {
   const tam = adiEsle(ad, liste, false);
   if (tam.karo) return { id: tam.karo.id };
   if (tam.hata === 'belirsiz') return { hata: 'belirsiz' };
+  const yonlu = yonluAdCoz(ad);
+  if (yonlu) {
+    const s = adiEsle(yonlu.metin, liste.filter((k) => yonDestekleniyorMu(yonlu.yon, k)), true);
+    if (s.karo) return { id: s.karo.id, yon: yonlu.yon };
+    if (s.hata === 'belirsiz') return { hata: 'belirsiz' };
+  }
   const { metin, parlaklik, kapat } = sorguCoz(ad);
   if (parlaklik !== null || kapat === true) {
     const s = adiEsle(metin, liste, true);
@@ -153,4 +172,83 @@ function eylemAdiniCoz(ad, karolar) {
   return { hata: s.hata };
 }
 
-module.exports = { EYLEM_ARGI, EYLEM_ONEKI, EN_COK_AD, EN_AZ_ONEK_HARFI, eylemIstendiMi, komutSatiriEylemi, eylemAdiniCoz };
+// --- pencere ve durum komutları (o-19) -------------------------------------------------------------------------------
+
+const PENCERE_FIILLERI = Object.freeze({ goster: 'goster', gizle: 'gizle', degistir: 'degistir' });
+const DURUM_FIILLERI = Object.freeze(['durum', 'liste']);
+const PENCERE_HEDEFLERI = Object.freeze(['ana', 'panel', 'palet']);
+const HEDEF_ARGI = '--hedef';
+const CIKTI_ARGI = '--cikti';
+const EN_COK_CIKTI_YOLU = 300; // ham değer üst sınırı (çözümleme sınırı komut-durum.js'tedir)
+/** `--goster`, `--gizle=x` gibi biçimler de "istendi" sayılır (bozuk yazım sessizce yok sayılmaz). */
+const FIIL_DESENI = /^--(goster|gizle|degistir|durum|liste)(=|$)/i;
+
+/**
+ * `--ad=değer` ya da `--ad değer` seçeneğinin değerini döner (ardışık seçenek olmayan argümanlar boşlukla eklenir, tırnaklar soyulur,
+ * denetim karakterleri atılır). Seçenek yoksa null; var ama değeri yoksa ''.
+ */
+function secenekDegeri(argv, ad) {
+  const sira = argv.findIndex((a) => {
+    if (typeof a !== 'string') return false;
+    const k = a.toLowerCase();
+    return k === ad || k.startsWith(`${ad}=`);
+  });
+  if (sira === -1) return null;
+  const parcalar = [];
+  if (argv[sira].length > ad.length) parcalar.push(argv[sira].slice(ad.length + 1));
+  for (let i = sira + 1; i < argv.length && !secenekMi(argv[i]); i += 1) parcalar.push(argv[i]);
+  let deger = parcalar.join(' ').replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim();
+  if (deger.length >= 2 && /^(["']).*\1$/.test(deger)) deger = deger.slice(1, -1).trim();
+  return deger;
+}
+
+/**
+ * argv içindeki pencere/durum komutunu çözer; hiçbiri yoksa null. Sonuç türleri:
+ *   { tur: 'pencere', islem: 'goster'|'gizle'|'degistir', hedef: 'ana'|'panel'|'palet' }
+ *   { tur: 'durum', liste: boolean, cikti: string|null, dizin: string|null }   cikti: ham değer (güvenli çözümleme komut-durum.js'te)
+ *   { tur: 'cakisma' }   birden çok komut (`--goster --gizle`, `--durum --goster`, `--eylem` ile birlikte)
+ *   { tur: 'gecersiz' }  bozuk yazım (`--goster=x`, bilinmeyen `--hedef`, fiilsiz `--hedef`/`--cikti`, `--durum --hedef`)
+ * @param {unknown} argv
+ * @param {string|null} [dizin] komutu veren kopyanın çalışma klasörü (göreli `--cikti` yolunu çözmek için)
+ */
+function pencereDurumKomutu(argv, dizin = null) {
+  if (!Array.isArray(argv)) return null;
+  const fiiller = argv.filter((a) => typeof a === 'string' && FIIL_DESENI.test(a));
+  const hedefHam = secenekDegeri(argv, HEDEF_ARGI);
+  const ciktiHam = secenekDegeri(argv, CIKTI_ARGI);
+  const eylemVar = eylemIstendiMi(argv);
+  if (fiiller.length === 0) {
+    if (eylemVar || (hedefHam === null && ciktiHam === null)) return null; // --eylem'in yan seçenekleri ya da hiç komut yok
+    return { tur: 'gecersiz' }; // fiilsiz --hedef / --cikti: sessiz kalınmaz
+  }
+  if (eylemVar) return { tur: 'cakisma' };
+  const adlar = new Set();
+  for (const f of fiiller) {
+    if (f.includes('=')) return { tur: 'gecersiz' };
+    adlar.add(f.slice(2).toLowerCase());
+  }
+  const pencereAdlari = [...adlar].filter((a) => Object.hasOwn(PENCERE_FIILLERI, a));
+  const durumAdlari = [...adlar].filter((a) => DURUM_FIILLERI.includes(a));
+  if (pencereAdlari.length > 1 || (pencereAdlari.length > 0 && durumAdlari.length > 0)) return { tur: 'cakisma' };
+  if (pencereAdlari.length === 1) {
+    if (ciktiHam !== null) return { tur: 'gecersiz' };
+    const hedef = hedefHam === null ? 'ana' : hedefHam.toLowerCase();
+    if (!PENCERE_HEDEFLERI.includes(hedef)) return { tur: 'gecersiz' };
+    return { tur: 'pencere', islem: PENCERE_FIILLERI[pencereAdlari[0]], hedef };
+  }
+  if (hedefHam !== null) return { tur: 'gecersiz' };
+  const cikti = ciktiHam === null || ciktiHam === '' ? null : ciktiHam.length > EN_COK_CIKTI_YOLU ? ciktiHam.slice(0, EN_COK_CIKTI_YOLU + 1) : ciktiHam;
+  return { tur: 'durum', liste: durumAdlari.includes('liste'), cikti, dizin: typeof dizin === 'string' && dizin ? dizin : null };
+}
+
+module.exports = {
+  EYLEM_ARGI,
+  EYLEM_ONEKI,
+  EN_COK_AD,
+  EN_AZ_ONEK_HARFI,
+  PENCERE_HEDEFLERI,
+  eylemIstendiMi,
+  komutSatiriEylemi,
+  eylemAdiniCoz,
+  pencereDurumKomutu,
+};

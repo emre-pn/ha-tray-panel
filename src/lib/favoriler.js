@@ -9,12 +9,15 @@
  *  - onayiDuzelt: zorunlu onaylı eylemlerde "onay:false" kaydını atar (sunucu tarafı doğrulama, hata-04).
  *  - HAZIR_LISTE / hazirListeUygula: hazır ilk karolar (hiz-07); GRUP_TABLOSU: panel grupları (gorunum-12).
  *
- * Favori kaydı: { entity_id, ad, onay?, etiket?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi? }
+ * Favori kaydı: { entity_id, ad, onay?, etiket?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi?, kisayolEylemi? }
  *   etiket   yalnız görünen kısa ad (güvenlik her zaman HA'daki GÜNCEL friendly_name'e bakar; etiket de süzgeçten geçer)
  *   kisayol  eylem kısayolu (hiz-05; yalnız zararsız eylemlerde)
  *   parlaklik yalnız ışıkta: panelde hazır seviyeler ve kaydırıcı (hiz-09)
  *   simge, renk, boyut  karo görünümü (1.4.0, o-31): src/lib/karo-gorunum.js (çizgi ikon ya da emoji; hazır palet adı; kucuk/genis/buyuk)
  *   tepsi    true ise tepsi menüsünün üst düzeyinde (zararsız favoriler arasında) önce gelir (1.4.0, o-16 "tepsiye ekle")
+ *   kisayolEylemi (1.4.0, o-13) kısayola basınca yapılacak KESİN yön, kapalı liste: 'ac', 'kapat', 'parlak+5|10|20', 'parlak-5|10|20'
+ *             (yalnız parlaklık kontrollü ışık), 'hiz+10|20', 'hiz-10|20' (yalnız vantilatör). Yok = varlığın kendi aç-kapa eylemi.
+ *             Yalnız geçerli kısayolu olan favoride saklanır (src/lib/yonlu-eylem.js)
  *
  * 1.4.0: favori olabilen alanlar src/lib/alan-kaydi.js karoAlaniMi ile belirlenir (iklim, medya, nem alıcı, süpürge, seçici,
  * sayı, zamanlayıcı, sensör, ikili sensör, hava eklendi). Kısayol yalnız tek tıklama eylemi olan (varsayilanServis) alanlarda
@@ -27,6 +30,7 @@ const { YASAK_ALANLAR, alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzge
 const { karoAlaniMi, varsayilanServis } = require('./alan-kaydi');
 const { SINIF, eylemSinifi } = require('./eylem-sinifi');
 const { EN_COK_FAVORI_KISAYOLU, kisayolDogrula, kisayolNormallestir } = require('./kisayol');
+const { kisayolEylemiGecerliMi } = require('./yonlu-eylem');
 const { kisalt } = require('./metin');
 const { simgeDuzelt, renkDuzelt, boyutDuzelt, VARSAYILAN_BOYUT } = require('./karo-gorunum');
 
@@ -158,7 +162,7 @@ function gorunumAlanlari(ek) {
   return sonuc;
 }
 
-/** ek: { onay?, etiket?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi? } — geçersiz alanlar sessizce atılır (çağıran gerekiyorsa bildirir). */
+/** ek: { onay?, etiket?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi?, kisayolEylemi? } — geçersiz alanlar sessizce atılır (çağıran gerekiyorsa bildirir). */
 function favoriOlustur(kimlik, ad, ek = {}) {
   const f = { entity_id: kimlik, ad };
   if (typeof ek.onay === 'boolean') f.onay = ek.onay;
@@ -169,6 +173,7 @@ function favoriOlustur(kimlik, ad, ek = {}) {
   if (ek.parlaklik === true && alanAl(kimlik) === 'light') f.parlaklik = true;
   Object.assign(f, gorunumAlanlari(ek));
   if (ek.tepsi === true) f.tepsi = true;
+  if (f.kisayol && typeof ek.kisayolEylemi === 'string' && kisayolEylemiGecerliMi(alanAl(kimlik), ek.kisayolEylemi, f)) f.kisayolEylemi = ek.kisayolEylemi;
   return f;
 }
 
@@ -230,6 +235,7 @@ function ekAlanlariBirlestir(kimlik, oge, kayit) {
     renk: typeof gelen.renk === 'string' ? gelen.renk : kayit?.renk,
     boyut: typeof gelen.boyut === 'string' ? gelen.boyut : kayit?.boyut,
     tepsi: typeof gelen.tepsi === 'boolean' ? gelen.tepsi : kayit?.tepsi,
+    kisayolEylemi: typeof gelen.kisayolEylemi === 'string' ? gelen.kisayolEylemi : kayit?.kisayolEylemi,
   };
 }
 
@@ -242,13 +248,16 @@ function ekAlanlariBirlestir(kimlik, oge, kayit) {
  *  - Seçilmeyenler kullanıcının kararıyla çıkar.
  *  - Kısayol yalnız geçerli biçimde, zararsız eylemde ve en çok 5 favoride tutulur; reddedilenler `kisayolHatalari` ile bildirilir
  *    (favori yine kaydedilir, yalnız kısayol atılır).
+ *  - Kısayol eylemi (kisayolEylemi, o-13) kapalı listeden ve favori için geçerli olmalıdır (parlaklık adımı yalnız parlaklık kontrollü ışıkta, hız
+ *    adımı yalnız vantilatörde); geçersiz olan atılır ve `eylemHatalari` ile bildirilir (favori ve kısayol yine kaydedilir, eylem aç-kapa kalır).
  *  - Karo adı (etiket, k-06) kapı süzgecinden (adGuvenliMi) geçmelidir; geçmeyen ad `etiketHatalari` ile bildirilir, önceki ad korunur.
  *  - Karo görünümü (simge, renk, boyut; o-31): geçersiz ya da yasak değer `gorunumHatalari` ile bildirilir ve önceki değer korunur.
  *  - Sıra: yükteki sıra aynen yeni listenin sırasıdır (k-05); tepsi menüsü ve panel bu sırayı kullanır.
  * @param {{ mevcut: object[], secilen: unknown[], guvenliListe: Map<string,string>, tumKimlikler: Set<string> }} girdi
  *   secilen: kimlik metni ya da { entity_id, onay?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi? }; guvenliListe: kimlik -> HA'daki güncel ad
  * @returns {{ yeni: object[], eksik: string[], engelli: {entity_id:string, ad:string}[], kisayolHatalari: {entity_id:string, neden:string}[],
- *   etiketHatalari: {entity_id:string, neden:string}[], gorunumHatalari: {entity_id:string, alan:'simge'|'renk'|'boyut'}[] }}
+ *   etiketHatalari: {entity_id:string, neden:string}[], gorunumHatalari: {entity_id:string, alan:'simge'|'renk'|'boyut'}[],
+ *   eylemHatalari?: {entity_id:string, neden:string}[] }}
  *   kisayolHatalari.neden: 'gecersiz' | 'sinif' | 'sinir'; etiketHatalari.neden: 'guvenlik'
  */
 function favorileriBirlestir({ mevcut, secilen, guvenliListe, tumKimlikler }) {
@@ -258,6 +267,7 @@ function favorileriBirlestir({ mevcut, secilen, guvenliListe, tumKimlikler }) {
   const kisayolHatalari = [];
   const etiketHatalari = [];
   const gorunumHatalari = [];
+  const eylemHatalari = [];
   const mevcutHarita = new Map((Array.isArray(mevcut) ? mevcut : []).map((f) => [f.entity_id, f]));
   const gorulen = new Set();
   let kisayollu = 0;
@@ -285,9 +295,11 @@ function favorileriBirlestir({ mevcut, secilen, guvenliListe, tumKimlikler }) {
     } else if (f.kisayol) {
       if (kisayollu >= EN_COK_KISAYOLLU_FAVORI) {
         delete f.kisayol;
+        delete f.kisayolEylemi;
         kisayolHatalari.push({ entity_id: kimlik, neden: 'sinir' });
       } else {
         kisayollu += 1;
+        if (ek.kisayolEylemi && !f.kisayolEylemi) eylemHatalari.push({ entity_id: kimlik, neden: 'gecersiz' });
       }
     }
     yeni.push(f);
@@ -313,7 +325,8 @@ function favorileriBirlestir({ mevcut, secilen, guvenliListe, tumKimlikler }) {
     }
     engelli.push({ entity_id: kimlik, ad: kayit.ad });
   }
-  return { yeni, eksik, engelli, kisayolHatalari, etiketHatalari, gorunumHatalari };
+  // eylemHatalari yalnız doluysa eklenir: eski çağıranların sonuç biçimi bozulmaz
+  return { yeni, eksik, engelli, kisayolHatalari, etiketHatalari, gorunumHatalari, ...(eylemHatalari.length > 0 ? { eylemHatalari } : {}) };
 }
 
 /**

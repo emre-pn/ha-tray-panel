@@ -527,6 +527,8 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     },
     panelAcKapat: (kaynak = 'tepsi') => acKapat('panel', kaynak),
     paletAcKapat: () => acKapat('palet', 'kisayol'),
+    /** Kesin gösterim (komut satırı `--goster --hedef=panel|palet`, o-19): açıksa yeniden yerleştirir, kapalıysa açar. Geçersiz kipte false. */
+    ac: (kip) => goster(kip),
     gizle,
     /**
      * Arayüz dili değişti: pencere başlığı güncellenir, sayfaya 'dil:degisti' ({ dil }) bildirilir (gizli olsa da; sayfa kendini yeniden çevirir).

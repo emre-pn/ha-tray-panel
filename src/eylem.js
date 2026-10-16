@@ -23,6 +23,8 @@
 const { eylemHattiOlustur, bildirimKapatHattiOlustur, basiliTutmaDeposu } = require('./lib/eylem-hatti');
 const { SINIF, eylemSinifi } = require('./lib/eylem-sinifi');
 const { eylemAdiniCoz } = require('./lib/komut-satiri');
+const { goreliParlaklik, goreliHiz, kisayolEylemiYonu, kisayolEylemiGecerliMi } = require('./lib/yonlu-eylem');
+const { alanAl, guvenliVarlikMi } = require('./lib/suzgec');
 const { durumuDuzelt } = require('./lib/ha-ws-protokol');
 const { AD_SINIRI, basariMetni, gonderildiMetni, hataBildirimiMetni } = require('./lib/bildirim-metni');
 const { TR } = require('./lib/ceviri-varsayilan');
@@ -206,6 +208,49 @@ function eylemKatmaniOlustur({
     return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
   }
 
+  /** Hat dışında kalan hatalar (durum okunamadı, yön hesaplanamadı) da aynı biçimde bildirilir; ayrıntı (ağ, adres) yazılmaz. */
+  function yonluHata(sonuc, kimlik) {
+    gunluk(`Yönlü eylem başarısız: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
+    geriBildirim({ tur: 'hata', metin: hataBildirimiMetni(eylemHataMetni(sonuc, t), t), baslik: `${adAl()} — ${kisalt(favoriAl(kimlik)?.ad || kimlik, AD_SINIRI)}` });
+    return { ok: false, tur: sonuc.tur };
+  }
+
+  /**
+   * Kesin yönlü eylem (o-13): kısayol ve komut satırı için. 'ac' / 'kapat' / 'degistir' doğrudan hattan geçer; 'goreli' (parlaklık ya da
+   * vantilatör hızı ±N) önce HA'daki GÜNCEL durumu okur, yeni değeri hesaplar ve AYNI hattan (kapı kuralı, sınıf, servis izin listesi,
+   * hız sınırı) tek POST ile gönderir. Hesap yalnız 1..100 / 0..100 aralığında kalır; kapalı ışığa artı adım ışığı o yüzdeyle açar.
+   * @param {string} kimlik
+   * @param {'kisayol'|'komut-satiri'} kaynak
+   * @param {{tur: 'ac'|'kapat'|'degistir'} | {tur: 'goreli', delta: number, hedef?: 'parlaklik'|'hiz'}} yon
+   */
+  async function yonluCalistir(kimlik, kaynak, yon) {
+    if (yon?.tur === 'ac') return calistir({ kimlik, kaynak, eylem: { servis: 'turn_on' } });
+    if (yon?.tur === 'kapat') return calistir({ kimlik, kaynak, eylem: { servis: 'turn_off' } });
+    if (yon?.tur === 'degistir') return calistir({ kimlik, kaynak });
+    if (yon?.tur !== 'goreli' || !Number.isInteger(yon.delta)) return yonluHata({ tur: 'gecersiz' }, kimlik);
+    const alan = alanAl(kimlik);
+    if (alan !== 'light' && alan !== 'fan') return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik);
+    if (yon.hedef !== undefined && yon.hedef !== (alan === 'light' ? 'parlaklik' : 'hiz')) return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik);
+    let varlik;
+    try {
+      varlik = await guncelDurum(kimlik);
+    } catch {
+      return yonluHata({ tur: 'ulasilamiyor' }, kimlik);
+    }
+    if (varlik === null || varlik === undefined) return yonluHata({ tur: 'bulunamadi' }, kimlik);
+    if (typeof varlik !== 'object' || varlik.entity_id !== kimlik || !guvenliVarlikMi(varlik)) return yonluHata({ tur: 'yasak' }, kimlik);
+    const hesap = alan === 'light' ? goreliParlaklik(varlik, yon.delta) : goreliHiz(varlik, yon.delta);
+    if (hesap.tur === 'ulasilamiyor') return yonluHata({ tur: 'ulasilamiyor' }, kimlik);
+    if (hesap.tur === 'desteklenmiyor') return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik);
+    if (hesap.tur === 'degisim-yok') {
+      const ad = (typeof varlik.attributes?.friendly_name === 'string' && varlik.attributes.friendly_name.trim()) || favoriAl(kimlik)?.ad || kimlik;
+      geriBildirim({ tur: 'ok', metin: t('sonuc.degisimYok', { ad: kisalt(ad, AD_SINIRI) }) });
+      return { ok: true, degismedi: true };
+    }
+    const eylem = alan === 'light' ? { parlaklik: hesap.yuzde } : { servis: 'set_percentage', veri: { percentage: hesap.yuzde } };
+    return calistir({ kimlik, kaynak, eylem });
+  }
+
   return {
     calistir,
     guncelDurum,
@@ -289,9 +334,17 @@ function eylemKatmaniOlustur({
       if (typeof kimlik === 'string') basili.iptal(kimlik);
     },
 
-    /** Eylem kısayolu (hiz-05): yalnız zararsız eylemler çalışır, yıkıcı olan hatta 'kaynak-izinsiz' olur. */
+    /**
+     * Eylem kısayolu (hiz-05): yalnız zararsız eylemler çalışır, yıkıcı olan hatta 'kaynak-izinsiz' olur. Favoride `kisayolEylemi` varsa
+     * (o-13: aç, kapat, parlaklık/hız ±N) o kesin yön uygulanır; eylem bu favori için artık geçerli değilse (parlaklık kontrolü sonradan
+     * kapatıldı gibi) sessizce aç-kapa yapılmaz, hata bildirilir. Yoksa varlığın kendi tek tıklama eylemi çalışır.
+     */
     kisayolla(kimlik) {
-      return calistir({ kimlik, kaynak: 'kisayol' });
+      const favori = favoriAl(kimlik);
+      const ham = favori?.kisayolEylemi;
+      if (ham === undefined || ham === '') return calistir({ kimlik, kaynak: 'kisayol' });
+      if (!kisayolEylemiGecerliMi(alanAl(kimlik), ham, favori)) return Promise.resolve(yonluHata({ tur: 'gecersiz' }, kimlik));
+      return yonluCalistir(kimlik, 'kisayol', kisayolEylemiYonu(ham));
     },
 
     /**
@@ -350,6 +403,7 @@ function eylemKatmaniOlustur({
         geriBildirim({ tur: 'hata', metin: t(anahtar) });
         return { ok: false, tur: cozum.hata };
       }
+      if (cozum.yon) return yonluCalistir(cozum.id, 'komut-satiri', cozum.yon); // "led +10", "salon ac", "salon kapat" (o-13)
       let eylemYuku; // "led 40" -> parlaklık, "led 0" -> kapat (turn_off); "klima 24" -> servis; düz ad -> varlığın kendi eylemi
       if (cozum.parlaklik !== undefined) eylemYuku = { parlaklik: cozum.parlaklik };
       else if (cozum.kapat === true) eylemYuku = { servis: 'turn_off' };

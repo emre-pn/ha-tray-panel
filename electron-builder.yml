@@ -1,5 +1,6 @@
 # Ev Paneli — electron-builder ayarı
 # Komut: npm run dist  ->  dist\Ev-Paneli-Kurulum-<sürüm>.exe
+# Taşınabilir derleme: npm run dist:tasinabilir  ->  dist\Ev-Paneli-Tasinabilir-<sürüm>.exe (aşağıdaki `portable` bloğu)
 
 appId: io.github.emre-pn.evpaneli          # src/main.js içindeki UYGULAMA_KIMLIGI ile aynı olmalı
 productName: Ev Paneli
@@ -14,6 +15,7 @@ files:
   - assets/**/*
   - varsayilan-ayarlar.json
   - package.json
+  - CHANGELOG.md   # "Yenilikler" (o-40): uygulama çalışan sürümün notlarını bu dosyadan gösterir (ağ yok)
 
 asar: true
 
@@ -34,6 +36,19 @@ win:
         - x64
   icon: assets/ikon.ico
   artifactName: Ev-Paneli-Kurulum-${version}.${ext}
+
+# Taşınabilir Windows derlemesi (o-45): kurulum gerektirmez; exe her açılışta kendini geçici klasöre açar, çalışır, kapanınca siler.
+# Yalnız `npm run dist:tasinabilir` ile derlenir (win.target listesinde DEĞİL: `npm run dist` yine yalnız kurucuyu üretir).
+#  - Ayarlar, anahtar ve HA oturumu kurulu sürümle AYNI klasördedir (%APPDATA%\Ev Paneli); tek kopya kilidi de ortaktır.
+#    Taşınabilir sürümü açarken kurulu sürüm çalışıyorsa yeni kopya açılmaz, çalışan pencere öne gelir.
+#  - "Windows açılınca başlat" taşınabilir sürümde YOKTUR: geçici klasördeki exe'yi kayıt defterine yazmak anlamsızdır (src/main.js tasinabilirMi).
+#  - unpackDirName: false -> her açılış kendine özgü geçici klasör kullanır; ikinci bir açılış (ör. --eylem) çalışan kopyanın dosyalarına çarpmaz.
+#  - Komut satırı bağımsız değişkenleri (--eylem, --goster, --durum...) açılış yardımcısı tarafından uygulamaya aktarılır, ama her çağrı exe'yi
+#    yeniden açtığı için kurulu sürümden belirgin biçimde yavaştır.
+portable:
+  artifactName: Ev-Paneli-Tasinabilir-${version}.${ext}
+  requestExecutionLevel: user
+  unpackDirName: false
 
 nsis:
   # Tek tıkla, kullanıcı başına kurulum: %LOCALAPPDATA%\Programs\ altına kurar, yönetici izni istemez.

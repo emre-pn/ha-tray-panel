@@ -33,6 +33,7 @@ const {
   Menu,
   Notification,
   Tray,
+  clipboard,
   dialog,
   globalShortcut,
   ipcMain,
@@ -80,7 +81,13 @@ const { bilgiKimlikleri, bilgiKaydi, bilgiModeliOlustur, bilgiBolumunuEkle, bilg
 const { malzemeDestekliMi, pencereMalzemesi } = require('./lib/malzeme');
 const { temaKaynagi, etkinSema, sistemKoyuMu, ozelPalet, gorunumModeli, metinOlcegiOrani } = require('./lib/gorunum');
 const { sonKullanilanlarOlustur } = require('./lib/son-kullanilanlar');
-const { komutSatiriEylemi, eylemIstendiMi } = require('./lib/komut-satiri');
+const { komutSatiriEylemi, eylemIstendiMi, pencereDurumKomutu } = require('./lib/komut-satiri');
+const { durumBelgesiOlustur, ciktiYoluCoz, durumDosyasiYaz } = require('./lib/komut-durum');
+const { surumDenetleyicisiOlustur, dosyaDeposu: surumDeposu, SURUM_SAYFASI, DURUM_DOSYASI: SURUM_DURUM_DOSYASI } = require('./lib/surum-denetimi');
+const { yenilikleriAyikla } = require('./lib/yenilikler');
+const { yazimDenetiminiKapat } = require('./lib/yazim-denetimi');
+const { raporOlustur, gunlukSonSatirlari } = require('./lib/tanilama');
+const { odaOnerileri } = require('./lib/oda-kurulum');
 const { tekrarEngeliOlustur } = require('./lib/tekrar-engeli');
 const { durumlariSuz, durumuDuzelt } = require('./lib/ha-ws-protokol');
 // Kullanıcıya giden metinler arayüz diline göre t('...') ile (src/lib/ceviri/ana.js) alınır; bu modülden yalnız parametreli işlevler gelir.
@@ -105,6 +112,7 @@ const { bildirimAkisiOlustur } = require('./lib/bildirim-akisi');
 const { kapatilanDeposuOlustur } = require('./lib/bildirim-merkezi');
 const { UYARI_ALANLARI, durumOnerileri, alanSimgesi } = require('./lib/uyari-kurallari');
 const { karoAlaniMi, alanSirasi, varsayilanServis } = require('./lib/alan-kaydi');
+const { kisayolEylemSecenekleri } = require('./lib/yonlu-eylem');
 const { eylemKatmaniOlustur } = require('./eylem');
 const { yuzeyYoneticisiOlustur } = require('./yuzey-yoneticisi');
 const { duzenGecmisiOlustur } = require('./lib/duzen-gecmisi');
@@ -165,6 +173,9 @@ const YERLESIM_SESSIZ_MS = 800; // programla yerleştirilen boyut/konum ayara ya
 app.setName(UYGULAMA_ADI);
 // Geliştirme sürümü (npm start) kurulu sürümden AYRI klasör ve ayrı tek kopya kilidi kullanır:
 // kurulu uygulama tepsideyken deneme sessizce kapanıp kurulu pencereyi öne getirmesin (hata-23).
+// Taşınabilir derleme (o-45; electron-builder portable) kurulu sürümle AYNI klasörü ve aynı tek kopya kilidini kullanır: ayarlar, anahtar ve HA
+// oturumu ortaktır; kurulu sürüm çalışırken taşınabilir exe yeni kopya açmaz, çalışanı öne getirir. Ayar klasörünü exe'nin yanına almak
+// bilinçli olarak YAPILMADI: erişim anahtarı Windows kullanıcısına bağlı (DPAPI) şifrelenir, başka bilgisayarda çözülemez.
 const VERI_KLASORU = app.isPackaged ? UYGULAMA_ADI : `${UYGULAMA_ADI} (gelistirme)`;
 app.setPath('userData', path.join(app.getPath('appData'), VERI_KLASORU)); // %APPDATA%\Ev Paneli
 app.setAppLogsPath(); // Windows'ta userData\logs
@@ -201,6 +212,7 @@ let kayitliKisayol = null;
 
 let aktifAdres = null; // ana pencerede şu an açık HA kökeni
 let baglantiTuru = null; // 'yerel' | 'dis' | null
+let sonBasari = null; // son başarılı HA okumasının/canlı bağlantının zamanı (ms; yalnız bu oturum; tanılama raporu için)
 let gosterilenSayfa = 'yok'; // 'baglaniyor' | 'cevrimdisi' | 'ha' | 'yok'
 let haSayfaBasligi = '';
 let yenidenDenemeZamanlayicisi = null;
@@ -221,6 +233,7 @@ let favoriYenilemeTekrari = false; // yenileme sürerken zorla-yenile istendi (e
 let hazirListeSuruyor = null; // hazır liste uygulaması (hiz-07) sürerken ikinci çağrı aynı sözü paylaşır
 let hazirYenidenDenemeZamanlayicisi = null; // HA yeni açılmışken eksik kalan hazır karolar için oturum içi yeniden deneme
 let bekleyenKomutEylemi = null; // uygulama hazır olmadan gelen --eylem=<ad> (ikinci kopya): hazır olunca çalıştırılır
+let bekleyenPencereKomutu = null; // uygulama hazır olmadan gelen --goster/--gizle/--degistir/--durum/--liste (o-19): hazır olunca çalıştırılır
 const kisayolTekrarEngeli = tekrarEngeliOlustur(); // basılı tutulan ana/eylem/palet/pano kısayolunun klavye tekrarları tek tetikleme sayılır (h-04)
 const tepsiTiklamaEngeli = tekrarEngeliOlustur({ sureMs: TEPSI_CIFT_TIK_MS }); // tepsi çift tıklaması tek tık sayılır (k-17)
 const ekKisayollar = new Map(); // kayıtlı eylem/palet/pano kısayolları: hızlandırıcı -> plan kimliği
@@ -714,7 +727,10 @@ const ws = haWsOlustur({
   depo,
   etkinMi: () => ayarlar?.canliBaglanti !== false,
   durumDegisti: (d) => {
-    if (d.canli) depo.sonHata = null; // canlı bağlantı kuruldu: eski bir REST hatası ("bağlantı yok") artık geçerli değil
+    if (d.canli) {
+      depo.sonHata = null; // canlı bağlantı kuruldu: eski bir REST hatası ("bağlantı yok") artık geçerli değil
+      sonBasari = Date.now();
+    }
     bildirimAkisi.baglantiDegisti(); // kurulum/kopma sırasındaki toplu durumlar uyarı üretmez (1.4.0)
     yuzey.modelDegisti();
     masaustuKarolari.modelDegisti(); // karolardaki bağlantı durumu (canlı / yedek)
@@ -1930,11 +1946,27 @@ function vurguyuUygula(pencere) {
 // Ayarlar penceresi
 // ---------------------------------------------------------------------------
 
-function ayarlarPenceresiniAc() {
+// Tepsiden/bildirimden doğrudan açılabilen Ayarlar bölümleri (Ayarlar'daki kimliklerle aynı; başka değer yok sayılır).
+const AYARLAR_BOLUMLERI = new Set(['bolumSurum', 'bolumAraclar']);
+
+/** Açık Ayarlar penceresine "şu bölümü aç ve göster" der (ayarlar:bolum-ac); sayfa kendi bölümünü açar. */
+function ayarlarBolumuIste(bolum) {
+  if (!AYARLAR_BOLUMLERI.has(bolum) || !ayarlarPenceresi || ayarlarPenceresi.isDestroyed()) return;
+  try {
+    ayarlarPenceresi.webContents.send('ayarlar:bolum-ac', { bolum });
+  } catch {
+    /* pencere kapanıyor */
+  }
+}
+
+/** @param {string} [bolum] açılışta gösterilecek bölüm (AYARLAR_BOLUMLERI); menü `click` işleyicisi olarak çağrılınca gelen nesne yok sayılır */
+function ayarlarPenceresiniAc(bolum) {
+  const istenen = typeof bolum === 'string' && AYARLAR_BOLUMLERI.has(bolum) ? bolum : null;
   if (ayarlarPenceresi && !ayarlarPenceresi.isDestroyed()) {
     if (ayarlarPenceresi.isMinimized()) ayarlarPenceresi.restore();
     ayarlarPenceresi.show();
     ayarlarPenceresi.focus();
+    if (istenen) ayarlarBolumuIste(istenen);
     return;
   }
   ayarlarPenceresi = yerelPencereOlustur({
@@ -1985,6 +2017,7 @@ function ayarlarPenceresiniAc() {
     if (secim === 0) olay.preventDefault();
   });
   ayarlarPenceresi.loadFile(AYARLAR_HTML).catch(() => {});
+  if (istenen) ayarlarPenceresi.webContents.once('did-finish-load', () => ayarlarBolumuIste(istenen));
 }
 
 /**
@@ -2077,10 +2110,19 @@ function ayarlarIcinAcikSayfa() {
 // Otomatik başlatma ve genel kısayol
 // ---------------------------------------------------------------------------
 
+/**
+ * Taşınabilir derleme mi (o-45)? electron-builder'ın portable açılış yardımcısı exe'yi geçici klasöre açar ve PORTABLE_EXECUTABLE_FILE
+ * ortam değişkenini taşınabilir exe'nin yoluna ayarlar. Bu durumda process.execPath geçici klasörü gösterir ve kalıcı DEĞİLDİR: Windows
+ * açılışına yazılmaz.
+ */
+function tasinabilirMi() {
+  return typeof process.env.PORTABLE_EXECUTABLE_FILE === 'string' && process.env.PORTABLE_EXECUTABLE_FILE !== '';
+}
+
 /** Windows'taki GERÇEK oturum açılışı durumu: { durum, mesaj } (src/lib/oturum-acilisi.js). */
 function otomatikBaslatDurumu() {
   let s = null;
-  if (app.isPackaged) {
+  if (app.isPackaged && !tasinabilirMi()) {
     try {
       s = app.getLoginItemSettings({ path: process.execPath, args: [GIZLI_BASLAT_ARG] });
     } catch {
@@ -2089,6 +2131,7 @@ function otomatikBaslatDurumu() {
   }
   return oturumAcilisiDurumu({
     paketli: app.isPackaged,
+    tasinabilir: tasinabilirMi(),
     ayarAcik: ayarlar.otomatikBaslat,
     s,
     ad: UYGULAMA_ADI, // Windows başlangıç kaydının adı (çevrilmez)
@@ -2103,8 +2146,8 @@ function otomatikBaslatDurumu() {
  * kaydı kapatmışsa kullanıcı açıkça istemedikçe (zorla) YAZILMAZ.
  */
 function otomatikBaslatUygula({ zorla = false } = {}) {
-  // Geliştirme modunda (npm start) kayıt defterine electron.exe yazmayalım.
-  if (!app.isPackaged) return;
+  // Geliştirme modunda (npm start) kayıt defterine electron.exe, taşınabilir derlemede geçici klasördeki exe yazılmasın (o-45).
+  if (!app.isPackaged || tasinabilirMi()) return;
   if (ayarlar.otomatikBaslat && !zorla && otomatikBaslatDurumu().durum === 'windows-kapatmis') {
     gunluk('Otomatik başlatma Windows tarafından kapatılmış; kullanıcı kararına saygı gösterilip yazılmadı.');
     return;
@@ -2124,6 +2167,7 @@ function otomatikBaslatUygula({ zorla = false } = {}) {
 
 /** Kullanıcı kutuyu elle değiştirdi (tepsi/ayarlar): Windows'ta kapatılmış olsa bile yeniden yazılır. */
 function otomatikBaslatAyarla(acik) {
+  if (tasinabilirMi()) return; // taşınabilir derleme kurulu sürümle ortak ayar dosyasını kullanır; başlangıç tercihine dokunmaz (o-45)
   ayarlar.otomatikBaslat = !!acik;
   ayarlariYaz();
   otomatikBaslatUygula({ zorla: true });
@@ -2345,6 +2389,271 @@ function komutSatiriEylemiCalistir(ad) {
   return eylem.komutSatirindan(ad);
 }
 
+/** Uygulama sürümü (package.json); okunamazsa boş metin. */
+function uygulamaSurumu() {
+  try {
+    return typeof app.getVersion === 'function' ? String(app.getVersion()) : '';
+  } catch {
+    return '';
+  }
+}
+
+/** `--cikti` dosyasının yazılamayacağı klasörler: uygulamanın kendi veri klasörleri (ayar, anahtar, oturum, günlük) ve kurulum klasörü. */
+function ciktiYasakKlasorleri() {
+  const liste = [app.getPath('userData'), KOK_DIZIN, path.dirname(process.execPath)];
+  try {
+    liste.push(path.join(app.getPath('appData'), UYGULAMA_ADI), path.join(app.getPath('appData'), `${UYGULAMA_ADI} (gelistirme)`));
+    if (process.env.LOCALAPPDATA) liste.push(path.join(process.env.LOCALAPPDATA, UYGULAMA_ADI), path.join(process.env.LOCALAPPDATA, `${UYGULAMA_ADI} (gelistirme)`));
+  } catch {
+    /* appData çözülemezse userData yine yasaktır */
+  }
+  return liste.filter((k) => typeof k === 'string' && k !== '');
+}
+
+/** `--goster` / `--gizle` / `--degistir` (o-19): servis çağrısı YOK; yalnız pencere gösterilir ya da gizlenir. hedef: 'ana' | 'panel' | 'palet'. */
+function pencereKomutuCalistir({ islem, hedef }) {
+  if (hedef === 'ana') {
+    const gorunur = !!anaPencere && !anaPencere.isDestroyed() && anaPencere.isVisible() && !anaPencere.isMinimized();
+    if (islem === 'goster' || (islem === 'degistir' && !gorunur)) pencereyiGoster();
+    else if (gorunur) pencereyiGizle();
+    return;
+  }
+  const acik = yuzey.kip() === hedef;
+  if (islem === 'goster' || (islem === 'degistir' && !acik)) yuzey.ac(hedef);
+  else if (acik) yuzey.gizle('komut-satiri');
+}
+
+/**
+ * `--durum` / `--liste` (o-19): güvenli favorilerin durumu `--cikti` dosyasına JSON olarak yazılır (src/lib/komut-durum.js). Belge yalnız
+ * kapı kuralından geçmiş karolardan kurulur; anahtar, adres (yalnız sınıfı), webhook kimliği ve ham durum metni belgeye girmez. Başarı
+ * sessizdir (betikler sık sorgulayabilir); hata köşe bildirimiyle söylenir.
+ */
+async function durumKomutuCalistir(komut) {
+  const cikti = ciktiYoluCoz(komut.cikti, { dizin: komut.dizin, ev: app.getPath('home'), yasakKlasorler: ciktiYasakKlasorleri() });
+  if (!cikti.ok) {
+    geriBildirim({ tur: 'hata', metin: t(cikti.neden === 'gerekli' ? 'sonuc.durumCiktiGerekli' : 'sonuc.durumCiktiGecersiz') });
+    return { ok: false, tur: cikti.neden };
+  }
+  // Canlı bağlantı yoksa ve son okuma eskiyse önce tazelenir (tepsi menüsünün kuralıyla aynı).
+  if (!ws.canliMi() && Date.now() - favoriSonYenileme > 10_000) await Promise.resolve(durumlariYenile()).catch(() => {});
+  const anaVar = !!anaPencere && !anaPencere.isDestroyed();
+  const belge = durumBelgesiOlustur({
+    liste: komut.liste === true,
+    simdi: new Date(),
+    uygulamaSurumu: uygulamaSurumu(),
+    baglantiTuru,
+    canli: ws.canliMi(),
+    anahtarVar: anahtarDeposu.varMi(),
+    anaPencere: anaVar ? (anaPencere.isVisible() && !anaPencere.isMinimized() ? 'gorunur' : 'gizli') : 'yok',
+    karolar: favoriKarolari(),
+  });
+  const yazim = durumDosyasiYaz(cikti.yol, belge, { ev: app.getPath('home'), yasakKlasorler: ciktiYasakKlasorleri() });
+  if (!yazim.ok) {
+    gunluk(`Durum dosyası yazılamadı (${yazim.neden}).`);
+    geriBildirim({ tur: 'hata', metin: t('sonuc.durumYazilamadi') });
+    return { ok: false, tur: yazim.neden };
+  }
+  gunluk(`Durum dosyası yazıldı (${belge.tur}, ${belge.favoriSayisi} favori).`); // yol günlüğe yazılmaz (kişisel klasör adı içerebilir)
+  return { ok: true };
+}
+
+/** `pencereDurumKomutu` sonucunu uygular; geçersiz ya da çakışan komut hata bildirir, hiçbir şey çalıştırmaz. */
+function pencereDurumKomutuIsle(komut) {
+  if (!komut) return Promise.resolve({ ok: false, tur: 'yok' });
+  if (komut.tur === 'pencere') {
+    pencereKomutuCalistir(komut);
+    return Promise.resolve({ ok: true });
+  }
+  if (komut.tur === 'durum') return durumKomutuCalistir(komut);
+  gunluk(`Komut satırı komutu reddedildi (${komut.tur}).`);
+  geriBildirim({ tur: 'hata', metin: t(komut.tur === 'cakisma' ? 'sonuc.komutCakisma' : 'sonuc.komutPencereGecersiz') });
+  return Promise.resolve({ ok: false, tur: komut.tur });
+}
+
+// ---------------------------------------------------------------------------
+// Yeni sürüm denetimi ve Yenilikler (o-40)
+// ---------------------------------------------------------------------------
+// Varsayılan KAPALI ve açık rıza ile (ayar surumDenetimi). Açıkken günde en çok bir kez GitHub'ın herkese açık sürüm adresine anahtarsız,
+// çerezsiz tek GET gider (src/lib/surum-denetimi.js); bulunan sürüm yalnız BİLDİRİLİR. İndirme ve kurulum yoktur: sürüm sayfası, kullanıcı
+// bildirime ya da düğmeye tıklayınca varsayılan tarayıcıda açılır. Kapalıyken ağa hiç çıkılmaz (elle denetim dahil).
+const SURUM_ILK_DENETIM_MS = 90_000; // açılıştan sonra: hazır liste ve bağlantı yerleştikten sonra
+const SURUM_BAKIS_MS = 6 * 60 * 60_000; // günlük sınırı denetleyici uygular; bu yalnız "zamanı geldi mi" bakışıdır
+let surumDenetleyicisiNesnesi = null;
+let surumZamanlayicisi = null;
+
+function surumDenetleyicisi() {
+  if (!surumDenetleyicisiNesnesi) {
+    surumDenetleyicisiNesnesi = surumDenetleyicisiOlustur({
+      fetch: (url, secenekler) => net.fetch(url, secenekler),
+      mevcutSurum: uygulamaSurumu(),
+      acikMi: () => ayarlar?.surumDenetimi === true,
+      depo: surumDeposu({ yol: path.join(app.getPath('userData'), SURUM_DURUM_DOSYASI) }),
+      gunluk,
+    });
+  }
+  return surumDenetleyicisiNesnesi;
+}
+
+/** Yeni sürüm bildirimi (Windows bildirimi): tıklanınca sürüm sayfası tarayıcıda açılır; aynı sürüm için bir kez gösterilir. */
+function yeniSurumBildir(surum, sayfa) {
+  bildir(t('surum.yeniCikti', { surum }), uygulamaAdi(), { tikla: () => disariAc(sayfa || SURUM_SAYFASI) });
+  surumDenetleyicisi().bildirildi(surum);
+}
+
+/** Zamanlanmış denetim: günde en çok bir kez (denetleyici sınırı uygular); kapalıysa hiçbir şey yapmaz. */
+async function surumOtomatikDenetle() {
+  if (ayarlar?.surumDenetimi !== true || cikiliyor) return;
+  try {
+    const sonuc = await surumDenetleyicisi().denetle();
+    if (sonuc.sonuc === 'yeni' && sonuc.bildirimGerek) yeniSurumBildir(sonuc.surum, sonuc.sayfa);
+  } catch {
+    gunluk('Sürüm denetimi çalıştırılamadı.');
+  }
+}
+
+/** Seçenek açıkken zamanlayıcıyı kurar (ilk bakış ilkMs sonra, sonra 6 saatte bir); kapalıyken zamanlayıcı YOKTUR. */
+function surumDenetimiPlanla(ilkMs) {
+  clearTimeout(surumZamanlayicisi);
+  surumZamanlayicisi = null;
+  if (ayarlar?.surumDenetimi !== true || cikiliyor) return;
+  surumZamanlayicisi = setTimeout(async () => {
+    await surumOtomatikDenetle();
+    surumDenetimiPlanla(SURUM_BAKIS_MS);
+  }, ilkMs);
+  if (typeof surumZamanlayicisi?.unref === 'function') surumZamanlayicisi.unref();
+}
+
+/** Elle denetim (tepsi ya da Ayarlar): seçenek kapalıysa ağa ÇIKILMAZ, 'kapali' döner. */
+async function surumElleDenetle() {
+  if (ayarlar?.surumDenetimi !== true) return { ok: true, sonuc: 'kapali' };
+  try {
+    const s = await surumDenetleyicisi().denetle({ elle: true });
+    return { ok: true, sonuc: s.sonuc, surum: s.surum, sayfa: s.sayfa };
+  } catch {
+    gunluk('Sürüm denetimi çalıştırılamadı.');
+    return { ok: true, sonuc: 'hata' };
+  }
+}
+
+/** Tepsi: "Güncellemeleri denetle". Sonuç her zaman söylenir; seçenek kapalıysa Ayarlar'daki ilgili bölüm açılır (ağa çıkılmaz). */
+async function surumTepsidenDenetle() {
+  const s = await surumElleDenetle();
+  if (s.sonuc === 'kapali') {
+    geriBildirim({ tur: 'ok', metin: t('sonuc.surumKapali') });
+    ayarlarPenceresiniAc('bolumSurum');
+  } else if (s.sonuc === 'yeni') {
+    yeniSurumBildir(s.surum, s.sayfa);
+  } else if (s.sonuc === 'guncel') {
+    geriBildirim({ tur: 'ok', metin: t('sonuc.surumGuncel', { surum: uygulamaSurumu() }) });
+  } else if (s.sonuc === 'cok-sik') {
+    geriBildirim({ tur: 'ok', metin: t('sonuc.surumCokSik') });
+  } else {
+    geriBildirim({ tur: 'hata', metin: t('sonuc.surumHata') });
+  }
+}
+
+/** Ayarlar'ın "Sürüm" bölümü için kayıtlı bilgi (ağa çıkmaz). */
+function surumBilgisi() {
+  return { ok: true, surum: uygulamaSurumu(), ...surumDenetleyicisi().bilgi() };
+}
+
+/** Çalışan sürümün notları: uygulamayla paketlenen CHANGELOG.md'den (ağ yok). Dosya yoksa/okunamazsa bulundu:false. */
+function yenilikleriGetir() {
+  const surum = uygulamaSurumu();
+  const yok = { ok: true, surum, bulundu: false, baslik: '', metin: '' };
+  try {
+    const yol = path.join(KOK_DIZIN, 'CHANGELOG.md');
+    if (fs.statSync(yol).size > 1_000_000) return yok;
+    return { ok: true, surum, ...yenilikleriAyikla(fs.readFileSync(yol, 'utf8'), surum) };
+  } catch {
+    return yok;
+  }
+}
+
+/**
+ * Tanılama raporu (o-41, src/lib/tanilama.js): sürüm, Windows yapısı, adres SINIFI (adresin kendisi değil), bağlantı kipi, yetki kesici
+ * durumu, hatalı deneme sayısı, son başarı ve günlüğün maskelenmiş son satırları. Erişim anahtarı ve günlük dosyasının yolu girmez.
+ * Metin her çağrıda ana süreçte kurulur (renderer metin yollamaz); kopyalama da aynı metni panoya yazar.
+ */
+function tanilamaRaporu() {
+  return raporOlustur({
+    simdi: new Date(),
+    uygulamaSurumu: uygulamaSurumu(),
+    paketTuru: tasinabilirMi() ? 'tasinabilir' : app.isPackaged ? 'kurulu' : 'gelistirme',
+    surumler: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
+    isletimSistemi: { platform: process.platform, surum: os.release(), mimari: process.arch },
+    yerelAdres: ayarlar?.yerelAdres ?? null,
+    disAdres: ayarlar?.disAdres ?? null,
+    baglantiTuru,
+    canli: ws.canliMi(),
+    anahtarVar: anahtarDeposu.varMi(),
+    yetkiDurumu,
+    hataliDeneme: yetkiKesici.hataliDenemeSayisi(),
+    yetkiKaydiSorunu: yetkiKesici.kayitSorunu(),
+    sonBasari,
+    gunlukSatirlari: gunlukSonSatirlari({ fs, yol: gunlukKaydi.yol, eskiYol: gunlukKaydi.eskiYol }),
+  });
+}
+
+/**
+ * Odadan ilk kurulum önerisi (o-44, src/lib/oda-kurulum.js): HA'daki oda (alan) kaydı ve güncel durumlar okunur; yalnız Kapı Kuralı'ndan
+ * geçen, zararsız, eylem alanındaki varlıklar odalara göre önerilir. Oda kaydı canlı WebSocket gerektirir; canlı değilse neden kodu
+ * döner (metni sayfa kendi dilinde yazar). Hiçbir şey kaydedilmez ve servis çağrılmaz: sayfa öneriyi favori SEÇİMİNE ekler, kayıt kullanıcının
+ * "Kaydet"idir (favoriler:kaydet kendi süzgecinden yine geçirir).
+ */
+async function odalariGetir() {
+  if (!ws.canliMi()) return { ok: false, neden: 'canli-yok' };
+  try {
+    const [durumlar, alanVerisi] = await Promise.all([haIstek('/api/states'), haOkuma.alanlar()]);
+    if (!Array.isArray(durumlar)) return { ok: false, neden: 'hata' };
+    if (haOkuma.kapaliUclar().includes('alanlar')) return { ok: false, neden: 'yetki' }; // oda kaydı bu anahtarla okunamıyor (yönetici gerekir)
+    return { ok: true, odalar: odaOnerileri({ durumlar, alanVerisi, dil: etkinDil }), alanSayisi: alanVerisi.alanlar.length };
+  } catch {
+    return { ok: false, neden: 'hata' };
+  }
+}
+
+/** Ayarlar önizlemesi: rapor metni (yalnız gösterilir). */
+function tanilamaGetir() {
+  try {
+    const { metin, gunlukSatiri } = tanilamaRaporu();
+    return { ok: true, metin, gunlukSatiri };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Raporu panoya yazar ve AYNI metni önizleme için geri verir (kullanıcı yapıştırmadan önce ne kopyalandığını görür). */
+function tanilamaKopyala() {
+  try {
+    const { metin, gunlukSatiri } = tanilamaRaporu();
+    clipboard.writeText(metin);
+    gunluk(`Tanılama raporu panoya kopyalandı (${gunlukSatiri} günlük satırı).`);
+    return { ok: true, metin, gunlukSatiri };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** "Günlük dosyasını göster": dosya yoksa klasörü açar. Yol arayüze verilmez, yalnız sonuç döner. */
+function gunlukKlasoruAc() {
+  const yol = gunlukKaydi.yol;
+  if (!yol) return { ok: false, neden: 'yok' };
+  try {
+    if (fs.existsSync(yol)) {
+      shell.showItemInFolder(yol);
+      return { ok: true };
+    }
+    if (fs.existsSync(path.dirname(yol))) {
+      shell.openPath(path.dirname(yol)).catch(() => {});
+      return { ok: true, klasor: true };
+    }
+  } catch {
+    /* açılamadı */
+  }
+  return { ok: false, neden: 'yok' };
+}
+
 /**
  * REST yedeği: izlenen varlıkların durumunu HA'dan okur ve depoya yazar. Canlı bağlantı kuruluyken (zorla: false) hiçbir
  * şey yapmaz: depoyu zaten canlı bağlantı günceller. 25'e kadar varlık için varlık başına istek, fazlası için tek /api/states.
@@ -2397,6 +2706,7 @@ async function durumlariYenile({ zorla = false } = {}) {
         }
       }
       depo.sonHata = null;
+      sonBasari = Date.now();
     } catch (hata) {
       depo.sonHata = hata;
     } finally {
@@ -2526,6 +2836,7 @@ function tepsiMenusuOlustur() {
   const oturum = otomatikBaslatDurumu(); // Windows'taki gerçek durum (Görev Yöneticisi'nden kapatılmış olabilir)
   let oturumEtiketi = t('menu.oturum');
   if (!app.isPackaged) oturumEtiketi += t('menu.oturumYalnizKurulu');
+  else if (tasinabilirMi()) oturumEtiketi += t('menu.oturumTasinabilir');
   else if (oturum.durum === 'windows-kapatmis') oturumEtiketi += t('menu.oturumWindowsKapatmis');
   const sablon = [
     { label: `${uygulamaAdi()} — ${baglantiDurumMetni()}`, enabled: false },
@@ -2542,6 +2853,8 @@ function tepsiMenusuOlustur() {
     { type: 'separator' },
     { label: t('menu.yenile'), click: () => yenile() },
     { label: t('menu.ayarlar'), click: ayarlarPenceresiniAc },
+    { label: t('menu.guncellemeDenetle'), click: () => surumTepsidenDenetle().catch(() => {}) },
+    { label: t('menu.yenilikler'), click: () => ayarlarPenceresiniAc('bolumSurum') },
     {
       label: t('menu.genisPencere'),
       type: 'checkbox',
@@ -2559,7 +2872,7 @@ function tepsiMenusuOlustur() {
       label: oturumEtiketi,
       type: 'checkbox',
       checked: oturum.durum === 'gelistirme' ? ayarlar.otomatikBaslat : ayarlar.otomatikBaslat && oturum.durum === 'etkin',
-      enabled: app.isPackaged,
+      enabled: app.isPackaged && !tasinabilirMi(),
       click: (oge) => otomatikBaslatAyarla(oge.checked),
     },
     { type: 'separator' },
@@ -2646,7 +2959,7 @@ async function ayarOzeti() {
     kisayolDurumlari: kisayolDurumlari.map(({ id, tur, kisayol, kimlik, sira, gecerli, neden, mesaj, durum }) => ({ id, tur, kisayol, kimlik, sira, gecerli, neden, mesaj, durum })),
     hazirListeGuncel: ayarlar.hazirListeSurumu >= HAZIR_LISTE_SURUMU,
     otomatikBaslat: ayarlar.otomatikBaslat,
-    otomatikBaslatDestekleniyor: app.isPackaged,
+    otomatikBaslatDestekleniyor: app.isPackaged && !tasinabilirMi(),
     otomatikBaslatDurumu: otomatikBaslatDurumu(),
     pencereBoyutu: ayarlar.pencereBoyutu,
     odakKaybindaGizle: ayarlar.odakKaybindaGizle,
@@ -2664,7 +2977,7 @@ async function ayarOzeti() {
     anahtarKarantinada: anahtarDeposu.karantinadaMi(), // reddedilen anahtarın kaydı yazılamadığı için dosyası kenara alındı
     yetkiKaydiSorunu: yetkiKesici.kayitSorunu(), // 'yazilamadi' | 'okunamadi' | null: kesici kaydı diske yazılamıyor/okunamıyor (Ayarlar uyarır)
     sifrelemeVar: await anahtarDeposu.kullanilabilirMi(),
-    favoriler: ayarlar.favoriler.map(({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, tepsi }) => ({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, ...(tepsi === true ? { tepsi: true } : {}) })),
+    favoriler: ayarlar.favoriler.map(({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, tepsi, kisayolEylemi }) => ({ entity_id, ad, onay, etiket, kisayol, parlaklik, kisayolEylemi, simge, renk, boyut, ...(tepsi === true ? { tepsi: true } : {}) })),
     odakFavori: odakFavoriyiAl(), // panel menüsünden "Düzenle…" ile açıldıysa odaklanılacak favori (bir kez)
     ayarDosyasi: ayarDosyasiYolu(),
     // o-32: bağlı ekranlar (tercih edilen ekran seçici): kimlik, o dilde etiket ve sınırlar; yalnız sayılar ve kısa metin
@@ -2826,7 +3139,7 @@ function ipcKaydet() {
     // Kutu elle değiştirildiyse Windows'ta kapatılmış olsa bile yeniden yazılır; değişmediyse kullanıcının
     // Görev Yöneticisi kararına dokunulmaz.
     let otomatikZorla = false;
-    if (yeni.otomatikBaslat !== undefined) {
+    if (yeni.otomatikBaslat !== undefined && !tasinabilirMi()) { // taşınabilirde ortak ayar değeri değişmez (kurulu sürümün tercihi korunur; o-45)
       otomatikZorla = yeni.otomatikBaslat !== ayarlar.otomatikBaslat;
       ayarlar.otomatikBaslat = yeni.otomatikBaslat;
     }
@@ -2931,6 +3244,24 @@ function ipcKaydet() {
 
   // "Açık sayfayı ekle" (k-18): ana pencerede açık HA sayfasının yolu ve adı.
   ipcMain.handle('ayarlar:aciksayfa', (olay) => (ayarlardan(olay) ? ayarlarIcinAcikSayfa() : izinYok()));
+
+  // Sürüm denetimi ve Yenilikler (o-40): yalnız Ayarlar penceresi sorabilir. Seçenek kapalıyken 'surum:denetle' ağa ÇIKMAZ.
+  ipcMain.handle('surum:durum', (olay) => (ayarlardan(olay) ? surumBilgisi() : izinYok()));
+  ipcMain.handle('surum:denetle', async (olay) => (ayarlardan(olay) ? surumElleDenetle() : izinYok()));
+  ipcMain.handle('surum:yenilikler', (olay) => (ayarlardan(olay) ? yenilikleriGetir() : izinYok()));
+  ipcMain.handle('surum:sayfa-ac', (olay) => {
+    if (!ayarlardan(olay)) return izinYok();
+    disariAc(SURUM_SAYFASI); // kullanıcı düğmeye bastı: varsayılan tarayıcıda sabit sürüm sayfası
+    return { ok: true };
+  });
+
+  // Tanılama (o-41): yalnız Ayarlar penceresi sorabilir. Rapor ana süreçte kurulur; kopyalama yalnız o metni panoya yazar.
+  ipcMain.handle('tanilama:getir', (olay) => (ayarlardan(olay) ? tanilamaGetir() : izinYok()));
+  ipcMain.handle('tanilama:kopyala', (olay) => (ayarlardan(olay) ? tanilamaKopyala() : izinYok()));
+  ipcMain.handle('gunluk:klasor-ac', (olay) => (ayarlardan(olay) ? gunlukKlasoruAc() : izinYok()));
+
+  // Odadan ilk kurulum (o-44): yalnız Ayarlar penceresi sorabilir; yalnız okur (öneri listesi döner, hiçbir şey kaydedilmez).
+  ipcMain.handle('odalar:getir', async (olay) => (ayarlardan(olay) ? odalariGetir() : izinYok()));
 
   // Windows Başlangıç ayarlarından kapatılmışsa kullanıcı açıkça isterse yeniden etkinleştirilir (pencere-08).
   ipcMain.handle('otomatik-baslat:etkinlestir', async (olay) => {
@@ -3084,6 +3415,7 @@ function ipcKaydet() {
             // yıkıcı eylem ve tek tıklama eylemi olmayan karo (1.4.0: iklim, sensör...) kısayola atanamaz
             kisayolUygun: siniflama.sinif === SINIF.ZARARSIZ && varsayilanServis(alan) !== null,
             tekTiklama: varsayilanServis(alan) !== null, // false: karo yalnız panelde ve palette görünür (tepsi menüsü ve kısayol atlar)
+            kisayolEylemleri: kisayolEylemSecenekleri(alan), // o-13: kısayola atanabilen kesin yönler (kapalı liste; boş = yalnız aç-kapa)
             gizli: adayGizliMi(v), // detay-20: panele/favorilere önerilmez; listede varsayılan gizli (güvenlik kuralı DEĞİLDİR)
             // 1.4.0 uyarı kuralı seçici (Ayarlar): kural kurulabilen alanlar ve o varlık için önerilen durum değerleri (HA'nın yazdığı adlar)
             ...(UYARI_ALANLARI.includes(alan) ? { uyariUygun: true, durumOnerileri: durumOnerileri(v), uyariSimgesi: alanSimgesi(alan) } : {}),
@@ -3118,7 +3450,7 @@ function ipcKaydet() {
     if (!Array.isArray(girdi) || girdi.length > 200) return { ok: false, hata: t('ana.gecersizListe') };
     if (!cihazOnbellegi) return { ok: false, hata: t('ana.onceCihazlar') };
     const duzenOncesi = duzen.anlik(); // 1.4.0 düzen (o-30): değişiklikten önceki favori + sayfa düzeni
-    const { yeni, eksik, engelli, kisayolHatalari, etiketHatalari, gorunumHatalari } = favorileriBirlestir({
+    const { yeni, eksik, engelli, kisayolHatalari, etiketHatalari, gorunumHatalari, eylemHatalari = [] } = favorileriBirlestir({
       mevcut: ayarlar.favoriler,
       secilen: girdi,
       guvenliListe: cihazOnbellegi.guvenli,
@@ -3143,6 +3475,8 @@ function ipcKaydet() {
       kisayolHatalari,
       etiketHatalari, // karo adı kapı süzgecinden geçmedi (k-06): Ayarlar söyler, önceki ad korunur
       gorunumHatalari, // simge / renk / boyut geçersizdi (o-31): [{ entity_id, alan }]; önceki değer korunur
+      // kısayol eylemi bu favori için geçerli değil (o-13): favori ve kısayol kaydedilir, eylem aç-kapa kalır; yalnız doluysa eklenir
+      ...(eylemHatalari.length > 0 ? { eylemHatalari } : {}),
       kisayolSorunlari: kisayolSorunlari().map(({ id, tur, kisayol, kimlik, neden, mesaj }) => ({ id, tur, kisayol, kimlik, neden, mesaj })),
     };
   });
@@ -3232,9 +3566,18 @@ async function yereleDonusuDene() {
 }
 
 function baslat() {
-  const gizliBasla = process.argv.includes(GIZLI_BASLAT_ARG) || baslangicEylemIstendi; // --eylem ile açılış (anlaşılmasa bile) pencere göstermez
+  // --eylem ile açılış (anlaşılmasa bile) ve pencere/durum komutuyla açılış (o-19) pencere göstermez; komut kendi işini yapar
+  const gizliBasla = process.argv.includes(GIZLI_BASLAT_ARG) || baslangicEylemIstendi || baslangicPencereKomutu !== null;
 
-  app.on('second-instance', (_olay, argv, _dizin, ek) => {
+  app.on('second-instance', (_olay, argv, dizin, ek) => {
+    // `--goster` / `--gizle` / `--degistir` / `--durum` / `--liste` (o-19): ikinci kopya komutu bu kopyaya iletir; servis çağrısı yapılmaz.
+    // `--eylem` ile birlikte verilen pencere komutu 'cakisma' sayılır ve HİÇBİRİ çalışmaz.
+    const pencereKomutu = pencereDurumKomutu(argv, dizin);
+    if (pencereKomutu) {
+      if (!ayarlar) bekleyenPencereKomutu = pencereKomutu; // henüz hazır değil: hazır olunca çalışır
+      else pencereDurumKomutuIsle(pencereKomutu);
+      return;
+    }
     // `--eylem=<ad>` (hiz-05): ikinci kopya eylemi bu kopyaya iletir (additionalData; yoksa argv) ve pencere AÇILMAZ.
     if (eylemIstendiMi(argv) || typeof ek?.eylem === 'string') {
       const istek = komutSatiriEylemi(typeof ek?.eylem === 'string' ? [`--eylem=${ek.eylem}`] : argv);
@@ -3295,6 +3638,9 @@ function baslat() {
     son.yukle();
     duzenGecmisi.yukle();
     ekAyarDinle('sayfalar', (yeni, eski) => duzen.sayfalarDegisti(yeni, eski)); // 1.4.0 düzen (o-24, o-30)
+    // Yazım denetimi ve sözlük indirmesi kapalı (o-42): oturumlar ilk kullanılmadan önce; Windows'ta Electron sözlüğü Google CDN'den indirirdi.
+    yazimDenetiminiKapat(session.fromPartition(HA_BOLUMU), gunluk);
+    yazimDenetiminiKapat(session.defaultSession, gunluk);
     izinleriAyarla(session.fromPartition(HA_BOLUMU));
     izinleriAyarla(session.defaultSession);
     ipcKaydet();
@@ -3331,9 +3677,23 @@ function baslat() {
     masaustuKarolari.hazirla(); // sabitlenmiş karolar açılıştan biraz sonra arka planda açılır (ana pencere ve tepsi önce gelsin)
     // Ekran bağlandı/söküldü ya da çözünürlük değişti: görünmez kalan karolar yerine alınır (kayıtlı konum silinmez, ekran dönünce geçerli olur).
     for (const olay of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(olay, () => masaustuKarolari.ekranDegisti());
+    // Yeni sürüm denetimi (o-40): seçenek açılırsa ilk bakış 3 sn sonra, kapanırsa zamanlayıcı kalkar; açılışta yalnız seçenek açıksa planlanır.
+    ekAyarDinle('surumDenetimi', (yeni) => surumDenetimiPlanla(yeni ? 3000 : 0));
+    surumDenetimiPlanla(SURUM_ILK_DENETIM_MS);
     hazirListeyiUygula().finally(() => {
-      if (baslangicEylemi) komutSatiriEylemiCalistir(baslangicEylemi.ad); // uygulama `--eylem=<ad>` ile başlatıldı
+      if (baslangicPencereKomutu) {
+        // uygulama `--goster` / `--durum`... ile başlatıldı; durum belgesi için favori durumları önce okunur
+        const komut = baslangicPencereKomutu;
+        Promise.resolve(komut.tur === 'durum' ? durumlariYenile({ zorla: true }) : undefined)
+          .catch(() => {})
+          .finally(() => pencereDurumKomutuIsle(komut));
+      } else if (baslangicEylemi) komutSatiriEylemiCalistir(baslangicEylemi.ad); // uygulama `--eylem=<ad>` ile başlatıldı
       else if (baslangicEylemIstendi) komutEylemiIsle(null); // `--eylem` var ama anlaşılamadı: sessiz kalmaz, hata bildirilir (h-22)
+      if (bekleyenPencereKomutu) {
+        const bekleyen = bekleyenPencereKomutu;
+        bekleyenPencereKomutu = null;
+        pencereDurumKomutuIsle(bekleyen); // hazır olmadan gelen ikinci kopya komutu
+      }
       if (bekleyenKomutEylemi) {
         const bekleyen = bekleyenKomutEylemi;
         bekleyenKomutEylemi = null;
@@ -3372,6 +3732,7 @@ function baslat() {
 // `--eylem=<ad>` ile başlatıldıysa ad, çalışan ilk kopyaya 'second-instance' additionalData ile iletilir.
 const baslangicEylemi = komutSatiriEylemi(process.argv);
 const baslangicEylemIstendi = eylemIstendiMi(process.argv); // anlaşılmayan `--eylem` de pencere açmaz ve hata bildirir
+const baslangicPencereKomutu = pencereDurumKomutu(process.argv, process.cwd()); // `--goster` / `--gizle` / `--degistir` / `--durum` / `--liste` (o-19)
 if (app.requestSingleInstanceLock(baslangicEylemi ? { eylem: baslangicEylemi.ad } : undefined)) {
   baslat();
 } else {

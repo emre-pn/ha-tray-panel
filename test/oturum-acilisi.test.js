@@ -60,3 +60,15 @@ test('eksik ya da yanlış biçimli s güvenle ele alınır', () => {
   assert.equal(oturumAcilisiDurumu(girdi({ s: { launchItems: [{ name: AD, enabled: false }] }, yol: undefined })).durum, 'windows-kapatmis');
   assert.equal(oturumAcilisiDurumu(girdi({ s: { launchItems: [{ name: AD, path: 5, enabled: true }] }, yol: undefined })).durum, 'belirsiz');
 });
+
+test('tasinabilir (o-45): taşınabilir derlemede durum "tasinabilir" olur; ayar açık olsa da Windows kaydına bakılmaz; iletisi iki dilde vardır', () => {
+  const d = oturumAcilisiDurumu(girdi({ tasinabilir: true, s: { executableWillLaunchAtLogin: true, launchItems: [{ name: AD, path: YOL, enabled: true }] } }));
+  assert.equal(d.durum, 'tasinabilir');
+  assert.match(d.mesaj, /Taşınabilir sürümde Windows ile başlatma yoktur/);
+  assert.equal(oturumAcilisiDurumu(girdi({ tasinabilir: true, ayarAcik: false, s: null })).durum, 'tasinabilir');
+  assert.equal(oturumAcilisiDurumu(girdi({ tasinabilir: false })).durum, 'kayit-yok', 'taşınabilir değilse eski davranış');
+  assert.equal(oturumAcilisiDurumu(girdi({ paketli: false, tasinabilir: true })).durum, 'gelistirme', 'paketlenmemiş sürüm önceliklidir');
+  const { cevirmen } = require('../src/lib/dil');
+  const en = oturumAcilisiDurumu(girdi({ tasinabilir: true, t: cevirmen('en', require('../src/lib/ceviri/ana')) }));
+  assert.match(en.mesaj, /portable version cannot start with Windows/);
+});

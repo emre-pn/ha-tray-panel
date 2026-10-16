@@ -234,6 +234,10 @@ const AYAR_ALANLARI = Object.freeze([
   tamsayiAlan('bildirimPilEsigi', 5, 50, 20), // bu yüzdenin altı/eşiti "düşük pil" sayılır
   mantiksalAlan('bildirimMasaustu', true), // yeni merkez bildirimlerini köşe bildirimi olarak da göster
   nesneAlan('uyariKurallari', { varsayilan: [], duzelt: (ham) => kurallariDuzelt(ham) }), // varlık uyarı kuralları (uyari-kurallari.js)
+  // --- arac grubu ---
+  // o-40 Yeni sürüm denetimi: günde en çok bir kez GitHub sürüm adresine anahtarsız GET (IP'n GitHub'a görünür). VARSAYILAN KAPALI, açık rıza ile.
+  // aktarilir:false -> dışa/içe aktarmaya girmez: başkasından alınan bir dosya bu dış ağ seçeneğini kendiliğinden açamaz.
+  mantiksalAlan('surumDenetimi', false, { aktarilir: false }),
 ]);
 
 /**

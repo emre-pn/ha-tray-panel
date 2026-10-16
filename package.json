@@ -18,6 +18,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win nsis --x64 --publish never",
+    "dist:tasinabilir": "electron-builder --win portable --x64 --publish never",
     "ikon": "node araclar/ikon-uret.js",
     "test": "node --test",
     "kontrol": "node araclar/kontrol.js"

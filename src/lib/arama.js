@@ -575,6 +575,40 @@
     return adaylar.length > 0 ? seviyeIsle(adaylar) : duzSonuc([]);
   }
 
+  // --- Yön sözdizimi (o-13): "led +10", "led -10", "salon ac", "salon kapat" ---------------------------------------------------
+  // Sondaki sözcük ya işaretli bir adımdır (+10, -10, +10%, +%10, −5) ya da bir fiildir. İşaret ve rakam bitişik olmalıdır: "Ses +" ve
+  // "Salon - Işık" gibi adlar bundan etkilenmez ("led - 10" yön değildir). Çözümleme yalnız ayrıştırır; adın hangi öğeye ait olduğunu
+  // ve öğenin bu yönü destekleyip desteklemediğini çağıran belirler. Tam adı bu metin olan bir öğe varsa çağıran yönü hiç aramalıdır.
+  const YON_ACMA = ['ac', 'yak', 'on'];
+  const YON_KAPATMA = ['kapat', 'sondur', 'off'];
+  const YON_DEGISTIRME = ['degistir', 'toggle'];
+  const GORELI_SONEKI = /^(.*\S)\s+([+\-−–])%?(\d{1,3})%?$/;
+  const EN_BUYUK_GORELI_ADIM = 100;
+
+  /**
+   * @param {string} sorgu
+   * @returns {{metin: string, yon: {tur: 'goreli', delta: number} | {tur: 'ac'|'kapat'|'degistir'}}|null}
+   *   goreli: 1-100 arası artı/eksi adım (delta işaretlidir); ac/kapat/degistir fiillerinin karşılıkları: aç/yak/on, kapat/söndür/off, değiştir/toggle
+   */
+  function yonCoz(sorgu) {
+    const duz = String(sorgu ?? '').trim().replace(/\s+/g, ' ');
+    const goreli = GORELI_SONEKI.exec(duz);
+    if (goreli) {
+      const n = Number(goreli[3]);
+      if (!Number.isInteger(n) || n < 1 || n > EN_BUYUK_GORELI_ADIM) return null;
+      return { metin: goreli[1].trim(), yon: { tur: 'goreli', delta: goreli[2] === '+' ? n : -n } };
+    }
+    const bosluk = duz.lastIndexOf(' ');
+    if (bosluk <= 0) return null;
+    const fiil = katlaDizi(duz.slice(bosluk + 1)).join('');
+    const metin = duz.slice(0, bosluk).trim();
+    if (metin === '') return null;
+    if (YON_ACMA.includes(fiil)) return { metin, yon: { tur: 'ac' } };
+    if (YON_KAPATMA.includes(fiil)) return { metin, yon: { tur: 'kapat' } };
+    if (YON_DEGISTIRME.includes(fiil)) return { metin, yon: { tur: 'degistir' } };
+    return null;
+  }
+
   return {
     katlaKarakter,
     katlaDizi,
@@ -582,6 +616,7 @@
     eslestir,
     ara,
     sorguCoz,
+    yonCoz,
     bosSorguListesi,
     paletSorgusu,
     alanKomutu,

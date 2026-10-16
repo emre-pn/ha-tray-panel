@@ -174,3 +174,112 @@ test('h-23: "led %40" ve "led 40%" parlaklık verir; "led 0" kapat anlamına gel
   assert.deepEqual(eylemAdiniCoz('film 0', KAROLAR), { hata: 'bulunamadi' });
   assert.deepEqual(eylemAdiniCoz('led 101', KAROLAR), { hata: 'bulunamadi' });
 });
+
+// --- 1.4.0: kesin yön (o-13) -------------------------------------------------------------------
+
+const YON_KAROLARI = [
+  { id: 'light.salon', etiket: 'Salon', parlaklikKontrol: true },
+  { id: 'light.masa_led_serit', etiket: 'LED şerit', parlaklikKontrol: true },
+  { id: 'light.smart_multicolor_bulb', etiket: 'Ampul', parlaklikKontrol: false },
+  { id: 'fan.vantilator', etiket: 'Vantilatör', parlaklikKontrol: false },
+  { id: 'switch.priz', etiket: 'Priz', parlaklikKontrol: false },
+  { id: 'scene.film', etiket: 'Film', parlaklikKontrol: false },
+  { id: 'scene.ekran_sahnesi', etiket: 'Ekranı kapat sahnesi', parlaklikKontrol: false },
+  { id: 'button.pc_bilgisayari_kapat', etiket: 'Bilgisayarı kapat', parlaklikKontrol: false },
+  { id: 'button.pc_mediavolumeup', etiket: 'Ses +', parlaklikKontrol: false },
+  { id: 'button.pc_mediavolumedown', etiket: 'Ses −', parlaklikKontrol: false },
+];
+
+test('o-13: "led +10" / "led -10" parlaklık kontrollü ışığa göreli adım olarak çözülür', () => {
+  assert.deepEqual(eylemAdiniCoz('led +10', YON_KAROLARI), { id: 'light.masa_led_serit', yon: { tur: 'goreli', delta: 10 } });
+  assert.deepEqual(eylemAdiniCoz('led -10', YON_KAROLARI), { id: 'light.masa_led_serit', yon: { tur: 'goreli', delta: -10 } });
+  assert.deepEqual(eylemAdiniCoz('LED ŞERİT +5%', YON_KAROLARI), { id: 'light.masa_led_serit', yon: { tur: 'goreli', delta: 5 } });
+  assert.deepEqual(eylemAdiniCoz('led −20', YON_KAROLARI), { id: 'light.masa_led_serit', yon: { tur: 'goreli', delta: -20 } });
+  assert.deepEqual(eylemAdiniCoz('vantilator +20', YON_KAROLARI), { id: 'fan.vantilator', yon: { tur: 'goreli', delta: 20 } }, 'vantilatör hızı');
+  assert.deepEqual(eylemAdiniCoz('salon -10', YON_KAROLARI), { id: 'light.salon', yon: { tur: 'goreli', delta: -10 } });
+});
+
+test('o-13: "salon ac" / "salon kapat" yalnız aç-kapat destekleyen karolar arasında aranır', () => {
+  assert.deepEqual(eylemAdiniCoz('salon ac', YON_KAROLARI), { id: 'light.salon', yon: { tur: 'ac' } });
+  assert.deepEqual(eylemAdiniCoz('SALON AÇ', YON_KAROLARI), { id: 'light.salon', yon: { tur: 'ac' } });
+  assert.deepEqual(eylemAdiniCoz('salon kapat', YON_KAROLARI), { id: 'light.salon', yon: { tur: 'kapat' } });
+  assert.deepEqual(eylemAdiniCoz('priz kapat', YON_KAROLARI), { id: 'switch.priz', yon: { tur: 'kapat' } });
+  assert.deepEqual(eylemAdiniCoz('ampul ac', YON_KAROLARI), { id: 'light.smart_multicolor_bulb', yon: { tur: 'ac' } }, 'kısılamayan ışık da açılır');
+  assert.deepEqual(eylemAdiniCoz('vantilator kapat', YON_KAROLARI), { id: 'fan.vantilator', yon: { tur: 'kapat' } });
+  assert.deepEqual(eylemAdiniCoz('salon degistir', YON_KAROLARI), { id: 'light.salon', yon: { tur: 'degistir' } });
+  assert.deepEqual(eylemAdiniCoz('salon toggle', YON_KAROLARI), { id: 'light.salon', yon: { tur: 'degistir' } });
+});
+
+test('o-13: yön, desteklemeyen karoya (sahne, düğme, kısılamayan ışık) uygulanmaz; bulunamadı kalır', () => {
+  // "film ac" Film sahnesini çalıştırmaz: sahnenin açma/kapatma yönü yoktur.
+  assert.deepEqual(eylemAdiniCoz('film ac', YON_KAROLARI), { hata: 'bulunamadi' });
+  assert.deepEqual(eylemAdiniCoz('film kapat', YON_KAROLARI), { hata: 'bulunamadi' });
+  // Tam ad önce denenir: adı "Bilgisayarı kapat" olan düğme yalnız bu adla (katlanmış da olsa) çalışır; yön olarak yorumlanmaz.
+  assert.deepEqual(eylemAdiniCoz('Bilgisayarı kapat', YON_KAROLARI), { id: 'button.pc_bilgisayari_kapat' }, 'tam ad önce denenir');
+  assert.deepEqual(eylemAdiniCoz('bilgisayari kapat', YON_KAROLARI), { id: 'button.pc_bilgisayari_kapat' }, 'katlanmış tam ad da önce denenir');
+  assert.deepEqual(eylemAdiniCoz('ekran kapat', YON_KAROLARI), { hata: 'bulunamadi' }, 'sahne "Ekranı kapat sahnesi" ile öneki tutmaz; yön sahneye uygulanmaz');
+  assert.deepEqual(eylemAdiniCoz('ampul +10', YON_KAROLARI), { hata: 'bulunamadi' }, 'parlaklık kontrolü olmayan ışığa adım uygulanmaz');
+  assert.deepEqual(eylemAdiniCoz('priz +10', YON_KAROLARI), { hata: 'bulunamadi' });
+});
+
+test('o-13: tam ad yönden önce gelir; "Ses +" ve "Ses −" yön olarak yorumlanmaz', () => {
+  assert.deepEqual(eylemAdiniCoz('Ses +', YON_KAROLARI), { id: 'button.pc_mediavolumeup' });
+  assert.deepEqual(eylemAdiniCoz('Ses −', YON_KAROLARI), { id: 'button.pc_mediavolumedown' });
+  assert.deepEqual(eylemAdiniCoz('ses -', YON_KAROLARI), { id: 'button.pc_mediavolumedown' });
+  assert.deepEqual(eylemAdiniCoz('ses +10', YON_KAROLARI), { hata: 'bulunamadi' }, 'ses düğmesi adım almaz');
+  // Adı tam olarak yön gibi görünen karo (ör. "Salon aç" sahnesi) varsa o seçilir.
+  const adli = [...YON_KAROLARI, { id: 'scene.salon_ac', etiket: 'Salon aç', parlaklikKontrol: false }];
+  assert.deepEqual(eylemAdiniCoz('salon ac', adli), { id: 'scene.salon_ac' });
+});
+
+test('o-13: belirsiz ad hiçbir şeyi seçmez; önek eşleşmesi yönlü aramada da en az 2 harf ister', () => {
+  const ikiIsik = [
+    { id: 'light.salon_tavan', etiket: 'Salon tavan', parlaklikKontrol: true },
+    { id: 'light.salon_lamba', etiket: 'Salon lamba', parlaklikKontrol: true },
+  ];
+  assert.deepEqual(eylemAdiniCoz('salon ac', ikiIsik), { hata: 'belirsiz' });
+  assert.deepEqual(eylemAdiniCoz('salon +10', ikiIsik), { hata: 'belirsiz' });
+  assert.deepEqual(eylemAdiniCoz('salon tavan ac', ikiIsik), { id: 'light.salon_tavan', yon: { tur: 'ac' } });
+  assert.deepEqual(eylemAdiniCoz('salon tav +10', ikiIsik), { id: 'light.salon_tavan', yon: { tur: 'goreli', delta: 10 } });
+  assert.deepEqual(eylemAdiniCoz('s ac', ikiIsik), { hata: 'bulunamadi' });
+});
+
+test('o-13: eski sözdizimi değişmez ("led 40", "led 0", düz ad, işaretsiz sayı)', () => {
+  assert.deepEqual(eylemAdiniCoz('led 40', YON_KAROLARI), { id: 'light.masa_led_serit', parlaklik: 40 });
+  assert.deepEqual(eylemAdiniCoz('led 0', YON_KAROLARI), { id: 'light.masa_led_serit', kapat: true });
+  assert.deepEqual(eylemAdiniCoz('led', YON_KAROLARI), { id: 'light.masa_led_serit' });
+  assert.deepEqual(eylemAdiniCoz('film', YON_KAROLARI), { id: 'scene.film' });
+  assert.deepEqual(eylemAdiniCoz('led - 10', YON_KAROLARI), { id: 'light.masa_led_serit', parlaklik: 10 }, 'boşluklu eksi yön değildir: eski çözümleme (işaret atılır, %10)');
+  assert.deepEqual(eylemAdiniCoz('led +101', YON_KAROLARI), { hata: 'bulunamadi' });
+});
+
+test('o-13: kapı kuralı — kapı/kilit karoları listede olmasa da çözümleme onları üretmez; yön yalnız aç-kapat alanlarına uygulanır', () => {
+  // Çağıran (src/eylem.js) listeyi zaten güvenli süzülmüş verir; yön çözümü listede olmayan kimliği asla uydurmaz.
+  assert.deepEqual(eylemAdiniCoz('kapi kilidi ac', YON_KAROLARI), { hata: 'bulunamadi' });
+  assert.deepEqual(eylemAdiniCoz('lock.on_kapi ac', YON_KAROLARI), { hata: 'bulunamadi' });
+  assert.deepEqual(eylemAdiniCoz('garaj kapisi kapat', YON_KAROLARI), { hata: 'bulunamadi' });
+  // Alan olarak lock/cover/alarm/camera/siren verilse bile (hata durumunda) yön desteklenmez.
+  const riskli = [
+    { id: 'lock.on_kapi', etiket: 'On kapi', parlaklikKontrol: false },
+    { id: 'cover.garaj', etiket: 'Garaj', parlaklikKontrol: false },
+    { id: 'alarm_control_panel.ev', etiket: 'Alarm', parlaklikKontrol: false },
+    { id: 'camera.bahce', etiket: 'Bahce', parlaklikKontrol: false },
+    { id: 'siren.siren', etiket: 'Siren', parlaklikKontrol: false },
+  ];
+  for (const ad of ['on kapi ac', 'on kapi kapat', 'garaj ac', 'garaj kapat', 'alarm kapat', 'alarm ac', 'bahce ac', 'siren kapat', 'garaj +10']) {
+    assert.deepEqual(eylemAdiniCoz(ad, riskli), { hata: 'bulunamadi' }, ad);
+  }
+});
+
+test('o-13: argv — tırnaksız eksi adım ("--eylem=led -10") seçenek sayılmaz, ada eklenir', () => {
+  assert.deepEqual(komutSatiriEylemi(['x', '--eylem=led', '-10']), { ad: 'led -10' });
+  assert.deepEqual(komutSatiriEylemi(['x', '--eylem', 'led', '-10']), { ad: 'led -10' });
+  assert.deepEqual(komutSatiriEylemi(['x', '--eylem=led', '+10']), { ad: 'led +10' });
+  assert.deepEqual(komutSatiriEylemi(['x', '--eylem=led', '-10%']), { ad: 'led -10%' });
+  assert.deepEqual(komutSatiriEylemi(['x', '--eylem=salon', 'ac']), { ad: 'salon ac' });
+  assert.deepEqual(komutSatiriEylemi(['x', '--eylem=led -10']), { ad: 'led -10' });
+  assert.deepEqual(komutSatiriEylemi(['x', '--eylem=led', '-gizli']), { ad: 'led' }, 'gerçek seçenek yine ayrılır');
+  assert.deepEqual(komutSatiriEylemi(['x', '--eylem=led', '-1000']), { ad: 'led' }, 'üç basamaktan uzun sayı seçenek sayılır');
+  const ad = komutSatiriEylemi(['x', '--eylem=led', '-10']).ad;
+  assert.deepEqual(eylemAdiniCoz(ad, YON_KAROLARI), { id: 'light.masa_led_serit', yon: { tur: 'goreli', delta: -10 } });
+});
