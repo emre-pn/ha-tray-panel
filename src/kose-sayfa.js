@@ -30,9 +30,19 @@
     else delete kok.dataset.malzeme;
   }
 
+  // Görünüm ayarları (1.4.0 grup "tema"): özel/hazır palet, yüksek karşıtlık, hareketi azalt, geçiş animasyonu. Model ana süreçten gelir; yoksa
+  // (varsayılan görünüm) önceki özel görünüm temizlenir. lib/tema-renk.js yüklenemezse bildirim yine varsayılan görünümle çıkar.
+  function gorunumAyarla(model) {
+    const Tema = window.EvTemaRenk;
+    if (!Tema || typeof Tema.gorunumUygula !== 'function') return;
+    const azalt = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches === true;
+    Tema.gorunumUygula(document.documentElement, model, { hareketAzalt: azalt });
+  }
+
   function goster(yuk) {
     if (!yuk || typeof yuk !== 'object') return;
     malzemeAyarla(yuk.malzeme);
+    gorunumAyarla(yuk.gorunum);
     const hata = yuk.tur === 'hata';
     const sureMs = Number.isFinite(yuk.sureMs) ? Math.min(Math.max(yuk.sureMs, 500), 10000) : 1500;
     metin.textContent = String(yuk.metin ?? '').slice(0, 200);

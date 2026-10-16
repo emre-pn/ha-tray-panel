@@ -737,3 +737,247 @@ input:focus-visible,
     transition: none;
   }
 }
+
+/* =====================================================================================================================
+ * Görünüm ayarları (1.4.0 grup "tema"): özel renkler, yüksek karşıtlık, kozmetik animasyonlar.
+ * Ana süreç görünüm modelini gönderir; src/yuzey-gorunum.js (lib/tema-renk.js gorunumUygula) bunu <html> öğesine yazar:
+ *   data-sema="koyu|acik"   özel/hazır panel paleti etkin; değişkenler <html>'in CSSOM stilinde (inline bildirimsiz) gelir, color-scheme buradan
+ *   data-karsitlik          yüksek karşıtlık (aşağıdaki sabit palet; özel renkler yok sayılır)
+ *   data-hareket="azalt"    hareketi azalt ayarı açık: kozmetik geçişler kapanır
+ *   data-gecis              hareketli geçişler açık (animasyonlar AÇIK ve hareket azaltılmamış)
+ * Renkler yine yalnız değişkenlerdendir. Yeni animasyon eklerken: :root[data-gecis] altına koy ve @media (prefers-reduced-motion:
+ * no-preference) içinde tut; test/tema-yuzey.test.js bunu denetler.
+ * ===================================================================================================================== */
+
+:root[data-sema="koyu"] {
+  color-scheme: dark;
+}
+
+:root[data-sema="acik"] {
+  color-scheme: light;
+}
+
+/* ---- Yüksek karşıtlık (o-25): opak zemin, belirgin kenarlık, metin >= 7:1; malzeme ana süreçte kapatılır ---- */
+:root[data-karsitlik] {
+  color-scheme: dark;
+  --bg: #000000;
+  --bg-ust: #000000;
+  --karo: #0a0a0a;
+  --karo-uzerinde: #262626;
+  --kenar: #ffffff;
+  --metin: #ffffff;
+  --soluk: #e6e6e6;
+  --soluk-eski: #e6e6e6;
+  --soluk-secili: #ffffff;
+  --acik: #ffd400;
+  --acik-eski: #ffd400;
+  --canli: #3ddc84;
+  --yedek: #ffd400;
+  --hata: #ff6b6b;
+  --vurgu: #5cc8ff;
+  --yikici: #ff7b7b;
+  --vurgu-metin: #8fdcff;
+  --yikici-metin: #ffa3a3;
+  --rozet-metin: #000000;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-karsitlik] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --bg-ust: #ffffff;
+    --karo: #ffffff;
+    --karo-uzerinde: #e0e0e0;
+    --kenar: #000000;
+    --metin: #000000;
+    --soluk: #1a1a1a;
+    --soluk-eski: #1a1a1a;
+    --soluk-secili: #000000;
+    --acik: #6b3300;
+    --acik-eski: #6b3300;
+    --canli: #005a2f;
+    --yedek: #7a3b00;
+    --hata: #a50000;
+    --vurgu: #004fc4;
+    --yikici: #a50000;
+    --vurgu-metin: #003d99;
+    --yikici-metin: #8a0000;
+    --rozet-metin: #ffffff;
+  }
+}
+
+:root[data-karsitlik] .karo,
+:root[data-karsitlik] .isik-karo,
+:root[data-karsitlik] .hazir,
+:root[data-karsitlik] .son-oge,
+:root[data-karsitlik] .alt-dugme,
+:root[data-karsitlik] .bos-dugme,
+:root[data-karsitlik] .arama,
+:root[data-karsitlik] .seviye-oge,
+:root[data-karsitlik] .eski {
+  border-width: 2px;
+}
+
+:root[data-karsitlik] .karo.durum-acik {
+  border-width: 3px;
+}
+
+/* Kullanılamayan karo soluklaştırılmaz (opaklık kontrastı düşürür); noktalı kenarlıkla ayırt edilir */
+:root[data-karsitlik] .karo.yok {
+  opacity: 1;
+  border-style: dotted;
+}
+
+:root[data-karsitlik] button:focus-visible,
+:root[data-karsitlik] input:focus-visible,
+:root[data-karsitlik] .icerik:focus-visible {
+  outline-width: 3px;
+  outline-offset: 2px;
+}
+
+:root[data-karsitlik] .palet-satir.secili {
+  box-shadow: inset 5px 0 0 var(--vurgu), inset 0 0 0 2px var(--vurgu);
+}
+
+:root[data-karsitlik] .ust,
+:root[data-karsitlik] .serit,
+:root[data-karsitlik] .alt,
+:root[data-karsitlik] .palet-serit {
+  border-color: var(--kenar);
+}
+
+/* ---- Hareketi azalt (ayar): kozmetik geçişler kapanır. Sistemin "animasyon efektleri" kapalıyken de aynısı media sorgusuyla olur ---- */
+:root[data-hareket="azalt"] .karo {
+  transition: none;
+}
+
+/* ---- Kozmetik animasyonlar (o-34): varsayılan KAPALI; yalnız :root[data-gecis] varken ve hareket azaltılmamışken ---- */
+
+/* Efekt tuvali (hava / mevsim): tüm pencerenin üstünde, fareyi geçirir; çizimi src/lib/efekt.js yapar */
+.efekt {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.efekt[hidden] {
+  display: none;
+}
+
+/* Kayan vurgu (palet): seçili satırın arkasındaki yüzey satırlar arasında kayar. Öğeyi src/yuzey-gorunum.js kurar; data-kayan ancak o hazırsa yazılır */
+.kayan-vurgu {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-gecis] .karo {
+    transition: background 100ms ease-out, transform 90ms ease-out;
+  }
+
+  :root[data-gecis] .karo:active {
+    transform: scale(0.97);
+  }
+
+  /* Karo içeri kayması: pencere her gösterildiğinde karolar sırayla kayarak girer (<html data-giris>'i src/yuzey-gorunum.js kısa süre ekler;
+     .kok'a sınıf eklenmez çünkü yuzey-sayfa.js her çizimde .kok sınıfını yeniden yazar) */
+  :root[data-gecis][data-giris] .izgara > .karo,
+  :root[data-gecis][data-giris] .izgara > .isik-karo,
+  :root[data-gecis][data-giris] .son-oge,
+  :root[data-gecis][data-giris] .palet-satir {
+    animation: karo-gir 220ms ease-out both;
+  }
+
+  :root[data-gecis][data-giris] .izgara > :nth-child(2) {
+    animation-delay: 25ms;
+  }
+
+  :root[data-gecis][data-giris] .izgara > :nth-child(3) {
+    animation-delay: 50ms;
+  }
+
+  :root[data-gecis][data-giris] .izgara > :nth-child(4) {
+    animation-delay: 75ms;
+  }
+
+  :root[data-gecis][data-giris] .izgara > :nth-child(5) {
+    animation-delay: 100ms;
+  }
+
+  :root[data-gecis][data-giris] .izgara > :nth-child(6) {
+    animation-delay: 125ms;
+  }
+
+  /* Simge büyümesi: başarı işareti büyüyerek belirir; grup simgesi üstüne gelince büyür */
+  :root[data-gecis] .karo.basari::before {
+    animation: isaret-gir 260ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  }
+
+  :root[data-gecis] .bolum-baslik::before {
+    display: inline-block;
+    transition: transform 160ms ease-out;
+  }
+
+  :root[data-gecis] .bolum:hover .bolum-baslik::before {
+    transform: scale(1.3);
+  }
+
+  :root[data-gecis] .icerik {
+    position: relative;
+  }
+
+  :root[data-gecis][data-kayan] .kayan-vurgu {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: var(--karo-uzerinde);
+    border-radius: 6px;
+    box-shadow: inset 3px 0 0 var(--vurgu), inset 0 0 0 1px var(--vurgu);
+    transition: transform 140ms ease-out, height 140ms ease-out, width 140ms ease-out;
+  }
+
+  :root[data-gecis][data-kayan] .kayan-vurgu[hidden] {
+    display: none;
+  }
+
+  :root[data-gecis][data-kayan] .kayan-vurgu.kayma-yok {
+    transition: none;
+  }
+
+  :root[data-gecis][data-kayan] .palet-satir {
+    z-index: 1;
+  }
+
+  :root[data-gecis][data-kayan] .palet-satir.secili {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+@keyframes karo-gir {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes isaret-gir {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

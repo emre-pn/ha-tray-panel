@@ -123,9 +123,9 @@ test('tipler, aktarılanlar ve özet: aktarilir/ozette bayrakları uyulur', () =
   assert.equal(ozet.metinOlcegi, 100, 'ayarda yoksa varsayılan');
   assert.equal(Object.hasOwn(ozet, 'yerelGizli'), false);
   // boş kayıtla bugünkü uygulama: hiçbir ek alan yok
-  assert.deepEqual(A.alanTipleri(), {});
-  assert.deepEqual(A.aktarilanAlanlar(), []);
-  assert.deepEqual(A.ekAyarOzeti({}), {});
+  assert.deepEqual(A.alanTipleri([]), {});
+  assert.deepEqual(A.aktarilanAlanlar([]), []);
+  assert.deepEqual(A.ekAyarOzeti({}, []), {});
 });
 
 test('gocleriUygula: yalnız kayıtlı sürümden yeni göçler, sürüm sırasıyla', () => {

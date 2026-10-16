@@ -32,15 +32,39 @@ const OPAK_MALZEME = Object.freeze({ malzeme: 'yok', secenekler: Object.freeze({
  *   engelAl: açık hızlı panel/palet penceresinin sınırları (g-09); bildirim onunla çakışırsa panelin üstüne yerleşir. Verilmezse
  *   (ya da okunamazsa) bildirim her zaman sağ alt köşededir.
  *   dilAl: etkin arayüz dili ('tr' | 'en'); verilirse sayfa yüklenince ve dil değişince 'dil:degisti' ({ dil }) iletisi gider (ana süreç verir).
+ *   gorunumAl: görünüm modeli (src/lib/gorunum.js gorunumModeli: özel palet, yüksek karşıtlık, animasyon); null ise yüke eklenmez
+ *   metinOlcegiAl: Ayarlar > Görünüm > Metin boyutu çarpanı (1, 1.15, 1.3, 1.5); pencere ve sayfa yakınlaştırması aynı oranda büyür (o-25)
  */
-function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malzemeAl = () => OPAK_MALZEME, engelAl = () => null, dilAl = null } = {}) {
+function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malzemeAl = () => OPAK_MALZEME, engelAl = () => null, dilAl = null, gorunumAl = () => null, metinOlcegiAl = () => 1 } = {}) {
   let pencere = null;
   let yuklendi = false;
   let bekleyen = null;
   let gizlemeZamanlayicisi = null;
   let yuklemeZamanlayicisi = null;
+  let uygulananOlcek = 1; // sayfaya son yazılan yakınlaştırma (yeni pencerede 1)
 
   const canliMi = () => !!pencere && !pencere.isDestroyed();
+
+  /** Ayarlar > Görünüm > Metin boyutu çarpanı (geçersizse 1). */
+  function metinOlcegi() {
+    let olcek = 1;
+    try {
+      olcek = Number(metinOlcegiAl());
+    } catch {
+      olcek = 1;
+    }
+    return Number.isFinite(olcek) && olcek >= 1 && olcek <= 2 ? olcek : 1;
+  }
+
+  /** Görünüm modeli yüke eklenir; varsayılan görünümde (null) hiçbir anahtar eklenmez. */
+  function gorunumEki() {
+    try {
+      const g = gorunumAl();
+      return g ? { gorunum: g } : {};
+    } catch {
+      return {};
+    }
+  }
 
   /**
    * Pencere kullanılamaz hale geldi (sayfa yüklenemedi ya da sayfa süreci öldü): pencereyi yok et, durumu sıfırla; sonraki
@@ -66,6 +90,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
   function olustur() {
     if (canliMi()) return;
     yuklendi = false;
+    uygulananOlcek = 1;
     try {
       const bu = yerelPencereOlustur({
         preload: PRELOAD_KOSE,
@@ -140,10 +165,15 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       } catch {
         engel = null; // panel sınırı okunamadı: varsayılan köşe konumu
       }
-      pencere.setBounds(koseKonumu(alan, undefined, undefined, engel));
+      const olcek = metinOlcegi();
+      pencere.setBounds(koseKonumu(alan, olcek === 1 ? undefined : { width: KOSE_BOYUTU.width * olcek, height: KOSE_BOYUTU.height * olcek }, undefined, engel));
+      if (olcek !== uygulananOlcek && typeof pencere.webContents.setZoomFactor === 'function') {
+        pencere.webContents.setZoomFactor(olcek);
+        uygulananOlcek = olcek;
+      }
       pencere.setAlwaysOnTop(true, 'screen-saver');
       pencere.setIgnoreMouseEvents(true);
-      pencere.webContents.send('kose:goster', { tur, metin: kisalt(metin, METIN_SINIRI), sureMs, malzeme: malzemeAl().malzeme });
+      pencere.webContents.send('kose:goster', { tur, metin: kisalt(metin, METIN_SINIRI), sureMs, malzeme: malzemeAl().malzeme, ...gorunumEki() });
       if (!pencere.isVisible()) pencere.showInactive(); // odak almadan göster
       clearTimeout(gizlemeZamanlayicisi);
       gizlemeZamanlayicisi = setTimeout(() => {

@@ -29,7 +29,7 @@ function onbellegiTemizle() {
 const akit = () => new Promise((coz) => setImmediate(coz));
 
 /** Sahte Electron + yönetici. `zoomVar`: webContents.setZoomFactor var mı (eski sürüm/sahte ortam davranışı). */
-function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {} } = {}) {
+function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {}, gorunumAl, metinOlcegiAl } = {}) {
   const pencereler = [];
   const ipcIsleyicileri = new Map();
   class SahteWebContents extends EventEmitter {
@@ -131,6 +131,8 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
     ayarlarAc() {},
     gunluk: (m) => gunlukler.push(m),
     zaman: { setTimeout: () => 1, clearTimeout() {} },
+    ...(gorunumAl ? { gorunumAl } : {}),
+    ...(metinOlcegiAl ? { metinOlcegiAl } : {}),
   });
   yonetici.ipcKaydet();
   const yuzeyOlayi = (pencere) => ({ sender: pencere.webContents, senderFrame: { parent: null, url: pathToFileURL(YUZEY_HTML).href } });
@@ -389,5 +391,137 @@ test('1.4.0 yuzey:oku: yalnız açık yüzeyden ve yalnız kayıtlı varlık iç
     assert.deepEqual(await okumasiz.ipcIsleyicileri.get('yuzey:oku')(okumasiz.yuzeyOlayi(p), { tur: 'gecmis', kimlikler: ['sensor.a'] }), { ok: false, tur: 'gecersiz' });
   } finally {
     okumasiz.temizle();
+  }
+});
+
+// ---- 1.4.0 grup "tema": görünüm modeli (o-29, o-34) ve metin boyutu (o-25) -----------------------------------------------
+
+test('tema: görünüm modeli yuzey:goster ve yuzey:durum-al yüküne YALNIZ varsayılandan farklıysa eklenir', async () => {
+  const model = { sema: 'koyu', degiskenler: { '--bg': '#0e1c2b' }, animasyon: { gecis: true, hava: 'otomatik', mevsim: 'yok' } };
+  let simdiki = null;
+  const o = kur({ gorunumAl: () => simdiki });
+  try {
+    const p = await panelAc(o);
+    const ilk = o.mesajlar(p, 'yuzey:goster').at(-1);
+    assert.deepEqual(Object.keys(ilk).sort(), ['malzeme', 'mod'], 'varsayılan görünümde gorunum anahtarı hiç yok');
+    assert.equal(Object.hasOwn((await o.ipcIsleyicileri.get('yuzey:durum-al')(o.yuzeyOlayi(p))), 'gorunum'), false);
+
+    simdiki = model;
+    o.yonetici.gizle('kapat');
+    o.yonetici.panelAcKapat('tepsi');
+    assert.deepEqual(o.mesajlar(p, 'yuzey:goster').at(-1).gorunum, model, 'her gösterimde güncel model gider');
+    const yanit = await o.ipcIsleyicileri.get('yuzey:durum-al')(o.yuzeyOlayi(p));
+    assert.deepEqual(yanit.gorunum, model);
+    assert.equal(yanit.ok, true);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('tema: görünüm modeli üretilemezse (istisna) panel yine açılır, yüke gorunum eklenmez', async () => {
+  const o = kur({ gorunumAl: () => { throw new Error('bozuk ayar'); } });
+  try {
+    const p = await panelAc(o);
+    assert.equal(p.gorunur, true);
+    assert.equal(Object.hasOwn(o.mesajlar(p, 'yuzey:goster').at(-1), 'gorunum'), false);
+    const yanit = await o.ipcIsleyicileri.get('yuzey:durum-al')(o.yuzeyOlayi(p));
+    assert.equal(yanit.ok, true);
+    assert.equal(Object.hasOwn(yanit, 'gorunum'), false);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-25 metin boyutu: panel Ayarlar\'daki ölçekle açılır (sayfa yakınlaştırması ve pencere boyutu), Ctrl 0 bu tabana döner', async () => {
+  const o = kur({ metinOlcegiAl: () => 1.3 });
+  try {
+    const p = await panelAc(o);
+    await akit();
+    assert.deepEqual(p.webContents.zoomlar.at(-1), 1.3, 'sayfa 130% ile açılır');
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [468, 546]);
+
+    o.tus(p, { key: '+' });
+    assert.equal(p.webContents.zoomlar.at(-1), 1.5);
+    o.tus(p, { key: '-' });
+    o.tus(p, { key: '-' });
+    assert.equal(p.webContents.zoomlar.at(-1), 1.15, 'taban altına inilebilir');
+    o.tus(p, { key: '0' });
+    assert.equal(p.webContents.zoomlar.at(-1), 1.3, 'Ctrl 0 tabana (130%) döner, 100%\'e değil');
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [468, 546]);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-25 metin boyutu: geçersiz ya da hatalı ölçek 1 sayılır; palet de tabanla açılır', async () => {
+  for (const kotu of [1.2, 0, -1, NaN, 'x', undefined, null, 9]) {
+    const o = kur({ metinOlcegiAl: () => kotu });
+    try {
+      const p = await panelAc(o);
+      assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [360, 420], String(kotu));
+      assert.equal(p.webContents.zoomlar.length, 0, 'ölçek 1 iken yakınlaştırma çağrısı yok');
+    } finally {
+      o.temizle();
+    }
+  }
+  const hatali = kur({ metinOlcegiAl: () => { throw new Error('x'); } });
+  try {
+    const p = await panelAc(hatali);
+    assert.equal(p.sinirlar.at(-1).width, 360);
+  } finally {
+    hatali.temizle();
+  }
+  const palet = kur({ metinOlcegiAl: () => 1.5 });
+  try {
+    assert.equal(palet.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    const p = palet.pencereler[0];
+    assert.equal(p.webContents.zoomlar.at(-1), 1.5);
+    assert.equal(p.sinirlar.at(-1).width, 840, 'palet 560 * 1,5');
+  } finally {
+    palet.temizle();
+  }
+});
+
+test('o-25 metin boyutu: Ayarlar\'da değişince açık panel yeni tabana gelir ve oturumdaki elle yakınlaştırma bırakılır', async () => {
+  let olcek = 1;
+  const o = kur({ metinOlcegiAl: () => olcek });
+  try {
+    const p = await panelAc(o);
+    o.tus(p, { key: '+' });
+    o.tus(p, { key: '+' }); // elle 1.3
+    assert.equal(p.webContents.zoomlar.at(-1), 1.3);
+
+    olcek = 1.15;
+    o.yonetici.metinOlcegiUygula();
+    assert.equal(p.webContents.zoomlar.at(-1), 1.15, 'elle seçim bırakılır, yeni taban uygulanır');
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [414, 483], 'görünür pencere yeniden yerleştirilir');
+
+    // gizliyken değişiklik bir sonraki gösterimde uygulanır
+    o.yonetici.gizle('kapat');
+    olcek = 1.5;
+    o.yonetici.metinOlcegiUygula();
+    o.yonetici.panelAcKapat('tepsi');
+    assert.equal(p.webContents.zoomlar.at(-1), 1.5);
+    assert.equal(p.sinirlar.at(-1).width, 540);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-25 metin boyutu: elle yakınlaştırma varken ayar değişmediği sürece oturum seçimi korunur (gizle/aç)', async () => {
+  const o = kur({ metinOlcegiAl: () => 1.15 });
+  try {
+    const p = await panelAc(o);
+    o.tus(p, { key: '+' }); // 1.3
+    o.yonetici.gizle('kapat');
+    o.yonetici.panelAcKapat('tepsi');
+    assert.equal(p.webContents.zoomlar.at(-1), 1.3, 'elle seçim yeniden gösterimde korunur');
+    o.tus(p, { key: '0' });
+    o.yonetici.gizle('kapat');
+    o.yonetici.panelAcKapat('tepsi');
+    assert.equal(p.webContents.zoomlar.at(-1), 1.15);
+  } finally {
+    o.temizle();
   }
 });

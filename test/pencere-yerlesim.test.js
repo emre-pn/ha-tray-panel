@@ -274,6 +274,16 @@ test('yakinlastirmaDegeri: adımlar 1 .. 2 arasında sınırlıdır, sıfırla 1
   assert.equal(yakinlastirmaDegeri(1.3, 'bilinmeyen'), 1.3);
 });
 
+test('yakinlastirmaDegeri: taban (Ayarlar > Metin boyutu) sıfırlamanın döneceği değerdir; taban altına inilebilir; geçersiz taban 1 sayılır (o-25)', () => {
+  assert.equal(yakinlastirmaDegeri(1.75, 'sifirla', 1.3), 1.3);
+  assert.equal(yakinlastirmaDegeri(1, 'sifirla', 1.5), 1.5);
+  assert.equal(yakinlastirmaDegeri(1.15, 'sifirla'), 1, 'taban verilmezse 1');
+  for (const kotu of [1.2, 0, -1, NaN, null, undefined, '1.3', 3]) assert.equal(yakinlastirmaDegeri(1.5, 'sifirla', kotu), 1, String(kotu));
+  assert.equal(yakinlastirmaDegeri(1.3, 'azalt', 1.3), 1.15, 'taban 130 iken Ctrl − 115\'e iner');
+  assert.equal(yakinlastirmaDegeri(1.3, 'artir', 1.3), 1.5);
+  assert.equal(yakinlastirmaDegeri(2, 'artir', 1.5), 2, 'üst sınır tabandan bağımsız');
+});
+
 test('yuzeyBoyutu: ölçek 1 eski davranışla aynı; ölçekle genişlik ve yükseklik büyür, çalışma alanına sığacak biçimde kırpılır', () => {
   const alan = { x: 0, y: 0, width: 1920, height: 1040 };
   assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1, alan), { width: 360, height: 420 });

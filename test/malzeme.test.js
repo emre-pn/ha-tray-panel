@@ -67,3 +67,42 @@ test('pencereMalzemesi: geçersiz seçim varsayılan malzemeye (acrylic) döner'
   assert.equal(pencereMalzemesi(undefined, '10.0.26300').malzeme, 'acrylic');
   assert.equal(pencereMalzemesi('bozuk', '10.0.26300').malzeme, 'acrylic');
 });
+
+// ---- 1.4.0 grup "tema": yüksek karşıtlık (o-25), açık tema ve özel panel arka planı (o-29) -----------------------------------
+
+test('pencereMalzemesi: yüksek karşıtlık malzemeyi HER ZAMAN kapatır (destekli sistemde de) ve saf siyah/beyaz opak zemin verir', () => {
+  const { YUKSEK_KARSITLIK_ARKA_PLAN } = require('../src/lib/malzeme');
+  assert.deepEqual(YUKSEK_KARSITLIK_ARKA_PLAN, { koyu: '#000000', acik: '#ffffff' });
+  for (const malzeme of ['acrylic', 'mica', 'yok']) {
+    const koyu = pencereMalzemesi(malzeme, '10.0.26300', { yuksekKarsitlik: true });
+    assert.deepEqual(koyu, { malzeme: 'yok', secenekler: { backgroundColor: '#000000' } }, malzeme);
+    assert.ok(!('backgroundMaterial' in koyu.secenekler));
+    const acik = pencereMalzemesi(malzeme, '10.0.26300', { yuksekKarsitlik: true, acikTema: true });
+    assert.deepEqual(acik.secenekler, { backgroundColor: '#ffffff' });
+  }
+  // özel panel arka planı yüksek karşıtlıkta yok sayılır
+  assert.equal(pencereMalzemesi('acrylic', '10.0.26300', { yuksekKarsitlik: true, arkaPlan: '#123456' }).secenekler.backgroundColor, '#000000');
+});
+
+test('pencereMalzemesi: açık temada opak arka plan açık renktir; özel panel arka planı yalnız opak durumda ilk boyama rengi olur', () => {
+  const { OPAK_ARKA_PLAN_ACIK } = require('../src/lib/malzeme');
+  assert.equal(OPAK_ARKA_PLAN_ACIK, '#f3f5f9', 'yuzey.css açık tema --bg ile aynı');
+  assert.deepEqual(pencereMalzemesi('yok', '10.0.26300', { acikTema: true }), { malzeme: 'yok', secenekler: { backgroundColor: '#f3f5f9' } });
+  assert.deepEqual(pencereMalzemesi('acrylic', '10.0.19045', { acikTema: true }).secenekler, { backgroundColor: '#f3f5f9' }, 'desteklenmeyen sistemde de');
+  assert.equal(pencereMalzemesi('yok', '10.0.26300', { arkaPlan: '#112233' }).secenekler.backgroundColor, '#112233');
+  assert.equal(pencereMalzemesi('yok', '10.0.26300', { arkaPlan: '#112233', acikTema: true }).secenekler.backgroundColor, '#112233', 'özel renk açık/koyu varsayılanın önündedir');
+  // malzeme açıkken pencere rengi saydam kalır: özel arka plan sayfa CSS'inde (yarı saydam yüzey) uygulanır
+  assert.deepEqual(pencereMalzemesi('acrylic', '10.0.26300', { arkaPlan: '#112233', acikTema: true }), {
+    malzeme: 'acrylic',
+    secenekler: { backgroundMaterial: 'acrylic', backgroundColor: SAYDAM_ARKA_PLAN },
+  });
+  // geçersiz özel renk yok sayılır (CSS enjeksiyonu ya da bozuk renk pencere rengine gitmez)
+  for (const kotu of ['red', '#12', '#1234567', 'url(x)', '#GGGGGG', '#ABCDEF', null, undefined, 5, {}]) {
+    assert.equal(pencereMalzemesi('yok', '10.0.26300', { arkaPlan: kotu }).secenekler.backgroundColor, OPAK_ARKA_PLAN, String(kotu));
+  }
+});
+
+test('pencereMalzemesi: üçüncü bağımsız değişken yokken eski davranış aynen korunur', () => {
+  assert.deepEqual(pencereMalzemesi('acrylic', '10.0.26300', undefined), pencereMalzemesi('acrylic', '10.0.26300'));
+  assert.deepEqual(pencereMalzemesi('yok', '10.0.26300', {}), { malzeme: 'yok', secenekler: { backgroundColor: OPAK_ARKA_PLAN } });
+});

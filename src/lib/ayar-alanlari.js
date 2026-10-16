@@ -37,6 +37,7 @@ const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
 const { alanAl, adGuvenliMi, metinGuvenliMi } = require('./suzgec');
 const { kayitliAlanMi } = require('./alan-kaydi');
 const { kisalt } = require('./metin');
+const { METIN_OLCEKLERI, VARSAYILAN_METIN_OLCEGI, HAZIR_TEMA_ADLARI, HAVA_EFEKTI_DEGERLERI, MEVSIM_EFEKTI_DEGERLERI, vurguRengiDuzelt } = require('./gorunum');
 
 const GUNCEL_EK_SURUM = 6;
 const KORUNAN_ADLAR = new Set(['__proto__', 'constructor', 'prototype', 'semaSurumu']);
@@ -135,11 +136,34 @@ function nesneAlan(ad, { varsayilan, duzelt, tip = Array.isArray(varsayilan) ? '
   return tanim(ad, tip, varsayilan, duzelt, ek);
 }
 
+// --- Grup "tema": metin boyutu ve yüksek karşıtlık (o-25), panel teması (o-29), kozmetik animasyonlar (o-34) ---------------------
+const renkDuzelt = (ham) => {
+  const renk = vurguRengiDuzelt(ham);
+  return renk === null ? undefined : renk; // '' = hazır temanın / varsayılanın rengi
+};
+const metinOlcegiAl = (ham) => {
+  const n = typeof ham === 'number' ? ham : typeof ham === 'string' && ham.trim() !== '' ? Number(ham) : NaN;
+  return METIN_OLCEKLERI.includes(n) ? n : undefined;
+};
+const TEMA_ALANLARI = [
+  nesneAlan('metinOlcegi', { varsayilan: VARSAYILAN_METIN_OLCEGI, tip: 'sayi', duzelt: metinOlcegiAl }), // % (100 | 115 | 130 | 150): panel, palet, bildirim, Ayarlar
+  mantiksalAlan('yuksekKarsitlik', false), // opak zemin, malzeme kapalı, belirgin kenarlık, >= 7:1 metin
+  secenekAlan('panelTemasi', HAZIR_TEMA_ADLARI, 'varsayilan'), // hazır panel teması
+  nesneAlan('panelVurguRengi', { varsayilan: '', tip: 'metin', duzelt: renkDuzelt }), // '' ya da "#rrggbb" (ana pencere kenarlığı olan vurguRengi'nden ayrı)
+  nesneAlan('panelArkaPlani', { varsayilan: '', tip: 'metin', duzelt: renkDuzelt }), // '' ya da "#rrggbb"
+  mantiksalAlan('animasyonlar', false), // kozmetik animasyonlar: varsayılan KAPALI
+  mantiksalAlan('animasyonGecisleri', true), // animasyonlar açıkken hareketli geçişler
+  secenekAlan('havaEfekti', HAVA_EFEKTI_DEGERLERI, 'otomatik'), // animasyonlar açıkken hava efekti
+  secenekAlan('mevsimEfekti', MEVSIM_EFEKTI_DEGERLERI, 'yok'), // animasyonlar açıkken mevsimsel süs
+  mantiksalAlan('hareketiAzalt', false), // true: hiçbir kozmetik animasyon çalışmaz (sistemin "hareketi azalt" tercihi zaten uygulanır)
+];
+
 /**
- * ŞEMA 6+ AYAR ALANLARI. Her grup kendi başlığı altına ekler (sıra önemsizdir). Şu an boştur: 1.4.0 özellik ajanları dolduracak.
+ * ŞEMA 6+ AYAR ALANLARI. Her grup kendi başlığı altına ekler (sıra önemsizdir).
  */
 const AYAR_ALANLARI = Object.freeze([
   // --- 1.4.0 özellik grupları satırlarını buraya ekler ---
+  ...TEMA_ALANLARI, // grup "tema"
 ]);
 
 /**
