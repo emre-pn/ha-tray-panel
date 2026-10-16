@@ -17,7 +17,7 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 - İstersen açılan bilgi kartları: grafikli sensör şeridi, saat ve hava durumu, salt okunur takvim ve yapılacaklar listeleri.
 - Sağ tık menüsü, sayfalar (sekmeler), karo simgesi, rengi ve boyutu, geri alınabilir sıralama ve masaüstüne sabitlenen karolar.
 - Home Assistant iletileri, düşük pil ve güncellemeler için panelde bildirimler; uyarı kuralları ve sessiz saatler. Masaüstü bildirimi isteğe bağlıdır.
-- Açık, koyu ve yüksek karşıtlıklı tema; hazır ya da özel renkler, metin boyutu, Windows 11 mika/akrilik görünüm, Türkçe ve İngilizce arayüz.
+- Açık, koyu ve yüksek karşıtlıklı tema; hazır ya da özel renkler, metin boyutu, Windows 11 mika/akrilik görünüm; Türkçe, İngilizce, Almanca, Fransızca ve İspanyolca arayüz.
 - Ayar araması, ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu ve varsayılan olarak kapalı, isteğe bağlı sürüm denetimi.
 - Kurulum gerektirmeyen taşınabilir sürüm.
 

@@ -17,7 +17,7 @@ English | [Türkçe](README.tr.md)
 - Optional info cards: a sensor strip with charts, a clock with weather, a read-only calendar and to-do lists.
 - Right-click menu, pages (tabs), tile icon, colour and size, reordering with an undo history, and tiles pinned to the desktop.
 - Notifications in the panel for Home Assistant messages, low batteries and updates, with alert rules and quiet hours. Desktop notifications are optional.
-- Light, dark and high-contrast themes with preset or custom colours, text size, Windows 11 mica/acrylic, English and Turkish interface.
+- Light, dark and high-contrast themes with preset or custom colours, text size, Windows 11 mica/acrylic, and an interface in English, Turkish, German, French and Spanish.
 - Settings search, settings export/import with automatic backups, a diagnostics report without secrets, and an opt-in update check (off by default).
 - A portable build that needs no installation.
 

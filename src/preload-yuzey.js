@@ -22,7 +22,7 @@ if (location.protocol === 'file:') {
     onDurum: (callback) => dinle('yuzey:durum', callback),
     // Yük: { mod: 'panel' | 'palet', malzeme, gorunum? } (pencere her gösterildiğinde)
     onGoster: (callback) => dinle('yuzey:goster', callback),
-    // Arayüz dili değişti: yük { dil: 'tr' | 'en' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
+    // Arayüz dili değişti: yük { dil: 'tr' | 'en' | 'de' | 'fr' | 'es' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
     onDilDegisti: (callback) => dinle('dil:degisti', callback),
     // Yük: { kimlik, parlaklik?, kapat?, servis?, veri?, sonDeger?, araDeger?, basili? }; yanıt: { ok, tur?, neden?, ad? }
     // (1.4.0 servis eylemi: { kimlik, servis, veri } — doğrulama ana süreçteki eylem hattındadır)

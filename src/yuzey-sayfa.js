@@ -115,8 +115,8 @@
   function ilkHarfBuyuk(metin) {
     const harfler = Array.from(String(metin));
     if (harfler.length === 0) return '';
-    // Türkçede i -> İ, ı -> I; İngilizcede i -> I olmalı (yoksa "invalid" "İnvalid" olurdu)
-    return harfler[0].toLocaleUpperCase(t.dil === 'en' ? 'en-US' : 'tr-TR') + harfler.slice(1).join('');
+    // Türkçede i -> İ, ı -> I; diğer dillerde i -> I olmalı (yoksa "invalid" "İnvalid" olurdu)
+    return harfler[0].toLocaleUpperCase(Dil.yerelAdi(t.dil)) + harfler.slice(1).join('');
   }
 
   // ---------------------------------------------------------------- model
@@ -1424,7 +1424,7 @@
   function bildirimZamani(zaman) {
     if (!zaman) return '';
     try {
-      return new Date(zaman).toLocaleTimeString(t.dil === 'en' ? 'en-US' : 'tr-TR', { hour: '2-digit', minute: '2-digit' });
+      return new Date(zaman).toLocaleTimeString(Dil.yerelAdi(t.dil), { hour: '2-digit', minute: '2-digit' });
     } catch (hata) {
       return '';
     }

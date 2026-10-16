@@ -22,7 +22,7 @@ if (location.protocol === 'file:') {
     durumAl: () => ipcRenderer.invoke('karo:durum-al'),
     // Karo değişti: yük { model, malzeme }
     onDurum: (callback) => dinle('karo:durum', callback),
-    // Arayüz dili değişti: yük { dil: 'tr' | 'en' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
+    // Arayüz dili değişti: yük { dil: 'tr' | 'en' | 'de' | 'fr' | 'es' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
     onDilDegisti: (callback) => dinle('dil:degisti', callback),
     // Yük: { tur: 'tikla' } ya da { parlaklik: 25 | 50 | 100 }; yanıt: { ok, tur? }. Onay gerektiren eylem çalışmaz (kaynak 'masaustu').
     calistir: (yuk) => ipcRenderer.invoke('karo:calistir', yuk),

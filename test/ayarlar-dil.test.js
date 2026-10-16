@@ -1,10 +1,11 @@
 'use strict';
 
 /**
- * Ayarlar penceresinin Türkçe/İngilizce çevirisi (src/ayarlar.html + src/ayarlar.js + src/lib/ceviri/ayarlar.js).
+ * Ayarlar penceresinin Türkçe/İngilizce/Almanca/Fransızca/İspanyolca çevirisi (src/ayarlar.html + src/ayarlar.js + src/lib/ceviri/ayarlar.js).
  *
- * Statik denetimler: HTML'deki Türkçe varsayılan metin sözlükle birebir aynı, kullanılan her anahtar iki dilde tanımlı, ölü anahtar yok,
- * İngilizce metinde Türkçe harf / çevrilmemiş kopya yok, kapı-kilit kuralının İngilizce açıklaması süzgeçteki her sözcüğü sayar.
+ * Statik denetimler: HTML'deki Türkçe varsayılan metin sözlükle birebir aynı, kullanılan her anahtar beş dilde tanımlı, ölü anahtar yok,
+ * İngilizce metinde Türkçe harf, Almanca/Fransızca/İspanyolca metinde Türkçeye özgü harf / çevrilmemiş kopya yok, kapı-kilit kuralının
+ * İngilizce, Almanca, Fransızca ve İspanyolca açıklaması süzgeçteki her sözcüğü sayar.
  * Davranış denetimleri (sahte DOM, test/ayarlar-sahte.js): dil seçimi kayıt yüküne girer, kayıttan ve ana süreç olayından sonra sayfa yeni dilde
  * yeniden yazılır (durumdan türeyen metinler dahil), kaydedilmemiş düzenleme ve güvenlik davranışları dile bağlı değildir.
  */
@@ -37,6 +38,10 @@ const KOK = path.join(__dirname, '..');
 // Ayarlar'ın metin yazan betikleri: ayarlar.js ve düzen bölümü (ayarlar-duzen.js; 1.4.0). Sözlük taramaları ikisini birlikte görür.
 const BETIK = `${ANA_BETIK}\n${DUZEN_BETIK}`;
 const TURKCE_HARF = /[çğıöşüÇĞİÖŞÜ]/;
+/** Almanca (ö ü), Fransızca (ç) ve İspanyolcada geçerli olan ç ö ü hariç, yalnız Türkçede bulunan harfler. */
+const TURKCE_OZEL_HARF = /[ğĞıİşŞ]/;
+const DILLER = ['tr', 'en', 'de', 'fr', 'es'];
+const YENI_DILLER = ['de', 'fr', 'es'];
 const DIL_ANAHTARI = 'evPaneli.ayarlar.dil';
 const yerTutucular = (metin) => [...String(metin).matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((m) => m[1]).sort();
 const varsayilanOlmayan = (s) => Object.keys(s.tr).filter((k) => !k.endsWith('.bir'));
@@ -93,10 +98,18 @@ test('ayarlar.html: data-i18n içeriği ve data-i18n-attr öznitelikleri Türkç
 
 test('ayarlar.html: dil seçici Görünüm bölümünde; "Dil / Language" etiketi ve dil adları sabit, "Sistem dili" çevrilir; sayfa betikleri doğru sırada', () => {
   assert.match(HTML, /<label for="dilSecimi">Dil \/ Language<\/label>/);
-  assert.match(HTML, /<select id="dilSecimi">\s*<option value="sistem" data-i18n="ayar\.dil\.sistem">Sistem dili<\/option>\s*<option value="tr">T&uuml;rk&ccedil;e<\/option>\s*<option value="en">English<\/option>\s*<\/select>/);
+  assert.match(HTML, /<select id="dilSecimi">\s*<option value="sistem" data-i18n="ayar\.dil\.sistem">Sistem dili<\/option>\s*<option value="tr">T&uuml;rk&ccedil;e<\/option>\s*<option value="en">English<\/option>\s*<option value="de">Deutsch<\/option>\s*<option value="fr">Fran&ccedil;ais<\/option>\s*<option value="es">Espa&ntilde;ol<\/option>\s*<\/select>/);
+  // seçenekler dil.js DIL_AYARLARI ile aynı sırada ve aynı kümede; yalnız "Sistem dili" seçeneği çevrilir (dil adlarında data-i18n yok)
+  const dilSecici = HTML.slice(HTML.indexOf('<select id="dilSecimi">'), HTML.indexOf('</select>', HTML.indexOf('<select id="dilSecimi">')));
+  assert.deepEqual([...dilSecici.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]), ['sistem', ...DILLER], 'seçici seçenekleri DIL_AYARLARI ile aynı');
+  assert.equal([...dilSecici.matchAll(/data-i18n=/g)].length, 1, 'dil seçicide yalnız "Sistem dili" çevrilir');
   const gorunum = HTML.slice(HTML.indexOf('id="bolumGorunum"'), HTML.indexOf('id="bolumAnahtar"'));
   assert.match(gorunum, /id="dilSecimi"/, 'dil seçici Görünüm bölümünde');
-  assert.ok(!Object.values(AYARLAR.tr).concat(Object.values(AYARLAR.en)).some((m) => m === 'English' || m === 'Türkçe'), 'dil adları çevrilmez');
+  const dilAdlari = ['English', 'Türkçe', 'Deutsch', 'Français', 'Español'];
+  for (const dil of DILLER) {
+    assert.ok(!Object.values(AYARLAR[dil]).some((m) => dilAdlari.includes(m)), `dil adları çevrilmez (${dil})`);
+    assert.equal(AYARLAR[dil]['ayar.dil.sistem'].includes('Language'), false, `${dil}: "Dil / Language" etiketi sözlükte yok`);
+  }
   // Sözlükler ve dil.js, ayarlar.js'ten ve kisayol.js'ten önce yüklenir
   const betikler = [...HTML.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
   assert.deepEqual(betikler, [
@@ -106,18 +119,17 @@ test('ayarlar.html: dil seçici Görünüm bölümünde; "Dil / Language" etiket
   assert.match(HTML, /<html lang="tr">/);
 });
 
-test('ayarlar.js: kullandığı her sözlük anahtarı tanımlı (ayar.* Ayarlar sözlüğünde, diğerleri ana sözlükte; iki dilde)', () => {
+test('ayarlar.js: kullandığı her sözlük anahtarı tanımlı (ayar.* Ayarlar sözlüğünde, diğerleri ana sözlükte; beş dilde)', () => {
   const kullanilan = new Set([...BETIK.matchAll(/'((?:ayar|bildirim|kisayol|uygulama|sonuc)\.[A-Za-z0-9_.]+)'/g)].map((m) => m[1]));
   assert.ok(kullanilan.size > 100, `anahtar bulunamadı (${kullanilan.size})`);
   for (const anahtar of kullanilan) {
     const kaynak = anahtar.startsWith('ayar.') ? AYARLAR : ANA;
-    assert.ok(Object.hasOwn(kaynak.tr, anahtar), `${anahtar}: tr sözlükte yok`);
-    assert.ok(Object.hasOwn(kaynak.en, anahtar), `${anahtar}: en sözlükte yok`);
+    for (const dil of DILLER) assert.ok(Object.hasOwn(kaynak[dil], anahtar), `${anahtar}: ${dil} sözlükte yok`);
   }
   for (const anahtar of ['bildirim.anahtarSilmeOnay']) assert.ok(kullanilan.has(anahtar), `${anahtar}: ayarlar.js kullanmıyor`);
   // HTML anahtarları: ayar.* Ayarlar sözlüğünde; sayfa başlığı ana sözlükten
   for (const [, anahtar] of HTML.matchAll(/\bdata-i18n="([^"]+)"/g)) {
-    assert.ok(Object.hasOwn(AYARLAR.en, anahtar) || Object.hasOwn(ANA.en, anahtar), `${anahtar}: HTML anahtarı sözlükte yok`);
+    for (const dil of DILLER) assert.ok(Object.hasOwn(AYARLAR[dil], anahtar) || Object.hasOwn(ANA[dil], anahtar), `${anahtar}: HTML anahtarı ${dil} sözlükte yok`);
   }
 });
 
@@ -163,6 +175,42 @@ test('Ayarlar sözlüğü İngilizce: Türkçe harf yok, Türkçe kopya değil, 
   assert.match(HTML, /<h1 data-i18n="ayar\.baslik">/);
 });
 
+test('Ayarlar sözlüğü Almanca/Fransızca/İspanyolca: Türkçeye özgü harf yok, ASCII Türkçe sözcük kalıntısı yok, yer tutucular beş dilde aynı, uygulama adı çevrilmez', () => {
+  const turkceSozcukler = ['veya', 'icin', 'degil', 'kadar', 'sonra', 'olarak', 'kisayol', 'cihaz', 'ayarlar', 'gibi', 'yoksa', 'ancak', 'tamam'];
+  const kalinti = new RegExp(`(?<![\\p{L}])(?:${turkceSozcukler.join('|')})(?![\\p{L}])`, 'iu');
+  for (const dil of YENI_DILLER) {
+    for (const [anahtar, metni] of Object.entries(AYARLAR[dil])) {
+      assert.doesNotMatch(metni, TURKCE_OZEL_HARF, `${dil} ${anahtar}: Türkçeye özgü harf`);
+      assert.deepEqual(yerTutucular(metni), yerTutucular(AYARLAR.tr[anahtar]), `${dil} ${anahtar}: yer tutucular farklı`);
+      if (anahtar !== 'ayar.guvenlik.metin') assert.doesNotMatch(metni.replace(/\{[A-Za-z0-9_]+\}/g, ''), kalinti, `${dil} ${anahtar}: Türkçe sözcük kalıntısı`);
+    }
+  }
+  assert.equal(AYARLAR.de['ayar.baslik'], 'Home-Panel-Einstellungen');
+  assert.equal(AYARLAR.fr['ayar.baslik'], 'Paramètres de Home Panel');
+  assert.equal(AYARLAR.es['ayar.baslik'], 'Configuración de Home Panel');
+  assert.equal(AYARLAR.de['ayar.kaydet.dugme'], 'Speichern');
+  assert.equal(AYARLAR.fr['ayar.kaydet.dugme'], 'Enregistrer');
+  assert.equal(AYARLAR.es['ayar.kaydet.dugme'], 'Guardar');
+  for (const dil of YENI_DILLER) assert.equal(ANA[dil]['uygulama.ad'], 'Home Panel', `${dil}: "Home Panel" çevrilmez`);
+});
+
+test('Güvenlik kuralı (kapı/kilit) açıklaması Almanca, Fransızca ve İspanyolcada da eksiksiz: süzgeçteki her sözcük sayılır, kuralın anlattıkları korunur', () => {
+  const ekBicimler = new Set(['kilid', 'kepeng', 'unlock']);
+  const beklenenler = {
+    de: [/schlösser \(lock\), alarmsysteme/, /können nicht zu den favoriten hinzugefügt werden/, /türen lassen sich nur innerhalb der home-assistant-oberfläche öffnen/, /kachelnamen unterliegen derselben regel/, /beim speichern automatisch entfernt/],
+    fr: [/les serrures \(lock\), les systèmes d’alarme/, /ne peuvent pas être ajoutés aux favoris/, /les portes ne peuvent être ouvertes que depuis l’interface de home assistant/, /les noms des tuiles suivent la même règle/, /retiré automatiquement lors de l’enregistrement/],
+    es: [/las cerraduras \(lock\), los sistemas de alarma/, /no se pueden añadir a los favoritos/, /las puertas solo se pueden abrir desde la interfaz de home assistant/, /los nombres de los mosaicos siguen la misma regla/, /se quita automáticamente al guardar/],
+  };
+  for (const dil of YENI_DILLER) {
+    const metni = AYARLAR[dil]['ayar.guvenlik.metin'].toLowerCase();
+    for (const sozcuk of [...YASAK_PARCALAR, ...YASAK_KISA_PARCALAR]) {
+      if (ekBicimler.has(sozcuk)) continue;
+      assert.match(metni, new RegExp(`(?<![a-z])${sozcuk}`), `${dil}: kural metninde "${sozcuk}" yok`);
+    }
+    for (const desen of beklenenler[dil]) assert.match(metni, desen, `${dil}: kural metni ${desen}`);
+  }
+});
+
 test('Güvenlik kuralı (kapı/kilit) açıklaması İngilizcede de eksiksiz: süzgeçteki her sözcük (Türkçe yazımlarıyla) sayılır; kural Türkçesi değişmedi', () => {
   const ingilizce = AYARLAR.en['ayar.guvenlik.metin'].toLowerCase();
   // kilid/kepeng/unlock yalnız ek biçimleri: kilit/kepenk/lock zaten sayılıyor
@@ -183,7 +231,7 @@ test('Güvenlik kuralı (kapı/kilit) açıklaması İngilizcede de eksiksiz: s�
 
 test('yer tutucu sayıları: çoğul çiftlerinde ({n}) .bir metni de {n} içerir; sayı verilen her metinde n var', () => {
   for (const anahtar of Object.keys(AYARLAR.tr).filter((k) => k.endsWith('.bir'))) {
-    for (const dil of ['tr', 'en']) assert.match(AYARLAR[dil][anahtar], /\{n\}/, `${anahtar} (${dil})`);
+    for (const dil of DILLER) assert.match(AYARLAR[dil][anahtar], /\{n\}/, `${anahtar} (${dil})`);
   }
 });
 
@@ -253,7 +301,7 @@ test('Türkçe açılış: dil seçimi "sistem" (alan yok ya da geçersizse), sa
   assert.equal(bildirim(sayfa).startsWith('Ayarlar kaydedildi.'), true);
   assert.equal(sayfa.oge('btnAyarlariKaydet').textContent, 'Kaydet');
 
-  for (const [dilAyari, beklenen] of [['tr', 'tr'], ['en', 'en'], ['sistem', 'sistem'], ['de', 'sistem'], [null, 'sistem']]) {
+  for (const [dilAyari, beklenen] of [['tr', 'tr'], ['en', 'en'], ['de', 'de'], ['fr', 'fr'], ['es', 'es'], ['sistem', 'sistem'], ['it', 'sistem'], ['DE', 'sistem'], ['de-DE', 'sistem'], [null, 'sistem']]) {
     const s = await acilmisSayfa({ ayar: { ...AYAR, dil: 'tr', dilAyari }, cihazlar: CIHAZLAR });
     assert.equal(s.oge('dilSecimi').value, beklenen, `dilAyari=${dilAyari}`);
     assert.equal(kirliMi(s), false, 'kayıtlı seçim kirli sayılmaz');
@@ -580,8 +628,17 @@ test('Son dil önbelleği: ilk boyama doğru dilde; ana süreç farklı dil söy
   assert.equal(eski.oge('anahtarRozet').textContent, 'Şifreli Olarak Saklanıyor');
   assert.deepEqual(ceviriOgeleriUyusuyor(eski, 'tr', JS_SAHIPLI), []);
 
+  // Yeni diller de geçerli önbellek değeridir: ilk boyama o dilde
+  for (const dil of YENI_DILLER) {
+    const s = sayfayiKur({ ayar: { ...AYAR_EN, dil, dilAyari: dil, sistemDili: dil }, cihazlar: CIHAZLAR_EN, depo: { [DIL_ANAHTARI]: dil } });
+    assert.equal(s.htmlDili(), dil, `${dil}: ilk boyama önbellekteki dilde`);
+    assert.equal(s.oge('btnAyarlariKaydet').textContent, metin(dil, 'ayar.kaydet.dugme'), `${dil}: düğme etiketi betik çalışır çalışmaz çevrilmiş`);
+    await akit();
+    assert.equal(s.htmlDili(), dil);
+  }
+
   // Geçersiz önbellek değeri yok sayılır
-  for (const kotu of ['fr', '', 'EN', '{}']) {
+  for (const kotu of ['it', '', 'EN', 'DE', 'de-DE', '{}']) {
     const s = await acilmisSayfa({ ayar: { ...AYAR, dil: 'tr', dilAyari: 'tr', sistemDili: 'tr' }, cihazlar: CIHAZLAR, depo: { [DIL_ANAHTARI]: kotu } });
     assert.equal(s.htmlDili(), null, `önbellek "${kotu}" yok sayılır`);
     assert.equal(s.oge('anahtarRozet').textContent, 'Şifreli Olarak Saklanıyor');
@@ -593,4 +650,136 @@ test('Ayar özeti alınamazsa ve dil bilgisi yoksa sayfa Türkçe kalır (eski a
   assert.equal(sayfa.htmlDili(), null);
   assert.equal(sayfa.oge('anahtarRozet').textContent, 'Şifreli Olarak Saklanıyor');
   assert.equal(sayfa.oge('secilenSayisi').textContent, '3 favori seçili', 'güvenlik kuralına takılan favori sayıya katılmaz');
+});
+
+// ---------------------------------------------------------------------------
+// o-35: Almanca, Fransızca, İspanyolca
+// ---------------------------------------------------------------------------
+
+/** ASCII veri ile (Türkçe harfli sunucu verisi yok) verilen dilde açılmış tam durum. */
+const AYAR_DILLI = (dil) => ({ ...AYAR_EN, dil, dilAyari: dil, sistemDili: dil });
+
+for (const dil of YENI_DILLER) {
+  test(`${dil} seçimi: kirli yapar; kaydedilince yük dil taşır ve sayfa ${dil} dilinde yeniden yazılır; Türkçeye dönüş sözlükle birebir`, async () => {
+    const sayfa = await acilmisSayfa({ ayar: { ...AYAR, dil: 'tr', dilAyari: 'tr', sistemDili: 'tr' }, cihazlar: CIHAZLAR });
+    sayfa.oge('dilSecimi').value = dil;
+    sayfa.oge('dilSecimi').dispatchEvent({ type: 'change' });
+    assert.equal(kirliMi(sayfa), true);
+    assert.equal(sayfa.htmlDili(), null, 'kaydedilene dek sayfa dili değişmez');
+
+    await kaydet(sayfa);
+    assert.equal(sonKayitYuku(sayfa).dil, dil);
+    assert.equal(sayfa.sunucu.dil, dil);
+    assert.equal(sayfa.htmlDili(), dil);
+    assert.equal(sayfa.oge('dilSecimi').value, dil);
+    assert.equal(kirliMi(sayfa), false);
+    assert.equal(sayfa.oge('btnAyarlariKaydet').textContent, metin(dil, 'ayar.kaydet.dugme'));
+    assert.equal(sayfa.oge('btnAyarlariKaydet').disabled, false);
+    assert.ok(bildirim(sayfa).startsWith(metin(dil, 'ayar.kaydet.kaydedildi')), `bildirim ${dil} dilinde: ${bildirim(sayfa)}`);
+    assert.equal(sayfa.oge('anahtarRozet').textContent, metin(dil, 'ayar.rozet.saklaniyor'));
+    assert.equal(sayfa.depo.get(DIL_ANAHTARI), dil, 'son dil ilk boyama için saklanır');
+    assert.deepEqual(ceviriOgeleriUyusuyor(sayfa, dil, JS_SAHIPLI), [], 'her çevrilebilir öğe o dildeki sözlük metni');
+    assert.doesNotMatch(bildirim(sayfa), TURKCE_OZEL_HARF);
+
+    // geri Türkçe
+    sayfa.oge('dilSecimi').value = 'tr';
+    sayfa.oge('dilSecimi').dispatchEvent({ type: 'change' });
+    await kaydet(sayfa);
+    assert.equal(sayfa.htmlDili(), 'tr');
+    assert.deepEqual(ceviriOgeleriUyusuyor(sayfa, 'tr', JS_SAHIPLI), []);
+    assert.equal(sayfa.oge('btnAyarlariKaydet').textContent, 'Kaydet');
+  });
+
+  test(`${dil} açılış: tam durumla (favoriler, sıra, HA panoları, yedekler, kurulum) sayfa ${dil} dilinde çizilir ve Türkçeye özgü harf kalmaz`, async () => {
+    const sayfa = await acilmisSayfa({ ayar: AYAR_DILLI(dil), cihazlar: CIHAZLAR_EN, yedekler: YEDEKLER_EN });
+    assert.equal(sayfa.htmlDili(), dil);
+    assert.deepEqual(ceviriOgeleriUyusuyor(sayfa, dil, JS_SAHIPLI), []);
+    assert.equal(sayfa.oge('dilSecimi').value, dil);
+    assert.equal(sayfa.ceviriOgeleri.find((o) => o.etiket === 'h1').textContent, AYARLAR[dil]['ayar.baslik']);
+    assert.equal(sayfa.ceviriOgeleri.find((o) => o.etiket === 'title').textContent, ANA[dil]['uygulama.ayarlarBaslik']);
+    assert.equal(sayfa.ceviriOgeleri.find((o) => o.etiket === 'nav').getAttribute('aria-label'), AYARLAR[dil]['ayar.gezin.etiket']);
+    assert.equal(sayfa.oge('yedekListesi').bul((o) => o.className === 'yedek-satir').length, 2);
+    assert.equal(sayfa.oge('secilenSayisi').textContent, metin(dil, 'ayar.favori.secili').replace('{n}', '2'), 'güvenlik kuralına takılan favori sayıya katılmaz');
+
+    const gorunur = gorunurMetinler(sayfa);
+    assert.ok(gorunur.length > 150, `denetim boş bir sayfayı sınıyor olmasın (${gorunur.length} metin)`);
+    assert.deepEqual(gorunur.filter(([, m]) => TURKCE_OZEL_HARF.test(m)), [], `${dil} sayfada Türkçeye özgü harfli görünür metin`);
+    assert.ok(sayfa.oge('cihazListesi').bul((o) => o.className.includes('cihaz-satir')).length >= 3);
+    assert.ok(gorunur.some(([, m]) => m === metin(dil, 'ayar.cihaz.karoAdi')), 'karo adı etiketi o dilde');
+    assert.ok(gorunur.some(([, m]) => m === metin(dil, 'ayar.favori.engelliNot')), 'güvenlik kuralı notu o dilde');
+  });
+
+  test(`${dil}: ana süreçten gelen dil olayı sayfayı çevirir, kaydedilmemiş düzenleme korunur; geçersiz dil yok sayılır`, async () => {
+    const sayfa = await acilmisSayfa({ ayar: { ...AYAR_D3, dil: 'tr', dilAyari: 'sistem', sistemDili: 'tr' }, cihazlar: CIHAZLAR_D3 });
+    yaz(sayfa.oge('yerelAdres'), 'http://192.168.1.99:8123');
+    const sayiTr = /^(\d+) favori seçili$/.exec(sayfa.oge('secilenSayisi').textContent)[1];
+    await sayfa.dilDegisti(dil);
+    assert.equal(sayfa.htmlDili(), dil);
+    assert.equal(sayfa.oge('btnAyarlariKaydet').textContent, metin(dil, 'ayar.kaydet.dugme'));
+    assert.equal(sayfa.oge('anahtarRozet').textContent, metin(dil, 'ayar.rozet.saklaniyor'));
+    assert.equal(sayfa.oge('secilenSayisi').textContent, metin(dil, 'ayar.favori.secili').replace('{n}', sayiTr));
+    assert.equal(sayfa.oge('hazirListeDurum').textContent, metin(dil, 'ayar.hazir.durumGuncel'));
+    assert.equal(sayfa.oge('canliDurumMetni').textContent, metin(dil, 'ayar.canli.canli'));
+    assert.equal(sayfa.oge('yerelAdres').value, 'http://192.168.1.99:8123', 'yazılan değer korunur');
+    assert.equal(kirliMi(sayfa), true, 'kirli durum korunur');
+    assert.equal(sayfa.depo.get(DIL_ANAHTARI), dil);
+    for (const kotu of ['it', 'DE', 'de-DE', 'xx', '', null]) {
+      await sayfa.dilDegisti(kotu);
+      assert.equal(sayfa.htmlDili(), dil, `geçersiz dil "${kotu}" yok sayılır`);
+    }
+  });
+}
+
+test('Sistem dili Almanca/Fransızca/İspanyolca iken "sistem" seçimi o dilde açar (ana süreç çözer, sayfa uygular)', async () => {
+  for (const dil of YENI_DILLER) {
+    const sayfa = await acilmisSayfa({ ayar: { ...AYAR, dil: 'tr', dilAyari: 'tr', sistemDili: dil }, cihazlar: CIHAZLAR });
+    sayfa.sunucu.sistemDili = dil;
+    sayfa.oge('dilSecimi').value = 'sistem';
+    sayfa.oge('dilSecimi').dispatchEvent({ type: 'change' });
+    await kaydet(sayfa);
+    assert.equal(sonKayitYuku(sayfa).dil, 'sistem');
+    assert.equal(sayfa.oge('dilSecimi').value, 'sistem');
+    assert.equal(sayfa.htmlDili(), dil);
+    assert.equal(sayfa.oge('btnAyarlariKaydet').textContent, metin(dil, 'ayar.kaydet.dugme'));
+  }
+});
+
+test('Çoğul: Almanca ve İspanyolcada yalnız 1 tekil; Fransızcada 0 da tekil; seçili favori sayısı doğru biçimde yazılır', async () => {
+  const bes = (n) => Array.from({ length: n }, (_, i) => ({ entity_id: `light.lamba_${i}`, ad: `Lamp ${i}` }));
+  const cihazlar = (n) => ({ ...CIHAZLAR_EN, cihazlar: bes(n).map((f) => ({ ...CIHAZLAR_EN.cihazlar[0], entity_id: f.entity_id, ad: f.ad })), eksik: [], engelli: [] });
+  const beklenen = {
+    de: { 1: '1 Favorit ausgewählt', 2: '2 Favoriten ausgewählt' },
+    fr: { 1: '1 favori sélectionné', 2: '2 favoris sélectionnés' },
+    es: { 1: '1 favorito seleccionado', 2: '2 favoritos seleccionados' },
+  };
+  for (const dil of YENI_DILLER) {
+    for (const n of [1, 2]) {
+      const sayfa = await acilmisSayfa({ ayar: { ...AYAR_DILLI(dil), favoriler: bes(n) }, cihazlar: cihazlar(n) });
+      assert.equal(sayfa.oge('secilenSayisi').textContent, beklenen[dil][n], `${dil} n=${n}`);
+    }
+  }
+  const sifir = await acilmisSayfa({ ayar: { ...AYAR_DILLI('fr'), favoriler: [] }, cihazlar: cihazlar(0) });
+  assert.equal(sifir.oge('secilenSayisi').textContent, '0 favori sélectionné', 'Fransızcada sıfır tekil');
+  const sifirDe = await acilmisSayfa({ ayar: { ...AYAR_DILLI('de'), favoriler: [] }, cihazlar: cihazlar(0) });
+  assert.equal(sifirDe.oge('secilenSayisi').textContent, '0 Favoriten ausgewählt', 'Almancada sıfır çoğul');
+});
+
+test('Güvenlik davranışları dile bağlı değildir: Almanca, Fransızca ve İspanyolcada da engelli varlık seçilemez, onaylı eylem zorunlu onayda kalır, kayıtta engelli sayısı bildirilir', async () => {
+  for (const dil of YENI_DILLER) {
+    const sayfa = await acilmisSayfa({ ayar: AYAR_DILLI(dil), cihazlar: CIHAZLAR_EN });
+    const satir = (kimlik) => sayfa.oge('cihazListesi').bul((o) => o.className.includes('cihaz-satir')).find((s) => s.bul((o) => o.className === 'cihaz-kimlik')[0].textContent === kimlik);
+    const engelli = satir('light.hallway');
+    assert.equal(engelli.bul((o) => o.etiket === 'input')[0].disabled, true, `${dil}: kapı/kilit kuralına takılan satır seçilemez`);
+    assert.ok(engelli.textContent.includes(metin(dil, 'ayar.favori.engelliNot')), `${dil}: engelli notu o dilde`);
+    const onayli = satir('button.shut_down_pc');
+    const onayKutusu = onayli.bul((o) => o.etiket === 'input' && o.type === 'checkbox')[1];
+    assert.equal(onayKutusu.checked, true);
+    assert.equal(onayKutusu.disabled, true, `${dil}: zorunlu onay kapatılamaz`);
+    assert.equal(onayli.bul((o) => o.className === 'onay-etiket')[0].title, metin(dil, 'ayar.cihaz.onayZorunluIpucu'));
+
+    await kaydet(sayfa);
+    assert.ok(bildirim(sayfa).includes(metin(dil, 'ayar.kaydet.engelli.bir').replace('{n}', '1')), `${dil}: engelli sayısı bildirildi: ${bildirim(sayfa)}`);
+    assert.match(sayfa.oge('genelBildirim').className, /bildirim-uyari/);
+    assert.equal(sayfa.sunucu.favoriler.some((f) => f.entity_id === 'light.hallway'), false, `${dil}: engelli varlık sunucuda favori kalmaz`);
+  }
 });

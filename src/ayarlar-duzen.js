@@ -18,6 +18,7 @@
 
   const Gorunum = kok.EvKaroGorunum || null;
   const Islem = kok.EvDuzenIslemleri || null;
+  const Dil = kok.EvDil || null;
 
   const EN_COK_SAYFA = Islem ? Islem.EN_COK_SAYFA : 12;
   const EN_COK_SAYFA_VARLIGI = Islem ? Islem.EN_COK_SAYFA_VARLIGI : 100;
@@ -114,7 +115,7 @@
   /** Geçmiş noktasının zamanı (kullanıcının dilinde, yerel saat). */
   function zamanMetni(zaman, dilKodu) {
     try {
-      return new Date(zaman).toLocaleString(dilKodu === 'en' ? 'en-GB' : 'tr-TR', { dateStyle: 'short', timeStyle: 'short' });
+      return new Date(zaman).toLocaleString(dilKodu === 'en' ? 'en-GB' : Dil ? Dil.yerelAdi(dilKodu) : 'tr-TR', { dateStyle: 'short', timeStyle: 'short' });
     } catch (hata) {
       return String(zaman);
     }

@@ -17,6 +17,7 @@
 
   const Arama = window.EvArama;
   const Kaydirici = window.EvKaydirici;
+  const Dil = window.EvDil || null;
   if (!Arama || !Kaydirici) return;
 
   // Her zaman kart olarak çizilen alanlar (tek tıklama eylemi yok). Vantilatör, nem alıcı ve ışık yalnız kendi denetimi varsa kart olur.
@@ -128,8 +129,12 @@
     return karo.alan === 'light' && (modlar.indexOf('color_temp') >= 0 || modlar.some(function (m) { return ISIK_RENK_MODLARI.indexOf(m) >= 0; }));
   }
 
+  function yerelAdi(dil) {
+    return Dil ? Dil.yerelAdi(dil) : dil === 'en' ? 'en-US' : 'tr-TR';
+  }
+
   function sayiYaz(n, t) {
-    return Number(n).toLocaleString(t.dil === 'en' ? 'en-US' : 'tr-TR', { maximumFractionDigits: 1 });
+    return Number(n).toLocaleString(yerelAdi(t.dil), { maximumFractionDigits: 1 });
   }
 
   function sinirla(d, alt, ust) {

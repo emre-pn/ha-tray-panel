@@ -3,9 +3,10 @@
 /**
  * Arayüz dili çekirdeği (saf; Electron'a bağlı değildir): dil seçimi, çevirmen ve sayfa çevirisi.
  *
- * Diller: 'tr' (varsayılan) ve 'en'. Ayardaki `dil` alanı 'sistem' | 'tr' | 'en' olabilir; 'sistem' Windows/Electron dilinden çözülür.
- * Metinler alan başına ayrı sözlük dosyalarındadır (src/lib/ceviri/ana.js, ayarlar.js, yuzey.js); her biri { tr: {...}, en: {...} } verir.
- * Türkçe metinler HTML'de varsayılan olarak durur; İngilizce seçiliyse sayfa çalışma anında sayfayiCevir ile değiştirilir.
+ * Diller: 'tr' (varsayılan), 'en', 'de', 'fr' ve 'es'. Ayardaki `dil` alanı 'sistem' ya da bu dillerden biri olabilir; 'sistem' Windows/Electron
+ * dilinden çözülür (tanınmayan sistem dili İngilizce olur).
+ * Metinler alan başına ayrı sözlük dosyalarındadır (src/lib/ceviri/ana.js, ayarlar.js, yuzey.js); her biri { tr, en, de, fr, es } verir.
+ * Türkçe metinler HTML'de varsayılan olarak durur; başka dil seçiliyse sayfa çalışma anında sayfayiCevir ile değiştirilir.
  *
  * Bu dosya hem Node'da (require) hem renderer'da (<script src="lib/dil.js">, window.EvDil) çalışır: `require` kullanmaz.
  */
@@ -14,23 +15,33 @@
   if (typeof module === 'object' && module.exports) module.exports = modul;
   else kok.EvDil = modul;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  const DILLER = Object.freeze(['tr', 'en']);
+  const DILLER = Object.freeze(['tr', 'en', 'de', 'fr', 'es']);
   const VARSAYILAN_DIL = 'tr';
   /** Ayarda saklanabilen değerler ('sistem' = işletim sistemi dilini izle). */
-  const DIL_AYARLARI = Object.freeze(['sistem', 'tr', 'en']);
+  const DIL_AYARLARI = Object.freeze(['sistem', ...DILLER]);
   const VARSAYILAN_DIL_AYARI = 'sistem';
+  /** Sistem dili tanınmazsa kullanılan dil (desteklenen dillerden birinde olmayan herkes İngilizce görür). */
+  const YEDEK_DIL = 'en';
+  /** Dil -> Intl/toLocale* yerel adı (sayı, tarih, saat ve büyük harf yazımı bu adla yapılır). */
+  const YEREL_ADLARI = Object.freeze({ tr: 'tr-TR', en: 'en-US', de: 'de-DE', fr: 'fr-FR', es: 'es-ES' });
 
   /**
    * Ayardaki değeri etkin dile çözer.
-   * @param {unknown} ayar 'sistem' | 'tr' | 'en'; geçersiz ya da eksikse 'tr'
-   * @param {unknown} [sistemDili] ör. 'tr-TR', 'en-US' (app.getLocale()); yalnız ayar 'sistem' iken kullanılır
-   * @returns {'tr'|'en'}
+   * @param {unknown} ayar 'sistem' | 'tr' | 'en' | 'de' | 'fr' | 'es'; geçersiz ya da eksikse 'tr'
+   * @param {unknown} [sistemDili] ör. 'tr-TR', 'en-US', 'de-AT' (app.getLocale()); yalnız ayar 'sistem' iken kullanılır
+   * @returns {'tr'|'en'|'de'|'fr'|'es'}
    */
   function dilCoz(ayar, sistemDili) {
-    if (ayar === 'tr' || ayar === 'en') return ayar;
+    if (typeof ayar === 'string' && DILLER.includes(ayar)) return ayar;
     if (ayar !== 'sistem') return VARSAYILAN_DIL;
     if (typeof sistemDili !== 'string' || sistemDili.trim() === '') return VARSAYILAN_DIL;
-    return /^tr(?:[-_]|$)/.test(sistemDili.trim().toLowerCase()) ? 'tr' : 'en';
+    const sistem = sistemDili.trim().toLowerCase();
+    return DILLER.find((d) => new RegExp(`^${d}(?:[-_]|$)`).test(sistem)) ?? YEDEK_DIL;
+  }
+
+  /** Dilin Intl yerel adı ('tr-TR', 'en-US', 'de-DE', 'fr-FR', 'es-ES'); bilinmeyen dil Türkçe sayılır. */
+  function yerelAdi(dil) {
+    return Object.hasOwn(YEREL_ADLARI, dil) ? YEREL_ADLARI[dil] : YEREL_ADLARI[VARSAYILAN_DIL];
   }
 
   /** Ayar değerini düzeltir: bilinmeyen değer varsayılana ('sistem') döner. */
@@ -48,8 +59,8 @@
   /**
    * Çevirmen üretir. Anahtar seçili dilin sözlüklerinde (verilme sırasıyla) aranır; yoksa Türkçeye, o da yoksa anahtarın kendisine düşer.
    * Metindeki {ad} yer tutucuları `degiskenler`den doldurulur (değişken yoksa yer tutucu olduğu gibi kalır).
-   * @param {string} dil 'tr' | 'en' (geçersizse 'tr')
-   * @param {...{tr?: object, en?: object}} sozlukler
+   * @param {string} dil 'tr' | 'en' | 'de' | 'fr' | 'es' (geçersizse 'tr')
+   * @param {...{tr?: object, en?: object, de?: object, fr?: object, es?: object}} sozlukler
    * @returns {((anahtar: string, degiskenler?: object) => string) & {dil: string, var: (anahtar: string) => boolean}}
    */
   function cevirmen(dil, ...sozlukler) {
@@ -71,11 +82,13 @@
   }
 
   /**
-   * Sayıya bağlı metin: n === 1 ve `anahtar.bir` sözlükte varsa tekil karşılığı, değilse `anahtar` kullanılır. {n} otomatik doldurulur.
+   * Sayıya bağlı metin: n tekil sayılıyorsa ve `anahtar.bir` sözlükte varsa tekil karşılığı, değilse `anahtar` kullanılır. {n} otomatik doldurulur.
+   * Tekil: her dilde n === 1; Fransızcada sıfır da tekil sayılır ("0 favori").
    * @param {Function} t cevirmen sonucu
    */
   function cogul(t, anahtar, n, degiskenler = {}) {
-    const tekil = n === 1 && typeof t.var === 'function' && t.var(`${anahtar}.bir`);
+    const tekilSayi = n === 1 || (n === 0 && t.dil === 'fr');
+    const tekil = tekilSayi && typeof t.var === 'function' && t.var(`${anahtar}.bir`);
     return t(tekil ? `${anahtar}.bir` : anahtar, { n, ...degiskenler });
   }
 
@@ -105,5 +118,18 @@
     }
   }
 
-  return { DILLER, VARSAYILAN_DIL, DIL_AYARLARI, VARSAYILAN_DIL_AYARI, dilCoz, dilAyariDuzelt, cevirmen, cogul, sayfayiCevir };
+  return {
+    DILLER,
+    VARSAYILAN_DIL,
+    DIL_AYARLARI,
+    VARSAYILAN_DIL_AYARI,
+    YEDEK_DIL,
+    YEREL_ADLARI,
+    dilCoz,
+    yerelAdi,
+    dilAyariDuzelt,
+    cevirmen,
+    cogul,
+    sayfayiCevir,
+  };
 });

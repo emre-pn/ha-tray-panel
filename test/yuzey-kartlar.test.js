@@ -625,6 +625,25 @@ test('İngilizce arayüz: kart metinleri ve erişilebilir adlar İngilizce yazı
   assert.match(metin(sayfa), /Dashed buttons run when held for about a second/);
 });
 
+test('Almanca, Fransızca ve İspanyolca arayüz: kart metinleri, sayı ve yüzde yazımı ve erişilebilir adlar o dilde yazılır', async () => {
+  const NBSP = '\u00A0';
+  const beklenen = {
+    de: { durum: /Kühlen · kühlt/, simdi: /Jetzt 26,5° · Luftfeuchte 55 %/, mod: 'Salon klima: auf Modus „Heizen“ wechseln', iptal: 'Mutfak: abbrechen', tonlar: ['Warmweiß', 'Neutralweiß', 'Kaltweiß'], hatirlat: /gestricheltem Rand/ },
+    fr: { durum: /Refroidir · refroidit/, simdi: /Actuellement 26,5° · Humidité 55 %/, mod: `Salon klima${NBSP}: passer en mode «${NBSP}Chauffer${NBSP}»`, iptal: `Mutfak${NBSP}: annuler`, tonlar: ['Blanc chaud', 'Blanc neutre', 'Blanc froid'], hatirlat: /bordure en pointillés/ },
+    es: { durum: /Enfriar · enfriando/, simdi: /Ahora 26,5° · Humedad 55 %/, mod: 'Salon klima: cambiar al modo “Calentar”', iptal: 'Mutfak: cancelar', tonlar: ['Blanco cálido', 'Blanco neutro', 'Blanco frío'], hatirlat: /borde discontinuo/ },
+  };
+  for (const [dil, b] of Object.entries(beklenen)) {
+    const sayfa = await panelAc({ model: modelYap(KLIMA, ZAMANLAYICI, RENKLI), dil });
+    assert.match(metin(sayfa), b.durum, dil);
+    assert.match(metin(sayfa), b.simdi, dil);
+    assert.ok(dugmeAra(sayfa, b.mod), `${dil}: ${b.mod}`);
+    assert.ok(dugmeAra(sayfa, b.iptal), `${dil}: ${b.iptal}`);
+    assert.deepEqual(dugmeler(sayfa, (o) => b.tonlar.some((ton) => (o.attributes['aria-label'] ?? '').includes(ton))).map((d) => d.textContent), b.tonlar, dil);
+    assert.match(metin(sayfa), b.hatirlat, dil);
+    assert.doesNotMatch(metin(sayfa), /yuzey\.[a-z]/, `${dil}: çözülmemiş sözlük anahtarı kalmamalı`);
+  }
+});
+
 test('kartlar betiği yoksa panel çökmez: kartlar düz karo olarak çizilir ve tıklamak istek göndermez', async () => {
   const sayfa = await panelAc({ model: modelYap(KLIMA, EV_MODU), kartlarYok: true });
   assert.equal(kartlar(sayfa).length, 0);

@@ -37,7 +37,7 @@ const OPAK_MALZEME = Object.freeze({ malzeme: 'yok', secenekler: Object.freeze({
  *   malzemeAl: Windows 11 pencere malzemesi (src/lib/malzeme.js, gorunum-11); verilmezse opak koyu arka plan
  *   engelAl: açık hızlı panel/palet penceresinin sınırları (g-09); bildirim onunla çakışırsa panelin üstüne yerleşir. Verilmezse
  *   (ya da okunamazsa) bildirim her zaman sağ alt köşededir.
- *   dilAl: etkin arayüz dili ('tr' | 'en'); verilirse sayfa yüklenince ve dil değişince 'dil:degisti' ({ dil }) iletisi gider (ana süreç verir).
+ *   dilAl: etkin arayüz dili ('tr' | 'en' | 'de' | 'fr' | 'es'); verilirse sayfa yüklenince ve dil değişince 'dil:degisti' ({ dil }) iletisi gider (ana süreç verir).
  *   gorunumAl: görünüm modeli (src/lib/gorunum.js gorunumModeli: özel palet, yüksek karşıtlık, animasyon); null ise yüke eklenmez
  *   metinOlcegiAl: Ayarlar > Görünüm > Metin boyutu çarpanı (1, 1.15, 1.3, 1.5); pencere ve sayfa yakınlaştırması aynı oranda büyür (o-25)
  */

@@ -274,7 +274,7 @@ let tepsiSoluk = true; // başlangıç durumu "bağlanıyor": tepsi soluk simgey
 // Arayüz dili (src/lib/dil.js, src/lib/ceviri/ana.js)
 // ---------------------------------------------------------------------------
 
-let etkinDil = 'tr'; // 'tr' | 'en': ayardaki dil ('sistem' | 'tr' | 'en') ve sistem dilinden çözülür
+let etkinDil = 'tr'; // 'tr' | 'en' | 'de' | 'fr' | 'es': ayardaki dil ('sistem' | 'tr' | 'en' | 'de' | 'fr' | 'es') ve sistem dilinden çözülür
 let cevirici = cevirmen('tr', ANA_SOZLUK);
 /** Kullanıcıya giden her metin buradan geçer; dil değişince kendiliğinden yeni dili izler (lib modülleri bu işlevi `t` olarak alır). */
 const t = (anahtar, degiskenler) => cevirici(anahtar, degiskenler);
@@ -2944,9 +2944,9 @@ async function ayarOzeti() {
     disAdres: ayarlar.disAdres,
     kisayol: ayarlar.kisayol, // yalnız başarıyla kaydedilen kısayol ayara yazılır: bu, fiilen etkin olandır
     kisayolEtkin: kayitliKisayol === ayarlar.kisayol,
-    dil: etkinDil, // etkin arayüz dili: 'tr' | 'en'
-    dilAyari: ayarlar.dil, // ayardaki değer: 'sistem' | 'tr' | 'en'
-    sistemDili: dilCoz('sistem', sistemDiliAl()), // 'sistem' seçilirse kullanılacak dil: 'tr' | 'en'
+    dil: etkinDil, // etkin arayüz dili: 'tr' | 'en' | 'de' | 'fr' | 'es'
+    dilAyari: ayarlar.dil, // ayardaki değer: 'sistem' | 'tr' | 'en' | 'de' | 'fr' | 'es'
+    sistemDili: dilCoz('sistem', sistemDiliAl()), // 'sistem' seçilirse kullanılacak dil: 'tr' | 'en' | 'de' | 'fr' | 'es'
     kisayolUyarilari: kisayolUyarilari(ayarlar.kisayol, t),
     varsayilanKisayol: VARSAYILAN_KISAYOL,
     paletKisayol: ayarlar.paletKisayol,

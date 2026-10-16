@@ -17,7 +17,7 @@ if (location.protocol === 'file:') {
       ipcRenderer.on('kose:goster', dinleyici);
       return () => ipcRenderer.removeListener('kose:goster', dinleyici);
     },
-    // Arayüz dili değişti: yük { dil: 'tr' | 'en' }.
+    // Arayüz dili değişti: yük { dil: 'tr' | 'en' | 'de' | 'fr' | 'es' }.
     onDilDegisti: (callback) => {
       if (typeof callback !== 'function') return () => {};
       const dinleyici = (_olay, yuk) => callback(yuk);

@@ -24,6 +24,9 @@ const { pathToFileURL } = require('node:url');
 const { anahtarParmakIzi } = require('../src/lib/yetki-kesici');
 const { simgePng } = require('../src/lib/tepsi-simgesi');
 const ANA_SOZLUK = require('../src/lib/ceviri/ana');
+/** Tepsi menüsündeki "Ayarlar…" öğesinin ve Ayarlar penceresi başlığının beş dildeki karşılıkları (arayüz dili hangisi olursa olsun bulunur). */
+const AYARLAR_MENU_ADLARI = ['tr', 'en', 'de', 'fr', 'es'].map((dil) => ANA_SOZLUK[dil]['menu.ayarlar']);
+const AYARLAR_BASLIK_DESENI = new RegExp(['tr', 'en', 'de', 'fr', 'es'].map((dil) => ANA_SOZLUK[dil]['uygulama.ayarlarBaslik'].split(' — ')[1]).join('|'));
 const {
   ACILIS_HATASI_BILDIRIMI,
   AYARLAR_ART_ARDA_COKTU_BILDIRIMI,
@@ -698,7 +701,7 @@ async function ortamKur({ paketli = false, tohum = null, ekDosyalar = null, cali
     /** main.js'in süreç düzeyinde eklediği dinleyiciler (uncaughtException / unhandledRejection). */
     surecDinleyicileri: (olay) => process.listeners(olay).filter((d) => !oncekiDinleyiciler[olay].includes(d)),
     /** Ayarlar penceresi (başlıkla bulunur: köşe bildirimi gibi başka pencereler araya girebilir). */
-    ayarlarPenceresi: () => durum.pencereler.find((p) => /Ayarlar|Settings/.test(p.secenekler.title ?? '')),
+    ayarlarPenceresi: () => durum.pencereler.find((p) => AYARLAR_BASLIK_DESENI.test(p.secenekler.title ?? '')),
     /** Köşe bildirimi penceresi (odak almayan, çerçevesiz küçük pencere). */
     kosePenceresi: () => durum.pencereler.find((p) => p.secenekler.focusable === false),
     /** Ana pencere: şu an yok edilmemiş, başlıksız-ayarsız ilk uygun pencere. */
@@ -906,7 +909,7 @@ ortamda('çevrimdışı ekran: sayfa sağlamken artan bekleme yerinde güncellen
 
 /** Ayarlar penceresini açar ve oradan gelmiş bir IPC olayı üretir (yalnız yerel sayfadan gelen istek kabul edilir). */
 function ayarlarOlayi({ menuOgesi, ayarlarPenceresi }) {
-  (menuOgesi('Ayarlar…') ?? menuOgesi('Settings…')).click(); // arayüz dili Türkçe ya da İngilizce olabilir
+  AYARLAR_MENU_ADLARI.map((ad) => menuOgesi(ad)).find(Boolean).click(); // arayüz dili beş dilden biri olabilir
   return {
     sender: ayarlarPenceresi().webContents,
     senderFrame: { url: pathToFileURL(AYARLAR_HTML).href, parent: null },
@@ -4796,7 +4799,7 @@ const ayarDosyasi = (ortam) => path.join(ortam.durum.yollar.get('userData'), 'ay
 const klasorAdlari = (ortam) => fs.readdirSync(ortam.durum.yollar.get('userData'));
 const bildirimGovdeleri = (ortam) => ortam.durum.bildirimler.map((b) => b.body);
 /** Yok edilmemiş Ayarlar penceresi (ortam.ayarlarPenceresi() kapanmış eski pencereyi de bulabilir). */
-const acikAyarlarPenceresi = (ortam) => ortam.durum.pencereler.find((p) => /Ayarlar|Settings/.test(p.secenekler.title ?? '') && !p.yikik);
+const acikAyarlarPenceresi = (ortam) => ortam.durum.pencereler.find((p) => AYARLAR_BASLIK_DESENI.test(p.secenekler.title ?? '') && !p.yikik);
 
 /** Yalnız ayarlar.json'a (varsayilan-ayarlar.json'a ya da .bak'a değil) giden okumaları yakalayan fs.readFileSync sahtesi. */
 function ayarOkumaSahtesi(karar) {
@@ -5611,9 +5614,77 @@ ortamda("dil: Ayarlar'dan dil değişince tepsi menüsü ve ipucu, pencere başl
   assert.equal(ortam.ayarlarPenceresi().sonBaslik, 'Ev Paneli — Ayarlar');
   assert.ok(ortam.menuOgesi('Ayarlar…'));
 
-  // geçersiz değer mevcut ayarı bozmaz
-  await ayarlarKaydet(ortam, { dil: 'de' });
+  // geçersiz değer mevcut ayarı bozmaz (it: desteklenmeyen dil; DE: büyük harf geçersiz)
+  await ayarlarKaydet(ortam, { dil: 'it' });
   assert.equal(ortam.ayarOku().dil, 'sistem');
+  await ayarlarKaydet(ortam, { dil: 'DE' });
+  assert.equal(ortam.ayarOku().dil, 'sistem');
+});
+
+ortamda('dil: Almanca, Fransızca ve İspanyolca seçilince tepsi menüsü, ipucu ve pencere başlıkları o dilde kurulur; dil:degisti gider; dil ayara yazılır', undefined, async (ortam) => {
+  const beklenen = [
+    ['de', 'Einstellungen…', 'Home Panel — Einstellungen'],
+    ['fr', 'Paramètres…', 'Home Panel — Paramètres'],
+    ['es', 'Configuración…', 'Home Panel — Configuración'],
+  ];
+  ayarlarOlayi(ortam);
+  let mesajSayisi = 0;
+  for (const [dil, menuMetni, baslik] of beklenen) {
+    const sonuc = await ayarlarKaydet(ortam, { dil });
+    assert.equal(sonuc.ok, true, dil);
+    assert.equal(ortam.ayarOku().dil, dil, `${dil}: dil ayara yazıldı`);
+    assert.equal(ortam.ayarlarPenceresi().sonBaslik, baslik, `${dil}: Ayarlar penceresi başlığı`);
+    assert.ok(ortam.menuOgesi(menuMetni), `${dil}: tepsi menüsünde "${menuMetni}"`);
+    assert.equal(ortam.menuOgesi('Ayarlar…'), undefined, `${dil}: Türkçe menü kalmadı`);
+    assert.equal(ortam.menuOgesi('Settings…'), undefined, `${dil}: İngilizce menü kalmadı`);
+    assert.ok(ortam.tepsi.ipuclari.at(-1).startsWith('Home Panel'), `${dil}: uygulama adı çevrilmez (${ortam.tepsi.ipuclari.at(-1)})`);
+    mesajSayisi += 1;
+    assert.deepEqual(dilMesajlari(ortam.ayarlarPenceresi()).at(-1), { dil }, `${dil}: dil:degisti`);
+    assert.equal(dilMesajlari(ortam.ayarlarPenceresi()).length, mesajSayisi);
+  }
+  // aynı dille yeniden kaydetmek olay göndermez; Türkçeye dönmek menüyü ve başlığı geri getirir
+  await ayarlarKaydet(ortam, { dil: 'es' });
+  assert.equal(dilMesajlari(ortam.ayarlarPenceresi()).length, mesajSayisi, 'dil değişmediyse olay yok');
+  await ayarlarKaydet(ortam, { dil: 'tr' });
+  assert.equal(ortam.ayarlarPenceresi().sonBaslik, 'Ev Paneli — Ayarlar');
+  assert.ok(ortam.menuOgesi('Ayarlar…'));
+});
+
+for (const [sistemDili, beklenenDil, menuMetni] of [['de-AT', 'de', 'Einstellungen…'], ['fr-CA', 'fr', 'Paramètres…'], ['es-MX', 'es', 'Configuración…'], ['it-IT', 'en', 'Settings…'], ['ja-JP', 'en', 'Settings…']]) {
+  ortamda(`dil: sistem dili ${sistemDili} iken arayüz ${beklenenDil} açılır (desteklenmeyen sistem dili İngilizce); Ayarlar yanıtı dili taşır`, {
+    oncesi: (durum) => {
+      durum.sistemDili = sistemDili;
+    },
+  }, async (ortam) => {
+    const yanit = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+    assert.equal(yanit.dilAyari, 'sistem');
+    assert.equal(yanit.sistemDili, beklenenDil, 'sistem dili beş dilden biri olarak çözülür');
+    assert.equal(yanit.dil, beklenenDil);
+    assert.ok(ortam.tepsi.ipuclari.at(-1).startsWith('Home Panel'));
+    assert.ok(ortam.menuOgesi(menuMetni), `tepsi menüsü ${beklenenDil}`);
+    assert.equal(ortam.menuOgesi('Ayarlar…'), undefined);
+  });
+}
+
+ortamda('dil: Almanca, Fransızca ve İspanyolca seçiliyken kaydetme hataları ve uyarıları o dilde döner (Türkçeye özgü harf kalmaz)', undefined, async (ortam) => {
+  await ayarlarKaydet(ortam, { dil: 'en' });
+  const enHata = (await ayarlarKaydet(ortam, { dil: 'en', yerelAdres: 'abc' })).hata;
+  const enUyari = (await ayarlarKaydet(ortam, { dil: 'en', kisayol: 'F9' })).uyarilar[0].mesaj;
+  await ayarlarKaydet(ortam, { dil: 'tr' });
+  const trHata = (await ayarlarKaydet(ortam, { dil: 'tr', yerelAdres: 'abc' })).hata;
+  for (const dil of ['de', 'fr', 'es']) {
+    await ayarlarKaydet(ortam, { dil });
+    const kotuAdres = await ayarlarKaydet(ortam, { dil, yerelAdres: 'abc' });
+    assert.equal(kotuAdres.ok, false, dil);
+    assert.doesNotMatch(kotuAdres.hata ?? JSON.stringify(kotuAdres), /[ğĞıİşŞ]/, `${dil}: hata metni`);
+    assert.notEqual(kotuAdres.hata, trHata, `${dil}: Türkçe metin değil`);
+    assert.notEqual(kotuAdres.hata, enHata, `${dil}: İngilizce metin değil`);
+    const kisayol = await ayarlarKaydet(ortam, { dil, kisayol: 'F9' });
+    assert.equal(kisayol.ok, true, dil);
+    assert.equal(kisayol.uyarilar.length, 1, dil);
+    assert.doesNotMatch(kisayol.uyarilar[0].mesaj, /[ğĞıİşŞ]/, `${dil}: uyarı metni`);
+    assert.notEqual(kisayol.uyarilar[0].mesaj, enUyari, `${dil}: İngilizce metin değil`);
+  }
 });
 
 ortamda('dil: İngilizce seçiliyken kaydetme hataları ve uyarıları İngilizce döner (Türkçe harf kalmaz)', undefined, async (ortam) => {

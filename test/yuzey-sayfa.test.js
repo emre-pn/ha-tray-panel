@@ -2026,8 +2026,199 @@ test('dil en: ipucu satırı iletileri (onay, çok sık, çalıştırılamadı, 
   assert.equal(sayfa.oge('ipucu').textContent, 'Hold to run “Shut down PC”.');
 });
 
+// Almanca, Fransızca ve İspanyolca (1.4.0 o-35). ç/ö/ü bu dillerde de geçtiği için kalıntı denetimi Türkçeye özgü harflerle (ğ ı İ ş) yapılır.
+const TURKCE_OZEL_HARF = /[ğıİşĞŞ]/;
+const turkceOzelKalan = (sayfa) => gorunurMetinler(sayfa).filter((m) => TURKCE_OZEL_HARF.test(m));
+const NBSP = '\u00A0';
+const YENI_DIL_METINLERI = {
+  de: {
+    baslik: 'Home Panel — Schnellpanel', haAc: 'HA-Dashboard öffnen', ayarlar: 'Einstellungen', arama: 'Aktion suchen…  (z. B. „Licht 40“)', aramaEtiket: 'Aktion suchen',
+    paletSerit: 'Enter ausführen · Shift+Enter Stufe · Enter gedrückt halten zum Bestätigen', eski: 'Status möglicherweise veraltet', canli: 'Live', medya: '♪ Wird abgespielt · Kopfhörer',
+    son: 'Zuletzt verwendet', yuzde: '60 %', kapali: 'aus', ipucu: 'gedrückt halten', pcBaslik: 'Shut down PC — zum Ausführen gedrückt halten', parlaklik: 'Helligkeit von LED strip',
+    bosAna: 'Kein Zugriffstoken hinzugefügt.', bosDugme: 'Einstellungen öffnen', favoriYok: 'Noch keine Favoriten.', hataSeridi: 'Home Assistant: invalid token',
+    sonVeFavoriler: 'Zuletzt verwendet und Favoriten', kapatRozet: 'Ausschalten', desteklenmiyor: 'Helligkeit nicht unterstützt', basiliRozet: 'Enter gedrückt halten', seviye: 'Helligkeitsstufe', eslesmeYok: 'Keine passenden Aktionen.',
+    onayPanel: 'Halte die Schaltfläche gedrückt, um „Bulb“ auszuführen.', onayPalet: 'Halte Enter gedrückt, um „Bulb“ auszuführen.', cokSik: 'Zu schnell; warte einen Moment.', calistirilamadi: '„Bulb“ konnte nicht ausgeführt werden.', gonderilemedi: 'Die Aktion konnte nicht gesendet werden.',
+    basiliDevam: '„Shut down PC“ wird ausgeführt… weiter gedrückt halten.', basiliTutun: 'Zum Ausführen von „Shut down PC“ gedrückt halten.',
+  },
+  fr: {
+    baslik: 'Home Panel — Panneau rapide', haAc: 'Ouvrir le tableau de bord HA', ayarlar: 'Paramètres', arama: 'Rechercher une action…  (p. ex. « lumière 40 »)', aramaEtiket: 'Rechercher une action',
+    paletSerit: 'Entrée pour exécuter · Maj+Entrée pour le niveau · maintenir Entrée pour confirmer', eski: 'Les états sont peut-être obsolètes', canli: 'En direct', medya: '♪ Lecture en cours · Casque',
+    son: 'Récemment utilisés', yuzde: '60 %', kapali: 'désactivé', ipucu: 'maintenir appuyé', pcBaslik: 'Shut down PC — maintenez appuyé pour exécuter', parlaklik: 'Luminosité de LED strip',
+    bosAna: 'Aucun jeton d’accès ajouté.', bosDugme: 'Ouvrir les paramètres', favoriYok: 'Aucun favori pour l’instant.', hataSeridi: 'Home Assistant : invalid token',
+    sonVeFavoriler: 'Récents et favoris', kapatRozet: 'Éteindre', desteklenmiyor: 'Luminosité non prise en charge', basiliRozet: 'Maintenir Entrée', seviye: 'Niveau de luminosité', eslesmeYok: 'Aucune action correspondante.',
+    onayPanel: 'Maintenez le bouton enfoncé pour exécuter « Bulb ».', onayPalet: 'Maintenez Entrée pour exécuter « Bulb ».', cokSik: 'Trop rapide ; patientez un instant.', calistirilamadi: '« Bulb » n’a pas pu être exécuté.', gonderilemedi: 'L’action n’a pas pu être envoyée.',
+    basiliDevam: 'Exécution de « Shut down PC »… continuez à maintenir appuyé.', basiliTutun: 'Maintenez appuyé pour exécuter « Shut down PC ».',
+  },
+  es: {
+    baslik: 'Home Panel — Panel rápido', haAc: 'Abrir panel de HA', ayarlar: 'Configuración', arama: 'Buscar acción…  (p. ej. “luz 40”)', aramaEtiket: 'Buscar acción',
+    paletSerit: 'Enter para ejecutar · Mayús+Enter para el nivel · mantén Enter para confirmar', eski: 'Los estados pueden estar desactualizados', canli: 'En vivo', medya: '♪ Reproduciendo · Auriculares',
+    son: 'Usados recientemente', yuzde: '60 %', kapali: 'apagado', ipucu: 'mantén pulsado', pcBaslik: 'Shut down PC — mantén pulsado para ejecutar', parlaklik: 'Brillo de LED strip',
+    bosAna: 'No se ha añadido ningún token de acceso.', bosDugme: 'Abrir configuración', favoriYok: 'Aún no hay favoritos.', hataSeridi: 'Home Assistant: invalid token',
+    sonVeFavoriler: 'Usados recientemente y favoritos', kapatRozet: 'Apagar', desteklenmiyor: 'Brillo no compatible', basiliRozet: 'Mantén Enter', seviye: 'Nivel de brillo', eslesmeYok: 'No hay acciones coincidentes.',
+    onayPanel: 'Mantén pulsado el botón para ejecutar “Bulb”.', onayPalet: 'Mantén Enter para ejecutar “Bulb”.', cokSik: 'Demasiado rápido; espera un momento.', calistirilamadi: 'No se pudo ejecutar “Bulb”.', gonderilemedi: 'No se pudo enviar la acción.',
+    basiliDevam: 'Ejecutando “Shut down PC”… sigue manteniendo pulsado.', basiliTutun: 'Mantén pulsado para ejecutar “Shut down PC”.',
+  },
+};
+
+// Fransızca tipografi: « » içinde ve ; : ? ! » öncesinde bölünmez boşluk (sözlükte \u00A0 olarak yazılır); tabloda okunaklı olsun diye düz boşlukla yazıldı.
+for (const anahtar of Object.keys(YENI_DIL_METINLERI.fr)) {
+  YENI_DIL_METINLERI.fr[anahtar] = YENI_DIL_METINLERI.fr[anahtar].replace(/« /g, `«${NBSP}`).replace(/ ([»;:?!])/g, `${NBSP}$1`);
+}
+
+test('dil de/fr/es: sabit ve dinamik panel metinleri o dilde; yüzde "60 %" yazılır; Türkçeye özgü harf kalmaz', async () => {
+  for (const [dil, b] of Object.entries(YENI_DIL_METINLERI)) {
+    const sayfa = await panelAc({ model: EN_MODEL, dil });
+    assert.equal(sayfa.kok.nitelikler.lang, dil);
+    assert.equal(sayfa.htmlBasligi().textContent, b.baslik, dil);
+    assert.equal(sayfa.oge('baslik').textContent, 'Home Panel', `${dil}: uygulama adı çevrilmez`);
+    assert.equal(sayfa.oge('haAc').textContent, b.haAc, dil);
+    assert.equal(sayfa.oge('ayarlarAc').textContent, b.ayarlar, dil);
+    assert.equal(sayfa.oge('arama').attributes['aria-label'], b.aramaEtiket, dil);
+    assert.equal(sayfa.oge('eski').textContent, b.eski, dil);
+    assert.equal(sayfa.oge('baglanti').textContent, b.canli, dil);
+    assert.equal(sayfa.oge('medya').textContent, b.medya, dil);
+    assert.equal(yazilar(sayfa, 'bolum-baslik')[0], b.son, dil);
+    assert.deepEqual(yazilar(sayfa, 'karo-durum'), [b.yuzde, b.kapali, '', ''], `${dil}: durum metinleri`);
+    assert.deepEqual(yazilar(sayfa, 'karo-ipucu'), [b.ipucu], dil);
+    assert.equal(dugmeBul(sayfa, 'Shut down PC').title, b.pcBaslik, dil);
+    assert.equal(sayfa.oge('icerik').bul((o) => o.etiket === 'input')[0].attributes['aria-label'], b.parlaklik, dil);
+    assert.deepEqual(turkceOzelKalan(sayfa), [], `${dil}: Türkçeye özgü harf kalmamalı`);
+    assert.doesNotMatch(gorunurMetinler(sayfa).join('\n'), /\b(?:yuzey|offline|kose|masaustu)\.[a-z]/i, `${dil}: çözülmemiş sözlük anahtarı kalmamalı`);
+  }
+  // arama ipucundaki örnek, dilin kendi örneği (Fransızcada « » aralarında bölünmez boşlukla)
+  assert.equal((await panelAc({ model: EN_MODEL, dil: 'de' })).oge('arama').attributes.placeholder, YENI_DIL_METINLERI.de.arama);
+  assert.equal((await panelAc({ model: EN_MODEL, dil: 'es' })).oge('arama').attributes.placeholder, YENI_DIL_METINLERI.es.arama);
+  const frArama = (await panelAc({ model: EN_MODEL, dil: 'fr' })).oge('arama').attributes.placeholder;
+  assert.equal(frArama, YENI_DIL_METINLERI.fr.arama);
+  assert.ok(frArama.includes(`«${NBSP}lumière 40${NBSP}»`), 'tırnak içinde bölünmez boşluk');
+});
+
+test('dil de/fr/es: bağlantı durumları, hata/uyarı şeridi (ilk harf dilin kurallarıyla büyür) ve medya çıkışları o dilde', async () => {
+  const durumlar = {
+    de: { canli: 'Live', baglaniyor: 'Verbindung wird hergestellt…', yedek: 'Fallback-Modus (Aktualisierung alle 60 s)', kapali: 'Live-Verbindung aus', hoparlor: '♪ Wird abgespielt · Lautsprecher', yalnizca: '♪ Wird abgespielt' },
+    fr: { canli: 'En direct', baglaniyor: 'Connexion en cours…', yedek: 'Mode de secours (actualisation toutes les 60 s)', kapali: 'Connexion en direct désactivée', hoparlor: '♪ Lecture en cours · Haut-parleur', yalnizca: '♪ Lecture en cours' },
+    es: { canli: 'En vivo', baglaniyor: 'Conectando…', yedek: 'Modo de respaldo (se actualiza cada 60 s)', kapali: 'Conexión en vivo desactivada', hoparlor: '♪ Reproduciendo · Altavoz', yalnizca: '♪ Reproduciendo' },
+  };
+  for (const [dil, d] of Object.entries(durumlar)) {
+    for (const baglanti of ['canli', 'baglaniyor', 'yedek', 'kapali']) {
+      const sayfa = await panelAc({ model: { ...EN_MODEL, ust: { ...EN_UST, baglanti } }, dil });
+      assert.equal(sayfa.oge('baglanti').textContent, d[baglanti], `${dil} ${baglanti}`);
+    }
+    const bozuk = await panelAc({ model: { ...EN_MODEL, ust: { ...EN_UST, baglanti: 'bilinmeyen' } }, dil });
+    assert.equal(bozuk.oge('baglanti').textContent, d.kapali, `${dil}: bilinmeyen bağlantı durumu "kapalı" sayılır`);
+    const sayfa = await panelAc({ model: { ...EN_MODEL, ust: { ...EN_UST, aktifCikis: 'hoparlor', hata: 'invalid token', uyari: 'invalid key rejected' } }, dil });
+    assert.equal(sayfa.oge('medya').textContent, d.hoparlor, dil);
+    const satirlar = sayfa.oge('serit').bul((o) => o.className === 'serit-metin').map((o) => o.textContent);
+    assert.deepEqual(satirlar, ['Invalid key rejected', YENI_DIL_METINLERI[dil].hataSeridi], `${dil}: i -> I (Türkçedeki İ olmaz)`);
+    assert.equal((await panelAc({ model: { ...EN_MODEL, ust: { ...EN_UST, medyaCaliyor: true, aktifCikis: null } }, dil })).oge('medya').textContent, d.yalnizca, dil);
+  }
+});
+
+test('dil de/fr/es: boş durum iletileri ve Ayarlar düğmesi o dilde (panel ve palet)', async () => {
+  for (const [dil, b] of Object.entries(YENI_DIL_METINLERI)) {
+    for (const ac of [panelAc, paletAc]) {
+      const anahtarsiz = await ac({ model: { gruplar: [], sonlar: [], ust: { anahtarYok: true } }, dil });
+      assert.deepEqual(yazilar(anahtarsiz, 'bos-metin'), [b.bosAna], dil);
+      assert.deepEqual(yazilar(anahtarsiz, 'bos-dugme'), [b.bosDugme], dil);
+      assert.equal(yazilar(anahtarsiz, 'bos-alt').length, 1, dil);
+      assert.deepEqual(turkceOzelKalan(anahtarsiz), [], dil);
+      const favorisiz = await ac({ model: { gruplar: [], sonlar: [], ust: { anahtarYok: false } }, dil });
+      assert.deepEqual(yazilar(favorisiz, 'bos-metin'), [b.favoriYok], dil);
+      assert.deepEqual(turkceOzelKalan(favorisiz), [], dil);
+    }
+  }
+});
+
+test('dil de/fr/es: palet bölüm başlıkları, rozetler, seviye grubu, eşleşme yok ve aria etiketleri o dilde', async () => {
+  for (const [dil, b] of Object.entries(YENI_DIL_METINLERI)) {
+    const sayfa = await paletAc({ model: EN_MODEL, dil });
+    assert.equal(sayfa.oge('paletSerit').textContent, b.paletSerit, dil);
+    assert.deepEqual(sayfa.oge('icerik').bul((o) => o.className === 'palet-baslik').map((o) => o.textContent)[0], b.son, dil);
+    assert.equal(sayfa.oge('icerik').attributes['aria-label'], b.sonVeFavoriler, dil);
+    assert.deepEqual(yazilar(sayfa, 'rozet uyari'), [b.basiliRozet], `${dil}: yıkıcı satır rozeti`);
+    sayfa.oge('arama').value = 'led 0';
+    sayfa.oge('arama').gonder('input');
+    assert.deepEqual(yazilar(sayfa, 'rozet'), [b.kapatRozet], dil);
+    sayfa.oge('arama').value = 'bulb 40';
+    sayfa.oge('arama').gonder('input');
+    assert.ok(yazilar(sayfa, 'rozet sessiz').length >= 1, dil);
+    assert.ok(yazilar(sayfa, 'rozet sessiz').every((m) => m === b.desteklenmiyor), dil);
+    sayfa.oge('arama').value = 'led';
+    sayfa.oge('arama').gonder('input');
+    sayfa.oge('arama').gonder('keydown', { key: 'Enter', shiftKey: true, repeat: false });
+    assert.equal(sayfa.oge('icerik').bul((o) => o.attributes.role === 'group')[0].attributes['aria-label'], b.seviye, dil);
+    assert.deepEqual(turkceOzelKalan(sayfa), [], dil);
+    sayfa.oge('arama').value = 'zzzzzz';
+    sayfa.oge('arama').gonder('input');
+    assert.deepEqual(yazilar(sayfa, 'bos'), [b.eslesmeYok], dil);
+  }
+});
+
+test('dil de/fr/es: ipucu satırı iletileri (onay, çok sık, çalıştırılamadı, gönderilemedi, basılı tutma) o dilde', async () => {
+  for (const [dil, b] of Object.entries(YENI_DIL_METINLERI)) {
+    const ipucu = async (ac, yanit, olay) => {
+      const sayfa = await ac({ model: EN_MODEL, dil, calistirYaniti: yanit });
+      olay(sayfa);
+      await akit();
+      return sayfa.oge('ipucu').textContent;
+    };
+    const panelTikla = (sayfa) => dugmeBul(sayfa, 'Bulb').gonder('click', { detail: 1 });
+    const paletEnter = (sayfa) => {
+      sayfa.oge('arama').value = 'bulb';
+      sayfa.oge('arama').gonder('input');
+      sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+    };
+    assert.equal(await ipucu(panelAc, { ok: false, tur: 'onay-gerekli' }, panelTikla), b.onayPanel, dil);
+    assert.equal(await ipucu(paletAc, { ok: false, tur: 'onay-gerekli' }, paletEnter), b.onayPalet, dil);
+    assert.equal(await ipucu(panelAc, { ok: false, tur: 'cok-sik' }, panelTikla), b.cokSik, dil);
+    assert.equal(await ipucu(panelAc, { ok: false, tur: 'ha-hatasi' }, panelTikla), b.calistirilamadi, dil);
+    assert.equal(await ipucu(panelAc, () => Promise.reject(new Error('x')), panelTikla), b.gonderilemedi, dil);
+    const sayfa = await panelAc({ model: EN_MODEL, dil });
+    const d = dugmeBul(sayfa, 'Shut down PC');
+    d.gonder('pointerdown', { button: 0 });
+    assert.equal(sayfa.oge('ipucu').textContent, b.basiliDevam, dil);
+    sayfa.zaman.ilerle(300);
+    d.gonder('pointerup');
+    assert.equal(sayfa.oge('ipucu').textContent, b.basiliTutun, dil);
+  }
+});
+
+test('dil: çalışma anında tr -> de -> fr -> es -> en geçişi sabit metinleri çevirir ve açık paneli yeniden çizer; geri Türkçeye dönülür', async () => {
+  const sayfa = await panelAc({ model: MODEL });
+  assert.equal(sayfa.oge('baglanti').textContent, 'Canlı');
+  for (const dil of ['de', 'fr', 'es']) {
+    sayfa.dilDegisti({ dil });
+    assert.equal(sayfa.kok.nitelikler.lang, dil);
+    assert.equal(sayfa.oge('baglanti').textContent, YENI_DIL_METINLERI[dil].canli, dil);
+    assert.equal(sayfa.oge('haAc').textContent, YENI_DIL_METINLERI[dil].haAc, dil);
+    assert.equal(sayfa.htmlBasligi().textContent, YENI_DIL_METINLERI[dil].baslik, dil);
+    assert.equal(yazilar(sayfa, 'bolum-baslik')[0], YENI_DIL_METINLERI[dil].son, `${dil}: açık panel yeni dille çizilir`);
+    assert.deepEqual(yazilar(sayfa, 'karo-ipucu'), [YENI_DIL_METINLERI[dil].ipucu], dil);
+  }
+  sayfa.dilDegisti({ dil: 'en' });
+  assert.equal(sayfa.oge('baglanti').textContent, 'Live');
+  sayfa.dilDegisti({ dil: 'tr' });
+  assert.equal(sayfa.kok.nitelikler.lang, 'tr');
+  assert.equal(sayfa.oge('baglanti').textContent, 'Canlı');
+  assert.equal(yazilar(sayfa, 'bolum-baslik')[0], 'Son kullanılanlar');
+});
+
+test('dil: palet açıkken Almancaya geçilince sorgu korunur, rozetler yeni dilde yazılır, eski ipucu silinir', async () => {
+  const sayfa = await paletAc({ model: EN_MODEL, calistirYaniti: { ok: false, tur: 'cok-sik' } });
+  sayfa.oge('arama').value = 'led 0';
+  sayfa.oge('arama').gonder('input');
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  await akit();
+  assert.match(sayfa.oge('ipucu').textContent, /Çok sık/);
+  sayfa.dilDegisti({ dil: 'de' });
+  assert.equal(sayfa.oge('arama').value, 'led 0', 'yazılan sorgu korunur');
+  assert.deepEqual(yazilar(sayfa, 'rozet'), ['Ausschalten']);
+  assert.equal(sayfa.oge('ipucu').textContent, '');
+  assert.equal(sayfa.oge('arama').attributes.placeholder, YENI_DIL_METINLERI.de.arama);
+});
+
 test('dil: durumAl yanıtında dil yoksa ya da geçersizse sayfa Türkçe kalır; tr verilirse <html lang> tr olur', async () => {
-  for (const dil of [undefined, 'de', 'EN', 7]) {
+  for (const dil of [undefined, 'it', 'EN', 'de-DE', 'FR', 7]) {
     const sayfa = await panelAc({ dil });
     assert.equal(sayfa.oge('baglanti').textContent, 'Canlı', String(dil));
     assert.equal(sayfa.oge('haAc').textContent, 'HA’yı aç', String(dil));
@@ -2050,7 +2241,8 @@ test('dil: çalışma anında değişim (onDilDegisti) sabit metinleri çevirir 
   assert.equal(sayfa.htmlBasligi().textContent, 'Home Panel — Quick Panel');
   assert.deepEqual(yazilar(sayfa, 'karo-ipucu'), ['hold to confirm']);
   assert.equal(yazilar(sayfa, 'bolum-baslik')[0], 'Recently used');
-  sayfa.dilDegisti({ dil: 'de' });
+  sayfa.dilDegisti({ dil: 'it' });
+  sayfa.dilDegisti({ dil: 'ES' });
   sayfa.dilDegisti(null);
   sayfa.dilDegisti({});
   assert.equal(sayfa.oge('baglanti').textContent, 'Live', 'geçersiz dil mevcut dili bozmaz');

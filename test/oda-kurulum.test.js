@@ -157,12 +157,14 @@ test('odaOnerileri: bozuk girdiler boş sonuç verir, fırlatmaz; kaynak girdile
   assert.deepEqual(odaOnerileri({ durumlar: [durum('light.a', 'A')], alanVerisi: { alanlar: [{ id: 'salon', ad: 'Salon' }], varlikAlanlari: JSON.parse('{"__proto__": "salon"}') } }), []);
 });
 
-test('odaOnerileri: dil seçimi oda sırasını belirler (en: İngilizce harf sırası)', () => {
+test('odaOnerileri: dil seçimi oda sırasını belirler (en, de, fr, es: Türkçe dışı harf sırası; geçersiz ya da eksik dil Türkçe)', () => {
   const durumlar = [durum('light.a', 'A'), durum('light.b', 'B')];
   const veri = eslestir(alanlar(['a', 'Ilık Oda'], ['b', 'İç Oda']), { 'light.a': 'a', 'light.b': 'b' });
   // Türkçede noktasız ı, noktalı i'den önce gelir; İngilizce sıralamada taban harfler (i) eşit olduğundan ikinci harfe (c < l) bakılır.
   assert.deepEqual(odaOnerileri({ durumlar, alanVerisi: veri, dil: 'tr' }).map((o) => o.ad), ['Ilık Oda', 'İç Oda']);
   assert.deepEqual(odaOnerileri({ durumlar, alanVerisi: veri, dil: 'en' }).map((o) => o.ad), ['İç Oda', 'Ilık Oda']);
+  for (const dil of ['de', 'fr', 'es']) assert.deepEqual(odaOnerileri({ durumlar, alanVerisi: veri, dil }).map((o) => o.ad), ['İç Oda', 'Ilık Oda'], dil);
+  for (const dil of [undefined, 'it', 'sistem', 'DE', 'toString']) assert.deepEqual(odaOnerileri({ durumlar, alanVerisi: veri, dil }).map((o) => o.ad), ['Ilık Oda', 'İç Oda'], String(dil));
 });
 
 test('her öneri Kapı Kuralı süzgecinden geçer (tüm odalar, tüm cihazlar)', () => {

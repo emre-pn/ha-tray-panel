@@ -29,7 +29,7 @@ const DIL_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'dil.js'), 'utf8
 const TEMA_RENK_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'tema-renk.js'), 'utf8');
 const SOZLUK_ANA_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'ceviri', 'ana.js'), 'utf8');
 const SOZLUK_AYARLAR_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'ceviri', 'ayarlar.js'), 'utf8');
-const DIL_AYARLARI = ['sistem', 'tr', 'en'];
+const DIL_AYARLARI = ['sistem', 'tr', 'en', 'de', 'fr', 'es'];
 
 const akit = async () => {
   for (let i = 0; i < 16; i += 1) await new Promise((coz) => setImmediate(coz));
@@ -337,7 +337,7 @@ function sayfayiKur({
       cagrilar.push(['anahtarSil']);
       sunucu.anahtarVar = false;
       // Ana süreç gibi seçili dilde yanıt verir (Türkçe: bildirim-metni sabiti ile aynı metin).
-      return { ok: true, mesaj: sunucu.dil === 'en' ? SOZLUK_ANA.en['bildirim.anahtarSilindi'] : ANAHTAR_SILINDI_METNI };
+      return { ok: true, mesaj: Object.hasOwn(SOZLUK_ANA, sunucu.dil) && sunucu.dil !== 'tr' ? SOZLUK_ANA[sunucu.dil]['bildirim.anahtarSilindi'] : ANAHTAR_SILINDI_METNI };
     },
     yetkiYenidenDene: async (secenek) => {
       cagrilar.push(['yetkiYenidenDene']);

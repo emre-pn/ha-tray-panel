@@ -247,6 +247,20 @@ test('o-29 önizleme: İngilizcede kontrast metni İngilizce ve noktalı ondalı
   assert.equal(sayfa.oge('temaKontrast').textContent, 'High contrast is on: custom panel colors are not used.');
 });
 
+test('o-35 önizleme: Almanca, Fransızca ve İspanyolcada kontrast metni kendi dilinde ve virgüllü ondalıktır (Fransızcada iki nokta öncesi bölünmeyen boşluk)', async () => {
+  const beklenen = {
+    de: [/^Textkontrast der Vorschau: \d,\d:1 \(mindestens 4,5:1 erforderlich\)\.$/, 'Hoher Kontrast ist aktiv: Eigene Panelfarben werden nicht verwendet.'],
+    fr: [/^Contraste du texte de l’aperçu : \d,\d:1 \(au moins 4,5:1 requis\)\.$/, 'Contraste élevé activé : les couleurs de panneau personnalisées ne sont pas utilisées.'],
+    es: [/^Contraste del texto de la vista previa: \d,\d:1 \(se necesita al menos 4,5:1\)\.$/, 'Contraste alto activado: no se usan colores de panel personalizados.'],
+  };
+  for (const [dil, [desen, yuksek]] of Object.entries(beklenen)) {
+    const sayfa = await acilmisSayfa({ ayar: { ...TEMA_AYARI, dil, dilAyari: dil }, cihazlar: CIHAZLAR });
+    assert.match(sayfa.oge('temaKontrast').textContent, desen, dil);
+    isaretle(sayfa.oge('yuksekKarsitlik'), true);
+    assert.equal(sayfa.oge('temaKontrast').textContent, yuksek, dil);
+  }
+});
+
 test('o-25 yüksek karşıtlık: Ayarlar penceresi de hemen opak/yüksek karşıtlıklı olur (<html data-karsitlik>) ve kapanınca kalkar', async () => {
   const sayfa = await acilmisSayfa({ ayar: TEMA_AYARI, cihazlar: CIHAZLAR });
   assert.equal(sayfa.htmlOzelligi('data-karsitlik'), null);

@@ -26,8 +26,8 @@
   const TemaRenk = window.EvTemaRenk || null; // panel renk önizlemesi (lib/tema-renk.js); yoksa önizleme çizilmez
 
   // --- Arayüz dili -------------------------------------------------------------------------------------------------------------
-  const DIL_ANAHTARI = 'evPaneli.ayarlar.dil'; // son etkin dil ('tr' | 'en'): sayfa ilk boyamadan önce doğru dilde açılsın diye
-  let dil = 'tr'; // etkin dil; kayıtlı seçim (sistem/tr/en) dilSecimi alanındadır
+  const DIL_ANAHTARI = 'evPaneli.ayarlar.dil'; // son etkin dil ('tr' | 'en' | 'de' | 'fr' | 'es'): sayfa ilk boyamadan önce doğru dilde açılsın diye
+  let dil = 'tr'; // etkin dil; kayıtlı seçim (sistem/tr/en/de/fr/es) dilSecimi alanındadır
   let t = cevirmenKur('tr');
 
   function cevirmenKur(hedef) {
@@ -44,7 +44,7 @@
   }
 
   function dilTemizMi(deger) {
-    return deger === 'tr' || deger === 'en';
+    return Dil ? Dil.DILLER.indexOf(deger) >= 0 : deger === 'tr' || deger === 'en';
   }
 
   // --- Durum ---------------------------------------------------------------------------------------------------------------
@@ -1012,7 +1012,7 @@
       disAdres: sonuc.disAdres || '',
       kisayol: kisNorm(sonuc.kisayol || varsayilanKisayolMetni),
       paletKisayol: kisNorm(typeof sonuc.paletKisayol === 'string' ? sonuc.paletKisayol : varsayilanPaletKisayolMetni),
-      dil: ['sistem', 'tr', 'en'].indexOf(sonuc.dilAyari) >= 0 ? sonuc.dilAyari : 'sistem',
+      dil: Dil ? Dil.dilAyariDuzelt(sonuc.dilAyari) : ['sistem', 'tr', 'en'].indexOf(sonuc.dilAyari) >= 0 ? sonuc.dilAyari : 'sistem',
       tepsiSolTik: sonuc.tepsiSolTik === 'pencere' ? 'pencere' : 'panel',
       canliBaglanti: sonuc.canliBaglanti !== false,
       otomatikBaslat: !!sonuc.otomatikBaslat,
@@ -1221,7 +1221,7 @@
 
   function onizlemeKontrastiMetni(oran) {
     const yazi = (Math.floor(oran * 10) / 10).toFixed(1); // aşağı yuvarlanır: "4,5" gösterilip gerçekte 4,46 olmasın
-    return t('ayar.panelTema.kontrast', { oran: dil === 'tr' ? yazi.replace('.', ',') : yazi });
+    return t('ayar.panelTema.kontrast', { oran: dil === 'en' ? yazi : yazi.replace('.', ',') });
   }
 
   /**
@@ -2935,7 +2935,7 @@
   // --- Dışa / içe aktarma, yedekten dönme (k-13) -----------------------------------------------------------------------------
   function yedekZamani(zaman) {
     try {
-      return new Date(zaman).toLocaleString(dil === 'en' ? 'en-US' : 'tr-TR');
+      return new Date(zaman).toLocaleString(Dil ? Dil.yerelAdi(dil) : dil === 'en' ? 'en-US' : 'tr-TR');
     } catch {
       return '';
     }

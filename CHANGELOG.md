@@ -10,6 +10,7 @@ Update by running `Ev-Paneli-Kurulum-1.4.0.exe` over the installed version. The 
 - **Info cards:** A sensor strip with charts and history, a clock with weather, a read-only calendar and to-do lists. All of them are off until you pick them in Settings.
 - **Layout:** Right-click menu, a detail pane, pages (tabs), tile icon, colour and size, "add to tray" for a favorite, reordering with an undo history (the last 20 layouts), and a repair for favorites that disappeared from Home Assistant.
 - **Window:** Always on top, remembered position and screen, opacity, a badge on the tray icon and tiles pinned to the desktop.
+- **Interface languages:** German, French and Spanish join Türkçe and English. Pick one under Settings → Appearance → Language; System language follows Windows for all five. The palette's command words stay Turkish and English.
 - **Look:** Text size, high contrast, preset or custom colours with a 4.5:1 contrast check, and optional animations (off by default).
 - **Notifications:** A strip in the panel for Home Assistant notifications, low batteries and updates. Alert rules with a duration, a cooldown and quiet hours. Desktop notifications are an extra option.
 - **Tools:** Settings search, directional actions (`led +10`, `salon kapat`) for hotkeys and the command line, `--goster`, `--gizle`, `--degistir` and `--durum` commands, a starter list built from one room, a diagnostics report without secrets and a "what's new" view. The spell-check dictionary download is switched off.

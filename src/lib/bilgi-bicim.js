@@ -16,7 +16,9 @@
   const TARIH_BICIMLERI = Object.freeze(['orta', 'kisa', 'uzun', 'yok']);
   const GUN_MS = 86_400_000;
 
-  const yerelAdi = (dil) => (dil === 'en' ? 'en-US' : 'tr-TR');
+  // Dil -> Intl yerel adı (lib/dil.js YEREL_ADLARI ile aynı; bu dosya dil.js'e bağlı olmadan çalışır, test/dil.test.js eşliği denetler).
+  const YEREL_ADLARI = Object.freeze({ tr: 'tr-TR', en: 'en-US', de: 'de-DE', fr: 'fr-FR', es: 'es-ES' });
+  const yerelAdi = (dil) => (Object.hasOwn(YEREL_ADLARI, dil) ? YEREL_ADLARI[dil] : YEREL_ADLARI.tr);
   const sonluMu = (n) => typeof n === 'number' && Number.isFinite(n);
 
   function bicimleyici(yerel, secenek, saatDilimi) {
@@ -147,11 +149,12 @@
     return null;
   }
 
-  /** Sayıyı yüzde işaretiyle yazar: Türkçede "%45", İngilizcede "45%". */
+  /** Sayıyı yüzde işaretiyle yazar: Türkçede "%45", İngilizcede "45%", Almanca / Fransızca / İspanyolcada "45 %". */
   function yuzdeMetni(sayi, { hassasiyet = null, dil = 'tr' } = {}) {
     const n = sayiBicimle(sayi, { hassasiyet, dil });
     if (n === '') return '';
-    return dil === 'en' ? `${n}%` : `%${n}`;
+    if (dil === 'en') return `${n}%`;
+    return dil === 'de' || dil === 'fr' || dil === 'es' ? `${n} %` : `%${n}`;
   }
 
   /**
@@ -229,6 +232,7 @@
   });
 
   return {
+    YEREL_ADLARI,
     SAAT_BICIMLERI,
     TARIH_BICIMLERI,
     DIKKAT_IKILI_SINIFLAR,

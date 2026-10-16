@@ -56,7 +56,7 @@ function varsayilanZaman() {
  * @param {() => number} [bag.opaklikAl] 1.4.0 (o-32) panel opaklığı (yüzde, 50-100; ayar panelOpaklik); yalnız opak malzemede ('yok')
  *   uygulanır, akrilik/mica ile üst üste binmez; verilmezse 100
  * @param {Function} [bag.t] çevirmen (src/lib/dil.js; ana süreçte dil değişince kendiliğinden yeni dili izler). Verilmezse Türkçe.
- * @param {() => string} [bag.dilAl] etkin arayüz dili ('tr' | 'en'); verilirse sayfaya durum yanıtında `dil` olarak gider
+ * @param {() => string} [bag.dilAl] etkin arayüz dili ('tr' | 'en' | 'de' | 'fr' | 'es'); verilirse sayfaya durum yanıtında `dil` olarak gider
  * @param {(m: string) => void} [bag.gunluk]
  * @param {() => number} [bag.simdi]
  * @param {{setTimeout: Function, clearTimeout: Function}} [bag.zaman]

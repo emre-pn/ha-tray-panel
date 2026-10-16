@@ -264,7 +264,7 @@ function ayarlariDuzelt(ham, { varsayilan } = {}) {
     temaZorla: temaDuzelt(g.temaZorla, temaDuzelt(v.temaZorla)),
     vurguRengi: vurguRengiDuzelt(g.vurguRengi) ?? vurguRengiDuzelt(v.vurguRengi) ?? '', // geçersiz renk sistem rengine döner
     yeniPencereMalzemesi: malzemeDuzelt(g.yeniPencereMalzemesi, malzemeDuzelt(v.yeniPencereMalzemesi)),
-    dil: dilAyariDuzelt(g.dil, dilAyariDuzelt(v.dil)), // arayüz dili: 'sistem' | 'tr' | 'en' (şema sürümü artmadan eklendi; eksik/geçersiz -> varsayılan 'sistem')
+    dil: dilAyariDuzelt(g.dil, dilAyariDuzelt(v.dil)), // arayüz dili: 'sistem' | 'tr' | 'en' | 'de' | 'fr' | 'es' (şema sürümü artmadan eklendi; eksik/geçersiz -> varsayılan 'sistem')
     favoriler,
     panolar,
     // Daha yeni bir sürümün hazır liste sürümü (bizimkinden büyük) düşürülmez: geri dönünce silinen karolar yeniden eklenmesin (h-11).

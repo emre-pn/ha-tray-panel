@@ -27,7 +27,7 @@ The code, comments and identifiers are in Turkish. Keep new code consistent with
 
 ## Translations
 
-The interface strings live in `src/lib/ceviri/`, one file per area. Each row is `[key, Turkish, English]`, and the tests check that both languages have the same keys and placeholders. If a translation reads oddly, a small pull request that fixes it is the best kind of contribution. Adding a language means adding a column to those rows and an entry to `DILLER` in `src/lib/dil.js`.
+The interface strings live in `src/lib/ceviri/`, one file per area. Each row is `[key, Turkish, English, German, French, Spanish]`, and the tests check that all five languages have the same keys and placeholders. If a translation reads oddly, a small pull request that fixes it is the best kind of contribution. Adding a language means adding a column to those rows and an entry to `DILLER` in `src/lib/dil.js`.
 
 ## Türkçe
 

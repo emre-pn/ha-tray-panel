@@ -435,8 +435,35 @@ test('dil: durumAl yanıtındaki dil İngilizceyse metinler İngilizce; dil:degi
   s.dilDegisti({ dil: 'tr' });
   assert.equal(s.oge('deger').textContent, '%60');
   assert.equal(s.oge('kaldir').getAttribute('aria-label'), 'Masaüstünden kaldır');
-  for (const gecersiz of [null, undefined, 'en', { dil: 'de' }, { dil: 5 }, {}]) s.dilDegisti(gecersiz);
+  for (const gecersiz of [null, undefined, 'en', { dil: 'it' }, { dil: 'DE' }, { dil: 'de-DE' }, { dil: 5 }, {}]) s.dilDegisti(gecersiz);
   assert.equal(s.oge('deger').textContent, '%60', 'geçersiz dil mesajları değiştirmez');
+});
+
+test('dil: Almanca, Fransızca ve İspanyolca karo metinlerini çevirir; yüzde "60 %" yazılır; dil:degisti ile diller arasında geçilir', async () => {
+  const beklenen = {
+    de: { baglanti: 'Live', ana: 'Salon — zum Ein-/Ausschalten klicken', onayar: 'Helligkeit von Salon 50 %', kaldir: 'Vom Desktop entfernen' },
+    fr: { baglanti: 'En direct', ana: 'Salon — cliquez pour allumer/éteindre', onayar: 'Luminosité de Salon 50 %', kaldir: 'Retirer du bureau' },
+    es: { baglanti: 'En vivo', ana: 'Salon — haz clic para encender/apagar', onayar: 'Brillo de Salon 50 %', kaldir: 'Quitar del escritorio' },
+  };
+  for (const [dil, b] of Object.entries(beklenen)) {
+    const s = sayfayiKur({ dil });
+    await akit();
+    assert.equal(s.oge('deger').textContent, '60 %', dil);
+    assert.equal(s.oge('baglanti').textContent, b.baglanti, dil);
+    assert.equal(s.oge('ana').title, b.ana, dil);
+    assert.equal(s.onayarDugmeleri()[1].getAttribute('aria-label'), b.onayar, dil);
+    assert.equal(s.oge('kaldir').getAttribute('aria-label'), b.kaldir, dil);
+  }
+  const s = sayfayiKur({ dil: 'de' });
+  await akit();
+  s.dilDegisti({ dil: 'fr' });
+  assert.equal(s.oge('baglanti').textContent, 'En direct');
+  s.dilDegisti({ dil: 'es' });
+  assert.equal(s.oge('baglanti').textContent, 'En vivo');
+  s.dilDegisti({ dil: 'en' });
+  assert.equal(s.oge('deger').textContent, '60%');
+  s.dilDegisti({ dil: 'tr' });
+  assert.equal(s.oge('deger').textContent, '%60');
 });
 
 test('çeviri betikleri yüklenemese de karo etiket ve değeriyle çizilir; metin anahtarı yerine boş kalır', async () => {
@@ -450,13 +477,12 @@ test('çeviri betikleri yüklenemese de karo etiket ve değeriyle çizilir; meti
   assert.equal(sensor.oge('deger').textContent, '5 W');
 });
 
-test('betikteki görünür metinlerin hepsi sözlükten gelir: Türkçe/İngilizce sözlük anahtarları var', () => {
+test('betikteki görünür metinlerin hepsi sözlükten gelir: beş dilin sözlük anahtarları var', () => {
   const kullanilan = new Set([...BETIK_KODU.matchAll(/\bt\('([a-z][\w.]*)'/g)].map((m) => m[1]), [...BETIK_KODU.matchAll(/anahtar = [^'\n]*'([a-z][\w.]*)'\s*:\s*'([a-z][\w.]*)'/g)].flatMap((m) => [m[1], m[2]]));
   assert.ok(kullanilan.size >= 8);
   const sozluk = require('../src/lib/ceviri/yuzey.js');
   for (const anahtar of kullanilan) {
-    assert.ok(sozluk.tr[anahtar], `tr: ${anahtar}`);
-    assert.ok(sozluk.en[anahtar], `en: ${anahtar}`);
+    for (const dil of ['tr', 'en', 'de', 'fr', 'es']) assert.ok(sozluk[dil][anahtar], `${dil}: ${anahtar}`);
   }
 });
 

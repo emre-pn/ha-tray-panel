@@ -23,6 +23,9 @@ const { alanAl, guvenliVarlikMi, guvenliMetin } = require('./suzgec');
 const { karoAlaniMi, eylemAlaniMi, alanSirasi } = require('./alan-kaydi');
 const { SINIF, eylemSinifi, adayGizliMi } = require('./eylem-sinifi');
 
+// Ad sıralamasında kendi sıralama kuralı kullanılan diller (Türkçe varsayılan: ı/İ ve ç, ğ, ö, ş, ü sırası).
+const SIRALAMA_DILLERI = ['en', 'de', 'fr', 'es'];
+
 const EN_COK_ODA = 100;
 const EN_COK_CIHAZ = 20; // oda başına öneri
 const ODA_AD_SINIRI = 60;
@@ -49,7 +52,7 @@ function onerilebilirMi(varlik) {
  * @param {object} g
  * @param {unknown} g.durumlar HA /api/states yanıtı (dizi değilse boş sonuç)
  * @param {unknown} g.alanVerisi haOkuma.alanlar() sonucu
- * @param {string} [g.dil] sıralama dili ('tr' | 'en')
+ * @param {string} [g.dil] sıralama dili ('tr' | 'en' | 'de' | 'fr' | 'es')
  * @param {number} [g.enCokCihaz] oda başına öneri sınırı
  * @returns {{ id: string, ad: string, toplam: number, cihazlar: { entity_id: string, ad: string, alan: string }[] }[]}
  */
@@ -73,7 +76,7 @@ function odaOnerileri({ durumlar, alanVerisi, dil = 'tr', enCokCihaz = EN_COK_CI
     gorulen.add(kimlik);
     oda.adaylar.push({ entity_id: kimlik, ad: varlikAdi(varlik), alan: alanAl(kimlik) });
   }
-  const karsilastir = (a, b) => String(a).localeCompare(String(b), dil === 'en' ? 'en' : 'tr');
+  const karsilastir = (a, b) => String(a).localeCompare(String(b), SIRALAMA_DILLERI.includes(dil) ? dil : 'tr');
   return [...odalar.values()]
     .filter((o) => o.adaylar.length > 0)
     .sort((a, b) => karsilastir(a.ad, b.ad))

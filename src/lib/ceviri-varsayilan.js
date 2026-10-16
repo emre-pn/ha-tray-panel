@@ -9,7 +9,7 @@
 const { cevirmen } = require('./dil');
 const ANA = require('./ceviri/ana');
 
-/** @param {string} dil 'tr' | 'en' */
+/** @param {string} dil 'tr' | 'en' | 'de' | 'fr' | 'es' */
 const anaCevirmen = (dil) => cevirmen(dil, ANA);
 const TR = anaCevirmen('tr');
 

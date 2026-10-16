@@ -18,6 +18,10 @@ const ANA = require('../src/lib/ceviri/ana');
 const KOK = path.join(__dirname, '..');
 const oku = (g) => fs.readFileSync(path.join(KOK, g), 'utf8');
 const TURKCE_HARF = /[çğıöşüÇĞİÖŞÜ]/;
+// Almanca ve Fransızca da ç/ö/ü kullanır; yalnız Türkçeye özgü harfler (ğ, ı, İ, ş) o dillerde kalıntı sayılır.
+const TURKCE_OZEL_HARF = /[ğıİşĞŞ]/;
+const YENI_DILLER = ['de', 'fr', 'es'];
+const BES_DIL = ['tr', 'en', 'de', 'fr', 'es'];
 const SAYFALAR = [
   ['src/yuzey.html', 'src/yuzey-sayfa.js'],
   ['src/yuzey.html', 'src/yuzey-duzen.js'], // 1.4.0 düzen: sayfa sekmeleri ve ayrıntı bölmesi (aynı sayfa, ayrı betik)
@@ -54,21 +58,21 @@ test('yüzey sözlüğü: sayfa betiklerinde ve HTML işaretlerinde kullanılan 
   assert.ok(kullanilan.size > 60, `çok az anahtar bulundu (${kullanilan.size}): düzenli ifade bozulmuş olabilir`);
   for (const anahtar of kullanilan) {
     assert.ok(Object.hasOwn(YUZEY.tr, anahtar), `${anahtar}: sözlükte (tr) yok`);
-    assert.ok(Object.hasOwn(YUZEY.en, anahtar), `${anahtar}: sözlükte (en) yok`);
+    for (const dil of BES_DIL.slice(1)) assert.ok(Object.hasOwn(YUZEY[dil], anahtar), `${anahtar}: sözlükte (${dil}) yok`);
   }
   const kullanilmayan = Object.keys(YUZEY.tr).filter((k) => !kullanilan.has(k));
   assert.deepEqual(kullanilmayan, [], 'sözlükte olup hiçbir sayfada kullanılmayan anahtarlar');
 });
 
-test('yüzey sözlüğü: uygulama adı ve pencere başlıkları ana süreç sözlüğüyle (pencere başlığı) aynı; İngilizce ad "Home Panel"', () => {
-  for (const dil of ['tr', 'en']) {
+test('yüzey sözlüğü: uygulama adı ve pencere başlıkları ana süreç sözlüğüyle (pencere başlığı) aynı; yabancı dillerde ad "Home Panel"', () => {
+  for (const dil of BES_DIL) {
     assert.equal(YUZEY[dil]['yuzey.uygulamaAdi'], ANA[dil]['uygulama.ad'], dil);
     assert.equal(YUZEY[dil]['yuzey.sayfaBasligi'], ANA[dil]['uygulama.yuzeyBaslik'], dil);
     for (const anahtar of ['offline.sayfaBasligi', 'kose.sayfaBasligi']) {
       assert.ok(YUZEY[dil][anahtar].startsWith(`${ANA[dil]['uygulama.ad']} — `), `${dil} ${anahtar}`);
     }
   }
-  assert.equal(YUZEY.en['yuzey.uygulamaAdi'], 'Home Panel');
+  for (const dil of ['en', ...YENI_DILLER]) assert.equal(YUZEY[dil]['yuzey.uygulamaAdi'], 'Home Panel', dil);
   assert.equal(YUZEY.tr['yuzey.uygulamaAdi'], 'Ev Paneli');
 });
 
@@ -249,7 +253,7 @@ test('offline.js ?dil=en: başlık, açıklama, ham hata kodu, düğmeler, adres
 });
 
 test('offline.js: dil yoksa, geçersizse ya da tr ise Türkçe', () => {
-  for (const sorgu of ['?durum=cevrimdisi&sn=0', '?durum=cevrimdisi&sn=0&dil=de', '?durum=cevrimdisi&sn=0&dil=EN', '?durum=cevrimdisi&sn=0&dil=tr']) {
+  for (const sorgu of ['?durum=cevrimdisi&sn=0', '?durum=cevrimdisi&sn=0&dil=it', '?durum=cevrimdisi&sn=0&dil=DE', '?durum=cevrimdisi&sn=0&dil=de-DE', '?durum=cevrimdisi&sn=0&dil=EN', '?durum=cevrimdisi&sn=0&dil=tr']) {
     const s = offlineKur(sorgu);
     assert.equal(s.oge('baslik').textContent, 'Ev sunucusuna bağlanılamadı', sorgu);
     assert.equal(s.oge('btnDeneMetin').textContent, 'Tekrar Dene', sorgu);
@@ -325,7 +329,7 @@ test('offline.js: sayfa açıkken dil değişince (onDilDegisti) metinler çevri
   s.zamanlayicilar[0].fn();
   assert.equal(s.oge('kalanSaniye').textContent, '14', 'sayaç İngilizce görünümde de işler');
   // geçersiz yükler dili bozmaz
-  for (const yuk of [null, 'en', 42, {}, { dil: 'de' }, { dil: 'EN' }]) s.dilGonder(yuk);
+  for (const yuk of [null, 'en', 42, {}, { dil: 'it' }, { dil: 'EN' }, { dil: 'de-DE' }]) s.dilGonder(yuk);
   assert.equal(s.oge('baslik').textContent, 'Could not connect to the home server');
   // Türkçeye dönüş
   s.dilGonder({ dil: 'tr' });
@@ -376,6 +380,115 @@ test('offline.js: köprüde onDilDegisti yoksa (eski preload) çökmez', () => {
   assert.equal(sayfa.oge('btnDeneMetin').textContent, 'Try again');
 });
 
+const turkceOzelKalan = (sayfa) => sayfa.metinler().filter((m) => TURKCE_OZEL_HARF.test(m));
+
+test('offline.js de/fr/es: başlık, açıklama, ham hata kodu, düğmeler, adres etiketleri, sayfa başlığı ve <html lang> o dilde; Türkçeye özgü harf kalmaz', () => {
+  const beklenen = {
+    de: { baslik: 'Verbindung zum Heimserver nicht möglich', baslikTitle: 'Home Panel — Verbindung', kod: 'Fehlercode: ERR_CONNECTION_REFUSED', dene: 'Erneut versuchen', ayarlar: 'Einstellungen', evIci: 'Heimnetz-Adresse:', tanimsiz: '(nicht festgelegt)' },
+    fr: { baslik: 'Impossible de se connecter au serveur domestique', baslikTitle: 'Home Panel — Connexion', kod: 'Code d’erreur\u00A0: ERR_CONNECTION_REFUSED', dene: 'Réessayer', ayarlar: 'Paramètres', evIci: 'Adresse locale\u00A0:', tanimsiz: '(non définie)' },
+    es: { baslik: 'No se pudo conectar con el servidor doméstico', baslikTitle: 'Home Panel — Conexión', kod: 'Código de error: ERR_CONNECTION_REFUSED', dene: 'Reintentar', ayarlar: 'Configuración', evIci: 'Dirección local:', tanimsiz: '(sin definir)' },
+  };
+  for (const [dil, b] of Object.entries(beklenen)) {
+    const s = offlineKur(`?durum=cevrimdisi&dil=${dil}&sn=0&hata=ERR_CONNECTION_REFUSED&yerel=http%3A%2F%2F192.168.1.5%3A8123`);
+    assert.equal(s.kok.nitelikler.lang, dil);
+    assert.equal(s.baslik().textContent, b.baslikTitle, dil);
+    assert.equal(s.oge('baslik').textContent, b.baslik, dil);
+    assert.equal(s.oge('hataKodu').textContent, b.kod, dil);
+    assert.equal(s.oge('hataKodu').hidden, false, dil);
+    assert.equal(s.oge('btnDeneMetin').textContent, b.dene, dil);
+    assert.equal(s.oge('btnAyarlar').textContent, b.ayarlar, dil);
+    assert.equal(s.anahtarOgesi('offline.adres.evIci').textContent, b.evIci, dil);
+    assert.equal(s.oge('yerelAdresDeger').textContent, 'http://192.168.1.5:8123', dil);
+    assert.equal(s.oge('disAdresDeger').textContent, b.tanimsiz, dil);
+    assert.deepEqual(turkceOzelKalan(s), [], `${dil}: Türkçeye özgü harf kalmamalı`);
+    // Türkçe HTML varsayılanı bırakılmadı: görünür başlıklar ve düğmeler Türkçeden farklı
+    assert.notEqual(s.oge('baslik').textContent, YUZEY.tr['offline.baslik.cevrimdisi'], dil);
+  }
+});
+
+test('offline.js de/fr/es: her Chromium hata kodunun, çökmenin ve HTTP hatalarının açıklaması çevrilmiş; Türkçe ve İngilizceden farklı', () => {
+  const kodlar = [
+    'ERR_NAME_NOT_RESOLVED', 'ERR_CONNECTION_REFUSED', 'ERR_CONNECTION_TIMED_OUT', 'ERR_TIMED_OUT', 'ERR_CONNECTION_RESET',
+    'ERR_INTERNET_DISCONNECTED', 'ERR_ADDRESS_UNREACHABLE', 'ERR_NETWORK_CHANGED', 'ERR_CERT_DATE_INVALID', 'ERR_CERT_AUTHORITY_INVALID',
+    'ERR_CERT_COMMON_NAME_INVALID', 'HTTP_403', 'HTTP_502', 'HTTP_503', 'COKME', 'HATA_-105', '',
+  ];
+  for (const dil of YENI_DILLER) {
+    const gorulen = new Set();
+    for (const kod of kodlar) {
+      const s = offlineKur(`?durum=cevrimdisi&dil=${dil}&sn=0&hata=${encodeURIComponent(kod)}`);
+      const tr = offlineKur(`?durum=cevrimdisi&dil=tr&sn=0&hata=${encodeURIComponent(kod)}`);
+      const en = offlineKur(`?durum=cevrimdisi&dil=en&sn=0&hata=${encodeURIComponent(kod)}`);
+      assert.deepEqual(turkceOzelKalan(s), [], `${dil} ${kod}`);
+      assert.notEqual(s.oge('aciklama').textContent, tr.oge('aciklama').textContent, `${dil} ${kod}: Türkçeden farklı`);
+      assert.notEqual(s.oge('aciklama').textContent, en.oge('aciklama').textContent, `${dil} ${kod}: İngilizceden farklı`);
+      assert.ok(s.oge('aciklama').textContent.length > 30, `${dil} ${kod}`);
+      assert.equal(s.oge('hataKodu').hidden, tr.oge('hataKodu').hidden, `${dil} ${kod}: ham kod satırı Türkçe kuralla aynı`);
+      if (!s.oge('hataKodu').hidden) assert.ok(s.oge('hataKodu').textContent.endsWith(kod), `${dil} ${kod}: ham kod olduğu gibi yazılır`);
+      gorulen.add(s.oge('aciklama').textContent);
+    }
+    assert.ok(gorulen.size >= 12, `${dil}: her kod grubunun kendi açıklaması var`);
+  }
+  // {kod} yer tutucusu doldurulur, ham HTTP kodu açıklamada görünür
+  assert.match(offlineKur('?durum=cevrimdisi&dil=de&sn=0&hata=HTTP_503').oge('aciklama').textContent, /^Serverfehler \(503\)\./);
+  assert.match(offlineKur('?durum=cevrimdisi&dil=fr&sn=0&hata=HTTP_503').oge('aciklama').textContent, /^Erreur du serveur \(503\)\./);
+  assert.match(offlineKur('?durum=cevrimdisi&dil=es&sn=0&hata=HTTP_503').oge('aciklama').textContent, /^Error del servidor \(503\)\./);
+  for (const dil of YENI_DILLER) assert.match(offlineKur(`?durum=cevrimdisi&dil=${dil}&sn=0&hata=HATA_-105`).oge('aciklama').textContent, /\(HATA_-105\)/, dil);
+  // çökme açıklaması düğmenin yeni dildeki adını anar
+  assert.match(offlineKur('?dil=de&sn=0&hata=COKME').oge('aciklama').textContent, /„Erneut versuchen“/);
+  assert.match(offlineKur('?dil=fr&sn=0&hata=COKME').oge('aciklama').textContent, /«\u00A0Réessayer\u00A0»/);
+  assert.match(offlineKur('?dil=es&sn=0&hata=COKME').oge('aciklama').textContent, /“Reintentar”/);
+});
+
+test('offline.js de/fr/es: bağlanılıyor görünümü ve geri sayım (çoğul / tekil) o dilde; sayı vurgulu öğesinde kalır', () => {
+  const beklenen = {
+    de: { baslik: 'Verbindung zum Heimserver wird hergestellt…', dene: 'Verbindung wird hergestellt…', cogul: ['Neuer Versuch in ', '3', ' Sekunden…'], tekil: ['Neuer Versuch in ', '1', ' Sekunde…'] },
+    fr: { baslik: 'Connexion au serveur domestique…', dene: 'Connexion…', cogul: ['Nouvelle tentative dans ', '3', ' secondes…'], tekil: ['Nouvelle tentative dans ', '1', ' seconde…'] },
+    es: { baslik: 'Conectando con el servidor doméstico…', dene: 'Conectando…', cogul: ['Reintentando en ', '3', ' segundos…'], tekil: ['Reintentando en ', '1', ' segundo…'] },
+  };
+  for (const [dil, b] of Object.entries(beklenen)) {
+    const baglaniyor = offlineKur(`?durum=baglaniyor&dil=${dil}&sn=0`);
+    assert.equal(baglaniyor.oge('baslik').textContent, b.baslik, dil);
+    assert.equal(baglaniyor.oge('btnDeneMetin').textContent, b.dene, dil);
+    assert.equal(baglaniyor.oge('btnDene').disabled, true, dil);
+    assert.deepEqual(turkceOzelKalan(baglaniyor), [], dil);
+
+    const s = offlineKur(`?durum=cevrimdisi&dil=${dil}&sn=3&hata=HTTP_502`);
+    assert.equal(s.oge('sayacKutusu').style.display, 'inline-block', dil);
+    assert.deepEqual([s.oge('sayacOn').textContent, s.oge('kalanSaniye').textContent, s.oge('sayacSon').textContent], b.cogul, dil);
+    s.zamanlayicilar[0].fn();
+    s.zamanlayicilar[0].fn();
+    assert.deepEqual([s.oge('sayacOn').textContent, s.oge('kalanSaniye').textContent, s.oge('sayacSon').textContent], b.tekil, `${dil}: tekil`);
+    s.zamanlayicilar[0].fn();
+    assert.equal(s.oge('btnDeneMetin').textContent, b.dene, `${dil}: süre bitince bağlanılıyor görünümü`);
+    assert.equal(s.cagrilar.tekrarDene, 0, 'sayfa kendi başına denemez (hata-05)');
+  }
+});
+
+test('offline.js: sayfa açıkken diller arasında geçilir (tr -> de -> fr -> es -> en); geri sayım ve hata kodu bozulmaz', () => {
+  const s = offlineKur('?durum=cevrimdisi&sn=20&hata=HTTP_502&yerel=http%3A%2F%2Fa');
+  for (let i = 0; i < 5; i += 1) s.zamanlayicilar[0].fn();
+  s.dilGonder({ dil: 'de' });
+  assert.equal(s.kok.nitelikler.lang, 'de');
+  assert.equal(s.oge('baslik').textContent, 'Verbindung zum Heimserver nicht möglich');
+  assert.equal(s.oge('hataKodu').textContent, 'Fehlercode: HTTP_502');
+  assert.deepEqual([s.oge('sayacOn').textContent, s.oge('kalanSaniye').textContent, s.oge('sayacSon').textContent], ['Neuer Versuch in ', '15', ' Sekunden…']);
+  s.dilGonder({ dil: 'fr' });
+  assert.equal(s.kok.nitelikler.lang, 'fr');
+  assert.equal(s.oge('btnDeneMetin').textContent, 'Réessayer');
+  assert.equal(s.oge('kalanSaniye').textContent, '15');
+  s.dilGonder({ dil: 'es' });
+  assert.equal(s.kok.nitelikler.lang, 'es');
+  assert.equal(s.oge('btnAyarlar').textContent, 'Configuración');
+  s.dilGonder({ dil: 'en' });
+  assert.equal(s.oge('btnAyarlar').textContent, 'Settings');
+  assert.equal(s.zamanlayicilar.length, 1, 'zamanlayıcı yeniden kurulmadı');
+  assert.equal(s.oge('btnDene').disabled, false);
+  // ana sürecin yerinde güncellemesi yeni dilleri de taşıyabilir
+  s.durumGonder({ durum: 'cevrimdisi', sn: 8, hata: 'ERR_CONNECTION_REFUSED', yerel: 'http://a', dis: 'https://b', dil: 'fr' });
+  assert.equal(s.kok.nitelikler.lang, 'fr');
+  assert.match(s.oge('aciklama').textContent, /^Le serveur a refusé la connexion\./);
+});
+
 // --- kose-sayfa.js --------------------------------------------------------------------------------------------
 
 function koseKur({ sozlukYukle = true } = {}) {
@@ -400,8 +513,20 @@ test('kose-sayfa.js: dil:degisti sayfa başlığını ve <html lang> değerini �
   assert.equal(s.kok.nitelikler.lang, 'tr');
   assert.equal(s.baslik().textContent, 'Ev Paneli — Bildirim');
   // geçersiz yükler yok sayılır
-  for (const yuk of [null, 'en', 7, {}, { dil: 'de' }]) s.dilGonder(yuk);
+  for (const yuk of [null, 'en', 7, {}, { dil: 'it' }, { dil: 'FR' }]) s.dilGonder(yuk);
   assert.equal(s.kok.nitelikler.lang, 'tr');
+});
+
+test('kose-sayfa.js: dil:degisti Almanca, Fransızca ve İspanyolca sayfa başlığını ve <html lang> değerini çevirir; bildirim metnine dokunmaz', () => {
+  const s = koseKur();
+  s.gonder({ tur: 'ok', metin: 'Licht im Wohnzimmer eingeschaltet' });
+  for (const [dil, baslik] of [['de', 'Home Panel — Benachrichtigung'], ['fr', 'Home Panel — Notification'], ['es', 'Home Panel — Notificación']]) {
+    s.dilGonder({ dil });
+    assert.equal(s.kok.nitelikler.lang, dil);
+    assert.equal(s.baslik().textContent, baslik, dil);
+    assert.equal(s.oge('metin').textContent, 'Licht im Wohnzimmer eingeschaltet', dil);
+    assert.deepEqual(turkceOzelKalan(s), [], dil);
+  }
 });
 
 test('kose-sayfa.js: çeviri betikleri yüklenemese bile bildirim görünür (çeviri yalnız sayfa başlığı içindir)', () => {

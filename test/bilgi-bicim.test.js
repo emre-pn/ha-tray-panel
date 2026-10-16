@@ -25,6 +25,28 @@ test('sayiBicimle: dilin ondalık ayracı, hassasiyet ve büyüklüğe göre bas
   assert.doesNotThrow(() => B.sayiBicimle(1, { hassasiyet: 99 }), 'aşırı hassasiyet sınırlanır');
 });
 
+test('sayiBicimle ve yuzdeMetni: beş dilin ondalık ayracı ve yüzde yazımı (tr %45, en 45%, de/fr/es 45 %)', () => {
+  for (const dil of ['tr', 'en', 'de', 'fr', 'es']) {
+    assert.equal(B.sayiBicimle(21.456, { hassasiyet: 1, dil }), dil === 'en' ? '21.5' : '21,5', dil);
+  }
+  assert.equal(B.sayiBicimle(1234.5, { dil: 'de' }), '1.235');
+  assert.match(B.sayiBicimle(1234.5, { dil: 'fr' }), /^1[\s ]235$/, 'Fransızca binlik ayracı boşluk');
+  assert.match(B.sayiBicimle(1234.5, { dil: 'es' }), /^1\.?235$/);
+  const yuzde = { tr: '%45', en: '45%', de: '45 %', fr: '45 %', es: '45 %' };
+  const ondalikli = { tr: '%45,5', en: '45.5%', de: '45,5 %', fr: '45,5 %', es: '45,5 %' };
+  for (const [dil, beklenen] of Object.entries(yuzde)) {
+    assert.equal(B.yuzdeMetni(45, { dil }), beklenen, dil);
+    assert.equal(B.yuzdeMetni(45.5, { hassasiyet: 1, dil }), ondalikli[dil], dil);
+    assert.equal(B.sensorSayisiMetni({ sayi: 45, birim: '%', hassasiyet: null }, { dil }), beklenen, `${dil}: yüzde birimli sensör`);
+    assert.equal(B.sensorSayisiMetni({ sayi: 21.4, birim: '°C', hassasiyet: 1 }, { dil }), dil === 'en' ? '21.4 °C' : '21,4 °C', `${dil}: birimli sensör`);
+    assert.equal(B.yuzdeMetni(NaN, { dil }), '', dil);
+  }
+  assert.ok(!B.yuzdeMetni(45, { dil: 'de' }).includes('\u00A0'), 'yüzde ile sayı arasında düz boşluk (bölünmez boşluk değil)');
+  // tanınmayan dil Türkçe sayılır
+  assert.equal(B.yuzdeMetni(45, { dil: 'it' }), '%45');
+  assert.equal(B.yuzdeMetni(45, { dil: '__proto__' }), '%45');
+});
+
 test('saatMetni: 24 ve 12 saat, geçersiz zaman boş', () => {
   assert.equal(B.saatMetni(OCAK, { saatBicimi: '24', saatDilimi: 'UTC' }), '21:05');
   assert.match(B.saatMetni(OCAK, { saatBicimi: '12', saatDilimi: 'UTC' }), /^9:05\s?PM$/i);
@@ -53,6 +75,21 @@ test('tarihMetni: kısa, orta, uzun ve yok', () => {
   assert.equal(B.tarihMetni(OCAK, { tarihBicimi: 'yok', saatDilimi: 'UTC' }), '');
   assert.equal(B.tarihMetni(NaN), '');
   assert.equal(B.tarihMetni('x'), '');
+});
+
+test('tarihMetni, gunMetni ve eksenZamani: Almanca, Fransızca ve İspanyolca ay ve gün adlarıyla yazılır', () => {
+  const uzun = { de: /Mittwoch.*14\. Oktober 2026/, fr: /mercredi 14 octobre 2026/, es: /miércoles, 14 de octubre de 2026/ };
+  const kisa = { de: '14.10.2026', fr: '14/10/2026', es: '14/10/2026' };
+  const gun = { de: /20\. Okt/, fr: /20 oct/, es: /20 oct/ };
+  const eksen = { de: '14. Okt.', fr: '14 oct.', es: '14 oct' };
+  for (const dil of ['de', 'fr', 'es']) {
+    assert.match(B.tarihMetni(OCAK, { tarihBicimi: 'uzun', dil, saatDilimi: 'UTC' }), uzun[dil], dil);
+    assert.equal(B.tarihMetni(OCAK, { tarihBicimi: 'kisa', dil, saatDilimi: 'UTC' }), kisa[dil], dil);
+    assert.match(B.gunMetni('2026-10-20', { dil, saatDilimi: 'Pacific/Kiritimati' }), gun[dil], `${dil}: tüm gün tarihi saat diliminden etkilenmez`);
+    assert.equal(B.eksenZamani(OCAK, { gunluk: true, dil, saatDilimi: 'UTC' }), eksen[dil], dil);
+    assert.equal(B.eksenZamani(OCAK, { gunluk: false, saatBicimi: '24', dil, saatDilimi: 'UTC' }), '21:05', `${dil}: saat ekseni dilden bağımsız 24 saat`);
+    assert.equal(B.tarihMetni(OCAK, { tarihBicimi: 'yok', dil }), '', dil);
+  }
 });
 
 test('gunFarki: bugün/yarın/geçmiş; saat dilimine göre gün sınırı; tüm gün tarihi', () => {

@@ -50,7 +50,7 @@ if (location.protocol === 'file:') {
     ayarlariIceAktar: () => ipcRenderer.invoke('ayarlar:ice-aktar'),
     yedekleriGetir: () => ipcRenderer.invoke('ayarlar:yedekler'),
     yedektenDon: (ad) => ipcRenderer.invoke('ayarlar:yedekten-don', ad),
-    // Arayüz dili değişti (Ayarlar'dan ya da ana süreçte): yük { dil: 'tr' | 'en' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
+    // Arayüz dili değişti (Ayarlar'dan ya da ana süreçte): yük { dil: 'tr' | 'en' | 'de' | 'fr' | 'es' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).
     onDilDegisti: (callback) => {
       if (typeof callback !== 'function') return () => {};
       const dinleyici = (_olay, yuk) => callback(yuk);

@@ -101,7 +101,7 @@ function ayarGirdisiniDogrula(girdi, mevcut, { t = TR } = {}) {
   if (typeof girdi.koseBildirimi === 'boolean') yeni.koseBildirimi = girdi.koseBildirimi;
   if (typeof girdi.bipSesi === 'boolean') yeni.bipSesi = girdi.bipSesi;
   if (TEPSI_SOL_TIK_DEGERLERI.includes(girdi.tepsiSolTik)) yeni.tepsiSolTik = girdi.tepsiSolTik;
-  // Arayüz dili ('sistem' | 'tr' | 'en'): geçersiz değer mevcut olanı korur.
+  // Arayüz dili ('sistem' | 'tr' | 'en' | 'de' | 'fr' | 'es'): geçersiz değer mevcut olanı korur.
   if (DIL_AYARLARI.includes(girdi.dil)) yeni.dil = girdi.dil;
   // Görünüm (Dalga 4): geçersiz tema/malzeme mevcut olanı korur; geçersiz vurgu rengi uyarıdır (kayıt devam eder).
   if (TEMA_DEGERLERI.includes(girdi.temaZorla)) yeni.temaZorla = girdi.temaZorla;
