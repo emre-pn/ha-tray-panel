@@ -23,11 +23,24 @@ const SAYFALAR = [
   ['src/kose-bildirim.html', 'src/kose-sayfa.js'],
   ['src/offline.html', 'src/offline.js'],
 ];
+// Sayfa betiğinin yanında sözlük kullanan yardımcı renderer betikleri (1.4.0 cihaz kartları; yuzey.html bunları yükler).
+const EK_BETIKLER = ['src/yuzey-kartlar.js'];
 
 // --- sözlük ve sayfa yapısı -------------------------------------------------------------------------------
 
 test('yüzey sözlüğü: sayfa betiklerinde ve HTML işaretlerinde kullanılan her anahtar tanımlı; tanımlı her anahtar kullanılıyor', () => {
   const kullanilan = new Set();
+  for (const dosya of EK_BETIKLER) {
+    for (const m of oku(dosya).matchAll(/'((?:yuzey|offline|kose)\.[A-Za-z0-9_.]+)'/g)) {
+      if (!m[1].endsWith('.')) kullanilan.add(m[1]);
+      else {
+        // dinamik anahtar ailesi ('yuzey.klima.mod.' + mod): ön ekle başlayan her sözlük satırı kullanılmış sayılır (en az biri olmalı)
+        const aile = Object.keys(YUZEY.tr).filter((k) => k.startsWith(m[1]));
+        assert.ok(aile.length > 0, `${dosya}: '${m[1]}' ön ekli anahtar ailesi sözlükte yok`);
+        for (const k of aile) kullanilan.add(k);
+      }
+    }
+  }
   for (const [html, betik] of SAYFALAR) {
     for (const m of oku(betik).matchAll(/'((?:yuzey|offline|kose)\.[A-Za-z0-9_.]+)'/g)) kullanilan.add(m[1]);
     for (const m of oku(html).matchAll(/\bdata-i18n="([^"]+)"/g)) kullanilan.add(m[1]);

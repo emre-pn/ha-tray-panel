@@ -8,6 +8,8 @@
  * Eşleştirici harflerin SIRAYLA geçmesini arar ("flm" -> "Film"); boşlukla ayrılan her sözcük eşleşmelidir (VE).
  * Kısa söz dizimi: "ışık 40", "ışık %40", "ışık 40%" = yüzde 40 parlaklık (yalnız parlaklık kontrollü ışıkta, 1-100);
  * "ışık 0" = kapat. Sondaki sayı, tam adı o olan bir öğe varsa ("Salon 2") ad parçası sayılır.
+ * 1.4.0 servis komutları: "klima 24" (sıcaklık), "masa sicak" (beyaz tonu), "tv ses 30", "ev modu uyku"... öğenin alanına göre
+ * (alanKomutu); aşağıdaki "servis komutları" bölümüne bakın. Komut yalnız bir öneridir, doğrulama ana süreçtedir.
  *
  * Bu dosya hem Node'da (require) hem renderer'da (<script src="lib/arama.js">) çalışır: `require` kullanmaz.
  */
@@ -208,9 +210,284 @@
     ];
   }
 
+  // ---------------------------------------------------------------- servis komutları (1.4.0, o-01/o-02/o-03/o-05/o-06)
+  //
+  // "klima 24", "masa sicak", "tv ses 30", "ev modu uyku": sorgunun SONUNDAKİ 1-4 sözcük, eşleşen öğenin KENDİ alanının komut
+  // sözlüğünde aranır; kalan baş kısım öğenin adıyla eşleşmelidir. Sözlük alana göre değişir (klimada sayı sıcaklıktır, medyada
+  // "ses 30" sestir, seçicide son sözcük seçenektir). Çıkan komut yalnız bir SERVİS ÖNERİSİDİR ({servis, veri}); çalıştırmadan önce
+  // ana süreçteki eylem hattı (src/lib/servis-izinleri.js) izin listesi, sınır ve adım denetimini yeniden yapar. Burada sınır
+  // dışı değerler yalnız arayüzün satırı "aralık dışı" göstermesi içindir. Hiçbir sözlükte kilit/kapı/kepenk/alarm yoktur.
+
+  const KOMUT_KUYRUK_SINIRI = 4;
+  const KOMUTLU_ALANLAR = new Set(['climate', 'light', 'media_player', 'fan', 'humidifier', 'vacuum', 'input_select', 'select', 'input_number', 'number', 'timer']);
+  const KAPAT_SOZLERI = new Set(['kapat', 'kapali', 'off']);
+  const AC_SOZLERI = new Set(['ac', 'acik', 'on']);
+  // Beyaz tonları (kelvin) ve küçük renk paleti; panelin düğmeleri de bunlardan çizilir (yuzey-kartlar.js).
+  const BEYAZ_TONLAR = Object.freeze({ sicak: 2700, dogal: 4000, soguk: 6500 });
+  const BEYAZ_SOZLERI = new Map([['sicak', 'sicak'], ['warm', 'sicak'], ['dogal', 'dogal'], ['natural', 'dogal'], ['neutral', 'dogal'], ['soguk', 'soguk'], ['cool', 'soguk'], ['cold', 'soguk']]);
+  const RENK_PALETI = Object.freeze({
+    kirmizi: Object.freeze([255, 0, 0]),
+    turuncu: Object.freeze([255, 140, 0]),
+    sari: Object.freeze([255, 215, 0]),
+    yesil: Object.freeze([0, 200, 60]),
+    turkuaz: Object.freeze([0, 210, 210]),
+    mavi: Object.freeze([30, 90, 255]),
+    mor: Object.freeze([150, 60, 255]),
+    pembe: Object.freeze([255, 105, 180]),
+  });
+  const RENK_SOZLERI = new Map([
+    ['kirmizi', 'kirmizi'], ['red', 'kirmizi'], ['turuncu', 'turuncu'], ['orange', 'turuncu'], ['sari', 'sari'], ['yellow', 'sari'],
+    ['yesil', 'yesil'], ['green', 'yesil'], ['turkuaz', 'turkuaz'], ['cyan', 'turkuaz'], ['mavi', 'mavi'], ['blue', 'mavi'],
+    ['mor', 'mor'], ['purple', 'mor'], ['violet', 'mor'], ['pembe', 'pembe'], ['pink', 'pembe'],
+  ]);
+  const ISIK_RENK_MODLARI = ['hs', 'rgb', 'rgbw', 'rgbww', 'xy'];
+  // Klima modu sözcükleri -> HA hvac_mode adayları (cihazın listesindeki ilk aday seçilir).
+  const IKLIM_MOD_SOZLERI = new Map([
+    ['isit', ['heat']], ['isitma', ['heat']], ['heat', ['heat']],
+    ['sogut', ['cool']], ['sogutma', ['cool']], ['cool', ['cool']],
+    ['oto', ['auto', 'heat_cool']], ['otomatik', ['auto', 'heat_cool']], ['auto', ['auto', 'heat_cool']],
+    ['fan', ['fan_only']], ['vantilator', ['fan_only']],
+    ['kuru', ['dry']], ['kurutma', ['dry']], ['dry', ['dry']],
+  ]);
+  const MEDYA_SOZLERI = new Map([
+    ['sessiz', ['volume_mute', { is_volume_muted: true }, 'sessiz']], ['mute', ['volume_mute', { is_volume_muted: true }, 'sessiz']], ['sustur', ['volume_mute', { is_volume_muted: true }, 'sessiz']],
+    ['sesli', ['volume_mute', { is_volume_muted: false }, 'sesli']], ['unmute', ['volume_mute', { is_volume_muted: false }, 'sesli']],
+    ['oynat', ['media_play_pause', undefined, 'oynat']], ['duraklat', ['media_play_pause', undefined, 'oynat']], ['play', ['media_play_pause', undefined, 'oynat']], ['pause', ['media_play_pause', undefined, 'oynat']],
+    ['sonraki', ['media_next_track', undefined, 'sonraki']], ['ileri', ['media_next_track', undefined, 'sonraki']], ['next', ['media_next_track', undefined, 'sonraki']],
+    ['onceki', ['media_previous_track', undefined, 'onceki']], ['geri', ['media_previous_track', undefined, 'onceki']], ['prev', ['media_previous_track', undefined, 'onceki']], ['previous', ['media_previous_track', undefined, 'onceki']],
+  ]);
+  const SUPURGE_SOZLERI = new Map([
+    ['basla', ['start', 'basla']], ['baslat', ['start', 'basla']], ['start', ['start', 'basla']], ['temizle', ['start', 'basla']], ['clean', ['start', 'basla']],
+    ['duraklat', ['pause', 'duraklat']], ['pause', ['pause', 'duraklat']],
+    ['don', ['return_to_base', 'sarj']], ['sarj', ['return_to_base', 'sarj']], ['sarja don', ['return_to_base', 'sarj']], ['dock', ['return_to_base', 'sarj']], ['home', ['return_to_base', 'sarj']], ['return', ['return_to_base', 'sarj']],
+  ]);
+  const ZAMANLAYICI_SOZLERI = new Map([
+    ['basla', ['start', 'basla']], ['baslat', ['start', 'basla']], ['start', ['start', 'basla']], ['devam', ['start', 'basla']],
+    ['duraklat', ['pause', 'duraklat']], ['pause', ['pause', 'duraklat']],
+    ['iptal', ['cancel', 'iptal']], ['cancel', ['cancel', 'iptal']], ['durdur', ['cancel', 'iptal']], ['stop', ['cancel', 'iptal']],
+  ]);
+
+  const katla = (metin) => katlaDizi(metin).join('');
+  const sonluSayi = (d) => (typeof d === 'number' && Number.isFinite(d) ? d : null);
+  const komut = (servis, veri, tur, deger, ek) => {
+    const k = { servis, tur, deger };
+    if (veri !== undefined) k.veri = veri;
+    return ek ? { ...k, ...ek } : k;
+  };
+
+  /** "24", "24,5", "-3", "%40", "40%": sonlu sayı (ondalık ayracı . ya da ,); yoksa null. */
+  function sayiOku(kuyruk) {
+    const e = /^(%\s*)?(-?\d{1,6}(?:[.,]\d{1,3})?)\s*(%)?$/.exec(kuyruk);
+    if (!e || (e[1] && e[3])) return null;
+    const n = Number(e[2].replace(',', '.'));
+    return Number.isFinite(n) ? { n, yuzde: !!(e[1] || e[3]), tam: Number.isInteger(n) } : null;
+  }
+
+  /** Cihazın listesinde katlanmış tam eşleşme; yoksa TEK ön ek (en az 2 harf) ya da TEK içerme eşleşmesi. Dönen: listedeki özgün metin. */
+  function listedenBul(liste, kuyruk) {
+    const kaynak = Array.isArray(liste) ? liste.filter((s) => typeof s === 'string' && s !== '') : [];
+    const katli = kaynak.map(katla);
+    const tam = katli.indexOf(kuyruk);
+    if (tam >= 0) return kaynak[tam];
+    if (Array.from(kuyruk).length < 2) return null;
+    for (const uygun of [(s) => s.startsWith(kuyruk), (s) => s.includes(kuyruk)]) {
+      const bulunan = katli.map((s, i) => (uygun(s) ? i : -1)).filter((i) => i >= 0);
+      if (bulunan.length === 1) return kaynak[bulunan[0]];
+    }
+    return null;
+  }
+
+  function acKapatKomutu(k) {
+    if (KAPAT_SOZLERI.has(k)) return komut('turn_off', undefined, 'kapat');
+    if (AC_SOZLERI.has(k)) return komut('turn_on', undefined, 'ac');
+    return null;
+  }
+
+  function isikKomutu(oz, k) {
+    const modlar = Array.isArray(oz.renkModlari) ? oz.renkModlari : [];
+    const sicaklikVar = modlar.includes('color_temp');
+    const renkVar = modlar.some((m) => ISIK_RENK_MODLARI.includes(m));
+    const kelvinKomutu = (kelvin, tur, deger) => {
+      const alt = sonluSayi(oz.enAzKelvin);
+      const ust = sonluSayi(oz.enCokKelvin);
+      const kirpik = Math.round(Math.min(ust ?? kelvin, Math.max(alt ?? kelvin, kelvin))); // cihazın kendi aralığına kırpılır
+      return komut('turn_on', { color_temp_kelvin: kirpik }, tur, deger ?? kirpik, { kelvin: kirpik });
+    };
+    const kelvin = /^(\d{4,5})\s*k$/.exec(k);
+    if (kelvin) {
+      const n = Number(kelvin[1]);
+      if (n < 1000 || n > 20000) return { hata: 'sinir' };
+      return sicaklikVar ? kelvinKomutu(n, 'kelvin') : { hata: 'desteklenmiyor' };
+    }
+    const ton = BEYAZ_SOZLERI.get(k);
+    if (ton) return sicaklikVar ? kelvinKomutu(BEYAZ_TONLAR[ton], 'ton', ton) : { hata: 'desteklenmiyor' };
+    const renk = RENK_SOZLERI.get(k);
+    if (renk) return renkVar ? komut('turn_on', { rgb_color: [...RENK_PALETI[renk]] }, 'renk', renk) : { hata: 'desteklenmiyor' };
+    return acKapatKomutu(k);
+  }
+
+  function iklimKomutu(oz, k) {
+    const s = sayiOku(k);
+    if (s) {
+      if (s.yuzde) return null;
+      const alt = sonluSayi(oz.enAz) ?? -50;
+      const ust = sonluSayi(oz.enCok) ?? 100;
+      if (s.n < alt || s.n > ust) return { hata: 'sinir', alt, ust };
+      return komut('set_temperature', { temperature: s.n }, 'sicaklik', s.n);
+    }
+    const ack = acKapatKomutu(k);
+    if (ack) return ack;
+    const adaylar = IKLIM_MOD_SOZLERI.get(k);
+    if (!adaylar) return null;
+    const modlar = Array.isArray(oz.modlar) ? oz.modlar : [];
+    const mod = adaylar.find((m) => modlar.includes(m));
+    return mod ? komut('set_hvac_mode', { hvac_mode: mod }, 'mod', mod) : { hata: 'desteklenmiyor' };
+  }
+
+  function medyaKomutu(oz, k) {
+    const ses = /^(?:ses|sesi|volume|vol)\s+(?:%\s*)?(\d{1,3})\s*%?$/.exec(k);
+    if (ses) {
+      const n = Number(ses[1]);
+      return n > 100 ? { hata: 'sinir', alt: 0, ust: 100 } : komut('volume_set', { volume_level: Number((n / 100).toFixed(2)) }, 'ses', n);
+    }
+    const sabit = MEDYA_SOZLERI.get(k);
+    if (sabit) return komut(sabit[0], sabit[1], sabit[2]);
+    const ack = acKapatKomutu(k);
+    if (ack) return ack;
+    const kaynakSozu = /^(?:kaynak|source|giris|input)\s+(.+)$/.exec(k);
+    const kaynak = listedenBul(oz.kaynaklar, kaynakSozu ? kaynakSozu[1] : k);
+    if (kaynakSozu) return kaynak ? komut('select_source', { source: kaynak }, 'kaynak', kaynak) : { hata: 'desteklenmiyor' };
+    // Çıplak kaynak adı yalnız TAM eşleşmede komuttur ("tv hdmi 2"); ön ek/içerme eşleşmesi adın parçası olabilir.
+    const tamKaynak = Array.isArray(oz.kaynaklar) ? oz.kaynaklar.find((s) => typeof s === 'string' && katla(s) === k) : undefined;
+    return tamKaynak ? komut('select_source', { source: tamKaynak }, 'kaynak', tamKaynak) : null;
+  }
+
+  function fanKomutu(oz, k) {
+    const s = sayiOku(k);
+    if (s) {
+      if (!s.tam) return null;
+      return s.n < 0 || s.n > 100 ? { hata: 'sinir', alt: 0, ust: 100 } : komut('set_percentage', { percentage: s.n }, 'yuzde', s.n);
+    }
+    const ack = acKapatKomutu(k);
+    if (ack) return ack;
+    const onAyar = Array.isArray(oz.onAyarlar) ? oz.onAyarlar.find((a) => typeof a === 'string' && katla(a) === k) : undefined;
+    return onAyar ? komut('set_preset_mode', { preset_mode: onAyar }, 'onAyar', onAyar) : null;
+  }
+
+  function nemKomutu(oz, k) {
+    const s = sayiOku(k);
+    if (s) {
+      if (!s.tam) return null;
+      const alt = sonluSayi(oz.enAz) ?? 0;
+      const ust = sonluSayi(oz.enCok) ?? 100;
+      return s.n < alt || s.n > ust ? { hata: 'sinir', alt, ust } : komut('set_humidity', { humidity: s.n }, 'nem', s.n);
+    }
+    return acKapatKomutu(k);
+  }
+
+  function sozlukKomutu(sozluk, k) {
+    const e = sozluk.get(k);
+    return e ? komut(e[0], undefined, e[1]) : null;
+  }
+
+  function secimKomutu(oz, k) {
+    const secenek = listedenBul(oz.secenekler, k);
+    return secenek ? komut('select_option', { option: secenek }, 'secenek', secenek) : null;
+  }
+
+  function sayiKomutu(oz, k) {
+    const s = sayiOku(k);
+    if (!s || s.yuzde) return null;
+    const alt = sonluSayi(oz.enAz);
+    const ust = sonluSayi(oz.enCok);
+    if (alt === null || ust === null) return { hata: 'desteklenmiyor' }; // sınırı bilinmeyen sayı ayarlanmaz
+    return s.n < alt || s.n > ust ? { hata: 'sinir', alt, ust } : komut('set_value', { value: s.n }, 'sayi', s.n);
+  }
+
+  /**
+   * Öğenin alanına göre komut sözlüğünden TEK komut çözer. `kuyruk` katlanmış (katla) komut metnidir ("24", "ses 30", "sicak").
+   * @param {{alan?: string, ozellik?: object|null}} oge palet öğesi ya da yüzey karosu (alan + varlik-ozellik alt kümesi)
+   * @returns {{servis:string, veri?:object, tur:string, deger:*, kelvin?:number}|{hata:'sinir'|'desteklenmiyor', alt?:number, ust?:number}|null}
+   */
+  function alanKomutu(oge, kuyruk) {
+    if (typeof kuyruk !== 'string' || kuyruk === '' || !KOMUTLU_ALANLAR.has(oge?.alan)) return null;
+    const oz = oge.ozellik && typeof oge.ozellik === 'object' ? oge.ozellik : {};
+    switch (oge.alan) {
+      case 'light':
+        return isikKomutu(oz, kuyruk);
+      case 'climate':
+        return iklimKomutu(oz, kuyruk);
+      case 'media_player':
+        return medyaKomutu(oz, kuyruk);
+      case 'fan':
+        return fanKomutu(oz, kuyruk);
+      case 'humidifier':
+        return nemKomutu(oz, kuyruk);
+      case 'vacuum':
+        return sozlukKomutu(SUPURGE_SOZLERI, kuyruk);
+      case 'timer':
+        return sozlukKomutu(ZAMANLAYICI_SOZLERI, kuyruk);
+      case 'input_select':
+      case 'select':
+        return secimKomutu(oz, kuyruk);
+      default:
+        return sayiKomutu(oz, kuyruk); // input_number, number
+    }
+  }
+
+  /** Alan komut sözlüğü olan bir alan mı? */
+  const komutluAlanMi = (alan) => KOMUTLU_ALANLAR.has(alan);
+
+  /**
+   * Sorguyu ("baş" + "kuyruk") çiftlerine böler: kuyruk 1..4 sözcük, EN KISA kuyruk önce. baş en az bir sözcüktür.
+   * @returns {{bas: string, kuyruk: string}[]} kuyruk katlanmıştır; baş özgün yazımdadır
+   */
+  function kuyrukBolumleri(sorgu) {
+    const sozcukler = String(sorgu ?? '').trim().split(/\s+/).filter((s) => s !== '');
+    const sonuc = [];
+    for (let i = sozcukler.length - 1; i >= Math.max(1, sozcukler.length - KOMUT_KUYRUK_SINIRI); i -= 1) {
+      sonuc.push({ bas: sozcukler.slice(0, i).join(' '), kuyruk: katla(sozcukler.slice(i).join(' ')) });
+    }
+    return sonuc;
+  }
+
+  /** Palet için: komut sözlüğü olan öğelerden, baş kısmı adıyla eşleşip kuyruğu komut olanlar (puan sırasıyla). */
+  function komutAdaylari(sorgu, ogeler) {
+    const bolumler = kuyrukBolumleri(sorgu);
+    if (bolumler.length === 0) return [];
+    const adaylar = [];
+    (Array.isArray(ogeler) ? ogeler : []).forEach((oge, sira) => {
+      if (!komutluAlanMi(oge?.alan)) return;
+      for (const { bas, kuyruk } of bolumler) {
+        const k = alanKomutu(oge, kuyruk);
+        if (!k) continue;
+        const etiket = String(oge.etiket ?? '');
+        const saman = oge.grupEtiketi ? `${etiket} ${oge.grupEtiketi}` : etiket;
+        const e = eslestir(bas, saman);
+        if (!e) continue;
+        const etiketUzunlugu = Array.from(etiket).length;
+        adaylar.push({ oge, sira, puan: e.puan, konumlar: e.konumlar.filter((p) => p < etiketUzunlugu), k });
+        return;
+      }
+    });
+    adaylar.sort(
+      (a, b) =>
+        b.puan - a.puan ||
+        karsilastir(sonSirasi(a.oge), sonSirasi(b.oge)) ||
+        Array.from(String(a.oge.etiket ?? '')).length - Array.from(String(b.oge.etiket ?? '')).length ||
+        a.sira - b.sira,
+    );
+    const enIyi = adaylar.length > 0 ? adaylar[0].puan : 0;
+    const esik = enIyi > 0 ? enIyi * ALAKA_ORANI : -Infinity;
+    return adaylar.filter((a) => a.puan >= esik);
+  }
+
   /**
    * Palet sorgusu.
    *  - Boş sorgu: son kullanılanlar + bütün öğeler (bosSorguListesi).
+   *  - 1.4.0 servis komutu: "klima 24", "masa sicak", "tv ses 30", "ev modu uyku" (alanKomutu). Eşleşen satıra `eylem`
+   *    ({servis, veri, tur, deger}) yazılır; komut tanınıp cihaz desteklemiyorsa ya da değer aralık dışındaysa satırda
+   *    `komutHatasi: 'desteklenmiyor' | 'sinir'` olur ve `eylem` null kalır (arayüz o satırda eylem çalıştırmaz).
    *  - "ışık 40" / "%40" / "40%": sayı seviye olur. Parlaklık kontrollü aday, YALNIZ en iyi puanın en az %80'i kadar
    *    iyiyse öne alınır (h-02: "ses 40" LED şeridi %40 yapmaz). Seviye bütün kısılabilir satırlara yazılır (`parlaklik`);
    *    kısılamayan satırlar `parlaklikDesteklenmiyor: true` taşır ve arayüz o satırda eylem çalıştırmamalıdır (h-13).
@@ -219,10 +496,43 @@
    *  - Sayı tam metin olarak bir adla eşleşiyorsa ("oda 2" -> "Oda 2 Lambası") yine ad parçasıdır.
    * Üst düzey `parlaklik`, `kapat` ve `parlaklikDesteklenmiyor` İLK satırı anlatır (eski arayüz yalnız ilk satıra uygular).
    * @returns {{sonuclar: {oge:object, puan:number, konumlar:number[], parlaklik?:number|null, kapat?:boolean,
-   *   parlaklikDesteklenmiyor?:boolean, bolum?:string}[], parlaklik:number|null, kapat:boolean, parlaklikDesteklenmiyor:boolean}}
+   *   parlaklikDesteklenmiyor?:boolean, bolum?:string, eylem?:object|null, komutHatasi?:string}[], parlaklik:number|null,
+   *   kapat:boolean, parlaklikDesteklenmiyor:boolean}}
    */
   function paletSorgusu(sorgu, ogeler) {
     const duz = String(sorgu ?? '').trim();
+    if (duz === '') return parlaklikSorgusu(duz, ogeler);
+    const hedef = adOzeti(duz);
+    const tamAd = (Array.isArray(ogeler) ? ogeler : []).some((oge) => adOzeti(oge?.etiket) === hedef);
+    const komutlar = tamAd ? [] : komutAdaylari(duz, ogeler);
+    if (komutlar.length === 0) return parlaklikSorgusu(duz, ogeler);
+    const komutSatirlari = komutlar.map(({ oge, puan, konumlar, k }) => ({
+      oge,
+      puan,
+      konumlar,
+      parlaklik: null,
+      kapat: false,
+      parlaklikDesteklenmiyor: false,
+      eylem: k.hata ? null : k,
+      ...(k.hata ? { komutHatasi: k.hata } : {}),
+    }));
+    // Aynı sorguda parlaklık komutu da çalışabilir ("ışık 40"): komutu olmayan, gerçek bir seviye taşıyan satırlar puan sırasıyla araya girer.
+    const komutluOgeler = new Set(komutlar.map((a) => a.oge));
+    const parlaklikSatirlari = parlaklikSorgusu(duz, ogeler).sonuclar.filter(
+      (r) => !komutluOgeler.has(r.oge) && ((r.parlaklik !== null && r.parlaklik !== undefined) || r.kapat === true),
+    );
+    const sonuclar = [...komutSatirlari, ...parlaklikSatirlari].sort((a, b) => b.puan - a.puan);
+    const ilk = sonuclar[0];
+    return {
+      sonuclar,
+      parlaklik: ilk?.parlaklik ?? null,
+      kapat: ilk?.kapat === true,
+      parlaklikDesteklenmiyor: ilk?.parlaklikDesteklenmiyor === true,
+    };
+  }
+
+  /** Parlaklık söz dizimi ("ışık 40", "ışık 0") ve düz arama: 1.3.0'dan gelen davranış (paletSorgusu'nun komut dışı yolu). */
+  function parlaklikSorgusu(duz, ogeler) {
     const duzSonuc = (sonuclar) => ({ sonuclar, parlaklik: null, kapat: false, parlaklikDesteklenmiyor: false });
     if (duz === '') return duzSonuc(bosSorguListesi(ogeler));
     const { metin, parlaklik, kapat } = sorguCoz(duz);
@@ -265,5 +575,22 @@
     return adaylar.length > 0 ? seviyeIsle(adaylar) : duzSonuc([]);
   }
 
-  return { katlaKarakter, katlaDizi, altDiziEsles, eslestir, ara, sorguCoz, bosSorguListesi, paletSorgusu, ALAKA_ORANI, PARLAKLIK_YAKINLIGI, SON_SAYISI };
+  return {
+    katlaKarakter,
+    katlaDizi,
+    altDiziEsles,
+    eslestir,
+    ara,
+    sorguCoz,
+    bosSorguListesi,
+    paletSorgusu,
+    alanKomutu,
+    komutluAlanMi,
+    kuyrukBolumleri,
+    BEYAZ_TONLAR,
+    RENK_PALETI,
+    ALAKA_ORANI,
+    PARLAKLIK_YAKINLIGI,
+    SON_SAYISI,
+  };
 });

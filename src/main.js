@@ -2687,6 +2687,7 @@ function ipcKaydet() {
             varsayilanOnay: siniflama.sinif === SINIF.YIKICI,
             // yıkıcı eylem ve tek tıklama eylemi olmayan karo (1.4.0: iklim, sensör...) kısayola atanamaz
             kisayolUygun: siniflama.sinif === SINIF.ZARARSIZ && varsayilanServis(alan) !== null,
+            tekTiklama: varsayilanServis(alan) !== null, // false: karo yalnız panelde ve palette görünür (tepsi menüsü ve kısayol atlar)
             gizli: adayGizliMi(v), // detay-20: panele/favorilere önerilmez; listede varsayılan gizli (güvenlik kuralı DEĞİLDİR)
           };
         })

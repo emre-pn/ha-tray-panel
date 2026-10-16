@@ -94,7 +94,8 @@ const SERVIS_IZINLERI = Object.freeze({
   }),
   media_player: Object.freeze({
     turn_on: parametresiz,
-    turn_off: parametresiz,
+    // Kapatma varsayılan olarak onay ister (o-03): yanlış tıklamayla TV/hoparlör kapanmasın; favoride onay:false kapatır.
+    turn_off: Object.freeze({ sinif: 'onayli' }),
     media_play_pause: parametresiz,
     media_next_track: parametresiz,
     media_previous_track: parametresiz,
