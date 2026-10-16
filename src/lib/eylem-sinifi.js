@@ -8,7 +8,7 @@
  *  ZARARSIZ onaysız çalışır.
  *
  * Onay biçimi yüzeye göre değişir (soru-3): panel/palet ~0,8 sn BASILI TUT; tepsi menüsü onay penceresi;
- * kısayol ve komut satırına yıkıcı eylem atanamaz.
+ * kısayol, komut satırı ve masaüstü karosuna yıkıcı eylem atanamaz.
  *
  * 1.4.0: eylemSinifi(varlik, favori, servis) — servis verilirse src/lib/servis-izinleri.js'teki servis sınıfı da uygulanır:
  * 'yikici' servis (ör. todo.remove_item) her zaman onay ister (kapatılamaz); 'onayli' servis (ör. climate.set_hvac_mode)
@@ -24,7 +24,8 @@ const { sadelestir } = require('./metin');
 const { TR } = require('./ceviri-varsayilan');
 
 const SINIF = Object.freeze({ ZARARSIZ: 'zararsiz', YIKICI: 'yikici', YASAK: 'yasak' });
-const KAYNAKLAR = Object.freeze(['tepsi-menu', 'panel', 'palet', 'kisayol', 'komut-satiri']);
+// 'masaustu' (1.4.0, o-33): masaüstüne sabitlenen karo penceresi. Basılı tutma/onay penceresi sunmaz: YALNIZ zararsız eylem çalışır, yıkıcı olan reddedilir (kaynakIzni).
+const KAYNAKLAR = Object.freeze(['tepsi-menu', 'panel', 'palet', 'kisayol', 'komut-satiri', 'masaustu']);
 
 // Açık liste: her zaman YIKICI ve onay KAPATILAMAZ (zorunlu).
 const YIKICI_KIMLIKLER = new Set([

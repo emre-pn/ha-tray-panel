@@ -388,3 +388,59 @@ test('1.4.0 servisCalistir: yük biçimi ana süreçte de denetlenir (servis des
   assert.equal((await o.katman.servisCalistir({ kimlik: 'light.kapi_lambasi', kaynak: 'panel', servis: 'turn_off' })).tur, 'yasak');
   assert.equal(o.postlar().length, 1);
 });
+
+// --- 1.4.0 (o-33): masaüstü karosundan eylem -----------------------------------------------------------------------------------------
+
+test('masaustundenCalistir: düz tıklama tek POST (varsayılan servis), kaynak "masaustu"; "Son" listesine girmez; onay penceresi açmaz', async () => {
+  const o = ortam();
+  const s = await o.katman.masaustundenCalistir({ kimlik: 'light.ampul' });
+  assert.deepEqual([s.ok, s.ad], [true, 'Ampul']);
+  assert.deepEqual(o.postlar(), [{ yol: '/api/services/light/toggle', yontem: 'POST', govde: { entity_id: 'light.ampul' } }]);
+  assert.deepEqual(o.sonlar, [], 'yalnız panel/palet "Son"a yazar');
+  assert.deepEqual(o.diyaloglar, []);
+  assert.deepEqual(o.bildirimler.map((b) => b.tur), ['ok']);
+});
+
+test('masaustundenCalistir: parlaklık ön ayarı tam sayıdır, bildirim verir (sonDeger) ve yalnız favoride "parlaklık" açıkken çalışır', async () => {
+  const o = ortam();
+  const s = await o.katman.masaustundenCalistir({ kimlik: 'light.led', parlaklik: 50 });
+  assert.equal(s.ok, true);
+  assert.equal(o.postlar()[0].yol, '/api/services/light/turn_on');
+  assert.equal(o.postlar()[0].govde.brightness_pct, 50);
+  assert.deepEqual(o.bildirimler.map((b) => b.metin), ['LED şerit: %50'], 'ara değer sayılmaz: son değer bildirilir');
+  const kapali = await o.katman.masaustundenCalistir({ kimlik: 'light.ampul', parlaklik: 50 });
+  assert.equal(kapali.ok, false, 'favoride parlaklık kapalı: hat reddeder');
+  assert.equal(o.postlar().length, 1);
+});
+
+test('masaustundenCalistir: tam sayı olmayan/bozuk yük HA\'ya hiç gitmez; ek alanlar (kaynak, servis, veri) yok sayılır', async () => {
+  const o = ortam();
+  for (const yuk of [null, undefined, [], 'light.ampul', 5, {}, { kimlik: 5 }, { kimlik: 'x'.repeat(121) }, { kimlik: 'light.led', parlaklik: '50' }, { kimlik: 'light.led', parlaklik: 50.5 }, { kimlik: 'light.led', parlaklik: NaN }, { kimlik: 'light.led', parlaklik: null }]) {
+    const s = await o.katman.masaustundenCalistir(yuk);
+    assert.deepEqual([s.ok, s.tur], [false, 'gecersiz'], JSON.stringify(yuk));
+  }
+  assert.equal(o.postlar().length, 0);
+  const s = await o.katman.masaustundenCalistir({ kimlik: 'light.ampul', kaynak: 'panel', servis: 'turn_off', veri: { brightness: 255 }, eylem: { servis: 'turn_off' }, basili: true, onay: 'diyalog' });
+  assert.equal(s.ok, true);
+  assert.deepEqual(o.postlar().map((p) => p.yol), ['/api/services/light/toggle'], 'yalnız varsayılan servis; sayfanın verdiği servis/veri kullanılmaz');
+  assert.deepEqual(o.postlar()[0].govde, { entity_id: 'light.ampul' });
+});
+
+test('masaustundenCalistir: onay isteyen (yıkıcı) eylem ASLA çalışmaz (basılı tutma/onay penceresi yok); kapı kuralı ve favori olmayan kimlik de reddedilir', async () => {
+  const o = ortam();
+  const yikici = await o.katman.masaustundenCalistir({ kimlik: 'button.pc_bilgisayari_kapat' });
+  assert.deepEqual([yikici.ok, yikici.tur], [false, 'kaynak-izinsiz']);
+  const gizli = await o.katman.masaustundenCalistir({ kimlik: 'script.gizli_kapat' });
+  assert.equal(gizli.ok, false, 'HA\'daki güncel ad yıkıcı');
+  const kapi = await o.katman.masaustundenCalistir({ kimlik: 'light.kapi_lambasi' });
+  assert.deepEqual([kapi.ok, kapi.tur], [false, 'yasak']);
+  for (const kimlik of ['lock.on_kapi', 'cover.garaj', 'alarm_control_panel.ev', 'light.favori_degil']) {
+    assert.equal((await o.katman.masaustundenCalistir({ kimlik })).ok, false, kimlik);
+  }
+  assert.equal(o.postlar().length, 0);
+  assert.deepEqual(o.diyaloglar, []);
+  const basili = ortam({ zamanSimdi: (() => { let t = 0; return () => (t += 1000); })() });
+  basili.katman.basiliBasla('button.pc_bilgisayari_kapat');
+  assert.equal((await basili.katman.masaustundenCalistir({ kimlik: 'button.pc_bilgisayari_kapat', basili: true })).ok, false, 'basılı tutma kaydı olsa da masaüstü kaynağı yıkıcıyı çalıştırmaz');
+  assert.equal(basili.postlar().length, 0);
+});

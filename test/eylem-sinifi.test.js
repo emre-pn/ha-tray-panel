@@ -176,6 +176,11 @@ test('kaynakIzni: zararsız her yerde onaysız; yıkıcı tepsi menüsünde diya
 test('kaynakIzni: yıkıcı eylem kısayola ve komut satırına asla izin vermez; bilinmeyen kaynak/sınıf reddedilir', () => {
   assert.equal(kaynakIzni(SINIF.YIKICI, 'kisayol').izin, false);
   assert.equal(kaynakIzni(SINIF.YIKICI, 'komut-satiri').izin, false);
+  assert.equal(kaynakIzni(SINIF.YIKICI, 'masaustu').izin, false, '1.4.0 (o-33): masaüstü karosu onay/basılı tutma sunmaz: yıkıcı eylem çalışmaz');
+  assert.deepEqual(kaynakIzni(SINIF.YIKICI, 'masaustu'), { izin: false, onayTuru: null });
+  assert.deepEqual(kaynakIzni(SINIF.ZARARSIZ, 'masaustu'), { izin: true, onayTuru: null });
+  assert.equal(kaynakIzni(SINIF.YASAK, 'masaustu').izin, false);
+  assert.equal(KAYNAKLAR.includes('masaustu'), true);
   assert.equal(kaynakIzni(SINIF.ZARARSIZ, 'bilinmeyen').izin, false);
   assert.equal(kaynakIzni('baska', 'panel').izin, false);
   assert.equal(kaynakIzni(undefined, 'panel').izin, false);

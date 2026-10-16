@@ -20,7 +20,7 @@
 const path = require('node:path');
 const { ipcMain, screen } = require('electron');
 const { yerelPencereOlustur, yerelOlaydanMi, malzemeUygula } = require('./yerel-pencere');
-const { PANEL_BOYUTU, PALET_BOYUTU, panelKonumu, paletKonumu, yuzeyYuksekligiKirp, yuzeyBoyutu, yakinlastirmaTusu, yakinlastirmaDegeri } = require('./lib/pencere-yerlesim');
+const { PANEL_BOYUTU, PALET_BOYUTU, panelKonumu, paletKonumu, yuzeyYuksekligiKirp, yuzeyBoyutu, yakinlastirmaTusu, yakinlastirmaDegeri, opaklikOrani } = require('./lib/pencere-yerlesim');
 const { rendererModeli } = require('./lib/yuzey-modeli');
 const { tiklamaKarari } = require('./lib/pencere-davranisi');
 const { cokmeSayilirMi, cokmeNedeniMetni } = require('./lib/cokme-siniri');
@@ -51,6 +51,10 @@ function varsayilanZaman() {
  * @param {() => void} bag.ayarlarAc
  * @param {() => ({malzeme: string, secenekler: object})} [bag.malzemeAl] Windows 11 pencere malzemesi (src/lib/malzeme.js,
  *   gorunum-11); verilmezse opak koyu arka plan
+ * @param {() => boolean} [bag.ustteAl] 1.4.0 (o-22) "panel her zaman üstte" ayarı (panelHerZamanUstte): true ise panel/palet görünürken
+ *   'screen-saver' seviyesinde üstte tutulur (tam ekran uygulamaların üstünde), gizlenince 1.3.0 seviyesine ('floating') döner; verilmezse hep false
+ * @param {() => number} [bag.opaklikAl] 1.4.0 (o-32) panel opaklığı (yüzde, 50-100; ayar panelOpaklik); yalnız opak malzemede ('yok')
+ *   uygulanır, akrilik/mica ile üst üste binmez; verilmezse 100
  * @param {Function} [bag.t] çevirmen (src/lib/dil.js; ana süreçte dil değişince kendiliğinden yeni dili izler). Verilmezse Türkçe.
  * @param {() => string} [bag.dilAl] etkin arayüz dili ('tr' | 'en'); verilirse sayfaya durum yanıtında `dil` olarak gider
  * @param {(m: string) => void} [bag.gunluk]
@@ -58,7 +62,7 @@ function varsayilanZaman() {
  * @param {{setTimeout: Function, clearTimeout: Function}} [bag.zaman]
  * @param {object|null} [bag.okuma] 1.4.0 okuma uçları (src/lib/ha-okuma.js haOkumaOlustur); verilmezse yuzey:oku hep boş döner
  */
-function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null }) {
+function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, ustteAl = () => false, opaklikAl = () => 100, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null }) {
   const izinYok = () => ({ ok: false, hata: t('ana.izinYok') });
   let pencere = null;
   let yuklendi = false;
@@ -235,6 +239,43 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     pencere.setBounds(hedef); // karma DPI'da ilk çağrı yanlış ölçeklenebilir, ikincisi düzeltir (denenmedi)
   }
 
+  /**
+   * o-22: görünürken ayar açıksa 'screen-saver' seviyesi (tam ekran uygulamaların ve görev çubuğunun üstünde), değilse 1.3.0
+   * davranışı: pencere oluşturulurken alwaysOnTop:true'nun varsayılan seviyesi 'floating'. Gizlenince hep 'floating'e dönülür
+   * ('normal' seviyesi KULLANILMAZ: Electron'da "üstte değil" anlamına gelir). Sistem seviyeyi desteklemezse sessizce atlanır.
+   */
+  function ustSeviyesiniUygula(gorunur) {
+    if (!canliMi() || typeof pencere.setAlwaysOnTop !== 'function') return;
+    let ust = false;
+    try {
+      ust = ustteAl() === true;
+    } catch {
+      ust = false;
+    }
+    try {
+      if (gorunur && ust) pencere.setAlwaysOnTop(true, 'screen-saver');
+      else pencere.setAlwaysOnTop(true, 'floating');
+    } catch {
+      gunluk('Hızlı panel üst seviyesi uygulanamadı.');
+    }
+  }
+
+  /** o-32: panel opaklığı yalnız opak malzemede (malzeme 'yok') uygulanır; akrilik/mica'da pencere tam opak kalır. */
+  function opaklikUygula() {
+    if (!canliMi() || typeof pencere.setOpacity !== 'function') return;
+    let oran = 1;
+    try {
+      if (malzemeAl().malzeme === 'yok') oran = opaklikOrani(opaklikAl());
+    } catch {
+      oran = 1;
+    }
+    try {
+      pencere.setOpacity(oran);
+    } catch {
+      gunluk('Hızlı panel opaklığı uygulanamadı.');
+    }
+  }
+
   function modelGonder() {
     if (!canliMi() || !yuklendi) return;
     try {
@@ -258,6 +299,8 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       yerlestir(kip);
       modelGonder();
       pencere.webContents.send('yuzey:goster', { mod: kip, malzeme: malzemeAl().malzeme });
+      opaklikUygula();
+      ustSeviyesiniUygula(true);
       pencere.show();
       pencere.focus();
       pencere.webContents.focus(); // ilk tuş vuruşu sayfaya gitsin (palet arama kutusu)
@@ -279,6 +322,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     if (gorunurdu) {
       if (neden === 'odak') sonOtomatikGizleme = simdi();
       pencere.hide();
+      ustSeviyesiniUygula(false);
     }
   }
 
@@ -376,6 +420,15 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     /** Ayarlar > Görünüm değişti: var olan pencerenin arka plan malzemesi güncellenir; sayfa yeni değeri bir sonraki gösterimde alır. */
     malzemeyiUygula() {
       if (canliMi()) malzemeUygula(pencere, malzemeAl());
+      if (gorunurMu()) opaklikUygula(); // malzeme 'yok' <-> akrilik değişince opaklık kuralı da değişir
+    },
+    /** o-22: "panel her zaman üstte" ayarı değişti: açık pencerenin seviyesi hemen güncellenir (kapalıysa bir sonraki gösterimde uygulanır). */
+    ustteDegisti() {
+      if (gorunurMu()) ustSeviyesiniUygula(true);
+    },
+    /** o-32: panel opaklığı ayarı değişti: açık pencereye hemen uygulanır (kapalıysa bir sonraki gösterimde). */
+    opaklikDegisti() {
+      if (gorunurMu()) opaklikUygula();
     },
     panelAcKapat: (kaynak = 'tepsi') => acKapat('panel', kaynak),
     paletAcKapat: () => acKapat('palet', 'kisayol'),

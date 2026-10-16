@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title data-i18n="masaustu.sayfaBasligi">Ev Paneli — Masaüstü Karosu</title>
+  <link rel="stylesheet" href="masaustu-karo.css">
+</head>
+<body>
+  <div id="karo" class="karo" role="group">
+    <span id="baglanti" class="baglanti" role="status"></span>
+    <button id="kaldir" class="kaldir" type="button" data-i18n-attr="aria-label:masaustu.kaldir;title:masaustu.kaldir" aria-label="Masaüstünden kaldır" title="Masaüstünden kaldır">×</button>
+    <button id="ana" class="ana" type="button">
+      <span id="etiket" class="etiket"></span>
+      <span id="deger" class="deger"></span>
+    </button>
+    <div id="onayarlar" class="onayarlar" role="group" data-i18n-attr="aria-label:masaustu.onayarlar" aria-label="Parlaklık ön ayarları" hidden></div>
+  </div>
+  <script src="lib/dil.js"></script>
+  <script src="lib/ceviri/yuzey.js"></script>
+  <script src="masaustu-karo-sayfa.js"></script>
+</body>
+</html>

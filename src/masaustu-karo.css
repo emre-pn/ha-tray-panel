@@ -1,0 +1,253 @@
+/*
+ * Masaüstü karosu (masaustu-karo.html, o-33). Küçük, çerçevesiz, taşınıp boyutlandırılabilen pencere. Koyu tema varsayılan; Windows
+ * açık temadayken (prefers-color-scheme: light) açık tema. Renkler yalnız aşağıdaki değişkenlerden gelir (hızlı panelin yuzey.css
+ * paletiyle aynı değerler); satır içi stil yoktur (CSP). Pencereyi tutup sürüklemek için tüm yüzey -webkit-app-region: drag'dir,
+ * düğmeler no-drag'dir.
+ *
+ * Kontrast (WCAG 4,5:1): --metin ve --soluk --bg üzerinde, --rozet-metin --vurgu / --canli / --yedek / --hata üzerinde en az 4,5'tir;
+ * test/masaustu-karo-sayfa.test.js iki temada hesaplar. Yeni renk eklerken o testi güncelleyin.
+ */
+
+:root {
+  color-scheme: dark;
+  --bg: #2a3040;
+  --kenar: #39415a;
+  --dugme: #343c50;
+  --metin: #f1f5f9;
+  --soluk: #a3b1c6;
+  --acik: #fbbf24;
+  --canli: #10b981;
+  --yedek: #f59e0b;
+  --hata: #ef4444;
+  --vurgu: #60a5fa;
+  --rozet-metin: #0b1220;
+}
+
+/* Windows 11 malzemesi (gorunum-11): sayfa <html data-malzeme="acrylic|mica"> olur ve zemin yarı saydam olur. */
+:root[data-malzeme] {
+  --bg: rgba(42, 48, 64, 0.62);
+  --dugme: rgba(52, 60, 80, 0.78);
+  --kenar: rgba(255, 255, 255, 0.14);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --kenar: #c3cbdb;
+    --dugme: #e3e9f3;
+    --metin: #0f172a;
+    --soluk: #475569;
+    --acik: #9a4a06;
+    --canli: #047857;
+    --yedek: #9a4a06;
+    --hata: #b91c1c;
+    --vurgu: #1d4ed8;
+    --rozet-metin: #ffffff;
+  }
+
+  :root[data-malzeme] {
+    --bg: rgba(255, 255, 255, 0.7);
+    --dugme: rgba(227, 233, 243, 0.85);
+    --kenar: rgba(15, 23, 42, 0.16);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Dış 4 piksel sürükleme bölgesi DEĞİLDİR: çerçevesiz pencerenin yeniden boyutlandırma kenarı sürükleme bölgesi tarafından yutulmasın. */
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--metin);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  user-select: none;
+}
+
+body {
+  padding: 4px;
+}
+
+:root[data-malzeme],
+:root[data-malzeme] body {
+  background: transparent;
+}
+
+.karo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 6px 8px 8px;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--kenar);
+  -webkit-app-region: drag;
+}
+
+.karo.hata {
+  border-color: var(--hata);
+}
+
+/* Bağlantı durumu: küçük renkli nokta + kısa metin (renge ek olarak metin; renk körlüğünde de okunur) */
+.baglanti {
+  align-self: flex-start;
+  max-width: calc(100% - 28px);
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--soluk);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.baglanti::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--soluk);
+}
+
+.baglanti.canli::before {
+  background: var(--canli);
+}
+
+.baglanti.yedek::before {
+  background: var(--yedek);
+}
+
+.kaldir {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--soluk);
+  font-size: 16px;
+  line-height: 20px;
+  cursor: pointer;
+  opacity: 0;
+  -webkit-app-region: no-drag;
+}
+
+.karo:hover .kaldir,
+.kaldir:focus-visible {
+  opacity: 1;
+}
+
+.kaldir:hover {
+  background: var(--dugme);
+  color: var(--metin);
+}
+
+.ana {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--metin);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.ana:hover:not(:disabled) {
+  background: var(--dugme);
+}
+
+.ana:disabled {
+  cursor: default;
+}
+
+.etiket {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--soluk);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.deger {
+  overflow: hidden;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 32px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.karo.acik .deger {
+  color: var(--acik);
+}
+
+.onayarlar {
+  display: flex;
+  gap: 4px;
+}
+
+.onayarlar[hidden] {
+  display: none;
+}
+
+.onayar {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 3px 0;
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+  background: var(--dugme);
+  color: var(--metin);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.onayar:hover:not(:disabled) {
+  border-color: var(--vurgu);
+}
+
+.onayar.secili {
+  border-color: var(--vurgu);
+  background: var(--vurgu);
+  color: var(--rozet-metin);
+}
+
+.onayar:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 2px solid var(--vurgu);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

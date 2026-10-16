@@ -119,7 +119,7 @@ test('varsayılan ayarlar güvenli: favori yok, kısayol geçerli', () => {
 // ---------------------------------------------------------------------------
 
 const YEREL_SAYFALAR = tumDosyalar.filter((d) => goreli(d).startsWith('src/') && d.endsWith('.html')).map(goreli);
-const RENDERER_BETIKLERI = ['src/ayarlar.js', 'src/offline.js', 'src/kose-sayfa.js', 'src/yuzey-sayfa.js', 'src/lib/arama.js', 'src/lib/kaydirici.js', 'src/lib/kisayol.js', 'src/lib/dil.js', 'src/lib/ceviri/ana.js', 'src/lib/ceviri/ayarlar.js', 'src/lib/ceviri/yuzey.js'];
+const RENDERER_BETIKLERI = ['src/ayarlar.js', 'src/offline.js', 'src/kose-sayfa.js', 'src/yuzey-sayfa.js', 'src/masaustu-karo-sayfa.js', 'src/lib/arama.js', 'src/lib/kaydirici.js', 'src/lib/kisayol.js', 'src/lib/dil.js', 'src/lib/ceviri/ana.js', 'src/lib/ceviri/ayarlar.js', 'src/lib/ceviri/yuzey.js'];
 // preload.js'in window.evPaneli altında açtığı tam liste (başka işlev açılırsa bu test bilinçli güncellenmeli).
 const EV_PANELI_KOPRUSU = [
   'tekrarDene',
@@ -146,9 +146,11 @@ const EV_PANELI_KOPRUSU = [
 // preload-yuzey.js'in window.evYuzey altında açtığı tam liste (hızlı panel / palet; Dalga 3).
 // 1.4.0: 'oku' (yuzey:oku; geçmiş/takvim/hava/yapılacaklar, yalnız kayıtlı varlıklar, ana süreçte süzülür) bilinçli eklendi.
 const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc'];
+// preload-karo.js'in window.evKaro altında açtığı tam liste (masaüstü karosu, 1.4.0 o-33): yalnız kendi karosunun durumu, tıkla/ön ayar ve kaldır.
+const EV_KARO_KOPRUSU = ['durumAl', 'onDurum', 'onDilDegisti', 'calistir', 'kaldir'];
 
-test('yerel sayfalar bulundu (ayarlar, çevrimdışı, köşe bildirimi, hızlı panel/palet)', () => {
-  assert.deepEqual([...YEREL_SAYFALAR].sort(), ['src/ayarlar.html', 'src/kose-bildirim.html', 'src/offline.html', 'src/yuzey.html']);
+test('yerel sayfalar bulundu (ayarlar, çevrimdışı, köşe bildirimi, hızlı panel/palet, masaüstü karosu)', () => {
+  assert.deepEqual([...YEREL_SAYFALAR].sort(), ['src/ayarlar.html', 'src/kose-bildirim.html', 'src/masaustu-karo.html', 'src/offline.html', 'src/yuzey.html']);
 });
 
 test('yerel sayfalarda satır içi betik gövdesi ve on* olay özniteliği yok; betikler yerel dosyalara bağlı', () => {
@@ -295,6 +297,28 @@ test('preload-yuzey.js: hızlı panel köprüsü yalnız file: sayfasında ve ya
   assert.ok(kaynak.indexOf("location.protocol === 'file:'") < kaynak.indexOf('exposeInMainWorld'));
   assert.equal(kaynak.match(/exposeInMainWorld/g)?.length, 1);
   assert.ok(!/anahtarAl|getToken|readFile|child_process|shell|'ayarlar:/.test(kaynak), 'preload-yuzey anahtar/ayar kanalı açmaz');
+});
+
+test('preload-karo.js: masaüstü karosu köprüsü yalnız file: sayfasında ve yalnız bilinen işlevlerle açılır; anahtar/ayar kanalı yok', () => {
+  for (const protokol of ['http:', 'https:', 'about:', 'data:', 'blob:']) {
+    assert.deepEqual(preloadCalistir('src/preload-karo.js', protokol), {}, `${protokol} sayfasına köprü açılmamalı`);
+  }
+  const acilan = preloadCalistir('src/preload-karo.js', 'file:');
+  assert.deepEqual(Object.keys(acilan), ['evKaro']);
+  assert.deepEqual(Object.keys(acilan.evKaro).sort(), [...EV_KARO_KOPRUSU].sort());
+  const kaynak = oku('src/preload-karo.js');
+  assert.ok(kaynak.indexOf("location.protocol === 'file:'") < kaynak.indexOf('exposeInMainWorld'));
+  assert.equal(kaynak.match(/exposeInMainWorld/g)?.length, 1);
+  assert.ok(!/anahtarAl|getToken|readFile|child_process|shell|'ayarlar:|'yuzey:/.test(kaynak), 'preload-karo anahtar/ayar/yüzey kanalı açmaz');
+  // Karonun kimliği sayfadan gitmez: köprü işlevlerinden hiçbiri bağımsız değişken olarak kimlik almaz (calistir yalnız ön ayar yükü alır).
+  assert.deepEqual([...kaynak.matchAll(/ipcRenderer\.(?:invoke|send)\('([^']+)'/g)].map((m) => m[1]).sort(), ['karo:calistir', 'karo:durum-al', 'karo:kaldir']);
+});
+
+test('masaustu-karo-sayfa.js yalnız preload-karo\'nun açtığı işlevleri çağırır; kimlikleri masaustu-karo.html\'de var', () => {
+  const betik = oku('src/masaustu-karo-sayfa.js');
+  for (const [, ad] of betik.matchAll(/kopru\.(\w+)/g)) assert.ok(EV_KARO_KOPRUSU.includes(ad), `masaustu-karo-sayfa.js: evKaro.${ad} preload-karo'da yok`);
+  const html = oku('src/masaustu-karo.html');
+  for (const [, kimlik] of betik.matchAll(/getElementById\('([^']+)'\)/g)) assert.ok(html.includes(`id="${kimlik}"`), `masaustu-karo.html: #${kimlik} yok`);
 });
 
 test('preload.js: sır, adres ya da anahtar ismi içermez; koruma exposeInMainWorld\'den ÖNCE gelir', () => {

@@ -255,6 +255,25 @@ function eylemKatmaniOlustur({
       return calistir(istek);
     },
 
+    /**
+     * 1.4.0 (o-33): masaüstü karosu penceresinden gelen istek. Kaynak her zaman 'masaustu'dur ve karonun kimliğini ana süreç
+     * (pencere -> karo eşlemesi) verir, sayfa vermez. Yalnız iki biçim vardır: kimlik tek başına (alanın tek tıklama servisi) ya
+     * da kimlik + sabit parlaklık ön ayarı (tam sayı, hat 1-100 dışını reddeder). Karo onay/basılı tutma sunmaz: yıkıcı eylem ve
+     * serbest servis/veri bu yoldan çalışmaz; her şey yine tek güvenli hattan (Kapı Kuralı, sınıf, hız sınırı) geçer.
+     * @param {{kimlik: string, parlaklik?: number}} yuk
+     */
+    async masaustundenCalistir(yuk) {
+      if (!yuk || typeof yuk !== 'object' || Array.isArray(yuk)) return { ok: false, tur: 'gecersiz' };
+      if (typeof yuk.kimlik !== 'string' || yuk.kimlik.length > 120) return { ok: false, tur: 'gecersiz' };
+      const istek = { kimlik: yuk.kimlik, kaynak: 'masaustu' };
+      if (yuk.parlaklik !== undefined) {
+        if (!Number.isInteger(yuk.parlaklik)) return { ok: false, tur: 'gecersiz' };
+        istek.eylem = { parlaklik: yuk.parlaklik };
+        istek.sonDeger = true;
+      }
+      return calistir(istek);
+    },
+
     /** Renderer "basılı tutma başladı" dedi: ana süreç kendi saatini başlatır (yalnız favori kimlikleri için). */
     basiliBasla(kimlik) {
       if (typeof kimlik !== 'string' || !favoriAl(kimlik)) return false;

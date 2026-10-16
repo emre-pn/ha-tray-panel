@@ -29,7 +29,9 @@ function onbellegiTemizle() {
 const akit = () => new Promise((coz) => setImmediate(coz));
 
 /** Sahte Electron + yönetici. `zoomVar`: webContents.setZoomFactor var mı (eski sürüm/sahte ortam davranışı). */
-function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {} } = {}) {
+function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {}, ayar = {} } = {}) {
+  // 1.4.0 (o-22, o-32): ustteAl / opaklikAl / malzemeAl ayarları; testler `ayarlar` nesnesini değiştirir
+  const ayarlar = { ust: false, opaklik: 100, malzeme: 'yok', ...ayar };
   const pencereler = [];
   const ipcIsleyicileri = new Map();
   class SahteWebContents extends EventEmitter {
@@ -55,6 +57,8 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
       this.yikik = false;
       this.gorunur = false;
       this.sinirlar = [];
+      this.ustCagrilari = []; // setAlwaysOnTop(deger, seviye)
+      this.opakliklar = []; // setOpacity(oran)
       pencereler.push(this);
       if (getBoundsVar) this.getBounds = () => ({ ...(this.sinirlar.at(-1) ?? { x: 0, y: 0, width: 0, height: 0 }) });
     }
@@ -97,6 +101,13 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
 
     setBackgroundColor() {}
     setBackgroundMaterial() {}
+    setAlwaysOnTop(deger, seviye) {
+      this.ustCagrilari.push([deger, seviye]);
+    }
+
+    setOpacity(oran) {
+      this.opakliklar.push(oran);
+    }
   }
   const sahte = {
     app: { isPackaged: true },
@@ -127,6 +138,9 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
     eylem,
     okuma,
     tepsiSinirlariAl: () => TEPSI,
+    ustteAl: () => ayarlar.ust,
+    opaklikAl: () => ayarlar.opaklik,
+    malzemeAl: () => ({ malzeme: ayarlar.malzeme, secenekler: { backgroundColor: '#1b1f27' } }),
     haAc() {},
     ayarlarAc() {},
     gunluk: (m) => gunlukler.push(m),
@@ -136,6 +150,7 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
   const yuzeyOlayi = (pencere) => ({ sender: pencere.webContents, senderFrame: { parent: null, url: pathToFileURL(YUZEY_HTML).href } });
   return {
     yonetici,
+    ayarlar,
     pencereler,
     gunlukler,
     ipcIsleyicileri,
@@ -389,5 +404,131 @@ test('1.4.0 yuzey:oku: yalnız açık yüzeyden ve yalnız kayıtlı varlık iç
     assert.deepEqual(await okumasiz.ipcIsleyicileri.get('yuzey:oku')(okumasiz.yuzeyOlayi(p), { tur: 'gecmis', kimlikler: ['sensor.a'] }), { ok: false, tur: 'gecersiz' });
   } finally {
     okumasiz.temizle();
+  }
+});
+
+// --- 1.4.0 (o-22): panel her zaman üstte; (o-32): panel opaklığı ------------------------------------------------------------
+
+test('o-22: ayar kapalıyken (varsayılan) panel 1.3.0 gibi "floating" seviyesinde; "normal" ve "screen-saver" kullanılmaz', async () => {
+  const o = kur();
+  try {
+    const p = await panelAc(o);
+    assert.equal(p.secenekler.alwaysOnTop, true, 'pencere oluşturulurken alwaysOnTop true');
+    assert.deepEqual(p.ustCagrilari.at(-1), [true, 'floating']);
+    assert.ok(p.ustCagrilari.every(([deger, seviye]) => deger === true && seviye === 'floating'));
+    o.yonetici.gizle();
+    assert.deepEqual(p.ustCagrilari.at(-1), [true, 'floating']);
+    assert.ok(p.ustCagrilari.every(([, seviye]) => seviye !== 'normal'));
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-22: ayar açıkken görünür panel "screen-saver" seviyesindedir (tam ekran uygulamaların üstünde); gizlenince "floating"a döner', async () => {
+  const o = kur({ ayar: { ust: true } });
+  try {
+    const p = await panelAc(o);
+    assert.deepEqual(p.ustCagrilari.at(-1), [true, 'screen-saver']);
+    o.yonetici.gizle();
+    assert.deepEqual(p.ustCagrilari.at(-1), [true, 'floating'], 'gizliyken yüksek seviye bırakılmaz');
+    assert.equal(o.yonetici.panelAcKapat('tepsi'), 'acildi');
+    assert.deepEqual(p.ustCagrilari.at(-1), [true, 'screen-saver']);
+    assert.ok(p.ustCagrilari.every(([deger, seviye]) => deger === true && (seviye === 'screen-saver' || seviye === 'floating')));
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-22: ayar değişince açık panel hemen güncellenir; gizliyken pencereye dokunulmaz (bir sonraki gösterimde uygulanır)', async () => {
+  const o = kur();
+  try {
+    const p = await panelAc(o);
+    o.ayarlar.ust = true;
+    o.yonetici.ustteDegisti();
+    assert.deepEqual(p.ustCagrilari.at(-1), [true, 'screen-saver']);
+    o.ayarlar.ust = false;
+    o.yonetici.ustteDegisti();
+    assert.deepEqual(p.ustCagrilari.at(-1), [true, 'floating']);
+    o.yonetici.gizle();
+    const sayi = p.ustCagrilari.length;
+    o.ayarlar.ust = true;
+    o.yonetici.ustteDegisti();
+    assert.equal(p.ustCagrilari.length, sayi, 'gizliyken seviye değişmez');
+    o.yonetici.panelAcKapat('tepsi');
+    assert.deepEqual(p.ustCagrilari.at(-1), [true, 'screen-saver']);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-22: seviye uygulanamazsa (sistem desteklemiyor) panel yine açılır, günlüğe yazılır; ayar okunamazsa "floating"', async () => {
+  const o = kur({ ayar: { ust: true } });
+  try {
+    const p = await panelAc(o);
+    o.yonetici.gizle();
+    p.setAlwaysOnTop = () => {
+      throw new Error('desteklenmiyor');
+    };
+    assert.equal(o.yonetici.panelAcKapat('tepsi'), 'acildi');
+    assert.equal(p.gorunur, true);
+    assert.ok(o.gunlukler.some((m) => /üst seviyesi uygulanamadı/.test(m)));
+    p.setAlwaysOnTop = undefined; // eski ortam: işlev yok
+    assert.doesNotThrow(() => o.yonetici.ustteDegisti());
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-32: opaklık yalnız opak malzemede (yok) uygulanır; 50-100 dışı değer tam opak; akrilik/mica tam opak', async () => {
+  const o = kur({ ayar: { opaklik: 70 } });
+  try {
+    const p = await panelAc(o);
+    assert.equal(p.opakliklar.at(-1), 0.7);
+    o.ayarlar.opaklik = 55;
+    o.yonetici.opaklikDegisti();
+    assert.equal(p.opakliklar.at(-1), 0.55);
+    o.ayarlar.opaklik = 100;
+    o.yonetici.opaklikDegisti();
+    assert.equal(p.opakliklar.at(-1), 1);
+    for (const kotu of [49, 101, 0, NaN, '80', null]) {
+      o.ayarlar.opaklik = kotu;
+      o.yonetici.opaklikDegisti();
+      assert.equal(p.opakliklar.at(-1), 1, `${String(kotu)} -> tam opak`);
+    }
+    o.ayarlar.opaklik = 70;
+    o.ayarlar.malzeme = 'acrylic';
+    o.yonetici.malzemeyiUygula();
+    assert.equal(p.opakliklar.at(-1), 1, 'akrilikte pencere tam opak (şeffaflık malzemeden gelir)');
+    o.ayarlar.malzeme = 'mica';
+    o.yonetici.opaklikDegisti();
+    assert.equal(p.opakliklar.at(-1), 1);
+    o.ayarlar.malzeme = 'yok';
+    o.yonetici.malzemeyiUygula();
+    assert.equal(p.opakliklar.at(-1), 0.7, 'opak malzemeye dönünce opaklık yeniden uygulanır');
+  } finally {
+    o.temizle();
+  }
+});
+
+test('o-32: gizliyken opaklık değişirse bir sonraki gösterimde uygulanır; opaklık desteği olmayan ortamda hata vermez', async () => {
+  const o = kur({ ayar: { opaklik: 100 } });
+  try {
+    const p = await panelAc(o);
+    o.yonetici.gizle();
+    const sayi = p.opakliklar.length;
+    o.ayarlar.opaklik = 60;
+    o.yonetici.opaklikDegisti();
+    assert.equal(p.opakliklar.length, sayi);
+    o.yonetici.panelAcKapat('tepsi');
+    assert.equal(p.opakliklar.at(-1), 0.6);
+    p.setOpacity = undefined;
+    assert.doesNotThrow(() => o.yonetici.opaklikDegisti());
+    p.setOpacity = () => {
+      throw new Error('desteklenmiyor');
+    };
+    assert.doesNotThrow(() => o.yonetici.opaklikDegisti());
+    assert.ok(o.gunlukler.some((m) => /opaklığı uygulanamadı/.test(m)));
+  } finally {
+    o.temizle();
   }
 });
