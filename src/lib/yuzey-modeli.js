@@ -19,7 +19,7 @@
  * Renderer'a giden alanların tam listesi RENDERER_KARO_ALANLARI'dır; yeni alan ekleyen ajan oraya ve test/yuzey-modeli.test.js'e ekler.
  */
 
-const { alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
+const { alanAl, adGuvenliMi, guvenliVarlikMi, guvenliMetin } = require('./suzgec');
 const { karoAlaniMi, varsayilanServis } = require('./alan-kaydi');
 const { izinliServisler } = require('./servis-izinleri');
 const { guvenliOzellikler } = require('./varlik-ozellik');
@@ -130,9 +130,11 @@ function karolariOlustur(favoriler, durumAl, t = TR) {
  *   uyari: yetki kesici açıkken kısa metin (panelin başlık altı şeridinde görünür); anahtarYok: erişim anahtarı hiç eklenmemiş
  *   (panel/palet boş durumunda "anahtar yok" ile "favori yok" ayrılır)
  * @param {Function} [girdi.t] çevirmen (grup etiketleri o dilde yazılır; verilmezse Türkçe)
- * @returns {{ gruplar: object[], sonlar: object[], ust: {canli:boolean, baglanti:string, medyaCaliyor:boolean|null, aktifCikis:string|null, hata:string|null, uyari:string|null, anahtarYok:boolean} }}
+ * @param {{ogeler?: object[], sayi?: number, gizlenen?: number}|null} [girdi.bildirim] 1.4.0 bildirim merkezi modeli (src/lib/bildirim-akisi.js
+ *   model()): panelin bildirim şeridi. Renderer'a rendererBildirim ile süzülmüş (alan beyaz listesi + metin süzgeci) hâliyle gider.
+ * @returns {{ gruplar: object[], sonlar: object[], ust: {canli:boolean, baglanti:string, medyaCaliyor:boolean|null, aktifCikis:string|null, hata:string|null, uyari:string|null, anahtarYok:boolean}, bildirim: object|null }}
  */
-function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = {}, t = TR }) {
+function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = {}, t = TR, bildirim = null }) {
   const karolar = karolariOlustur(favoriler, durumAl, t);
   const gruplar = karolariGrupla(karolar, t);
   const harita = new Map(karolar.map((k) => [k.id, k]));
@@ -155,6 +157,7 @@ function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = 
       uyari: typeof baglanti.uyari === 'string' && baglanti.uyari ? kisalt(baglanti.uyari, 100) : null,
       anahtarYok: baglanti.anahtarYok === true,
     },
+    bildirim,
   };
 }
 
@@ -178,6 +181,48 @@ const RENDERER_KARO_ALANLARI = Object.freeze([
   'onayliServisler', // 1.4.0
 ]);
 
+/** Renderer'a giden bildirim öğesinde bulunabilecek alanların TAM listesi (HA bildirim kimliği ve varlık kimliği YOK; anahtar opaktır). */
+const RENDERER_BILDIRIM_ALANLARI = Object.freeze(['anahtar', 'kaynak', 'baslik', 'metin', 'zaman', 'simge']);
+const BILDIRIM_KAYNAKLARI = Object.freeze(['uyari', 'ha', 'pil', 'guncelleme']);
+const EN_COK_BILDIRIM = 30;
+
+/**
+ * Bildirim merkezi modelini IPC yüküne çevirir: yalnız RENDERER_BILDIRIM_ALANLARI, en çok EN_COK_BILDIRIM öğe. Kapı Kuralı'nın son
+ * savunması: başlığı ya da metni süzgeçten geçmeyen öğe ayrıca düşer ve "N gizlendi" sayısına eklenir (kaynak zaten süzmüştür).
+ * Model yoksa ya da geçersizse null (panel şeridi hiç görünmez).
+ * @returns {{ogeler: object[], sayi: number, gizlenen: number}|null}
+ */
+function rendererBildirim(bildirim) {
+  if (!bildirim || typeof bildirim !== 'object' || !Array.isArray(bildirim.ogeler)) return null;
+  const ogeler = [];
+  let gizlenen = Number.isInteger(bildirim.gizlenen) && bildirim.gizlenen > 0 ? Math.min(bildirim.gizlenen, 999) : 0;
+  let dusen = 0; // modelde sayılıp burada elenen öğeler (toplam sayıdan da çıkar)
+  for (const o of bildirim.ogeler.slice(0, EN_COK_BILDIRIM)) {
+    if (!o || typeof o !== 'object' || typeof o.anahtar !== 'string' || !BILDIRIM_KAYNAKLARI.includes(o.kaynak)) {
+      dusen += 1;
+      continue;
+    }
+    const metin = guvenliMetin(o.metin, 200);
+    const baslik = guvenliMetin(o.baslik, 80);
+    if (!metin || !baslik) {
+      gizlenen += 1;
+      dusen += 1;
+      continue;
+    }
+    ogeler.push({
+      anahtar: o.anahtar.slice(0, 40),
+      kaynak: o.kaynak,
+      baslik,
+      metin,
+      zaman: Number.isFinite(o.zaman) && o.zaman > 0 ? o.zaman : 0,
+      simge: typeof o.simge === 'string' ? Array.from(o.simge).slice(0, 4).join('') : '',
+    });
+  }
+  const toplam = Number.isInteger(bildirim.sayi) && bildirim.sayi >= 0 ? Math.min(bildirim.sayi, 9999) : ogeler.length + dusen;
+  const sayi = Math.max(ogeler.length, toplam - dusen);
+  return { ogeler, sayi, gizlenen };
+}
+
 function rendererKaro(karo) {
   const sonuc = {};
   for (const alan of RENDERER_KARO_ALANLARI) {
@@ -198,6 +243,7 @@ function rendererModeli(model) {
     gruplar: dizi(model?.gruplar).map((g) => ({ kod: g.kod, etiket: g.etiket, karolar: dizi(g.karolar).map(rendererKaro) })),
     sonlar: dizi(model?.sonlar).map(rendererKaro),
     ust: model?.ust ?? {},
+    bildirim: rendererBildirim(model?.bildirim),
   };
 }
 
@@ -210,5 +256,7 @@ module.exports = {
   karolariGrupla,
   yuzeyModeliOlustur,
   RENDERER_KARO_ALANLARI,
+  RENDERER_BILDIRIM_ALANLARI,
+  rendererBildirim,
   rendererModeli,
 };

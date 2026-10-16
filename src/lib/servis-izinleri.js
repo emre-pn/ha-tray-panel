@@ -138,6 +138,22 @@ const SERVIS_IZINLERI = Object.freeze({
   }),
 });
 
+/**
+ * VARLIKSIZ servisler (1.4.0, bildirim grubu): `entity_id` taşımayan, alan başına sabit izin listesi. Eylem hattı bunları yalnız
+ * adlandırılmış yollardan çağırır (eylem-hatti.js bildirimKapat); renderer serbest bir alan/servis adı gönderemez.
+ * persistent_notification.dismiss: HA'nın kalıcı bildirimini kapatır. Kapı Kuralı bildirimin METNİNDE uygulanır (bildirim-merkezi.js);
+ * kimlik yalnız bir anahtardır ve gösterilmez. Kilit/kapı/kepenk/alarm servisleri bu tabloya HİÇBİR zaman girmez.
+ */
+const BILDIRIM_KIMLIGI_DESENI = /^[A-Za-z0-9_.:-]{1,100}$/;
+const VARLIKSIZ_SERVISLER = Object.freeze({
+  persistent_notification: Object.freeze({
+    dismiss: Object.freeze({
+      sinif: 'zararsiz',
+      parametreler: Object.freeze({ notification_id: Object.freeze({ tur: 'kimlik', gerekli: true, desen: BILDIRIM_KIMLIGI_DESENI }) }),
+    }),
+  }),
+});
+
 const duzNesneMi = (d) => !!d && typeof d === 'object' && !Array.isArray(d) && [Object.prototype, null].includes(Object.getPrototypeOf(d));
 const sonluSayi = (d) => (typeof d === 'number' && Number.isFinite(d) ? d : null);
 
@@ -284,6 +300,32 @@ function servisDogrula(alan, servis, veri, varlik) {
 }
 
 /**
+ * Varlıksız servis (VARLIKSIZ_SERVISLER) isteğini doğrular ve gövdeyi kurar. Bilinmeyen alan/servis/parametre, desene uymayan
+ * kimlik, fazla anahtar REDDEDİLİR (sessizce düzeltilmez).
+ * @returns {{ok: true, govde: object, sinif: 'zararsiz'|'onayli'|'yikici'} | {ok: false, neden: 'servis'|'parametre'|'eksik', parametre?: string}}
+ */
+function varliksizServisDogrula(alan, servis, veri) {
+  if (typeof alan !== 'string' || typeof servis !== 'string') return { ok: false, neden: 'servis' };
+  if (!Object.hasOwn(VARLIKSIZ_SERVISLER, alan) || !Object.hasOwn(VARLIKSIZ_SERVISLER[alan], servis)) return { ok: false, neden: 'servis' };
+  const sema = VARLIKSIZ_SERVISLER[alan][servis];
+  const girdi = veri === undefined ? {} : veri;
+  if (!duzNesneMi(girdi)) return { ok: false, neden: 'parametre' };
+  const parametreler = sema.parametreler ?? {};
+  for (const ad of Object.keys(girdi)) if (!Object.hasOwn(parametreler, ad)) return { ok: false, neden: 'parametre', parametre: kisalt(ad, 40) };
+  const govde = {};
+  for (const [ad, pSema] of Object.entries(parametreler)) {
+    if (!Object.hasOwn(girdi, ad) || girdi[ad] === undefined) {
+      if (pSema.gerekli) return { ok: false, neden: 'eksik', parametre: ad };
+      continue;
+    }
+    const deger = girdi[ad];
+    if (pSema.tur !== 'kimlik' || typeof deger !== 'string' || !pSema.desen.test(deger)) return { ok: false, neden: 'parametre', parametre: ad };
+    govde[ad] = deger;
+  }
+  return { ok: true, govde, sinif: SINIFLAR.includes(sema.sinif) ? sema.sinif : 'zararsiz' };
+}
+
+/**
  * Renderer'a güvenle verilebilecek seçenek listesi (karo modelinde açılır liste için): cihazın listesi süzgeçten geçer.
  * @returns {string[]}
  */
@@ -297,6 +339,8 @@ function secilebilirListe(alan, servis, parametre, varlik) {
 
 module.exports = {
   SERVIS_IZINLERI,
+  VARLIKSIZ_SERVISLER,
+  BILDIRIM_KIMLIGI_DESENI,
   HVAC_MODLARI,
   RENK_MODLARI,
   TODO_DURUMLARI,
@@ -304,5 +348,6 @@ module.exports = {
   servisSemasi,
   servisSinifi,
   servisDogrula,
+  varliksizServisDogrula,
   secilebilirListe,
 };

@@ -82,6 +82,50 @@ function ikinciOnayMetni(neden, sayi = 0, kayit = null, t = TR) {
   return t('bildirim.ikinciOnayKayit');
 }
 
+// ---------------------------------------------------------------------------
+// 1.4.0 bildirim merkezi ve uyarı kuralları (bildirim grubu). Hiçbiri anahtar, adres ya da ham HA verisi içermez; ad, durum ve
+// sürüm gibi parçaları ÇAĞIRAN süzgeçten geçirir (bildirim-merkezi.js, uyari-kurallari.js) ve burada yalnız cümleye yerleştirilir.
+// ---------------------------------------------------------------------------
+
+/** Düşük pil satırı: sayısal pil sensörü ("Salon sensörü: %12"). */
+function pilYuzdeMetni(ad, yuzde, t = TR) {
+  return t('merkez.pil.yuzde', { ad: kisalt(ad, AD_SINIRI), yuzde });
+}
+
+/** Düşük pil satırı: yalnız "düşük" bilen ikili pil sensörü. */
+function pilDusukMetni(ad, t = TR) {
+  return t('merkez.pil.dusuk', { ad: kisalt(ad, AD_SINIRI) });
+}
+
+/** Bekleyen güncelleme satırı; sürüm bilinmiyorsa (ya da güvenli değilse) sürümsüz cümle. */
+function guncellemeMetni(ad, surum, t = TR) {
+  const a = kisalt(ad, AD_SINIRI);
+  return surum ? t('merkez.guncelleme.surum', { ad: a, surum }) : t('merkez.guncelleme.metin', { ad: a });
+}
+
+/** Köşe/Windows bildirimi gövdesi: "Başlık: metin" (başlık yoksa yalnız metin). */
+function merkezKoseMetni(baslik, metin, t = TR) {
+  return baslik ? t('merkez.kose', { baslik: kisalt(baslik, 60), metin: kisalt(metin, AD_SINIRI) }) : kisalt(metin, AD_SINIRI);
+}
+
+/** Hız sınırı yüzünden tek tek gösterilmeyen köşe bildirimlerinin özeti. */
+function birikenMetni(sayi, t = TR) {
+  return cogul(t, 'merkez.biriken', sayi, { n: sayi });
+}
+
+/** Uyarı kuralı için, kullanıcı cümlesi yokken kullanılan varsayılan cümle. `bag`: { ad, durum, esik }. */
+function uyariVarsayilanMetni(kosulTuru, bag, t = TR) {
+  const anahtar = {
+    gecis: 'uyari.metin.gecis',
+    durum: 'uyari.metin.durum',
+    ustunde: 'uyari.metin.ustunde',
+    altinda: 'uyari.metin.altinda',
+    ulasilamiyor: 'uyari.metin.ulasilamiyor',
+    bilinmiyor: 'uyari.metin.bilinmiyor',
+  }[kosulTuru];
+  return t(anahtar ?? 'uyari.metin.durum', { ad: bag.ad ?? '', durum: bag.durum ?? '', esik: bag.esik ?? '' });
+}
+
 /** Tepsi menüsünde ve hızlı panelin üstünde görünen kısa durum (kesici açıkken). */
 const ANAHTAR_REDDEDILDI_KISA_METNI = TR('bildirim.anahtarReddedildiKisa');
 const ANAHTAR_REDDEDILDI_MENU_METNI = TR('bildirim.anahtarReddedildiMenu');
@@ -209,6 +253,12 @@ module.exports = {
   HTTP_ANAHTAR_UYARISI,
   ONAY_BEKLIYOR_METNI,
   ayarDosyasiBozukMetni,
+  pilYuzdeMetni,
+  pilDusukMetni,
+  guncellemeMetni,
+  merkezKoseMetni,
+  birikenMetni,
+  uyariVarsayilanMetni,
   ANAHTAR_SILME_ONAY_METNI,
   ANAHTAR_SILINDI_METNI,
   basariMetni,

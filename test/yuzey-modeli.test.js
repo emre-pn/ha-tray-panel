@@ -271,3 +271,83 @@ test('1.4.0 karo: güvenli öznitelik alt kümesi (ozellik), tek tıklama eylemi
   rKlima.ozellik.modlar.push('degisti');
   assert.deepEqual(bul('climate.salon').ozellik.modlar, ['off', 'heat'], 'renderer kopyası ana modeli değiştirmez');
 });
+
+// ------------------------------------------------------------------ bildirim (1.4.0)
+
+const { rendererBildirim, RENDERER_BILDIRIM_ALANLARI } = require('../src/lib/yuzey-modeli');
+
+const bildirimOgesi = (ek = {}) => ({ anahtar: 'k0123456789abcdef', kaynak: 'ha', baslik: 'Başlık', metin: 'Bir şey oldu', zaman: 1_700_000_000_000, simge: '🔔', ...ek });
+
+test('rendererBildirim: model yoksa ya da geçersizse null (panel şeridi hiç çıkmaz)', () => {
+  for (const girdi of [null, undefined, 'x', 5, {}, { ogeler: 'x' }, []]) assert.equal(rendererBildirim(girdi), null);
+});
+
+test('rendererBildirim: yalnız beyaz listedeki alanlar geçer (HA bildirim kimliği, varlık kimliği ve fazlalıklar düşer)', () => {
+  const sonuc = rendererBildirim({
+    ogeler: [bildirimOgesi({ haKimligi: 'gizli-id', varlik: 'sensor.a_pil', notification_id: 'n1', ek: { x: 1 } })],
+    sayi: 1,
+    gizlenen: 0,
+  });
+  assert.deepEqual(Object.keys(sonuc.ogeler[0]).sort(), [...RENDERER_BILDIRIM_ALANLARI].sort());
+  assert.doesNotMatch(JSON.stringify(sonuc), /gizli-id|sensor\.a_pil|notification_id/);
+  assert.deepEqual(sonuc, { ogeler: [bildirimOgesi()], sayi: 1, gizlenen: 0 });
+});
+
+test('rendererBildirim: Kapı Kuralı süzgecine takılan başlık ya da metin öğeyi düşürür, yalnız "gizlenen" sayısı artar', () => {
+  const sonuc = rendererBildirim({
+    ogeler: [
+      bildirimOgesi({ anahtar: 'ka', metin: 'Ön kapı kilidi açıldı' }),
+      bildirimOgesi({ anahtar: 'kb', baslik: 'Garage door' }),
+      bildirimOgesi({ anahtar: 'kc', metin: 'Alarm kuruldu' }),
+      bildirimOgesi({ anahtar: 'kd', metin: 'Pil: %12' }),
+    ],
+    sayi: 4,
+    gizlenen: 1,
+  });
+  assert.deepEqual(sonuc.ogeler.map((o) => o.anahtar), ['kd']);
+  assert.equal(sonuc.gizlenen, 4, 'kaynakta gizlenen 1 + burada düşen 3');
+  assert.equal(sonuc.sayi, 1);
+  assert.doesNotMatch(JSON.stringify(sonuc), /kilit|garage|alarm/i);
+});
+
+test('rendererBildirim: bilinmeyen kaynak, anahtarsız ve nesne olmayan öğeler düşer; toplam sayıdan da çıkar', () => {
+  const sonuc = rendererBildirim({ ogeler: [bildirimOgesi(), bildirimOgesi({ kaynak: 'x' }), { baslik: 'a', metin: 'b' }, null, 7], sayi: 5, gizlenen: 0 });
+  assert.equal(sonuc.ogeler.length, 1);
+  assert.equal(sonuc.sayi, 1);
+});
+
+test('rendererBildirim: en çok 30 öğe gider; toplam sayı korunur; sayı yoksa öğe sayısıdır', () => {
+  const cok = Array.from({ length: 45 }, (_, i) => bildirimOgesi({ anahtar: 'k' + i }));
+  const sonuc = rendererBildirim({ ogeler: cok, sayi: 45, gizlenen: 0 });
+  assert.equal(sonuc.ogeler.length, 30);
+  assert.equal(sonuc.sayi, 45);
+  assert.equal(rendererBildirim({ ogeler: cok.slice(0, 3), gizlenen: 0 }).sayi, 3);
+});
+
+test('rendererBildirim: uzun metinler kısaltılır; zaman ve simge geçersizse güvenli varsayılan', () => {
+  const sonuc = rendererBildirim({ ogeler: [bildirimOgesi({ metin: 'a'.repeat(500), baslik: 'b'.repeat(500), zaman: 'dün', simge: '12345678' })], sayi: 1, gizlenen: 0 });
+  assert.ok(sonuc.ogeler[0].metin.length <= 200);
+  assert.ok(sonuc.ogeler[0].baslik.length <= 80);
+  assert.equal(sonuc.ogeler[0].zaman, 0);
+  assert.equal(Array.from(sonuc.ogeler[0].simge).length, 4);
+  assert.equal(rendererBildirim({ ogeler: [bildirimOgesi({ simge: 5, zaman: -3 })], sayi: 1, gizlenen: 0 }).ogeler[0].simge, '');
+});
+
+test('rendererBildirim: gizlenen sayısı sınırlanır; negatif ya da kesirli değer 0 olur', () => {
+  assert.equal(rendererBildirim({ ogeler: [], sayi: 0, gizlenen: 5000 }).gizlenen, 999);
+  assert.equal(rendererBildirim({ ogeler: [], sayi: 0, gizlenen: -2 }).gizlenen, 0);
+  assert.equal(rendererBildirim({ ogeler: [], sayi: 0, gizlenen: 1.5 }).gizlenen, 0);
+});
+
+test('yuzeyModeliOlustur ve rendererModeli: bildirim modeli panele süzülmüş hâliyle gider; verilmezse null', () => {
+  const bos = rendererModeli(yuzeyModeliOlustur({ favoriler: [], durumAl: () => undefined }));
+  assert.equal(bos.bildirim, null);
+  const model = yuzeyModeliOlustur({
+    favoriler: [],
+    durumAl: () => undefined,
+    bildirim: { ogeler: [bildirimOgesi(), bildirimOgesi({ anahtar: 'kz', metin: 'Kapı açık' })], sayi: 2, gizlenen: 0 },
+  });
+  const renderer = rendererModeli(model);
+  assert.deepEqual(renderer.bildirim.ogeler.map((o) => o.anahtar), ['k0123456789abcdef']);
+  assert.equal(renderer.bildirim.gizlenen, 1);
+});

@@ -37,6 +37,7 @@ const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
 const { alanAl, adGuvenliMi, metinGuvenliMi } = require('./suzgec');
 const { kayitliAlanMi } = require('./alan-kaydi');
 const { kisalt } = require('./metin');
+const { kurallariDuzelt } = require('./uyari-kurallari');
 
 const GUNCEL_EK_SURUM = 6;
 const KORUNAN_ADLAR = new Set(['__proto__', 'constructor', 'prototype', 'semaSurumu']);
@@ -140,6 +141,14 @@ function nesneAlan(ad, { varsayilan, duzelt, tip = Array.isArray(varsayilan) ? '
  */
 const AYAR_ALANLARI = Object.freeze([
   // --- 1.4.0 özellik grupları satırlarını buraya ekler ---
+
+  // --- Bildirim grubu (o-36, o-37, o-39): bildirim merkezi ve varlık uyarı kuralları (src/lib/bildirim-akisi.js) ---
+  mantiksalAlan('bildirimKalici', true), // HA kalıcı bildirimlerini panelde göster (WS persistent_notification/subscribe, yalnız okuma)
+  mantiksalAlan('bildirimPil', true), // düşük pil bildirimleri (10 dakikada bir GET /api/states)
+  mantiksalAlan('bildirimGuncelleme', false), // bekleyen güncelleme bildirimleri (update.* varlıkları)
+  tamsayiAlan('bildirimPilEsigi', 5, 50, 20), // bu yüzdenin altı/eşiti "düşük pil" sayılır
+  mantiksalAlan('bildirimMasaustu', true), // yeni merkez bildirimlerini köşe bildirimi olarak da göster
+  nesneAlan('uyariKurallari', { varsayilan: [], duzelt: (ham) => kurallariDuzelt(ham) }), // varlık uyarı kuralları (uyari-kurallari.js)
 ]);
 
 /**

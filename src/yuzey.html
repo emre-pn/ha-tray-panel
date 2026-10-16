@@ -19,6 +19,18 @@
 
     <div id="serit" class="serit" role="status" aria-live="polite" hidden></div>
 
+    <section id="bildirim" class="bildirim" aria-labelledby="bildirimBaslik" hidden>
+      <button id="bildirimDugme" class="bildirim-dugme" type="button" aria-expanded="false" aria-controls="bildirimListe">
+        <span class="bildirim-zil" aria-hidden="true">🔔</span>
+        <span id="bildirimBaslik" class="bildirim-baslik" data-i18n="yuzey.bildirim.baslik">Bildirimler</span>
+        <span id="bildirimSayi" class="bildirim-rozet" hidden></span>
+        <span id="bildirimOzet" class="bildirim-ozet"></span>
+        <span class="bildirim-ok" aria-hidden="true">▾</span>
+      </button>
+      <ul id="bildirimListe" class="bildirim-liste" hidden></ul>
+      <p id="bildirimGizli" class="bildirim-gizli" hidden></p>
+    </section>
+
     <div id="paletKutusu" class="palet-kutusu">
       <input id="arama" class="arama" type="text" data-i18n-attr="placeholder:yuzey.arama.ipucu;aria-label:yuzey.arama.etiket" placeholder="Eylem ara…  (örn. “ışık 40”)" autocomplete="off" spellcheck="false" aria-label="Eylem ara" maxlength="60" role="combobox" aria-expanded="true" aria-controls="icerik" aria-autocomplete="list" aria-describedby="paletSerit">
     </div>

@@ -3,6 +3,8 @@
 /**
  * Köşe bildirimi (hiz-04): ekranın sağ alt köşesinde 1,5 sn (hatada 3 sn) görünen, odak ALMAYAN küçük pencere.
  * Eylem başarılı olunca anında gösterilir; Windows bildirimi yalnız hatada çıkar.
+ * 1.4.0: 'bilgi' türü (bildirim merkezi ve varlık uyarıları): 6 sn görünür, sırayla gösterilir (en çok 5 bekleyen). Eylem geri
+ * bildirimi (ok / hata) hemen gösterilir; bekleyen bilgi bildirimleri o bitince sırayla görünür.
  *
  * Pencere ilk kullanımdan önce (açılıştan ~1 sn sonra) yüklenir; açılış yavaşlamasın. focusable:false pencerenin
  * Windows'ta gerçekten odak almadığı ve tam ekran oyunun üstünde görünüp görünmediği DENENMEDİ (soru-4: oyun/tam
@@ -20,6 +22,10 @@ const KOSE_HTML = path.join(__dirname, 'kose-bildirim.html');
 const PRELOAD_KOSE = path.join(__dirname, 'preload-kose.js');
 const SURE_BASARI_MS = 1500;
 const SURE_HATA_MS = 3000;
+const SURE_BILGI_MS = 6000;
+const BILGI_METIN_SINIRI = 140;
+const BILGI_SIMGE_SINIRI = 8;
+const BILGI_KUYRUK_SINIRI = 5;
 const GIZLEME_PAYI_MS = 150; // sayfadaki solma animasyonu bitsin
 const METIN_SINIRI = 100;
 const ILK_YUKLEME_GECIKMESI_MS = 1000;
@@ -37,6 +43,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
   let pencere = null;
   let yuklendi = false;
   let bekleyen = null;
+  let kuyruk = []; // gösterilmeyi bekleyen 'bilgi' bildirimleri
   let gizlemeZamanlayicisi = null;
   let yuklemeZamanlayicisi = null;
 
@@ -52,7 +59,9 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
     gunluk(`Köşe bildirimi penceresi sıfırlandı (${neden}); sonraki bildirimde yeniden oluşturulacak.`);
     clearTimeout(gizlemeZamanlayicisi);
     const kayit = bekleyen;
+    const sirada = kuyruk;
     bekleyen = null;
+    kuyruk = [];
     pencere = null;
     yuklendi = false;
     try {
@@ -61,6 +70,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       /* zaten yok edilmiş */
     }
     if (kayit) yedekGoster(kayit);
+    for (const k of sirada) yedekGoster(k);
   }
 
   function olustur() {
@@ -128,10 +138,19 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
     }
   }
 
-  function gosterIc({ tur, metin }) {
+  /** Görünen bildirim bitti: sırada bekleyen bilgi varsa onu göster, yoksa pencereyi gizle. */
+  function sonraki() {
+    if (!canliMi()) return;
+    const siradaki = kuyruk.shift();
+    if (siradaki) gosterIc(siradaki);
+    else pencere.hide();
+  }
+
+  function gosterIc({ tur, metin, simge }) {
     if (!canliMi() || !yuklendi) return;
     bekleyen = null;
-    const sureMs = tur === 'hata' ? SURE_HATA_MS : SURE_BASARI_MS;
+    const bilgi = tur === 'bilgi';
+    const sureMs = tur === 'hata' ? SURE_HATA_MS : bilgi ? SURE_BILGI_MS : SURE_BASARI_MS;
     try {
       const alan = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
       let engel = null;
@@ -143,12 +162,12 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       pencere.setBounds(koseKonumu(alan, undefined, undefined, engel));
       pencere.setAlwaysOnTop(true, 'screen-saver');
       pencere.setIgnoreMouseEvents(true);
-      pencere.webContents.send('kose:goster', { tur, metin: kisalt(metin, METIN_SINIRI), sureMs, malzeme: malzemeAl().malzeme });
+      const yuk = { tur, metin: kisalt(metin, bilgi ? BILGI_METIN_SINIRI : METIN_SINIRI), sureMs, malzeme: malzemeAl().malzeme };
+      if (bilgi) yuk.simge = kisalt(simge, BILGI_SIMGE_SINIRI);
+      pencere.webContents.send('kose:goster', yuk);
       if (!pencere.isVisible()) pencere.showInactive(); // odak almadan göster
       clearTimeout(gizlemeZamanlayicisi);
-      gizlemeZamanlayicisi = setTimeout(() => {
-        if (canliMi()) pencere.hide();
-      }, sureMs + GIZLEME_PAYI_MS);
+      gizlemeZamanlayicisi = setTimeout(sonraki, sureMs + GIZLEME_PAYI_MS);
     } catch {
       gunluk('Köşe bildirimi gösterilemedi.');
     }
@@ -169,13 +188,20 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       if (canliMi()) malzemeUygula(pencere, malzemeAl());
     },
     /**
-     * @param {{ tur: 'ok'|'hata', metin: string }} bildirim
+     * @param {{ tur: 'ok'|'hata'|'bilgi', metin: string, simge?: string }} bildirim simge yalnız 'bilgi' türünde kullanılır (kısa düz metin)
      * @returns {boolean} gösterildi (ya da yüklenince gösterilecek); pencere hiç oluşturulamadıysa false
      */
-    goster({ tur, metin }) {
-      const kayit = { tur: tur === 'hata' ? 'hata' : 'ok', metin: String(metin ?? '') };
+    goster({ tur, metin, simge }) {
+      const bilgi = tur === 'bilgi';
+      const kayit = bilgi ? { tur: 'bilgi', metin: String(metin ?? ''), simge: String(simge ?? '') } : { tur: tur === 'hata' ? 'hata' : 'ok', metin: String(metin ?? '') };
       if (!canliMi()) olustur();
       if (!canliMi()) return false;
+      if (bilgi && (bekleyen !== null || (yuklendi && pencere.isVisible()))) {
+        // Bir bildirim zaten görünüyor (ya da yüklenmeyi bekliyor): bilgi sırasını bekler; sıra dolarsa en eskisi düşer.
+        if (kuyruk.length >= BILGI_KUYRUK_SINIRI) kuyruk.shift();
+        kuyruk.push(kayit);
+        return true;
+      }
       if (!yuklendi) {
         bekleyen = kayit; // yükleme bitince gösterilir
         return true;
@@ -186,6 +212,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
     kapat() {
       clearTimeout(gizlemeZamanlayicisi);
       clearTimeout(yuklemeZamanlayicisi);
+      kuyruk = [];
       const eski = pencere;
       pencere = null; // önce boşalt: yok edilirken gelen olaylar sıfırlamayı tetiklemesin
       if (eski && !eski.isDestroyed()) eski.destroy();
@@ -193,4 +220,4 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
   };
 }
 
-module.exports = { SURE_BASARI_MS, SURE_HATA_MS, koseBildirimiOlustur };
+module.exports = { SURE_BASARI_MS, SURE_HATA_MS, SURE_BILGI_MS, BILGI_KUYRUK_SINIRI, koseBildirimiOlustur };

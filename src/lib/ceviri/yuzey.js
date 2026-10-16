@@ -74,6 +74,15 @@
     ['yuzey.ipucu.basiliTutun', '“{etiket}” için basılı tutun.', 'Hold to run “{etiket}”.'],
     ['yuzey.ipucu.yuklenemedi', 'Panel yüklenemedi.', 'The panel could not be loaded.'],
 
+    // --- Bildirim şeridi (1.4.0; bildirimin kendi başlığı ve metni ana süreçte seçili dilde yazılır) ---
+    ['yuzey.bildirim.baslik', 'Bildirimler', 'Notifications'],
+    ['yuzey.bildirim.sayi', '{n} bildirim', '{n} notifications'],
+    ['yuzey.bildirim.sayi.bir', '1 bildirim', '1 notification'],
+    ['yuzey.bildirim.kapat', 'Bildirimi kapat: {metin}', 'Dismiss notification: {metin}'],
+    ['yuzey.bildirim.gizlendi', '{n} bildirim gizlendi', '{n} notifications hidden'],
+    ['yuzey.bildirim.gizlendi.bir', '1 bildirim gizlendi', '1 notification hidden'],
+    ['yuzey.ipucu.bildirimKapatilamadi', 'Bildirim kapatılamadı.', 'The notification could not be dismissed.'],
+
     // --- Köşe bildirimi (src/kose-bildirim.html; bildirim metni ana süreçte seçili dilde yazılır) ---
     ['kose.sayfaBasligi', 'Ev Paneli — Bildirim', 'Home Panel — Notification'],
 

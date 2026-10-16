@@ -5,6 +5,7 @@
   --metin: #f1f5f9;
   --basari: #10b981;
   --hata: #ef4444;
+  --bilgi: #60a5fa;
   --isaret-metin: #0b1220; /* ✓ / ! simgesi, dolu --basari / --hata zemini üzerinde (kontrast >= 4,5) */
 }
 
@@ -23,6 +24,7 @@
     --metin: #0f172a;
     --basari: #047857;
     --hata: #b91c1c;
+    --bilgi: #1d4ed8;
     --isaret-metin: #ffffff;
   }
 
@@ -92,6 +94,19 @@ body {
 
 .hata .isaret {
   background: var(--hata);
+}
+
+/* Bilgi (bildirim merkezi, varlık uyarısı): vurgu rengi mavi; simge ana sürecin verdiği düz simgedir, dolu daire yok */
+.bildirim.bilgi {
+  border-left-color: var(--bilgi);
+}
+
+.bilgi .isaret {
+  width: auto;
+  min-width: 22px;
+  font-size: 17px;
+  color: var(--metin);
+  background: transparent;
 }
 
 .metin {

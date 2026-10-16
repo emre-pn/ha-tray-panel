@@ -29,7 +29,7 @@ function onbellegiTemizle() {
 const akit = () => new Promise((coz) => setImmediate(coz));
 
 /** Sahte Electron + yönetici. `zoomVar`: webContents.setZoomFactor var mı (eski sürüm/sahte ortam davranışı). */
-function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {} } = {}) {
+function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {}, bildirim = null } = {}) {
   const pencereler = [];
   const ipcIsleyicileri = new Map();
   class SahteWebContents extends EventEmitter {
@@ -126,6 +126,7 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
     modelAl: () => model ?? { gruplar: [], sonlar: [], ust: {} },
     eylem,
     okuma,
+    bildirim,
     tepsiSinirlariAl: () => TEPSI,
     haAc() {},
     ayarlarAc() {},
@@ -389,5 +390,91 @@ test('1.4.0 yuzey:oku: yalnız açık yüzeyden ve yalnız kayıtlı varlık iç
     assert.deepEqual(await okumasiz.ipcIsleyicileri.get('yuzey:oku')(okumasiz.yuzeyOlayi(p), { tur: 'gecmis', kimlikler: ['sensor.a'] }), { ok: false, tur: 'gecersiz' });
   } finally {
     okumasiz.temizle();
+  }
+});
+
+// --- 1.4.0 bildirim şeridi ---------------------------------------------------------------------------------------------------
+
+const BILDIRIM_OGESI = { anahtar: 'k0123456789abcdef', kaynak: 'ha', baslik: 'Çamaşır', metin: 'Çamaşır bitti', zaman: 1_760_000_000_000, simge: '🏠' };
+
+test('1.4.0 bildirim: renderer modelinde yalnız beyaz listedeki alanlar gider; süzgeçten geçmeyen öğe düşer ve "gizlenen"e eklenir; model yoksa null', async () => {
+  const bildirim = {
+    ogeler: [
+      { ...BILDIRIM_OGESI, haKimligi: 'garage_door_alert', ham: 'x' },
+      { ...BILDIRIM_OGESI, anahtar: 'kffffffffffffffff', metin: 'Garaj kapısı açık kaldı' },
+      { ...BILDIRIM_OGESI, anahtar: 'kaaaaaaaaaaaaaaaa', kaynak: 'bilinmeyen' },
+    ],
+    sayi: 3,
+    gizlenen: 2,
+  };
+  const o = kur({ model: { ...MODEL_ADLI, bildirim } });
+  try {
+    const p = await panelAc(o);
+    o.yonetici.modelDegisti();
+    const yuk = o.mesajlar(p, 'yuzey:durum').at(-1);
+    assert.deepEqual(yuk.bildirim, { ogeler: [BILDIRIM_OGESI], sayi: 1, gizlenen: 3 }, 'elenen öğeler toplamdan düşer, süzgeç yüzünden elenenler gizlenene eklenir');
+    assert.ok(!JSON.stringify(yuk).includes('garage_door_alert'), 'HA bildirim kimliği panele gitmez');
+    assert.ok(!JSON.stringify(yuk).includes('Garaj'), 'kapı metni panele gitmez');
+    const yanit = await o.ipcIsleyicileri.get('yuzey:durum-al')(o.yuzeyOlayi(p));
+    assert.deepEqual(yanit.model.bildirim.ogeler.map((x) => x.anahtar), ['k0123456789abcdef']);
+  } finally {
+    o.temizle();
+  }
+  const yok = kur({ model: MODEL_ADLI });
+  try {
+    const p = await panelAc(yok);
+    yok.yonetici.modelDegisti();
+    assert.equal(yok.mesajlar(p, 'yuzey:durum').at(-1).bildirim, null);
+  } finally {
+    yok.temizle();
+  }
+});
+
+test('1.4.0 yuzey:bildirim-kapat: yalnız açık hızlı panelden; anahtar doğrulanır; HA bildirimi eylem.bildirimKapat ile kapatılır', async () => {
+  const kapatCagrilari = [];
+  const haCagrilari = [];
+  const bildirim = {
+    kapat: async (anahtar, haKapat) => {
+      kapatCagrilari.push(anahtar);
+      const yanit = await haKapat('haKimligi');
+      return { ok: yanit.ok === true };
+    },
+  };
+  const eylem = { bildirimKapat: async (id) => (haCagrilari.push(id), { ok: true }) };
+  const o = kur({ bildirim, eylem });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:bildirim-kapat');
+    assert.equal(typeof isle, 'function');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await isle(yabanci, 'k0123456789abcdef')).ok, false);
+    assert.deepEqual(kapatCagrilari, [], 'yabancı gönderici: hiçbir şey kapanmaz');
+
+    const p = await panelAc(o);
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'k0123456789abcdef'), { ok: true });
+    assert.deepEqual(kapatCagrilari, ['k0123456789abcdef']);
+    assert.deepEqual(haCagrilari, ['haKimligi']);
+    for (const kotu of [undefined, null, 42, {}, [], '', 'x'.repeat(41)]) {
+      assert.deepEqual(await isle(o.yuzeyOlayi(p), kotu), { ok: false, tur: 'gecersiz' }, `geçersiz anahtar: ${String(kotu).slice(0, 10)}`);
+    }
+    assert.equal(kapatCagrilari.length, 1);
+
+    // palet kipinde şerit yok: kapatma kabul edilmez
+    o.yonetici.gizle('test');
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'k0123456789abcdef'), { ok: false, tur: 'gecersiz' });
+    // pencere gizliyken de kabul edilmez
+    o.yonetici.gizle('test');
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'k0123456789abcdef'), { ok: false, tur: 'gecersiz' });
+    assert.equal(kapatCagrilari.length, 1);
+  } finally {
+    o.temizle();
+  }
+  const bildirimsiz = kur();
+  try {
+    const p = await panelAc(bildirimsiz);
+    assert.deepEqual(await bildirimsiz.ipcIsleyicileri.get('yuzey:bildirim-kapat')(bildirimsiz.yuzeyOlayi(p), 'k0123456789abcdef'), { ok: false, tur: 'gecersiz' });
+  } finally {
+    bildirimsiz.temizle();
   }
 });

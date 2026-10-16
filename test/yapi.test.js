@@ -145,7 +145,7 @@ const EV_PANELI_KOPRUSU = [
 ];
 // preload-yuzey.js'in window.evYuzey altında açtığı tam liste (hızlı panel / palet; Dalga 3).
 // 1.4.0: 'oku' (yuzey:oku; geçmiş/takvim/hava/yapılacaklar, yalnız kayıtlı varlıklar, ana süreçte süzülür) bilinçli eklendi.
-const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc'];
+const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc'];
 
 test('yerel sayfalar bulundu (ayarlar, çevrimdışı, köşe bildirimi, hızlı panel/palet)', () => {
   assert.deepEqual([...YEREL_SAYFALAR].sort(), ['src/ayarlar.html', 'src/kose-bildirim.html', 'src/offline.html', 'src/yuzey.html']);

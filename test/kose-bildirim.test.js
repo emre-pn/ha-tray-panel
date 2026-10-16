@@ -341,3 +341,96 @@ test('köşe bildirimi: malzemeyiUygula var olan pencerenin malzemesini ve rengi
     o.temizle();
   }
 });
+
+// --- 1.4.0: bilgi türü (bildirim merkezi ve varlık uyarıları) --------------------------------------
+
+test('köşe bildirimi: bilgi türü simge ve 6 sn süreyle gösterilir; ok/hata yükünde simge anahtarı yoktur', async () => {
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'Uyarı: Salon çok sıcak', simge: '📈' });
+    await o.akit();
+    assert.deepEqual(o.mesajlar(o.pencereler[0]), [{ tur: 'bilgi', metin: 'Uyarı: Salon çok sıcak', simge: '📈', sureMs: 6000, malzeme: 'yok' }]);
+    o.kose.goster({ tur: 'ok', metin: 'Tamam' }); // eylem geri bildirimi bilgiyi beklemez
+    const son = o.mesajlar(o.pencereler[0]).at(-1);
+    assert.deepEqual(son, { tur: 'ok', metin: 'Tamam', sureMs: 1500, malzeme: 'yok' });
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: bilgi metni 140, simge 8 karakterle sınırlanır', async () => {
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'a'.repeat(400), simge: 'x'.repeat(50) });
+    await o.akit();
+    const yuk = o.mesajlar(o.pencereler[0])[0];
+    assert.equal(Array.from(yuk.metin).length, 140);
+    assert.equal(Array.from(yuk.simge).length, 8);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: görünen bildirim varken gelen bilgiler sıraya girer ve süre dolunca sırayla gösterilir', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'Bir', simge: '1' });
+    await o.akit();
+    assert.equal(o.kose.goster({ tur: 'bilgi', metin: 'İki', simge: '2' }), true);
+    assert.equal(o.kose.goster({ tur: 'bilgi', metin: 'Üç', simge: '3' }), true);
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin), ['Bir'], 'sıradakiler hemen görünmez');
+    t.mock.timers.tick(6000 + 150);
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin), ['Bir', 'İki']);
+    t.mock.timers.tick(6000 + 150);
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin), ['Bir', 'İki', 'Üç']);
+    assert.equal(o.pencereler[0].gorunur, true);
+    t.mock.timers.tick(6000 + 150);
+    assert.equal(o.pencereler[0].gorunur, false, 'sıra bitince pencere gizlenir');
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: bilgi sırası dolunca en eski düşer (en çok BILGI_KUYRUK_SINIRI bekler)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { BILGI_KUYRUK_SINIRI } = require(path.join(KOK, 'kose-bildirim.js'));
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'ilk', simge: 'i' });
+    await o.akit();
+    for (let i = 0; i < BILGI_KUYRUK_SINIRI + 3; i += 1) o.kose.goster({ tur: 'bilgi', metin: `s${i}`, simge: 'i' });
+    for (let i = 0; i < BILGI_KUYRUK_SINIRI + 2; i += 1) t.mock.timers.tick(6150);
+    const metinler = o.mesajlar(o.pencereler[0]).map((m) => m.metin);
+    assert.equal(metinler[0], 'ilk');
+    assert.equal(metinler.length, 1 + BILGI_KUYRUK_SINIRI);
+    assert.ok(!metinler.includes('s0') && !metinler.includes('s1') && !metinler.includes('s2'), 'en eskiler düştü: ' + metinler.join(','));
+    assert.equal(metinler.at(-1), `s${BILGI_KUYRUK_SINIRI + 2}`);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: yükleme beklerken gelen bilgiler sırada tutulur; pencere sıfırlanırsa hepsi yedeğe düşer', async () => {
+  const o = kur({ yuklemeSonucu: 'bekle' });
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'A', simge: 'a' });
+    o.kose.goster({ tur: 'bilgi', metin: 'B', simge: 'b' });
+    o.pencereler[0].webContents.emit('did-fail-load', {}, -6, 'ERR', 'file:///x', true);
+    assert.deepEqual(o.yedekler.map((y) => y.metin), ['A', 'B']);
+    assert.ok(o.yedekler.every((y) => y.tur === 'bilgi'));
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: bilinmeyen tür ok sayılır (bilgi yalnız açıkça istenince)', async () => {
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'uyari', metin: 'x', simge: 'y' });
+    await o.akit();
+    assert.deepEqual(o.mesajlar(o.pencereler[0]), [{ tur: 'ok', metin: 'x', sureMs: 1500, malzeme: 'yok' }]);
+  } finally {
+    o.temizle();
+  }
+});

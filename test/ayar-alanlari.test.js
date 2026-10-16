@@ -122,10 +122,11 @@ test('tipler, aktarılanlar ve özet: aktarilir/ozette bayrakları uyulur', () =
   assert.equal(ozet.saatBicimi, '12');
   assert.equal(ozet.metinOlcegi, 100, 'ayarda yoksa varsayılan');
   assert.equal(Object.hasOwn(ozet, 'yerelGizli'), false);
-  // boş kayıtla bugünkü uygulama: hiçbir ek alan yok
-  assert.deepEqual(A.alanTipleri(), {});
-  assert.deepEqual(A.aktarilanAlanlar(), []);
-  assert.deepEqual(A.ekAyarOzeti({}), {});
+  // gerçek kayıt (özellik grupları satır ekledikçe büyür): tablo ile türetilen listeler tutarlı kalır
+  const adlar = (liste) => liste.map((a) => a.ad).sort();
+  assert.deepEqual(Object.keys(A.alanTipleri()).sort(), adlar(A.AYAR_ALANLARI));
+  assert.deepEqual([...A.aktarilanAlanlar()].sort(), adlar(A.AYAR_ALANLARI.filter((a) => a.aktarilir)));
+  assert.deepEqual(Object.keys(A.ekAyarOzeti({})).sort(), adlar(A.AYAR_ALANLARI.filter((a) => a.ozette)));
 });
 
 test('gocleriUygula: yalnız kayıtlı sürümden yeni göçler, sürüm sırasıyla', () => {
