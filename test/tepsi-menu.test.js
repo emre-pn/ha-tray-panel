@@ -140,3 +140,17 @@ test('ipucuMetni: yetki kesici uyarısı durumdan hemen sonra gelir; 120 karakte
   assert.equal(ipucuMetni({ durum: 'Ev ağı', uyari: '' }), 'Ev Paneli — Ev ağı');
   assert.ok(Array.from(ipucuMetni({ durum: 'İnternet üzerinden', uyari: 'u'.repeat(300), gelistirme: true })).length <= IPUCU_SINIRI);
 });
+
+test('ipucuMetni (o-04): sensör uyarısı sayısı en sona eklenir; 0 ya da geçersiz sayı eklenmez; İngilizce çoğul; 120 sınırı', () => {
+  const { cevirmen } = require('../src/lib/dil');
+  const ANA = require('../src/lib/ceviri/ana');
+  assert.equal(ipucuMetni({ durum: 'Ev ağı', sensorUyari: 1 }), 'Ev Paneli — Ev ağı — 1 sensör uyarısı');
+  assert.equal(ipucuMetni({ durum: 'Ev ağı', sensorUyari: 3 }), 'Ev Paneli — Ev ağı — 3 sensör uyarısı');
+  assert.equal(ipucuMetni({ durum: 'Ev ağı', acikIsik: 2, sensorUyari: 1 }), 'Ev Paneli — Ev ağı — 2 ışık açık — 1 sensör uyarısı');
+  assert.equal(ipucuMetni({ durum: 'Ev ağı', acikIsik: 2, canli: false, sensorUyari: 2 }), 'Ev Paneli — Ev ağı — 2 ışık açık (son bilinen) — 2 sensör uyarısı');
+  for (const yok of [0, -1, 1.5, null, undefined, '2', NaN]) assert.equal(ipucuMetni({ durum: 'Ev ağı', sensorUyari: yok }), 'Ev Paneli — Ev ağı', String(yok));
+  const en = cevirmen('en', ANA);
+  assert.equal(ipucuMetni({ durum: 'Home network', sensorUyari: 1, t: en }), 'Home Panel — Home network — 1 sensor alert');
+  assert.equal(ipucuMetni({ durum: 'Home network', sensorUyari: 4, t: en }), 'Home Panel — Home network — 4 sensor alerts');
+  assert.ok(Array.from(ipucuMetni({ durum: 'İnternet üzerinden', uyari: 'u'.repeat(300), acikIsik: 4, sensorUyari: 9, gelistirme: true })).length <= IPUCU_SINIRI);
+});

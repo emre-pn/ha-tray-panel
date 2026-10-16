@@ -35,8 +35,8 @@ const durumAl = (k) => DEPO[k];
 const TUMU = Object.keys(DEPO).map((k) => favori(k));
 const harita = (model) => new Map(model.gruplar.flatMap((g) => g.karolar.map((k) => [k.id, { ...k, grupKodu: g.kod }])));
 
-test('grup tablosu: Işık, İklim, Sahne, PC, Medya, Yardımcılar, Diğer sırası; her grubun iki dilde etiketi var', () => {
-  assert.deepEqual(GRUPLAR.map((g) => g.kod), ['isik', 'iklim', 'sahne', 'pc', 'medya', 'yardimci', 'diger']);
+test('grup tablosu: Işık, İklim, Sahne, PC, Medya, Yardımcılar, Sensör, Diğer sırası; her grubun iki dilde etiketi var', () => {
+  assert.deepEqual(GRUPLAR.map((g) => g.kod), ['isik', 'iklim', 'sahne', 'pc', 'medya', 'yardimci', 'sensor', 'diger']);
   for (const g of GRUPLAR) {
     const satir = ANA.satirlar?.find?.((s) => s[0] === `grup.${g.kod}`) ?? null;
     assert.ok(satir || ANA.tr?.[`grup.${g.kod}`], `grup.${g.kod} sözlükte`);
@@ -44,7 +44,7 @@ test('grup tablosu: Işık, İklim, Sahne, PC, Medya, Yardımcılar, Diğer sır
   }
 });
 
-test('grupBul: iklim, nem alıcı ve vantilatör "İklim"; medya oynatıcı "Medya"; seçici, sayı, zamanlayıcı "Yardımcılar"; sensör "Diğer"; eski gruplar korunur', () => {
+test('grupBul: iklim, nem alıcı ve vantilatör "İklim"; medya oynatıcı "Medya"; seçici, sayı, zamanlayıcı "Yardımcılar"; sensör "Sensör"; eski gruplar korunur', () => {
   const beklenen = {
     'climate.x': 'iklim',
     'humidifier.x': 'iklim',
@@ -55,7 +55,8 @@ test('grupBul: iklim, nem alıcı ve vantilatör "İklim"; medya oynatıcı "Med
     'input_number.x': 'yardimci',
     'number.x': 'yardimci',
     'timer.x': 'yardimci',
-    'sensor.x': 'diger',
+    'sensor.x': 'sensor',
+    'binary_sensor.x': 'sensor',
     'vacuum.x': 'diger',
     'light.x': 'isik',
     'scene.x': 'sahne',
@@ -68,7 +69,7 @@ test('grupBul: iklim, nem alıcı ve vantilatör "İklim"; medya oynatıcı "Med
 
 test('panel modeli: gruplar sabit sırada, İklim ve Yardımcılar kendi gruplarında; onay isteyen yardımcı "Onaylı" satırına taşınmaz, PC kapat taşınır', () => {
   const model = yuzeyModeliOlustur({ favoriler: TUMU, durumAl });
-  assert.deepEqual(model.gruplar.map((g) => g.kod), ['isik', 'iklim', 'sahne', 'medya', 'yardimci', 'diger', 'onayli'], 'boş grup (PC kapat onaylıya gittiği için PC) çizilmez');
+  assert.deepEqual(model.gruplar.map((g) => g.kod), ['isik', 'iklim', 'sahne', 'medya', 'yardimci', 'sensor', 'diger', 'onayli'], 'boş grup (PC kapat onaylıya gittiği için PC) çizilmez');
   const k = harita(model);
   assert.equal(k.get('climate.salon').grupKodu, 'iklim');
   assert.equal(k.get('fan.v').grupKodu, 'iklim');
@@ -77,6 +78,7 @@ test('panel modeli: gruplar sabit sırada, İklim ve Yardımcılar kendi gruplar
   assert.equal(k.get('input_select.ev_modu').grupKodu, 'yardimci');
   assert.equal(k.get('input_number.esik').grupKodu, 'yardimci');
   assert.equal(k.get('timer.mutfak').grupKodu, 'yardimci');
+  assert.equal(k.get('sensor.sicaklik').grupKodu, 'sensor');
   assert.equal(k.get('input_select.ev_modu').sinif, 'yikici', 'yeni yardımcı karolar varsayılan onaylı');
   assert.equal(k.get('button.pc_bilgisayari_kapat').grupKodu, 'onayli');
 });

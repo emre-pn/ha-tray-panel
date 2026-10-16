@@ -160,8 +160,37 @@ test('KAPI KURALI: kapı/pencere sınıflı ikili sensör, kapı adlı varlık, 
   assert.deepEqual(await o.okuma.takvimEtkinlikleri('sensor.sicaklik'), [], 'takvim ucu yalnız calendar alanı');
   assert.deepEqual(await o.okuma.yapilacaklar('calendar.ev'), []);
   assert.equal(o.istekler.length, 0);
-  assert.deepEqual(Object.keys(await o.okuma.gecmis(['binary_sensor.hareket'])), [], 'hareket sensörü serbest (yanıtta yok)');
+  assert.deepEqual(await o.okuma.gecmis(['binary_sensor.hareket']), { 'binary_sensor.hareket': [] }, 'hareket sensörü serbest (yanıtta yok: boş dönem)');
   assert.equal(o.istekler.length, 1);
+});
+
+test('geçmiş: boş dönem (başarılı ama kayıt yok) boş dizidir; hata ve hız sınırında anahtar hiç yoktur', async () => {
+  const o = sahteOkuma({ rest: { '/api/history/period/': gecmisYaniti } });
+  // yanıtta olmayan ama istenen (ve izinli) varlık: boş dizi; yanıttaki diğer seri yine döner
+  const sonuc = await o.okuma.gecmis(['sensor.sicaklik', 'sensor.nem'], { saat: 6 });
+  assert.deepEqual(Object.keys(sonuc).sort(), ['sensor.nem', 'sensor.sicaklik']);
+  assert.deepEqual(sonuc['sensor.nem'], []);
+  assert.ok(sonuc['sensor.sicaklik'].length > 0);
+  // hata: anahtar yok (arayüz "alınamadı" der)
+  const h = sahteOkuma({ rest: { '/api/history/period/': () => { throw Object.assign(new Error('x'), { tur: 'ag' }); } } });
+  assert.deepEqual(await h.okuma.gecmis(['sensor.sicaklik']), {});
+  // geçersiz yanıt (dizi değil) de hata sayılır
+  const g = sahteOkuma({ rest: { '/api/history/period/': { message: 'x' } } });
+  assert.deepEqual(await g.okuma.gecmis(['sensor.sicaklik']), {});
+});
+
+test('yapılacaklar: taze okuma önbelleği atlar (kullanıcı kendi değişikliğini hemen görür); hız sınırı geçerli kalır', async () => {
+  let items = [{ uid: '1', summary: 'Süt', status: 'needs_action' }];
+  const o = sahteOkuma({ wsYanit: { 'todo/item/list': () => ({ ok: true, sonuc: { items: structuredClone(items) } }) } });
+  assert.equal((await o.okuma.yapilacaklar('todo.alisveris')).length, 1);
+  items = [...items, { uid: '2', summary: 'Ekmek', status: 'needs_action' }];
+  assert.equal((await o.okuma.yapilacaklar('todo.alisveris')).length, 1, 'TTL içinde önbellekten');
+  assert.equal((await o.okuma.yapilacaklar('todo.alisveris', { taze: true })).length, 2, 'taze: önbellek atlanır');
+  assert.equal((await o.okuma.yapilacaklar('todo.alisveris')).length, 2, 'taze sonuç önbelleğe yazılır');
+  assert.equal(o.komutlar.length, 2);
+  // taze de küresel dakika sınırına takılır: sınır dolunca önbellekteki son değer döner
+  for (let i = 0; i < DAKIKA_SINIRI; i += 1) await o.okuma.yapilacaklar('todo.alisveris', { taze: true });
+  assert.ok(o.komutlar.length <= DAKIKA_SINIRI, 'dakika sınırı aşılmaz');
 });
 
 test('güncel durum depoda yoksa REST ile alınır; HA\'da adı sonradan "kapı" olan varlık okunamaz', async () => {
@@ -384,7 +413,7 @@ test('yuzeyOkumasi: tür ve kimlik doğrulanır; kayıtsız kimlik okunamaz; sı
     gecmis: async (k, s) => (cagrilar.push(['gecmis', k, s]), { ok: 1 }),
     takvimEtkinlikleri: async (k, s) => (cagrilar.push(['takvim', k, s]), []),
     havaTahmini: async (k, t) => (cagrilar.push(['hava', k, t]), []),
-    yapilacaklar: async (k) => (cagrilar.push(['yapilacak', k]), []),
+    yapilacaklar: async (k, s) => (cagrilar.push(['yapilacak', k, s]), []),
   };
   const kayitli = new Set(['sensor.sicaklik', 'calendar.ev', 'weather.ev', 'todo.alisveris']);
   const kayitliMi = (k) => kayitli.has(k);
@@ -398,10 +427,14 @@ test('yuzeyOkumasi: tür ve kimlik doğrulanır; kayıtsız kimlik okunamaz; sı
   await yuzeyOkumasi(okuma, { tur: 'takvim', kimlik: 'calendar.ev', gun: 3 }, kayitliMi);
   await yuzeyOkumasi(okuma, { tur: 'hava', kimlik: 'weather.ev', tahmin: 'evil' }, kayitliMi);
   await yuzeyOkumasi(okuma, { tur: 'yapilacak', kimlik: 'todo.alisveris' }, kayitliMi);
+  await yuzeyOkumasi(okuma, { tur: 'yapilacak', kimlik: 'todo.alisveris', taze: true }, kayitliMi);
+  await yuzeyOkumasi(okuma, { tur: 'yapilacak', kimlik: 'todo.alisveris', taze: 'evet' }, kayitliMi);
   assert.deepEqual(cagrilar, [
     ['gecmis', ['sensor.sicaklik'], { saat: 24 }],
     ['takvim', 'calendar.ev', { gun: 3 }],
     ['hava', 'weather.ev', 'daily'],
-    ['yapilacak', 'todo.alisveris'],
+    ['yapilacak', 'todo.alisveris', { taze: false }],
+    ['yapilacak', 'todo.alisveris', { taze: true }],
+    ['yapilacak', 'todo.alisveris', { taze: false }],
   ]);
 });

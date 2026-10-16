@@ -204,8 +204,10 @@ test('servis çağrısı TEK yerde (src/lib/eylem-hatti.js) yapılır; oradan ö
 
 test('eylem yalnız kullanıcı hareketinden başlar: tepsi tıklaması, panel/palet IPC, kısayol, komut satırı; açılış ve zamanlayıcı yolunda çağrı yok', () => {
   const main = oku('src/main.js');
-  const cagrilar = [...main.matchAll(/\beylem\.(\w+)\(/g)].map((m) => m[1]).sort();
+  // kayitKaynagiEkle bir eylem DEĞİL, kayıt kaynağı tanımıdır (1.4.0: ayardaki bilgi varlıkları); eylemi yine hat/izin listeleri denetler.
+  const cagrilar = [...main.matchAll(/\beylem\.(\w+)\(/g)].map((m) => m[1]).filter((ad) => ad !== 'kayitKaynagiEkle').sort();
   assert.deepEqual(cagrilar, ['komutSatirindan', 'kisayolla', 'tepsiTikla'].sort(), 'main.js yalnız bu üç giriş noktasını çağırır');
+  assert.deepEqual([...main.matchAll(/\beylem\.kayitKaynagiEkle\((.*)\);/g)].map((m) => m[1]), ['bilgiKaydi(() => ayarlar)'], 'kayıt kaynağı yalnız ayardaki bilgi varlıklarını kaydeder');
   // Üç giriş noktası da kullanıcı olayına bağlı bir kapanışın içinde: menü tıklaması, global kısayol, ikinci kopya/komut satırı.
   assert.match(main, /const tikla = \(\) => eylem\.tepsiTikla\(oge\.kimlik\);/);
   assert.match(main, /else if \(oge\.tur === 'favori'\) is = \(\) => eylem\.kisayolla\(oge\.kimlik\);/);

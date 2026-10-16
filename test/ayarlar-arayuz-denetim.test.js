@@ -513,7 +513,8 @@ test('g-10: tek Kaydet çubuğu; anahtar kaydı ayrı; bölüm bağlantıları �
   for (const hedef of baglar) assert.match(HTML, new RegExp(`id="${hedef}"`));
 
   const katlananlar = [...HTML.matchAll(/<details class="bolum" id="(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(katlananlar, ['bolumPencere', 'bolumGeriBildirim', 'bolumBaslangic', 'bolumYedek']);
+  // 1.4.0: "Bilgi kartları ve sensörler" (bolumBilgi) nadir kullanılan bir bölümdür; Geri bildirim ile Windows ile başlat arasında katlanır.
+  assert.deepEqual(katlananlar, ['bolumPencere', 'bolumGeriBildirim', 'bolumBilgi', 'bolumBaslangic', 'bolumYedek']);
 
   const liste = /\.cihaz-listesi\s*\{([^}]*)\}/.exec(HTML)[1];
   assert.doesNotMatch(liste, /overflow|max-height/, 'cihaz listesi kendi içinde kaydırılmaz');

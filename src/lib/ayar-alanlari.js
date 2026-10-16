@@ -35,7 +35,7 @@
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
 const { alanAl, adGuvenliMi, metinGuvenliMi } = require('./suzgec');
-const { kayitliAlanMi } = require('./alan-kaydi');
+const { kayitliAlanMi, karoAlaniMi } = require('./alan-kaydi');
 const { kisalt } = require('./metin');
 
 const GUNCEL_EK_SURUM = 6;
@@ -136,10 +136,44 @@ function nesneAlan(ad, { varsayilan, duzelt, tip = Array.isArray(varsayilan) ? '
 }
 
 /**
- * ŞEMA 6+ AYAR ALANLARI. Her grup kendi başlığı altına ekler (sıra önemsizdir). Şu an boştur: 1.4.0 özellik ajanları dolduracak.
+ * Panelin üst kart yuvası (o-08): 'yok' | 'saat' (saat ve tarih) | 'hava' (havaVarligi) | karo olabilen herhangi bir varlık kimliği
+ * (yalnız durumu gösterilir; karttan eylem çalıştırılmaz). Kimlik Kapı Kuralı'ndan ve alan kaydından geçmelidir.
+ */
+function kartYuvasiAlan(ad) {
+  return nesneAlan(ad, {
+    varsayilan: 'yok',
+    tip: 'metin',
+    duzelt: (ham) => {
+      if (typeof ham !== 'string') return undefined;
+      const m = ham.trim();
+      if (m === 'yok' || m === 'saat' || m === 'hava') return m;
+      if (!VARLIK_KIMLIGI_DESENI.test(m) || !karoAlaniMi(alanAl(m))) return undefined;
+      return adGuvenliMi(m, '') ? m : undefined;
+    },
+  });
+}
+
+/**
+ * ŞEMA 6+ AYAR ALANLARI. Her grup kendi başlığı altına ekler (sıra önemsizdir).
  */
 const AYAR_ALANLARI = Object.freeze([
-  // --- 1.4.0 özellik grupları satırlarını buraya ekler ---
+  // --- bilgi grubu: sensör şeridi ve grafikleri (o-04, o-09, o-11), üst kartlar (o-08), takvim (o-10), yapılacaklar (o-07) ---
+  // Hepsi varsayılan olarak KAPALI/boştur (kullanıcı seçmedikçe panelde yeni bölüm görünmez). Varlık kimlikleri Kapı Kuralı'ndan geçer;
+  // seçilen varlıklar eylem katmanına yalnız kayıtlı varlık olarak eklenir (src/lib/bilgi-modeli.js bilgiKaydi).
+  kimlikListesiAlan('sensorSeridi', { enCok: 6, alanlar: ['sensor', 'binary_sensor'] }), // panelin üstündeki sensör şeridi
+  mantiksalAlan('sensorGrafik', true), // sensör karolarında/şeritte mini grafik ve gösterge (açık panelde HA geçmişi okunur)
+  secenekAlan('sensorGrafikSaat', [1, 6, 24], 6), // mini grafiğin kapsadığı saat
+  tamsayiAlan('pilEsigi', 5, 50, 20), // bu yüzdenin altındaki pil sensörü "dikkat" olarak vurgulanır
+  mantiksalAlan('sensorTepsiIpucu', false), // dikkat gerektiren sensörler tepsi ipucunda da yazılır
+  kartYuvasiAlan('ustKart1'),
+  kartYuvasiAlan('ustKart2'),
+  kimlikAlan('havaVarligi', { alanlar: ['weather'] }), // 'hava' yuvasının kaynağı
+  secenekAlan('saatBicimi', ['sistem', '24', '12'], 'sistem'), // sistem: Windows bölge ayarı
+  secenekAlan('tarihBicimi', ['orta', 'kisa', 'uzun', 'yok'], 'orta'),
+  kimlikListesiAlan('takvimler', { enCok: 4, alanlar: ['calendar'] }), // yaklaşan etkinlikler (salt okunur)
+  tamsayiAlan('takvimGunSayisi', 1, 14, 3), // bugünden kaç gün ileriye bakılır
+  kimlikListesiAlan('yapilacakListeleri', { enCok: 4, alanlar: ['todo'] }), // panelde görünen yapılacaklar listeleri
+  kimlikAlan('hizliListe', { alanlar: ['todo'] }), // palette "liste süt" ile eklenen liste ('' : ilk liste)
 ]);
 
 /**

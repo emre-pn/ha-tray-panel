@@ -39,6 +39,7 @@ const GRUPLAR = Object.freeze([
   { kod: 'pc', etiket: 'PC' },
   { kod: 'medya', etiket: 'Medya' },
   { kod: 'yardimci', etiket: 'Yardımcılar' }, // 1.4.0: seçici, sayı, zamanlayıcı
+  { kod: 'sensor', etiket: 'Sensör' }, // 1.4.0: sensör ve ikili sensör karoları (salt okunur; src/yuzey-bilgi.js çizer)
   { kod: 'diger', etiket: 'Diğer' },
 ]);
 
@@ -85,6 +86,8 @@ const ALAN_GRUPLARI = Object.freeze({
   input_number: 'yardimci',
   number: 'yardimci',
   timer: 'yardimci',
+  sensor: 'sensor', // salt okunur; panelde şerit ve karo olarak src/yuzey-bilgi.js çizer
+  binary_sensor: 'sensor',
 });
 
 /** Kimliğin panel grubu: hazır listedeki açık tablo, yoksa alan varsayılanı (ALAN_GRUPLARI; gerisi diger). */

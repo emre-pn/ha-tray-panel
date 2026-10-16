@@ -60,6 +60,7 @@
     ['grup.pc', 'PC', 'PC'],
     ['grup.medya', 'Medya', 'Media'],
     ['grup.yardimci', 'Yardımcılar', 'Helpers'],
+    ['grup.sensor', 'Sensör', 'Sensors'],
     ['grup.diger', 'Diğer', 'Other'],
     ['grup.onayli', 'Onaylı', 'Needs confirmation'],
 
@@ -93,6 +94,8 @@
     ['tepsi.isikAcik', '{n} ışık açık', '{n} lights on'],
     ['tepsi.isikAcik.bir', '{n} ışık açık', '{n} light on'],
     ['tepsi.sonBilinen', '(son bilinen)', '(last known)'],
+    ['tepsi.sensorUyari', '{n} sensör uyarısı', '{n} sensor alerts'],
+    ['tepsi.sensorUyari.bir', '{n} sensör uyarısı', '{n} sensor alert'],
     ['menu.anahtarEkle', 'Favoriler için ayarlardan erişim anahtarı ekle', 'Add an access token in Settings for favorites'],
     ['menu.durumAlinamadi', 'Durum alınamadı: {hata}', 'Could not get the status: {hata}'],
     ['menu.favoriYok', 'Henüz favori yok — Ayarlar’dan seçin…', 'No favorites yet — choose some in Settings…'],

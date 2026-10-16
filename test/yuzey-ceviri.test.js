@@ -24,7 +24,8 @@ const SAYFALAR = [
   ['src/offline.html', 'src/offline.js'],
 ];
 // Sayfa betiğinin yanında sözlük kullanan yardımcı renderer betikleri (1.4.0 cihaz kartları; yuzey.html bunları yükler).
-const EK_BETIKLER = ['src/yuzey-kartlar.js'];
+// yuzey-bilgi.js: hızlı panelin bilgi bölümleri (sensörler, yapılacaklar, takvim, grafik).
+const EK_BETIKLER = ['src/yuzey-kartlar.js', 'src/yuzey-bilgi.js'];
 
 // --- sözlük ve sayfa yapısı -------------------------------------------------------------------------------
 

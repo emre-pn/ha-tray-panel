@@ -175,6 +175,9 @@ function tusOlayi(alanlar) {
 const ALAN_ADLARI = [
   'yerelAdres', 'disAdres', 'otomatikBaslat', 'pencereBoyutu', 'odakKaybindaGizle', 'koseBildirimi', 'bipSesi',
   'yeniPencereMalzemesi', 'temaZorla', 'vurguRengi', 'tepsiSolTik', 'canliBaglanti', 'kisayol', 'paletKisayol',
+  // 1.4.0 bilgi grubu (src/lib/ayar-alanlari.js): sahte ana süreç yükteki değeri olduğu gibi saklar (doğrulama ana süreçte ve kendi testinde)
+  'sensorSeridi', 'sensorGrafik', 'sensorGrafikSaat', 'pilEsigi', 'sensorTepsiIpucu', 'ustKart1', 'ustKart2', 'havaVarligi',
+  'saatBicimi', 'tarihBicimi', 'takvimler', 'takvimGunSayisi', 'yapilacakListeleri', 'hizliListe',
 ];
 
 /** HTML'deki data-i18n / data-i18n-attr işaretli öğeler (kimliği olmayanlar dahil); sayfayiCevir bunları querySelectorAll ile bulur. */
