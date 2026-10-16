@@ -140,6 +140,11 @@ function nesneAlan(ad, { varsayilan, duzelt, tip = Array.isArray(varsayilan) ? '
  */
 const AYAR_ALANLARI = Object.freeze([
   // --- 1.4.0 özellik grupları satırlarını buraya ekler ---
+
+  // --- arac grubu ---
+  // o-40 Yeni sürüm denetimi: günde en çok bir kez GitHub sürüm adresine anahtarsız GET (IP'n GitHub'a görünür). VARSAYILAN KAPALI, açık rıza ile.
+  // aktarilir:false -> dışa/içe aktarmaya girmez: başkasından alınan bir dosya bu dış ağ seçeneğini kendiliğinden açamaz.
+  mantiksalAlan('surumDenetimi', false, { aktarilir: false }),
 ]);
 
 /**

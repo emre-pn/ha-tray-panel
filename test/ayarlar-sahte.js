@@ -175,6 +175,7 @@ function tusOlayi(alanlar) {
 const ALAN_ADLARI = [
   'yerelAdres', 'disAdres', 'otomatikBaslat', 'pencereBoyutu', 'odakKaybindaGizle', 'koseBildirimi', 'bipSesi',
   'yeniPencereMalzemesi', 'temaZorla', 'vurguRengi', 'tepsiSolTik', 'canliBaglanti', 'kisayol', 'paletKisayol',
+  'surumDenetimi',
 ];
 
 /** HTML'deki data-i18n / data-i18n-attr işaretli öğeler (kimliği olmayanlar dahil); sayfayiCevir bunları querySelectorAll ile bulur. */
@@ -195,6 +196,8 @@ function ceviriOgeleriniKur(ogeler, durum) {
   return sonuc;
 }
 
+const ORNEK_RAPOR = ['Ev Paneli / Home Panel diagnostics report', 'App version: 1.3.0 (installed build)', 'Home address: private IP, http', ''].join('\n');
+
 function sayfayiKur({
   ayar,
   cihazlar,
@@ -208,6 +211,7 @@ function sayfayiKur({
   yedekler = [],
   aktarimYaniti = null,
   yedektenDonYaniti = null,
+  aracYaniti = null, // arac grubu (o-40, o-41, o-44) köprü yanıtları: { surumDurumu, surumuDenetle, yenilikleriGetir, tanilamaGetir, tanilamaKopyala, gunlukKlasoruAc, odalariGetir } (işlev ya da nesne)
   depo = null,
   dilOlayi = true,
 }) {
@@ -229,6 +233,7 @@ function sayfayiKur({
   const belgeDinleyicileri = {};
   const pencereDinleyicileri = {};
   let favoriDegistiGeriCagrisi = null;
+  let bolumAcGeriCagrisi = null;
   let kapatmaSayisi = 0;
   let getirSayisi = 0;
   const yerelDepo = new Map(Object.entries(depo ?? {}));
@@ -271,6 +276,8 @@ function sayfayiKur({
         if (kisayol) f.kisayol = kisayol;
         const parlaklik = typeof g.parlaklik === 'boolean' ? g.parlaklik : eski?.parlaklik;
         if (parlaklik) f.parlaklik = parlaklik;
+        const kisayolEylemi = 'kisayolEylemi' in g ? g.kisayolEylemi : eski?.kisayolEylemi;
+        if (kisayolEylemi && f.kisayol) f.kisayolEylemi = kisayolEylemi;
         return f;
       });
   }
@@ -352,6 +359,61 @@ function sayfayiKur({
       const yanit = yedektenDonYaniti ?? { ok: true, ad, alanSayisi: 10, favoriSayisi: 2, atilanSayisi: 0, notlar: [], uyarilar: [] };
       if (yanit.ok && aktarimYaniti?.icesonrasi) aktarimYaniti.icesonrasi(sunucu);
       return yanit;
+    },
+    // arac grubu (o-40): açılışta çağrılan okumalar `cagrilar`a yazılmaz (mevcut testlerin tam çağrı listeleri bozulmasın); kullanıcı eylemleri yazılır.
+    surumDurumu: async () => {
+      const y = aracYaniti?.surumDurumu;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, surum: '1.3.0', acik: sunucu.surumDenetimi === true, sonDenetim: null, yeniSurum: null };
+    },
+    surumuDenetle: async () => {
+      cagrilar.push(['surumuDenetle']);
+      const y = aracYaniti?.surumuDenetle;
+      if (typeof y === 'function') return y(sunucu);
+      if (y) return y;
+      return sunucu.surumDenetimi === true ? { ok: true, sonuc: 'guncel', surum: '1.3.0' } : { ok: true, sonuc: 'kapali' };
+    },
+    yenilikleriGetir: async () => {
+      const y = aracYaniti?.yenilikleriGetir;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, surum: '1.3.0', bulundu: true, baslik: '1.3.0 — 2026-10-16', metin: 'First public release.\n\n• Interface language.' };
+    },
+    surumSayfasiniAc: async () => {
+      cagrilar.push(['surumSayfasiniAc']);
+      return { ok: true };
+    },
+    // arac grubu (o-41): tanılama raporu ve günlük klasörü; kullanıcı eylemleri `cagrilar`a yazılır
+    tanilamaGetir: async () => {
+      cagrilar.push(['tanilamaGetir']);
+      const y = aracYaniti?.tanilamaGetir;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, metin: ORNEK_RAPOR, gunlukSatiri: 3 };
+    },
+    tanilamaKopyala: async () => {
+      cagrilar.push(['tanilamaKopyala']);
+      const y = aracYaniti?.tanilamaKopyala;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, metin: ORNEK_RAPOR, gunlukSatiri: 3 };
+    },
+    gunlukKlasoruAc: async () => {
+      cagrilar.push(['gunlukKlasoruAc']);
+      const y = aracYaniti?.gunlukKlasoruAc;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true };
+    },
+    // arac grubu (o-44): odalar ve önerilen cihazlar (yalnız okur); varsayılan yanıt: Salon (yüklü cihazlar) ve Mutfak (cihazı yüklü listede yok)
+    odalariGetir: async () => {
+      cagrilar.push(['odalariGetir']);
+      const y = aracYaniti?.odalariGetir;
+      if (typeof y === 'function') return y(sunucu);
+      if (y) return y;
+      return {
+        ok: true,
+        alanSayisi: 2,
+        odalar: [
+          { id: 'salon', ad: 'Salon', toplam: 2, cihazlar: [{ entity_id: 'light.salon_lambasi', ad: 'Salon Lambası', alan: 'light' }, { entity_id: 'scene.film', ad: 'Film', alan: 'scene' }] },
+          { id: 'mutfak', ad: 'Mutfak', toplam: 1, cihazlar: [{ entity_id: 'light.mutfak_lambasi', ad: 'Mutfak Lambası', alan: 'light' }] }, // yüklü cihaz listesinde YOK
+        ],
+      };
+    },
+    onBolumAc: (geriCagri) => {
+      bolumAcGeriCagrisi = geriCagri;
+      return () => {};
     },
     onFavorilerDegisti: (geriCagri) => {
       favoriDegistiGeriCagrisi = geriCagri;
@@ -464,6 +526,12 @@ function sayfayiKur({
       const olay = { type: tip, onlendi: false, returnValue: undefined, preventDefault() { olay.onlendi = true; }, ...alanlar };
       for (const isleyici of pencereDinleyicileri[tip] ?? []) isleyici(olay);
       return olay;
+    },
+    /** Ana süreç 'ayarlar:bolum-ac' gönderdi (tepsi "Yenilikler" gibi). */
+    bolumIste: async (bolum) => {
+      assert.ok(bolumAcGeriCagrisi, 'onBolumAc kaydedilmemiş');
+      bolumAcGeriCagrisi({ bolum });
+      await akit();
     },
     favoriDegisti: async () => {
       assert.ok(favoriDegistiGeriCagrisi, 'onFavorilerDegisti kaydedilmemiş');

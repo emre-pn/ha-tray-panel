@@ -57,6 +57,27 @@ if (location.protocol === 'file:') {
       ipcRenderer.on('dil:degisti', dinleyici);
       return () => ipcRenderer.removeListener('dil:degisti', dinleyici);
     },
+    // Sürüm ve yenilikler (o-40): kayıtlı bilgi (ağa çıkmaz), elle denetim (seçenek kapalıyken ağa ÇIKMAZ), paketli sürüm notları ve
+    // sürüm sayfasını varsayılan tarayıcıda açma (kullanıcı düğmesi). Adres/yol renderer'dan gitmez; ana süreç sabit adresi açar.
+    surumDurumu: () => ipcRenderer.invoke('surum:durum'),
+    surumuDenetle: () => ipcRenderer.invoke('surum:denetle'),
+    yenilikleriGetir: () => ipcRenderer.invoke('surum:yenilikler'),
+    surumSayfasiniAc: () => ipcRenderer.invoke('surum:sayfa-ac'),
+    // Tanılama raporu (o-41): rapor metni ana süreçte kurulur (anahtar yok, adres yalnız sınıf olarak, günlük satırları maskeli). tanilamaGetir
+    // yalnız önizleme verir; tanilamaKopyala aynı metni panoya yazar ve geri verir. Günlük klasörünü ana süreç açar (yol arayüze verilmez).
+    tanilamaGetir: () => ipcRenderer.invoke('tanilama:getir'),
+    tanilamaKopyala: () => ipcRenderer.invoke('tanilama:kopyala'),
+    gunlukKlasoruAc: () => ipcRenderer.invoke('gunluk:klasor-ac'),
+    // Odadan ilk kurulum (o-44): HA'daki odalar ve her odanın önerilen güvenli cihazları (yalnız okur; canlı bağlantı gerekir). Öneriyi favori
+    // seçimine eklemek ve kaydetmek sayfanın ve kullanıcının işidir (favorileriKaydet); bu çağrı hiçbir şey yazmaz.
+    odalariGetir: () => ipcRenderer.invoke('odalar:getir'),
+    // Ana süreç belirli bir Ayarlar bölümünün açılmasını ister (tepsi "Yenilikler"): yük { bolum: 'bolumSurum' | 'bolumAraclar' }.
+    onBolumAc: (callback) => {
+      if (typeof callback !== 'function') return () => {};
+      const dinleyici = (_olay, yuk) => callback(yuk);
+      ipcRenderer.on('ayarlar:bolum-ac', dinleyici);
+      return () => ipcRenderer.removeListener('ayarlar:bolum-ac', dinleyici);
+    },
     // Favori listesi ana süreçte değişti (hazır karoların yeniden denemesi, h-27): Ayarlar listeyi tazeler.
     onFavorilerDegisti: (callback) => {
       if (typeof callback !== 'function') return () => {};

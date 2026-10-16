@@ -18,6 +18,7 @@
 
   const Kisayol = window.EvKisayol || null;
   const Arama = window.EvArama || null;
+  const AyarArama = window.EvAyarArama || null;
   const Dil = window.EvDil || null;
   const SozlukAyarlar = window.EvCeviriAyarlar || null;
   const SozlukAna = window.EvCeviriAna || null;
@@ -59,11 +60,13 @@
   const kayitliKisayol = new Map();
   const kayitliParlaklik = new Map();
   const kayitliEtiket = new Map();
+  const kayitliKisayolEylemi = new Map(); // kısayola basınca kesin yön (o-13): 'ac', 'kapat', 'parlak+10', 'hiz-20'...
   // Bu oturumda kullanıcının DEĞİŞTİRDİĞİ değerler (kayıtlı değere eşitse silinir: geri alınan düzenleme "kirli" sayılmaz)
   const onayDegisiklikleri = new Map();
   const kisayolDegisiklikleri = new Map();
   const parlaklikDegisiklikleri = new Map();
   const etiketDegisiklikleri = new Map();
+  const kisayolEylemiDegisiklikleri = new Map();
   const kisayolHatali = new Set(); // sunucunun reddettiği favori kısayolları / karo adları (satır işaretli kalır)
   const etiketHatali = new Set();
   let varsayilanKisayolMetni = 'Control+Alt+H';
@@ -164,11 +167,36 @@
   const secilenSayisi = $('secilenSayisi');
   const btnDahaFazla = $('btnDahaFazla');
   const ayarDosyasiYolu = $('ayarDosyasiYolu');
+  const ayarAra = $('ayarAra');
+  const ayarAramaDurum = $('ayarAramaDurum');
+  const btnAyarAraTemizle = $('btnAyarAraTemizle');
 
   const btnDisaAktar = $('btnDisaAktar');
   const btnIceAktar = $('btnIceAktar');
   const yedekListesi = $('yedekListesi');
   const yedekDurum = $('yedekDurum');
+
+  // Sürüm ve yenilikler (o-40)
+  const surumDenetimi = $('surumDenetimi');
+  const surumCalisan = $('surumCalisan');
+  const surumDurum = $('surumDurum');
+  const btnSurumDenetle = $('btnSurumDenetle');
+  const btnSurumSayfasi = $('btnSurumSayfasi');
+  const yenilikMetni = $('yenilikMetni');
+
+  // Odadan başla (o-44)
+  const btnOdalariGetir = $('btnOdalariGetir');
+  const odaSec = $('odaSec');
+  const odaDurum = $('odaDurum');
+  const odaOnizleme = $('odaOnizleme');
+  const btnOdaEkle = $('btnOdaEkle');
+
+  // Tanılama ve günlük (o-41)
+  const tanilamaMetni = $('tanilamaMetni');
+  const tanilamaDurum = $('tanilamaDurum');
+  const btnTanilamaGoster = $('btnTanilamaGoster');
+  const btnTanilamaKopyala = $('btnTanilamaKopyala');
+  const btnGunlukAc = $('btnGunlukAc');
 
   // Yetki kesici (1.1.1) durumları: Home Assistant'a istek gitmiyor; kullanıcı "Yeniden dene" (TEK yeni deneme) ya da yeni anahtar seçer.
   // Değerler sözlük anahtarlarıdır (lib/ceviri/ayarlar.js); metin yazılırken t ile çözülür.
@@ -424,6 +452,7 @@
       yeniPencereMalzemesi: yeniPencereMalzemesi.value,
       temaZorla: temaZorla.value,
       vurguRengi: vurguRengi.value.trim().toLowerCase(),
+      surumDenetimi: surumDenetimi.checked,
       panolar: panoYuku(),
     };
   }
@@ -447,6 +476,7 @@
       yeniPencereMalzemesi: ['acrylic', 'mica', 'yok'].indexOf(sonuc.yeniPencereMalzemesi) >= 0 ? sonuc.yeniPencereMalzemesi : 'acrylic',
       temaZorla: sonuc.temaZorla === 'sistem' ? 'sistem' : 'koyu',
       vurguRengi: (typeof sonuc.vurguRengi === 'string' ? sonuc.vurguRengi : '').toLowerCase(),
+      surumDenetimi: sonuc.surumDenetimi === true,
       panolar: (Array.isArray(sonuc.panolar) ? sonuc.panolar : []).map(function (p) {
         return { ad: String(p.ad || '').trim(), yol: String(p.yol || '').trim(), kisayol: kisNorm(p.kisayol) };
       }),
@@ -456,7 +486,7 @@
   function favoriKirli() {
     if (seciliSira.length !== kayitliSira.length) return true;
     if (seciliSira.some(function (kimlik, i) { return kimlik !== kayitliSira[i]; })) return true;
-    return [onayDegisiklikleri, kisayolDegisiklikleri, parlaklikDegisiklikleri, etiketDegisiklikleri].some(function (harita) {
+    return [onayDegisiklikleri, kisayolDegisiklikleri, parlaklikDegisiklikleri, etiketDegisiklikleri, kisayolEylemiDegisiklikleri].some(function (harita) {
       return Array.from(harita.keys()).some(function (kimlik) { return seciliSira.indexOf(kimlik) >= 0; });
     });
   }
@@ -479,6 +509,33 @@
   function degisiklikAyarla(harita, kimlik, deger, temel) {
     if (deger === temel) harita.delete(kimlik);
     else harita.set(kimlik, deger);
+  }
+
+  // --- Ayarlarda arama (o-26) ----------------------------------------------------------------------------------------------
+  // Süzme mantığı lib/ayar-arama.js'tedir (sayfadaki .bolum ve .form-grubu öğelerini sınıfla gizler); burada yalnız kutu, durum satırı ve
+  // klavye bağlanır. Arama sayfadaki GÖRÜNEN metne bakar: dil değişince ya da metinler yeniden yazılınca aynı sorgu yeniden uygulanır.
+  let ayarAramasi = null; // ilk yazışta kurulur
+  let aramaSonucu = null; // son sonuç: { aktif, bolumSayisi, ilk }
+
+  function aramaDurumunuYaz() {
+    if (!aramaSonucu || !aramaSonucu.aktif) {
+      ayarAramaDurum.textContent = '';
+      return;
+    }
+    ayarAramaDurum.textContent = aramaSonucu.bolumSayisi === 0 ? t('ayar.ara.yok') : cogul('ayar.ara.sonuc', aramaSonucu.bolumSayisi);
+  }
+
+  function ayarAramasiniUygula() {
+    if (!AyarArama || !Arama || typeof document.querySelectorAll !== 'function') return;
+    if (!ayarAramasi) ayarAramasi = AyarArama.olustur({ belge: document, katla: Arama.katlaDizi });
+    aramaSonucu = ayarAramasi.uygula(ayarAra.value);
+    btnAyarAraTemizle.style.display = aramaSonucu.aktif ? 'inline-flex' : 'none';
+    aramaDurumunuYaz();
+  }
+
+  function ayarAramasiniTemizle() {
+    ayarAra.value = '';
+    ayarAramasiniUygula();
   }
 
   // --- Kurulum listesi (k-03) ----------------------------------------------------------------------------------------------
@@ -510,7 +567,7 @@
   // Windows başlangıç durumu: kapatılmışsa uyarı + "Yeniden etkinleştir" düğmesi.
   function otomatikBaslatDurumunuGoster(durum) {
     const mesajlar = [];
-    if (durum && ['windows-kapatmis', 'kayit-yok', 'belirsiz', 'gelistirme'].indexOf(durum.durum) >= 0) {
+    if (durum && ['windows-kapatmis', 'kayit-yok', 'belirsiz', 'gelistirme', 'tasinabilir'].indexOf(durum.durum) >= 0) {
       mesajlar.push(durum.mesaj);
     }
     uyariKutusuDoldur(otomatikBaslatDurum, mesajlar);
@@ -606,10 +663,12 @@
     canliBaglanti.checked = d.canliBaglanti;
     canliDurumMetni.textContent = canliDurumAciklamasi(d.canliBaglanti, sonuc.canliDurum);
     otomatikBaslat.checked = d.otomatikBaslat;
+    otomatikBaslat.disabled = !!sonuc.otomatikBaslatDurumu && sonuc.otomatikBaslatDurumu.durum === 'tasinabilir'; // taşınabilir sürümde Windows ile başlatma yok (o-45)
     pencereBoyutu.value = d.pencereBoyutu;
     odakKaybindaGizle.checked = d.odakKaybindaGizle;
     koseBildirimi.checked = d.koseBildirimi;
     bipSesi.checked = d.bipSesi;
+    surumDenetimi.checked = d.surumDenetimi;
     yeniPencereMalzemesi.value = d.yeniPencereMalzemesi;
     temaZorla.value = d.temaZorla;
     uyariKutusuDoldur(malzemeUyari, sonuc.malzemeDestekleniyor === false ? [t('ayar.malzeme.desteklenmiyor')] : []);
@@ -964,6 +1023,10 @@
         eksikFavoriler = [];
         engelliFavoriler = [];
         cihazHaritasi.clear();
+        odalar = [];
+        odaSonucu = null;
+        odaListesiniCiz();
+        odaDurumunuYaz();
         guncelleSecilenSayisi();
         siraCiz();
         listeMesaji('ayar.anahtar.silindiListe', false);
@@ -1001,12 +1064,14 @@
     kayitliKisayol.clear();
     kayitliParlaklik.clear();
     kayitliEtiket.clear();
+    kayitliKisayolEylemi.clear();
     favoriler.forEach(function (f) {
       adHaritasi.set(f.entity_id, f.ad || f.entity_id);
       if (typeof f.onay === 'boolean') kayitliOnay.set(f.entity_id, f.onay);
       if (typeof f.kisayol === 'string' && f.kisayol) kayitliKisayol.set(f.entity_id, f.kisayol);
       if (f.parlaklik === true) kayitliParlaklik.set(f.entity_id, true);
       if (typeof f.etiket === 'string' && f.etiket) kayitliEtiket.set(f.entity_id, f.etiket);
+      if (typeof f.kisayolEylemi === 'string' && f.kisayolEylemi) kayitliKisayolEylemi.set(f.entity_id, f.kisayolEylemi);
     });
     kayitliSira = favoriler.map(function (f) { return f.entity_id; });
     if (birlestir && !temizdi) {
@@ -1019,6 +1084,7 @@
       kisayolDegisiklikleri.clear();
       parlaklikDegisiklikleri.clear();
       etiketDegisiklikleri.clear();
+      kisayolEylemiDegisiklikleri.clear();
       kisayolHatali.clear();
       etiketHatali.clear();
     }
@@ -1047,6 +1113,22 @@
   function etkinParlaklik(kimlik) {
     if (parlaklikDegisiklikleri.has(kimlik)) return parlaklikDegisiklikleri.get(kimlik);
     return kayitliParlaklik.get(kimlik) === true;
+  }
+
+  function etkinKisayolEylemi(kimlik) {
+    if (kisayolEylemiDegisiklikleri.has(kimlik)) return kisayolEylemiDegisiklikleri.get(kimlik);
+    return kayitliKisayolEylemi.get(kimlik) || '';
+  }
+
+  // Kısayol eylemi seçeneğinin görünen adı: 'ac' -> "Aç", 'parlak+10' -> "Parlaklık +%10", 'hiz-20' -> "Hız −%20"; boş değer varsayılan aç-kapadır.
+  function kisayolEylemiAdi(deger) {
+    if (deger === 'ac') return t('ayar.cihaz.eylem.ac');
+    if (deger === 'kapat') return t('ayar.cihaz.eylem.kapat');
+    const e = /^(parlak|hiz)([+-])(\d{1,3})$/.exec(deger);
+    if (!e) return t('ayar.cihaz.eylem.varsayilan');
+    const artis = e[2] === '+';
+    if (e[1] === 'parlak') return artis ? t('ayar.cihaz.eylem.parlakArti', { n: e[3] }) : t('ayar.cihaz.eylem.parlakEksi', { n: e[3] });
+    return artis ? t('ayar.cihaz.eylem.hizArti', { n: e[3] }) : t('ayar.cihaz.eylem.hizEksi', { n: e[3] });
   }
 
   function etkinEtiket(kimlik) {
@@ -1228,6 +1310,8 @@
     let kisayolGirdisi = null;
     let etiketGirdisi = null;
     let parlaklikCb = null;
+    let eylemSecici = null;
+    let eylemSeciciniGuncelle = null;
     if (s.cihaz) {
       const ek = el('div', 'cihaz-ek');
       if (s.cihaz.kisayolUygun === true) {
@@ -1243,6 +1327,41 @@
         kisayolGirdisi.setAttribute('aria-label', t('ayar.cihaz.kisayolEtiket', { ad: s.ad }));
         etiket.appendChild(kisayolGirdisi);
         ek.appendChild(etiket);
+      }
+      // Kısayol eylemi (o-13): kapalı listeden; boş = varlığın kendi aç-kapa eylemi. Yalnız kısayol varken seçilir; parlaklık adımları
+      // yalnız "Parlaklık ayarı" açıkken.
+      if (kisayolGirdisi && Array.isArray(s.cihaz.kisayolEylemleri) && s.cihaz.kisayolEylemleri.length > 0) {
+        const eylemEtiket = el('label', 'onay-etiket');
+        eylemEtiket.title = t('ayar.cihaz.kisayolEylemiIpucu');
+        eylemEtiket.appendChild(el('span', '', t('ayar.cihaz.kisayolEylemi')));
+        eylemSecici = document.createElement('select');
+        eylemSecici.className = 'kisayol-eylemi';
+        eylemSecici.setAttribute('aria-label', t('ayar.cihaz.kisayolEylemiEtiket', { ad: s.ad }));
+        const eylemSecenekleri = [''].concat(s.cihaz.kisayolEylemleri);
+        eylemSecenekleri.forEach(function (deger) {
+          const secenek = document.createElement('option');
+          secenek.value = deger;
+          secenek.textContent = kisayolEylemiAdi(deger);
+          eylemSecici.appendChild(secenek);
+        });
+        eylemSecici.value = etkinKisayolEylemi(s.kimlik);
+        eylemSeciciniGuncelle = function (parlaklikDegisti) {
+          const parlaklikAcik = parlaklikCb ? parlaklikCb.checked : false;
+          Array.prototype.slice.call(eylemSecici.children).forEach(function (secenek) { // children bir HTMLCollection'dır (forEach yok)
+            secenek.disabled = secenek.value.indexOf('parlak') === 0 && !parlaklikAcik;
+          });
+          eylemSecici.disabled = !cb.checked || kisNorm(kisayolGirdisi.value) === '';
+          if (parlaklikDegisti === true && !parlaklikAcik && eylemSecici.value.indexOf('parlak') === 0) {
+            eylemSecici.value = ''; // parlaklık ayarı kapandı: parlaklık adımı artık geçerli değil
+            degisiklikAyarla(kisayolEylemiDegisiklikleri, s.kimlik, '', kayitliKisayolEylemi.get(s.kimlik) || '');
+          }
+        };
+        eylemSecici.addEventListener('change', function () {
+          degisiklikAyarla(kisayolEylemiDegisiklikleri, s.kimlik, eylemSecici.value, kayitliKisayolEylemi.get(s.kimlik) || '');
+          kirliGuncelle();
+        });
+        eylemEtiket.appendChild(eylemSecici);
+        ek.appendChild(eylemEtiket);
       }
       const etiketKutusu = el('label', 'onay-etiket');
       etiketKutusu.appendChild(el('span', '', t('ayar.cihaz.karoAdi')));
@@ -1275,6 +1394,7 @@
         etiket.appendChild(el('span', '', t('ayar.cihaz.parlaklik')));
         parlaklikCb.addEventListener('change', function () {
           degisiklikAyarla(parlaklikDegisiklikleri, s.kimlik, parlaklikCb.checked, kayitliParlaklik.get(s.kimlik) === true);
+          if (eylemSeciciniGuncelle) eylemSeciciniGuncelle(true);
           kirliGuncelle();
         });
         ek.appendChild(etiket);
@@ -1291,6 +1411,7 @@
           degisti: function () {
             kisayolHatali.delete(s.kimlik);
             degisiklikAyarla(kisayolDegisiklikleri, s.kimlik, kisNorm(kisayolGirdisi.value), kisNorm(kayitliKisayol.get(s.kimlik) || ''));
+            if (eylemSeciciniGuncelle) eylemSeciciniGuncelle();
             kirliGuncelle();
           },
         });
@@ -1300,6 +1421,7 @@
         ileti.appendChild(el('div', '', t('ayar.cihaz.karoAdiEngelli')));
       }
       ek.appendChild(ileti);
+      if (eylemSeciciniGuncelle) eylemSeciciniGuncelle();
       if (ek.children.length > 0) {
         ek.addEventListener('click', function (e) {
           e.stopPropagation(); // satırın seç/bırak tıklaması buraya taşmasın
@@ -1316,6 +1438,7 @@
       if (kisayolGirdisi) kisayolGirdisi.disabled = !cb.checked;
       if (etiketGirdisi) etiketGirdisi.disabled = !cb.checked;
       if (parlaklikCb) parlaklikCb.disabled = !cb.checked;
+      if (eylemSeciciniGuncelle) eylemSeciciniGuncelle();
       guncelleSecilenSayisi();
       siraCiz();
       kirliGuncelle();
@@ -1443,6 +1566,7 @@
       if (kisayolDegisiklikleri.has(kimlik)) girdi.kisayol = kisayolDegisiklikleri.get(kimlik);
       if (parlaklikDegisiklikleri.has(kimlik)) girdi.parlaklik = parlaklikDegisiklikleri.get(kimlik);
       if (etiketDegisiklikleri.has(kimlik)) girdi.etiket = etiketDegisiklikleri.get(kimlik);
+      if (kisayolEylemiDegisiklikleri.has(kimlik)) girdi.kisayolEylemi = kisayolEylemiDegisiklikleri.get(kimlik);
       return girdi;
     });
   }
@@ -1459,6 +1583,285 @@
     kurulumGuncelle();
     kirliGuncelle();
     return true;
+  }
+
+  // --- Sürüm ve yenilikler (o-40) ------------------------------------------------------------------------------------------
+  // Denetim ana süreçte yapılır (seçenek kapalıyken ağa çıkılmaz); sayfa yalnız sonucu yazar. Notlar uygulamayla paketlenen CHANGELOG.md'dendir.
+  // Sonuç metinleri durumdan türetilir (dil değişince yeniden yazılır).
+  let surumKaydi = null; // { surum, acik, yeniSurum }
+  let surumSonucu = null; // { tur: 'denetleniyor' | 'kapali' | 'guncel' | 'yeni' | 'cok-sik' | 'hata', surum }
+  let yenilikKaydi = null; // { bulundu, baslik, metin }
+
+  function surumDurumunuYaz() {
+    surumCalisan.textContent = surumKaydi && surumKaydi.surum ? t('ayar.surum.calisan', { surum: surumKaydi.surum }) : '';
+    const s = surumSonucu;
+    let metin = '';
+    if (s && s.tur === 'denetleniyor') metin = t('ayar.surum.denetleniyor');
+    else if (s && s.tur === 'kapali') metin = t('ayar.surum.denetimKapali');
+    else if (s && s.tur === 'guncel') metin = t('ayar.surum.guncel', { surum: s.surum });
+    else if (s && s.tur === 'yeni') metin = t('ayar.surum.yeni', { surum: s.surum });
+    else if (s && s.tur === 'cok-sik') metin = t('ayar.surum.cokSik');
+    else if (s) metin = t('ayar.surum.hata');
+    else if (surumKaydi && surumKaydi.yeniSurum) metin = t('ayar.surum.yeni', { surum: surumKaydi.yeniSurum });
+    surumDurum.textContent = metin;
+  }
+
+  function yenilikleriYaz() {
+    const notlarVar = yenilikKaydi && yenilikKaydi.bulundu && yenilikKaydi.metin;
+    yenilikMetni.textContent = notlarVar ? yenilikKaydi.baslik + '\n\n' + yenilikKaydi.metin : t('ayar.surum.yenilikYok');
+  }
+
+  async function surumBolumunuYukle() {
+    if (typeof window.evPaneli.surumDurumu === 'function') {
+      try {
+        const yanit = await window.evPaneli.surumDurumu();
+        surumKaydi = yanit && yanit.ok ? yanit : null;
+      } catch {
+        surumKaydi = null;
+      }
+    }
+    if (typeof window.evPaneli.yenilikleriGetir === 'function') {
+      try {
+        const yanit = await window.evPaneli.yenilikleriGetir();
+        yenilikKaydi = yanit && yanit.ok ? yanit : null;
+      } catch {
+        yenilikKaydi = null;
+      }
+    }
+    surumDurumunuYaz();
+    yenilikleriYaz();
+  }
+
+  async function surumuDenetle() {
+    if (typeof window.evPaneli.surumuDenetle !== 'function') return;
+    btnSurumDenetle.disabled = true;
+    surumSonucu = { tur: 'denetleniyor' };
+    surumDurumunuYaz();
+    try {
+      const yanit = await window.evPaneli.surumuDenetle();
+      const tur = yanit && yanit.ok ? yanit.sonuc : 'hata';
+      surumSonucu = { tur: ['kapali', 'guncel', 'yeni', 'cok-sik'].indexOf(tur) >= 0 ? tur : 'hata', surum: yanit && typeof yanit.surum === 'string' ? yanit.surum : '' };
+      if (surumSonucu.tur === 'guncel') surumSonucu.surum = surumKaydi && surumKaydi.surum ? surumKaydi.surum : surumSonucu.surum;
+    } catch {
+      surumSonucu = { tur: 'hata' };
+    } finally {
+      btnSurumDenetle.disabled = false;
+    }
+    surumDurumunuYaz();
+  }
+
+  async function surumSayfasiniAc() {
+    if (typeof window.evPaneli.surumSayfasiniAc !== 'function') return;
+    try {
+      await window.evPaneli.surumSayfasiniAc();
+    } catch {
+      /* tarayıcı açılamadı: sessiz */
+    }
+  }
+
+  // --- Odadan başla (o-44) ---------------------------------------------------------------------------------------------------
+  // Odalar ve her odanın önerilen cihazları ana süreçten gelir (Kapı Kuralı'ndan geçmiş, zararsız, eylem alanındaki varlıklar; yalnız okur).
+  // "Seçime ekle" öneriyi favori SEÇİMİNE katar (kimlikler yüklü cihaz listesinde olmalı); kayıt yine tek Kaydet düğmesindedir ve ana süreç
+  // favoriler:kaydet'te her kimliği kendi süzgecinden yeniden geçirir. Durum satırı durumdan türetilir (dil değişince yeniden yazılır).
+  const EN_COK_FAVORI = 200; // ana süreçteki favoriler:kaydet sınırı
+  let odalar = []; // [{ id, ad, toplam, cihazlar: [{ entity_id, ad, alan }] }]
+  let odaSonucu = null; // { tur: 'yukleniyor' | 'hazir' | 'bos' | 'canli-yok' | 'yetki' | 'hata' | 'eklendi' | 'sinir' | 'hepsi-secili', n, ad, sinir }
+
+  function odaBul(kimlik) {
+    return odalar.find(function (o) { return o.id === kimlik; }) || null;
+  }
+
+  function odaDurumunuYaz() {
+    const s = odaSonucu;
+    let metin = '';
+    if (s && s.tur === 'yukleniyor') metin = t('ayar.oda.yukleniyor');
+    else if (s && s.tur === 'hazir') metin = t('ayar.oda.hazir', { n: s.n });
+    else if (s && s.tur === 'bos') metin = t('ayar.oda.bos');
+    else if (s && s.tur === 'canli-yok') metin = t('ayar.oda.canliYok');
+    else if (s && s.tur === 'yetki') metin = t('ayar.oda.yetki');
+    else if (s && s.tur === 'eklendi') metin = cogul(s.sinir ? 'ayar.oda.eklendiSinir' : 'ayar.oda.eklendi', s.n, { ad: s.ad });
+    else if (s && s.tur === 'sinir') metin = t('ayar.oda.sinir');
+    else if (s && s.tur === 'hepsi-secili') metin = t('ayar.oda.hepsiSecili', { ad: s.ad });
+    else if (s) metin = t('ayar.oda.hata');
+    odaDurum.textContent = metin;
+  }
+
+  // Seçim kutusu odalarla kurulur; önceki seçim hâlâ varsa korunur.
+  function odaListesiniCiz() {
+    const onceki = odaSec.value;
+    const secenekler = [el('option', '', t('ayar.oda.bosSecim'))];
+    secenekler[0].value = '';
+    odalar.forEach(function (oda) {
+      const secenek = el('option', '', oda.ad + ' (' + oda.toplam + ')');
+      secenek.value = oda.id;
+      secenekler.push(secenek);
+    });
+    odaSec.replaceChildren.apply(odaSec, secenekler);
+    odaSec.disabled = odalar.length === 0;
+    odaSec.value = odaBul(onceki) ? onceki : '';
+    odaOnizlemeyiCiz();
+  }
+
+  // Seçili odanın önerisi: başlık satırı ve cihaz satırları (yalnız textContent ile).
+  function odaOnizlemeyiCiz() {
+    const oda = odaBul(odaSec.value);
+    odaOnizleme.replaceChildren();
+    btnOdaEkle.disabled = !oda || oda.cihazlar.length === 0;
+    if (!oda) {
+      odaOnizleme.style.display = 'none';
+      return;
+    }
+    odaOnizleme.style.display = '';
+    const secili = new Set(seciliSira);
+    odaOnizleme.appendChild(el('div', '', oda.cihazlar.length < oda.toplam
+      ? t('ayar.oda.onizlemeKirpik', { ad: oda.ad, n: oda.toplam, m: oda.cihazlar.length })
+      : t('ayar.oda.onizlemeBaslik', { ad: oda.ad, n: oda.toplam })));
+    oda.cihazlar.forEach(function (c) {
+      const ek = secili.has(c.entity_id) ? ' · ' + t('ayar.oda.zatenSecili') : '';
+      odaOnizleme.appendChild(el('div', '', '• ' + c.ad + ' · ' + t('alan.' + c.alan) + ek));
+    });
+  }
+
+  // Ana süreçten gelen oda verisi yalnız beklenen biçimde kabul edilir (kimlik, ad ve kimlik listesi); gerisi atılır.
+  function odalariTemizle(ham) {
+    const sonuc = [];
+    (Array.isArray(ham) ? ham : []).forEach(function (o) {
+      if (!o || typeof o.id !== 'string' || typeof o.ad !== 'string' || !Array.isArray(o.cihazlar)) return;
+      const cihazlar = o.cihazlar.filter(function (c) { return c && typeof c.entity_id === 'string' && typeof c.ad === 'string' && typeof c.alan === 'string'; });
+      if (cihazlar.length === 0) return;
+      sonuc.push({ id: o.id, ad: o.ad, toplam: Number.isInteger(o.toplam) && o.toplam >= cihazlar.length ? o.toplam : cihazlar.length, cihazlar: cihazlar });
+    });
+    return sonuc;
+  }
+
+  async function odalariGetir() {
+    if (typeof window.evPaneli.odalariGetir !== 'function') return;
+    btnOdalariGetir.disabled = true;
+    odaSonucu = { tur: 'yukleniyor' };
+    odaDurumunuYaz();
+    try {
+      if (!cihazlarYuklendi) await cihazlariYukle(true); // eklenecek kimlikler yüklü cihaz listesinde bulunmalı
+      const yanit = await window.evPaneli.odalariGetir();
+      if (yanit && yanit.ok) {
+        odalar = odalariTemizle(yanit.odalar);
+        odaSonucu = odalar.length > 0 ? { tur: 'hazir', n: odalar.length } : { tur: 'bos' };
+      } else {
+        odalar = [];
+        const neden = yanit && yanit.neden;
+        odaSonucu = { tur: neden === 'canli-yok' ? 'canli-yok' : neden === 'yetki' ? 'yetki' : 'hata' };
+      }
+    } catch (err) {
+      odalar = [];
+      odaSonucu = { tur: 'hata' };
+    } finally {
+      btnOdalariGetir.disabled = false;
+    }
+    odaListesiniCiz();
+    odaDurumunuYaz();
+  }
+
+  async function odayiSecimeEkle() {
+    const oda = odaBul(odaSec.value);
+    if (!oda) return;
+    btnOdaEkle.disabled = true;
+    try {
+      if (!cihazlarYuklendi) await cihazlariYukle(true);
+      if (!cihazlarYuklendi) {
+        odaSonucu = { tur: 'hata' };
+        return;
+      }
+      const secili = new Set(seciliSira);
+      let eklenen = 0;
+      let sinir = false;
+      oda.cihazlar.forEach(function (c) {
+        if (secili.has(c.entity_id) || !cihazHaritasi.has(c.entity_id)) return; // yalnız yüklü (süzgeçten geçmiş) adaylar
+        if (seciliSira.length >= EN_COK_FAVORI) {
+          sinir = true;
+          return;
+        }
+        seciliSira.push(c.entity_id);
+        secili.add(c.entity_id);
+        eklenen += 1;
+      });
+      if (eklenen > 0) {
+        guncelleSecilenSayisi();
+        cihazlariCiz();
+        siraCiz();
+        kirliGuncelle();
+        odaSonucu = { tur: 'eklendi', n: eklenen, ad: oda.ad, sinir: sinir };
+      } else {
+        odaSonucu = sinir ? { tur: 'sinir' } : { tur: 'hepsi-secili', ad: oda.ad };
+      }
+    } finally {
+      odaOnizlemeyiCiz();
+      odaDurumunuYaz();
+    }
+  }
+
+  // --- Tanılama ve günlük (o-41) -------------------------------------------------------------------------------------------
+  // Rapor ana süreçte kurulur (erişim anahtarı yok, adres yalnız sınıf olarak, günlük maskeli); sayfa yalnız gösterir. Kopyalamada ana süreç
+  // AYNI metni panoya yazıp geri verir, böylece görünen metin kopyalanan metindir. Rapor metni İngilizcedir (sorun kaydı dili); durum
+  // satırı arayüz dilindedir ve durumdan türetilir (dil değişince yeniden yazılır).
+  let tanilamaSonucu = null; // { tur: 'hazir' | 'kopyalandi' | 'hata' | 'gunluk-acildi' | 'gunluk-yok', n }
+
+  function tanilamaDurumunuYaz() {
+    const s = tanilamaSonucu;
+    let metin = '';
+    if (s && s.tur === 'hazir') metin = t('ayar.arac.hazir', { n: s.n });
+    else if (s && s.tur === 'kopyalandi') metin = t('ayar.arac.kopyalandi', { n: s.n });
+    else if (s && s.tur === 'gunluk-acildi') metin = t('ayar.arac.gunlukAcildi');
+    else if (s && s.tur === 'gunluk-yok') metin = t('ayar.arac.gunlukYok');
+    else if (s) metin = t('ayar.arac.hata');
+    tanilamaDurum.textContent = metin;
+  }
+
+  async function tanilamaIste(kopyala) {
+    const islev = kopyala ? window.evPaneli.tanilamaKopyala : window.evPaneli.tanilamaGetir;
+    if (typeof islev !== 'function') return;
+    btnTanilamaGoster.disabled = true;
+    btnTanilamaKopyala.disabled = true;
+    try {
+      const yanit = await islev();
+      if (yanit && yanit.ok && typeof yanit.metin === 'string') {
+        tanilamaMetni.textContent = yanit.metin;
+        tanilamaSonucu = { tur: kopyala ? 'kopyalandi' : 'hazir', n: Number.isInteger(yanit.gunlukSatiri) ? yanit.gunlukSatiri : 0 };
+      } else {
+        tanilamaSonucu = { tur: 'hata' };
+      }
+    } catch {
+      tanilamaSonucu = { tur: 'hata' };
+    } finally {
+      btnTanilamaGoster.disabled = false;
+      btnTanilamaKopyala.disabled = false;
+    }
+    tanilamaDurumunuYaz();
+  }
+
+  async function gunlukKlasoruAc() {
+    if (typeof window.evPaneli.gunlukKlasoruAc !== 'function') return;
+    try {
+      const yanit = await window.evPaneli.gunlukKlasoruAc();
+      tanilamaSonucu = { tur: yanit && yanit.ok ? 'gunluk-acildi' : 'gunluk-yok' };
+    } catch {
+      tanilamaSonucu = { tur: 'gunluk-yok' };
+    }
+    tanilamaDurumunuYaz();
+  }
+
+  // Tepsiden "Yenilikler" ya da "Güncellemeleri denetle": ana süreç belirli bir bölümün açılmasını ister (yalnız bilinen kimlikler).
+  const ACILABILIR_BOLUMLER = ['bolumSurum', 'bolumAraclar'];
+  function bolumuAc(kimlik) {
+    if (ACILABILIR_BOLUMLER.indexOf(kimlik) < 0) return;
+    if (ayarAra.value !== '') ayarAramasiniTemizle();
+    const bolum = $(kimlik);
+    bolum.open = true;
+    try {
+      bolum.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch {
+      /* kaydırma desteklenmiyor */
+    }
+    const ozet = typeof bolum.querySelector === 'function' ? bolum.querySelector('summary') : null;
+    if (ozet) odakla(ozet);
   }
 
   // --- Kaydet (tek çubuk) --------------------------------------------------------------------------------------------------
@@ -1478,6 +1881,7 @@
       yeniPencereMalzemesi: a.yeniPencereMalzemesi,
       temaZorla: a.temaZorla,
       vurguRengi: vurguRengi.value.trim(),
+      surumDenetimi: a.surumDenetimi,
       tepsiSolTik: a.tepsiSolTik,
       paletKisayol: a.paletKisayol,
       canliBaglanti: a.canliBaglanti,
@@ -1604,6 +2008,11 @@
         const etiketSayisi = (favoriSonuc.etiketHatalari || []).length;
         if (etiketSayisi > 0) {
           parcalar.push(cogul('ayar.kaydet.etiketRed', etiketSayisi));
+          tur = 'uyari';
+        }
+        const eylemSayisi = (favoriSonuc.eylemHatalari || []).length;
+        if (eylemSayisi > 0) {
+          parcalar.push(cogul('ayar.kaydet.eylemRed', eylemSayisi));
           tur = 'uyari';
         }
       }
@@ -1869,6 +2278,12 @@
     if (cihazlarYuklendi) cihazlariCiz();
     else if (listeIletisi) listeMesaji(listeIletisi.anahtar, listeIletisi.hata, listeIletisi.ham);
     if (sonYedekler !== null) yedekleriCiz(sonYedekler);
+    surumDurumunuYaz();
+    yenilikleriYaz();
+    tanilamaDurumunuYaz();
+    odaListesiniCiz();
+    odaDurumunuYaz();
+    if (ayarAra.value.trim() !== '') ayarAramasiniUygula(); // sayfa metni değişti: aynı sorgu yeni dilde yeniden aranır
   }
 
   /** Ayar özetindeki etkin dil şimdikinden farklıysa dili değiştirir ve sayfayı yeniden yazar. true: dil değişti. */
@@ -1901,7 +2316,7 @@
   // --- Olaylar -------------------------------------------------------------------------------------------------------------
   const kirliAlanlari = [
     yerelAdres, disAdres, canliBaglanti, otomatikBaslat, pencereBoyutu, odakKaybindaGizle, anaPanoyaDonDk,
-    koseBildirimi, bipSesi, yeniPencereMalzemesi, temaZorla, tepsiSolTik, dilSecimi,
+    koseBildirimi, bipSesi, yeniPencereMalzemesi, temaZorla, tepsiSolTik, dilSecimi, surumDenetimi,
   ];
   kirliAlanlari.forEach(function (girdi) {
     girdi.addEventListener('input', kirliGuncelle);
@@ -2055,6 +2470,23 @@
   btnAyarlariKaydet.addEventListener('click', hepsiniKaydet);
   btnBildirimKapat.addEventListener('click', bildirimGizle);
 
+  // Ayarlarda arama (o-26): yazdıkça süzer; Esc önce aramayı temizler (pencereyi kapatmaz), Enter ilk eşleşmeye gider.
+  ayarAra.addEventListener('input', ayarAramasiniUygula);
+  ayarAra.addEventListener('keydown', function (olay) {
+    if (olay.key === 'Escape' && ayarAra.value !== '') {
+      olay.preventDefault();
+      olay.stopPropagation();
+      ayarAramasiniTemizle();
+    } else if (olay.key === 'Enter') {
+      olay.preventDefault();
+      if (aramaSonucu && aramaSonucu.ilk && typeof aramaSonucu.ilk.scrollIntoView === 'function') aramaSonucu.ilk.scrollIntoView({ block: 'center' });
+    }
+  });
+  btnAyarAraTemizle.addEventListener('click', function () {
+    ayarAramasiniTemizle();
+    odakla(ayarAra);
+  });
+
   // Anahtar bölümü
   anahtarGirdisi.addEventListener('input', function () {
     ikinciOnayiGizle();
@@ -2076,6 +2508,19 @@
 
   btnDisaAktar.addEventListener('click', disaAktar);
   btnIceAktar.addEventListener('click', iceAktar);
+
+  btnSurumDenetle.addEventListener('click', surumuDenetle);
+  btnSurumSayfasi.addEventListener('click', surumSayfasiniAc);
+  odaListesiniCiz(); // başlangıç durumu: oda yok, seçim kutusu kapalı, önizleme gizli
+  btnOdalariGetir.addEventListener('click', odalariGetir);
+  odaSec.addEventListener('change', odaOnizlemeyiCiz);
+  btnOdaEkle.addEventListener('click', odayiSecimeEkle);
+  btnTanilamaGoster.addEventListener('click', function () { tanilamaIste(false); });
+  btnTanilamaKopyala.addEventListener('click', function () { tanilamaIste(true); });
+  btnGunlukAc.addEventListener('click', gunlukKlasoruAc);
+  if (typeof window.evPaneli.onBolumAc === 'function') {
+    window.evPaneli.onBolumAc(function (yuk) { bolumuAc(yuk && yuk.bolum); });
+  }
 
   // Bölüm bağlantıları (g-10)
   BOLUM_BAGLARI.forEach(function (bag) {
@@ -2102,6 +2547,10 @@
       } else if (tus === '0') {
         olay.preventDefault();
         yakinlastir(0);
+      } else if ((tus === 'f' || tus === 'F') && !olay.shiftKey) {
+        olay.preventDefault(); // Ctrl+F: ayar araması (o-26)
+        odakla(ayarAra);
+        if (typeof ayarAra.select === 'function') ayarAra.select();
       }
       return;
     }
@@ -2144,6 +2593,7 @@
         cihazlariYukle(false);
       }
       yedekleriYukle();
+      surumBolumunuYukle();
     } catch (err) {
       bildirimGoster(t('ayar.yukleme.alinirkenHata'), 'hata');
     }

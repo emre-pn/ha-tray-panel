@@ -178,6 +178,53 @@
       flex: 1;
     }
 
+    /* Ayarlarda arama (o-26): kutu üst şeritte; eşleşmeyen bölüm ve ayar kümeleri bu sınıfla gizlenir (sayfanın kendi display kararlarına dokunulmaz). */
+    .ayar-ara {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .ayar-ara input[type="text"] {
+      flex: 1;
+      padding: 7px 12px;
+    }
+
+    .ayar-ara-durum {
+      min-height: 16px;
+    }
+
+    /* Salt okunur, kaydırılabilir düz metin kutusu (Yenilikler, tanılama önizlemesi): içerik yalnız textContent ile yazılır. */
+    .metin-kutusu {
+      margin-top: 6px;
+      padding: 10px 12px;
+      max-height: 260px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--label);
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+    }
+
+    .metin-kutusu.sabit-aralik {
+      font-family: Consolas, 'Cascadia Mono', monospace;
+      font-size: 11.5px;
+    }
+
+    .metin-kutusu:focus-visible {
+      outline: 2px solid var(--input-focus);
+      outline-offset: 1px;
+    }
+
+    .arama-gizli {
+      display: none !important;
+    }
+
     .bildirim-kutusu {
       padding: 10px 14px;
       border-radius: 6px;
@@ -684,6 +731,13 @@
       font-family: monospace;
     }
 
+    .cihaz-ek select.kisayol-eylemi {
+      width: auto;
+      max-width: 190px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
     .cihaz-ek .cihaz-not {
       flex-basis: 100%;
       margin-top: 0;
@@ -923,6 +977,11 @@
       <a id="gezinAnahtar" href="#bolumAnahtar"><span data-i18n="ayar.gezin.anahtar">Anahtar</span></a>
       <a id="gezinDiger" href="#bolumDiger"><span data-i18n="ayar.gezin.diger">Diğer</span></a>
     </nav>
+    <div class="ayar-ara" role="search">
+      <input type="text" id="ayarAra" placeholder="Ayarlarda ara…  (Ctrl+F)" aria-label="Ayarlarda ara" aria-describedby="ayarAramaDurum" spellcheck="false" autocomplete="off" data-i18n-attr="placeholder:ayar.ara.yerTutucu;aria-label:ayar.ara.etiket">
+      <button class="buton buton-ikincil buton-kucuk" id="btnAyarAraTemizle" type="button" style="display: none;" data-i18n="ayar.ara.temizle">Temizle</button>
+    </div>
+    <div class="ipucu ayar-ara-durum" id="ayarAramaDurum" role="status" aria-live="polite"></div>
     <div id="bildirimSeridi" class="bildirim-seridi">
       <div id="genelBildirim" class="bildirim-kutusu" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="buton buton-ikincil buton-kucuk" id="btnBildirimKapat" type="button" aria-label="Bildirimi kapat" data-i18n="ayar.bildirim.kapat" data-i18n-attr="aria-label:ayar.bildirim.kapatEtiket">Kapat</button>
@@ -1004,6 +1063,22 @@
       <h3 data-i18n="ayar.sira.baslik">Sıra ve tepsi</h3>
       <div class="ipucu" data-i18n="ayar.sira.ipucu">Tepsi menüsünün üstünde sıradaki ilk 8 zararsız favori görünür; geri kalanlar “Diğer favoriler”, onay isteyenler “Onaylı eylemler” altında yer alır. Sırayı ↑ ↓ düğmeleriyle değiştirebilirsin.</div>
       <div id="favoriSirasiListesi" role="list" aria-label="Seçili favorilerin sırası" data-i18n-attr="aria-label:ayar.sira.listeEtiket"></div>
+    </div>
+
+    <div class="form-grubu" id="odaSecici">
+      <label for="odaSec" id="odaSeciciEtiketi" data-i18n="ayar.oda.baslik">Odadan başla</label>
+      <div class="ipucu" style="margin-top: 0; margin-bottom: 8px;" data-i18n="ayar.oda.aciklama">Home Assistant’ta tanımladığın odalardan birini seç; o odadaki güvenli cihazların önerisini görürsün. “Seçime ekle” öneriyi favori seçimine katar, Kaydet’e basana kadar kaydedilmez. Kapı, kilit ve alarm cihazları ile onay isteyen eylemler önerilmez. Odalar için Home Assistant’a canlı bağlantı gerekir.</div>
+      <div class="buton-satiri" style="margin-top: 0; margin-bottom: 8px;">
+        <button class="buton buton-ikincil" id="btnOdalariGetir" type="button" data-i18n="ayar.oda.getir">Odaları getir</button>
+      </div>
+      <select id="odaSec" disabled>
+        <option value="" data-i18n="ayar.oda.bosSecim">Oda seç…</option>
+      </select>
+      <div class="ipucu" id="odaDurum" role="status" aria-live="polite"></div>
+      <div class="metin-kutusu" id="odaOnizleme" role="region" tabindex="0" aria-labelledby="odaSeciciEtiketi" style="display: none;"></div>
+      <div class="buton-satiri" style="margin-top: 8px;">
+        <button class="buton buton-ikincil" id="btnOdaEkle" type="button" disabled data-i18n="ayar.oda.ekle">Seçime ekle</button>
+      </div>
     </div>
 
     <div class="cihaz-filtre">
@@ -1256,6 +1331,49 @@
     </div>
   </details>
 
+  <details class="bolum" id="bolumSurum">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.surum.baslik">Sürüm ve yenilikler</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.surum.aciklama">Çalışan sürüm, yeni sürüm denetimi ve bu sürümün yenilikleri. Denetim, istersen açabileceğin bir seçenektir; indirme ve kurulum her zaman sende kalır.</p>
+      <div class="ipucu" id="surumCalisan" style="margin-top: 0;"></div>
+
+      <div class="form-grubu" style="margin-top: 14px;">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="surumDenetimi">
+          <span data-i18n="ayar.surum.denetim">Yeni sürüm çıkınca bildirim göster</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.surum.denetimIpucu">Varsayılan olarak kapalıdır. Açıkken uygulama günde en çok bir kez GitHub’ın herkese açık sürüm adresine bakar. Erişim anahtarın ve Home Assistant adreslerin gönderilmez, ama IP adresin GitHub tarafından görülür. Hiçbir şey indirilmez ya da kurulmaz; sürüm sayfası yalnızca sen tıklayınca tarayıcıda açılır.</div>
+        <div class="buton-satiri" style="margin-top: 8px;">
+          <button class="buton buton-ikincil" id="btnSurumDenetle" type="button" data-i18n="ayar.surum.simdiDenetle">Şimdi denetle</button>
+          <button class="buton buton-ikincil" id="btnSurumSayfasi" type="button" data-i18n="ayar.surum.sayfayiAc">Sürüm sayfasını aç</button>
+        </div>
+        <div class="ipucu" id="surumDurum" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="form-grubu" style="margin-top: 16px;">
+        <label id="yeniliklerEtiketi" data-i18n="ayar.surum.yenilikler">Bu sürümün yenilikleri</label>
+        <div class="metin-kutusu" id="yenilikMetni" role="region" tabindex="0" aria-labelledby="yeniliklerEtiketi"></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bolum" id="bolumAraclar">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.arac.baslik">Tanılama ve günlük</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.arac.aciklama">Sorun bildirirken işine yarayacak bilgileri tek metinde toplar: sürüm, Windows yapısı, bağlantı durumu ve günlüğün son satırları. Erişim anahtarın rapora girmez; adresin yerine yalnızca türü yazılır (özel IP, yerel ad, genel ad). Rapor İngilizcedir ve yapıştırmadan önce burada görürsün.</p>
+      <div class="buton-satiri" style="margin-top: 0;">
+        <button class="buton buton-ikincil" id="btnTanilamaGoster" type="button" data-i18n="ayar.arac.goster">Raporu göster</button>
+        <button class="buton buton-ikincil" id="btnTanilamaKopyala" type="button" data-i18n="ayar.arac.kopyala">Raporu panoya kopyala</button>
+        <button class="buton buton-ikincil" id="btnGunlukAc" type="button" data-i18n="ayar.arac.gunlukAc">Günlük dosyasını göster</button>
+      </div>
+      <div class="ipucu" id="tanilamaDurum" role="status" aria-live="polite"></div>
+      <div class="form-grubu" style="margin-top: 14px;">
+        <label id="tanilamaEtiketi" data-i18n="ayar.arac.onizleme">Rapor önizlemesi</label>
+        <div class="metin-kutusu sabit-aralik" id="tanilamaMetni" role="region" tabindex="0" aria-labelledby="tanilamaEtiketi"></div>
+      </div>
+    </div>
+  </details>
+
   <div class="alt-bilgi">
     <span data-i18n="ayar.altBilgi.dosya">Ayar dosyası:</span> <code id="ayarDosyasiYolu">%APPDATA%\Ev Paneli\ayarlar.json</code>
   </div>
@@ -1278,6 +1396,7 @@
   <script src="lib/ceviri/ayarlar.js"></script>
   <script src="lib/kisayol.js"></script>
   <script src="lib/arama.js"></script>
+  <script src="lib/ayar-arama.js"></script>
   <script src="ayarlar.js"></script>
 </body>
 </html>

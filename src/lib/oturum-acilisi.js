@@ -7,6 +7,7 @@
  *
  * Durumlar:
  *  gelistirme       paketlenmemiş sürümde kayıt defterine yazılmaz
+ *  tasinabilir      taşınabilir derlemede (o-45) kayıt defterine yazılmaz: exe her açılışta geçici klasöre açılır, yolu kalıcı değildir
  *  kapali           kullanıcı ayarda kapatmış
  *  etkin            Windows açılışta çalıştıracak
  *  windows-kapatmis kayıt var ama Windows Başlangıç ayarlarında devre dışı
@@ -17,18 +18,19 @@
 const { TR } = require('./ceviri-varsayilan');
 
 // Durum iletileri src/lib/ceviri/ana.js sözlüğündedir ('oturum.<durum>'); 'kapali' için ileti yoktur (boş metin).
-const MESAJ_ANAHTARLI_DURUMLAR = new Set(['gelistirme', 'etkin', 'windows-kapatmis', 'kayit-yok', 'belirsiz']);
+const MESAJ_ANAHTARLI_DURUMLAR = new Set(['gelistirme', 'tasinabilir', 'etkin', 'windows-kapatmis', 'kayit-yok', 'belirsiz']);
 
 const yolKarsilastir = (a, b) =>
   typeof a === 'string' && typeof b === 'string' && a.replace(/\//g, '\\').toLowerCase() === b.replace(/\//g, '\\').toLowerCase();
 
 /**
- * @param {{paketli:boolean, ayarAcik:boolean, s:object|null, ad:string, yol?:string, t?:Function}} girdi t: çevirmen (verilmezse Türkçe)
+ * @param {{paketli:boolean, tasinabilir?:boolean, ayarAcik:boolean, s:object|null, ad:string, yol?:string, t?:Function}} girdi t: çevirmen (verilmezse Türkçe)
  * @returns {{durum:string, mesaj:string}}
  */
-function oturumAcilisiDurumu({ paketli, ayarAcik, s, ad, yol, t = TR }) {
+function oturumAcilisiDurumu({ paketli, tasinabilir = false, ayarAcik, s, ad, yol, t = TR }) {
   const sonuc = (durum) => ({ durum, mesaj: MESAJ_ANAHTARLI_DURUMLAR.has(durum) ? t(`oturum.${durum}`) : '' });
   if (!paketli) return sonuc('gelistirme');
+  if (tasinabilir) return sonuc('tasinabilir');
   if (!ayarAcik) return sonuc('kapali');
   if (!s || typeof s !== 'object') return sonuc('belirsiz'); // okunamadı: durum uydurulmaz
   if (s.executableWillLaunchAtLogin === true) return sonuc('etkin');

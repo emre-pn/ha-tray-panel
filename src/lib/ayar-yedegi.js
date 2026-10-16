@@ -118,7 +118,7 @@ const AKTARILAN_ALANLAR = Object.freeze([
   ...aktarilanAlanlar(), // 1.4.0: ayar-alanlari.js tablosunda aktarilir:true olan alanlar (sır taşıyan alan tabloya girmez)
 ]);
 const GIZLI_DEGER_DESENI = /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/;
-const FAVORI_ALANLARI = ['entity_id', 'ad', 'onay', 'etiket', 'kisayol', 'parlaklik'];
+const FAVORI_ALANLARI = ['entity_id', 'ad', 'onay', 'etiket', 'kisayol', 'parlaklik', 'kisayolEylemi'];
 
 const duzNesne = (d) => (d && typeof d === 'object' && !Array.isArray(d) ? d : null);
 

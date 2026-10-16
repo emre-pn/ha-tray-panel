@@ -303,12 +303,22 @@ function sahteElectronOlustur(durum) {
     }
   }
 
+  const bolumOturumlari = new Map();
   // Oturumun izin işleyicileri kaydedilir (h-36): test, istekleri doğrudan işleyicilere verir.
-  const oturum = () => {
-    const kayit = { istek: null, denetim: null, cihaz: null };
+  const oturum = (ad = 'varsayilan') => {
+    const kayit = { ad, istek: null, denetim: null, cihaz: null, yazimAcik: undefined, yazimDilleri: undefined, sira: [] }; // sira: oturum çağrılarının sırası (o-42: yazım denetimi ilk kullanımdan önce kapanır)
     durum.oturumlar.push(kayit);
     return {
+      setSpellCheckerEnabled(deger) {
+        kayit.sira.push('yazim-acik');
+        kayit.yazimAcik = deger;
+      },
+      setSpellCheckerLanguages(diller) {
+        kayit.sira.push('yazim-diller');
+        kayit.yazimDilleri = diller;
+      },
       setPermissionRequestHandler(isleyici) {
+        kayit.sira.push('izin');
         kayit.istek = isleyici;
       },
       setPermissionCheckHandler(isleyici) {
@@ -322,13 +332,15 @@ function sahteElectronOlustur(durum) {
   };
 
   const app = Object.assign(new EventEmitter(), {
-    isPackaged: false, // kayıt defterine/oturum açılışına hiçbir şey yazılmaz
+    isPackaged: durum.paketli === true, // varsayılan false: kayıt defterine/oturum açılışına hiçbir şey yazılmaz (paketli: taşınabilir derleme sınaması, o-45)
     setName() {},
+    getVersion: () => durum.surum ?? '1.3.0',
     getLocale: () => durum.sistemDili ?? 'tr-TR', // işletim sistemi dili (arayüz dili "sistem" iken kullanılır)
     getPath: (ad) => {
       if (ad === 'appData') return durum.appData;
       if (ad === 'logs') return path.join(durum.appData, 'gunlukler'); // gerçek %APPDATA% değil, geçici klasör
       if (ad === 'documents') return path.join(durum.appData, 'Belgeler'); // Ayarlar dışa/içe aktarma diyaloğunun açılış klasörü
+      if (ad === 'home') return durum.appData; // kullanıcı klasörü (gerçekte appData onun içindedir): komut satırı --cikti yolu doğrulaması (o-19)
       return durum.yollar.get(ad);
     },
     setPath(ad, yol) {
@@ -353,11 +365,14 @@ function sahteElectronOlustur(durum) {
     quit() {
       durum.cikisIstendi = true;
     },
-    setLoginItemSettings() {
-      throw new Error('oturum açılışı yazılmamalı');
+    setLoginItemSettings(secenek) {
+      if (!durum.paketli) throw new Error('oturum açılışı yazılmamalı');
+      durum.oturumYazimlari.push(secenek);
     },
-    getLoginItemSettings() {
-      throw new Error('oturum açılışı okunmamalı');
+    getLoginItemSettings(secenek) {
+      if (!durum.paketli) throw new Error('oturum açılışı okunmamalı');
+      durum.oturumOkumalari.push(secenek);
+      return { executableWillLaunchAtLogin: false, launchItems: [] };
     },
   });
 
@@ -448,8 +463,22 @@ function sahteElectronOlustur(durum) {
       getCursorScreenPoint: () => ({ x: 100, y: 100 }),
       getDisplayNearestPoint: () => ({ workArea: durum.calismaAlani, bounds: durum.calismaAlani }),
     },
-    session: { fromPartition: oturum, defaultSession: oturum() },
+    // Gerçek Electron gibi aynı bölüm adı aynı oturumu döner (o-42: yazım denetimi kapatma ile izin işleyicileri aynı nesnede görünür).
+    session: { fromPartition: (ad) => (bolumOturumlari.has(ad) ? bolumOturumlari.get(ad) : bolumOturumlari.set(ad, oturum(ad)).get(ad)), defaultSession: oturum() },
+    clipboard: {
+      writeText(metin) {
+        if (durum.panoHatasi) throw new Error('pano kullanılamıyor');
+        durum.pano.push(metin);
+      },
+    },
     shell: {
+      showItemInFolder(yol) {
+        durum.klasordeGosterilenler.push(yol);
+      },
+      openPath: async (yol) => {
+        durum.acilanKlasorler.push(yol);
+        return ''; // gerçek Electron: boş dize = başarı
+      },
       openExternal: async (adres) => {
         if (durum.disariAcmaHatasi) throw new Error('açılamadı'); // varsayılan tarayıcı yok / engellendi
         durum.disariAcilanlar.push(adres);
@@ -506,11 +535,14 @@ function sahteWebSocketOlustur(durum) {
  *   tohum: ayarlar.json'a önceden yazılacak ham ayar; yoklama: /manifest.json yanıt kodu (null: ağ yok);
  *   ekDosyalar: veri klasörüne önceden yazılacak ek dosyalar ({ ad: metin }); anahtar: sahte (şifreli biçimde) bir erişim anahtarı dosyası yazılsın; hazirBekle: app "ready" olmadan yüklenir (durum.hazirCoz() ile hazır olur)
  */
-async function ortamKur({ tohum = null, ekDosyalar = null, calismaAlani = { x: 0, y: 0, width: 1920, height: 1040 }, yoklama = null, anahtar = false, kisayolReddi = [], ha = null, apiYaniti = null, hazirBekle = false, osSurumu = '10.0.26300', yerelDosyalar = null, acilisArgv = null, oncesi = null } = {}) {
+async function ortamKur({ paketli = false, tohum = null, ekDosyalar = null, calismaAlani = { x: 0, y: 0, width: 1920, height: 1040 }, yoklama = null, anahtar = false, kisayolReddi = [], ha = null, apiYaniti = null, hazirBekle = false, osSurumu = '10.0.26300', yerelDosyalar = null, acilisArgv = null, oncesi = null } = {}) {
   const gecici = fs.mkdtempSync(path.join(os.tmpdir(), 'ev-paneli-test-'));
   const oncekiYerelAppData = process.env.LOCALAPPDATA;
   process.env.LOCALAPPDATA = path.join(gecici, 'LocalAppData'); // gerçek %LOCALAPPDATA%'ya hiçbir şey yazılmasın
   const durum = {
+    paketli, // app.isPackaged (varsayılan false)
+    oturumYazimlari: [], // app.setLoginItemSettings çağrıları (yalnız paketli)
+    oturumOkumalari: [],
     yerelDosyalar,
     appData: gecici,
     yollar: new Map(),
@@ -533,6 +565,9 @@ async function ortamKur({ tohum = null, ekDosyalar = null, calismaAlani = { x: 0
     bildirimNesneleri: [], // oluşturulan tüm Notification örnekleri (tıklama taklidi için; k-10)
     oturumlar: [], // session.fromPartition / defaultSession izin işleyicileri (h-36)
     disariAcilanlar: [], // shell.openExternal adresleri (k-20)
+    pano: [], // clipboard.writeText metinleri (o-41)
+    klasordeGosterilenler: [], // shell.showItemInFolder yolları (o-41)
+    acilanKlasorler: [], // shell.openPath yolları (o-41)
     ekMocklar: [], // oncesi seçeneğinin kurduğu mock'lar; temizle geri alır
     httpUyarilari: [], // "ev içi adres http" açılış uyarısı (Windows bildirimi)
     diyaloglar: [], // dialog.showMessageBox çağrıları
@@ -578,7 +613,7 @@ async function ortamKur({ tohum = null, ekDosyalar = null, calismaAlani = { x: 0
     }
   };
   const oncekiArgv = process.argv;
-  if (acilisArgv) process.argv = ['ev-paneli.exe', ...acilisArgv]; // uygulama `--eylem ...` ile açılıyorsa (main.js yüklenirken okunur)
+  if (acilisArgv) process.argv = ['ev-paneli.exe', ...(typeof acilisArgv === 'function' ? acilisArgv(gecici) : acilisArgv)]; // uygulama `--eylem ...` ile açılıyorsa (main.js yüklenirken okunur); işlev: geçici klasörü alır
   let anaModul = null;
   try {
     anaModul = require(MAIN);
@@ -2175,6 +2210,749 @@ ortamda('komut satırı (h-23): "led 0" ışığı kapatır (turn_off), "led %40
   assert.equal(postlar(ortam).length, 2, 'kısılamayan ışıkta sayı aç/kapat yapmaz');
 });
 
+// --- kesin yön (o-13): "led +10", "salon ac", eylem kısayolu ------------------------------------
+
+const yonVarlik = (kimlik, ad, state, nitelik = {}) => ({ entity_id: kimlik, state, attributes: { friendly_name: ad, ...nitelik } });
+
+ortamda('komut satırı (o-13): "led +10" / "led -10" HA\'daki güncel parlaklığa göre tek POST; "salon ac" / "salon kapat" sabit turn_on / turn_off', dalga3([
+  { entity_id: 'light.led_serit', ad: 'LED şerit', parlaklik: true },
+  { entity_id: 'light.ampul', ad: 'Ampul' },
+]), async (ortam) => {
+  haKur(ortam.durum, [yonVarlik('light.led_serit', 'LED şerit', 'on', { brightness: 128 }), yonVarlik('light.ampul', 'Ampul', 'off')]);
+  await ortam.akit();
+  const gosterOnce = ortam.pencere.cagri.show;
+  const gonder = async (ad) => {
+    ortam.app.emit('second-instance', {}, ['ev-paneli.exe', `--eylem=${ad}`], 'C:\\');
+    await ortam.akit();
+    ortam.ilerle(2000);
+  };
+  await gonder('led +10');
+  await gonder('led -10');
+  assert.deepEqual(postlar(ortam).map((p) => [p.url.replace('http://192.168.1.10:8123', ''), JSON.parse(p.govde)]), [
+    ['/api/services/light/turn_on', { entity_id: 'light.led_serit', brightness_pct: 60 }],
+    ['/api/services/light/turn_on', { entity_id: 'light.led_serit', brightness_pct: 40 }],
+  ]);
+  await gonder('ampul ac');
+  await gonder('ampul kapat');
+  assert.deepEqual(postlar(ortam).slice(2).map((p) => [p.url.replace('http://192.168.1.10:8123', ''), JSON.parse(p.govde)]), [
+    ['/api/services/light/turn_on', { entity_id: 'light.ampul' }],
+    ['/api/services/light/turn_off', { entity_id: 'light.ampul' }],
+  ]);
+  await gonder('ampul +10'); // kısılamayan ışığa adım uygulanmaz
+  assert.equal(postlar(ortam).length, 4);
+  assert.equal(ortam.pencere.cagri.show, gosterOnce, 'komut satırı ana pencereyi açmaz');
+  assert.equal(ortam.yuzeyPenceresi()?.gorunur ?? false, false, 'panel de açılmadı');
+});
+
+ortamda('komut satırı (o-13): tırnaksız "--eylem=led -10" (eksi adım ayrı argüman) seçenek sayılmaz; kapı lambası ve kilit yön komutuyla da çalışmaz', dalga3([
+  { entity_id: 'light.led_serit', ad: 'LED şerit', parlaklik: true },
+  { entity_id: 'lock.on_kapi', ad: 'Ön Kapı' },
+]), async (ortam) => {
+  haKur(ortam.durum, [yonVarlik('light.led_serit', 'LED şerit', 'on', { brightness: 255 }), yonVarlik('lock.on_kapi', 'Ön Kapı', 'locked')]);
+  await ortam.akit();
+  ortam.app.emit('second-instance', {}, ['ev-paneli.exe', '--eylem=led', '-10'], 'C:\\');
+  await ortam.akit();
+  assert.equal(postlar(ortam).length, 1, '"led" tek başına aç-kapa değil, "-10" adımı uygulanır');
+  assert.deepEqual(JSON.parse(postlar(ortam)[0].govde), { entity_id: 'light.led_serit', brightness_pct: 90 });
+  for (const ad of ['on kapi ac', 'on kapi kapat', 'lock.on_kapi ac']) {
+    ortam.ilerle(2000);
+    ortam.app.emit('second-instance', {}, ['ev-paneli.exe', `--eylem=${ad}`], 'C:\\');
+    await ortam.akit();
+  }
+  assert.equal(postlar(ortam).length, 1, 'kilit yönlü komutla da çalışmaz');
+});
+
+ortamda('eylem kısayolu (o-13): favoride kisayolEylemi varsa kısayol kesin yönü uygular (parlak+20 -> tek POST); geçersiz kayıt yükte düşer', dalga3([
+  { entity_id: 'light.led_serit', ad: 'LED şerit', parlaklik: true, kisayol: 'Control+Alt+L', kisayolEylemi: 'parlak+20' },
+  { entity_id: 'light.ampul', ad: 'Ampul', kisayol: 'Control+Alt+M', kisayolEylemi: 'parlak+10' }, // parlaklık kontrolü yok: yüklemede düşer
+  { entity_id: 'switch.priz', ad: 'Priz', kisayol: 'Control+Alt+N', kisayolEylemi: 'kapat' },
+]), async (ortam) => {
+  haKur(ortam.durum, [
+    yonVarlik('light.led_serit', 'LED şerit', 'on', { brightness: 128 }),
+    yonVarlik('light.ampul', 'Ampul', 'off'),
+    yonVarlik('switch.priz', 'Priz', 'on'),
+  ]);
+  await ortam.akit();
+  const kayit = ortam.ayarOku().favoriler;
+  assert.equal(kayit.find((f) => f.entity_id === 'light.led_serit').kisayolEylemi, 'parlak+20');
+  assert.equal('kisayolEylemi' in kayit.find((f) => f.entity_id === 'light.ampul'), false, 'geçersiz eylem diskte de kalmaz');
+  assert.equal(kayit.find((f) => f.entity_id === 'switch.priz').kisayolEylemi, 'kapat');
+
+  await ortam.durum.kisayollar.get('Control+Alt+L')();
+  await ortam.akit();
+  ortam.ilerle(2000);
+  await ortam.durum.kisayollar.get('Control+Alt+M')(); // eylemi düştü: aç-kapa
+  await ortam.akit();
+  ortam.ilerle(2000);
+  await ortam.durum.kisayollar.get('Control+Alt+N')();
+  await ortam.akit();
+  assert.deepEqual(postlar(ortam).map((p) => [p.url.replace('http://192.168.1.10:8123', ''), JSON.parse(p.govde)]), [
+    ['/api/services/light/turn_on', { entity_id: 'light.led_serit', brightness_pct: 70 }],
+    ['/api/services/light/toggle', { entity_id: 'light.ampul' }],
+    ['/api/services/switch/turn_off', { entity_id: 'switch.priz' }],
+  ]);
+  assert.equal(ortam.yuzeyPenceresi()?.gorunur ?? false, false, 'kısayol paneli açmaz');
+});
+
+ortamda('Ayarlar (o-13): cihaz listesi kisayolEylemleri taşır; kayıtta kisayolEylemi saklanır, geçersizi eylemHatalari ile bildirilir', dalga3([
+  { entity_id: 'light.led_serit', ad: 'LED şerit', parlaklik: true },
+]), async (ortam) => {
+  haKur(ortam.durum, [
+    yonVarlik('light.led_serit', 'LED şerit', 'on', { brightness: 128 }),
+    yonVarlik('light.ampul', 'Ampul', 'off'),
+    yonVarlik('fan.vantilator', 'Vantilatör', 'on', { percentage: 50 }),
+    yonVarlik('scene.film', 'Film', 'unknown'),
+    yonVarlik('light.kapi_lambasi', 'Kapı lambası', 'on'),
+  ]);
+  await ortam.akit();
+  const olay = ayarlarOlayi(ortam);
+  const liste = await ortam.durum.ipc.get('cihazlar:getir')(olay);
+  const eylemleri = Object.fromEntries(liste.cihazlar.map((c) => [c.entity_id, c.kisayolEylemleri]));
+  assert.deepEqual(eylemleri['light.led_serit'], ['ac', 'kapat', 'parlak+5', 'parlak+10', 'parlak+20', 'parlak-5', 'parlak-10', 'parlak-20']);
+  assert.deepEqual(eylemleri['fan.vantilator'], ['ac', 'kapat', 'hiz+10', 'hiz+20', 'hiz-10', 'hiz-20']);
+  assert.deepEqual(eylemleri['scene.film'], [], 'sahnenin yönlü eylemi yok');
+  assert.equal('light.kapi_lambasi' in eylemleri, false, 'kapı lambası renderer\'a hiç gitmez');
+
+  const sonuc = await ortam.durum.ipc.get('favoriler:kaydet')(olay, [
+    { entity_id: 'light.led_serit', parlaklik: true, kisayol: 'Control+Alt+L', kisayolEylemi: 'parlak-10' },
+    { entity_id: 'light.ampul', kisayol: 'Control+Alt+M', kisayolEylemi: 'parlak+10' }, // parlaklık kontrolü yok
+    { entity_id: 'fan.vantilator', kisayol: 'Control+Alt+V', kisayolEylemi: 'hiz+20' },
+  ]);
+  assert.equal(sonuc.ok, true);
+  assert.deepEqual(sonuc.eylemHatalari, [{ entity_id: 'light.ampul', neden: 'gecersiz' }]);
+  assert.deepEqual(sonuc.kisayolHatalari, []);
+  const kayit = Object.fromEntries(ortam.ayarOku().favoriler.map((f) => [f.entity_id, f]));
+  assert.equal(kayit['light.led_serit'].kisayolEylemi, 'parlak-10');
+  assert.equal(kayit['light.ampul'].kisayol, 'Control+Alt+M', 'kısayol yine kaydedilir');
+  assert.equal('kisayolEylemi' in kayit['light.ampul'], false);
+  assert.equal(kayit['fan.vantilator'].kisayolEylemi, 'hiz+20');
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(olay);
+  assert.equal(ozet.favoriler.find((f) => f.entity_id === 'light.led_serit').kisayolEylemi, 'parlak-10', 'ayar özeti eylemi taşır');
+  assert.deepEqual(postlar(ortam), [], 'kaydetmek HA\'ya hiçbir servis çağrısı göndermez');
+});
+
+// --- pencere ve durum komutları (o-19) -----------------------------------------------------
+
+const pencereKomutuGonder = async (ortam, argv, dizin = 'C:\\') => {
+  ortam.app.emit('second-instance', {}, ['ev-paneli.exe', ...argv], dizin);
+  await ortam.akit();
+};
+
+ortamda('komut satırı (o-19): --gizle / --goster / --degistir ana pencereyi yönetir; servis çağrısı yok, bildirim yok', dalga3([SALON]), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await ortam.akit();
+  ortam.ilerle(400);
+  assert.equal(ortam.pencere.gorunur, true);
+  await pencereKomutuGonder(ortam, ['--gizle']);
+  assert.equal(ortam.pencere.gorunur, false);
+  const gizleSayisi = ortam.pencere.cagri.hide;
+  await pencereKomutuGonder(ortam, ['--gizle']); // zaten gizli: değişmez
+  assert.equal(ortam.pencere.cagri.hide, gizleSayisi);
+  await pencereKomutuGonder(ortam, ['--goster']);
+  assert.equal(ortam.pencere.gorunur, true);
+  await pencereKomutuGonder(ortam, ['--GOSTER', '--hedef=ana']); // zaten görünür: gösterim yinelenir ama gizlenmez
+  assert.equal(ortam.pencere.gorunur, true);
+  await pencereKomutuGonder(ortam, ['--degistir']);
+  assert.equal(ortam.pencere.gorunur, false, 'görünürken değiştir gizler');
+  await pencereKomutuGonder(ortam, ['--degistir']);
+  assert.equal(ortam.pencere.gorunur, true, 'gizliyken değiştir gösterir');
+  assert.deepEqual(postlar(ortam), []);
+  assert.deepEqual(ortam.durum.bildirimler, []);
+  assert.equal(ortam.yuzeyPenceresi()?.gorunur ?? false, false);
+});
+
+ortamda('komut satırı (o-19): --hedef=panel / palet hızlı yüzeyi açar, kapatır ve değiştirir; başka kipte açık yüzeye dokunmaz', dalga3([SALON]), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await ortam.akit();
+  ortam.ilerle(400);
+  const anaOnce = ortam.pencere.cagri.show;
+  await pencereKomutuGonder(ortam, ['--goster', '--hedef=panel']);
+  const yuzey = ortam.yuzeyPenceresi();
+  assert.ok(yuzey?.gorunur, 'panel açıldı');
+  assert.deepEqual(yuzeyMesajlari(ortam, 'yuzey:goster').at(-1)?.mod, 'panel');
+  await pencereKomutuGonder(ortam, ['--gizle', '--hedef=palet']); // palet açık değil: panel kapanmaz
+  assert.equal(yuzey.gorunur, true);
+  await pencereKomutuGonder(ortam, ['--degistir', '--hedef=panel']);
+  assert.equal(yuzey.gorunur, false, 'panel kapandı');
+  await pencereKomutuGonder(ortam, ['--degistir', '--hedef', 'palet']);
+  assert.equal(yuzey.gorunur, true);
+  assert.equal(yuzeyMesajlari(ortam, 'yuzey:goster').at(-1)?.mod, 'palet');
+  await pencereKomutuGonder(ortam, ['--gizle', '--hedef=palet']);
+  assert.equal(yuzey.gorunur, false);
+  assert.equal(ortam.pencere.cagri.show, anaOnce, 'ana pencereye dokunulmadı');
+  assert.deepEqual(postlar(ortam), []);
+});
+
+ortamda('komut satırı (o-19): geçersiz ve çakışan komutlar hata bildirir, hiçbir şey çalıştırmaz (pencere değişmez, POST yok)', dalga3([SALON]), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await ortam.akit();
+  ortam.ilerle(400);
+  const sirali = [
+    [['--goster', '--gizle'], /birden çok komut/],
+    [['--goster', '--eylem=salon lambası'], /birden çok komut/],
+    [['--durum', '--goster'], /birden çok komut/],
+    [['--goster', '--hedef=ayarlar'], /anlaşılamadı/],
+    [['--goster=x'], /anlaşılamadı/],
+    [['--hedef=panel'], /anlaşılamadı/],
+  ];
+  let beklenen = 0;
+  for (const [argv, desen] of sirali) {
+    ortam.ilerle(2000);
+    await pencereKomutuGonder(ortam, argv);
+    beklenen += 1;
+    assert.equal(ortam.durum.bildirimler.length, beklenen, `bildirim: ${argv.join(' ')}`);
+    assert.match(ortam.durum.bildirimler.at(-1).body, desen);
+  }
+  assert.equal(ortam.pencere.gorunur, true, 'hiçbiri pencereyi gizlemedi');
+  assert.deepEqual(postlar(ortam), [], '--eylem ile çakışan komut eylemi de çalıştırmaz');
+});
+
+const yasakliParcalar = (metin, ortam) => {
+  for (const yasak of [TEST_ANAHTAR, '192.168.1.10', 'ha.example.com', 'Authorization', 'Bearer', 'webhook', 'token']) {
+    assert.ok(!metin.includes(yasak), `durum dosyasında ${yasak} yok`);
+  }
+  assert.ok(!metin.includes(ortam.durum.appData), 'durum dosyasında yol yok');
+};
+
+ortamda('komut satırı (o-19): --liste güvenli favorilerin durumunu çıktı dosyasına yazar (kapı kuralı, sır yok, pencere/POST yok); --durum özet yazar', {
+  ...dalga3([
+    SALON,
+    { entity_id: 'light.led_serit', ad: 'LED şerit', parlaklik: true },
+    { entity_id: 'light.hol', ad: 'Hol' }, // HA'daki güncel ad kapı oldu: karo hiç oluşmaz
+  ]),
+  ha: [
+    durumNesnesi('light.salon_lambasi', 'Salon Lambası', 'off'),
+    { entity_id: 'light.led_serit', state: 'on', attributes: { friendly_name: 'LED şerit', brightness: 128 } },
+    durumNesnesi('light.hol', 'Kapı Lambası', 'on'),
+  ],
+}, async (ortam) => {
+  await ortam.akit();
+  ortam.ilerle(400);
+  const klasor = path.join(ortam.durum.appData, 'Belgelerim');
+  fs.mkdirSync(klasor);
+  const yol = path.join(klasor, 'liste.json');
+  const gosterOnce = ortam.pencere.cagri.show;
+  await pencereKomutuGonder(ortam, ['--liste', `--cikti=${yol}`]);
+  const belge = JSON.parse(fs.readFileSync(yol, 'utf8'));
+  assert.equal(belge.bicim, 'ev-paneli-durum');
+  assert.equal(belge.tur, 'liste');
+  assert.equal(belge.uygulama.surum, '1.3.0');
+  assert.equal(belge.baglanti.anahtarVar, true);
+  assert.ok(['yerel', 'dis', 'yok'].includes(belge.baglanti.tur));
+  assert.deepEqual(belge.favoriler.map((f) => f.kimlik), ['light.salon_lambasi', 'light.led_serit']);
+  assert.deepEqual(belge.favoriler.find((f) => f.kimlik === 'light.led_serit'), { kimlik: 'light.led_serit', ad: 'LED şerit', alan: 'light', durum: 'acik', yuzde: 50, kullanilabilir: true, onayli: false });
+  assert.equal(belge.favoriler.find((f) => f.kimlik === 'light.salon_lambasi').durum, 'kapali');
+  assert.equal(belge.favoriSayisi, 2);
+  assert.equal(belge.acikIsikSayisi, 1);
+  yasakliParcalar(fs.readFileSync(yol, 'utf8'), ortam);
+  assert.ok(!JSON.stringify(belge).includes('hol'), 'kapı oldu diye süzülen favori belgede yok');
+
+  // göreli yol komutu veren kopyanın çalışma klasörüne göre çözülür; --durum liste içermez
+  await pencereKomutuGonder(ortam, ['--durum', '--cikti', 'ozet.json'], klasor);
+  const ozet = JSON.parse(fs.readFileSync(path.join(klasor, 'ozet.json'), 'utf8'));
+  assert.equal(ozet.tur, 'durum');
+  assert.equal(ozet.favoriSayisi, 2);
+  assert.equal('favoriler' in ozet, false);
+  assert.deepEqual(postlar(ortam), []);
+  assert.equal(ortam.pencere.cagri.show, gosterOnce);
+  assert.equal(ortam.yuzeyPenceresi()?.gorunur ?? false, false);
+  assert.deepEqual(ortam.durum.bildirimler, [], 'başarı sessizdir');
+  assert.ok(!ortam.gunlukOku().includes(klasor), 'günlükte çıktı yolu yok');
+});
+
+ortamda('komut satırı (o-19): --cikti eksik, .json değil, kullanıcı klasörü dışında ya da uygulama veri klasöründe ise yazılmaz ve hata bildirilir', dalga3([SALON]), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await ortam.akit();
+  ortam.ilerle(400);
+  const veri = ortam.durum.yollar.get('userData');
+  fs.mkdirSync(veri, { recursive: true });
+  const kotuler = [
+    [['--durum'], /--cikti/],
+    [['--liste', '--cikti=durum.txt'], /\.json/],
+    [['--durum', `--cikti=${path.join(veri, 'ayarlar.json')}`], /\.json/],
+    [['--durum', `--cikti=${path.join(os.tmpdir(), 'baska-yer.json')}`], /\.json/],
+  ];
+  const oncekiAyar = fs.readFileSync(path.join(veri, 'ayarlar.json'), 'utf8');
+  let sayi = 0;
+  for (const [argv, desen] of kotuler) {
+    ortam.ilerle(2000);
+    await pencereKomutuGonder(ortam, argv, ortam.durum.appData);
+    sayi += 1;
+    assert.equal(ortam.durum.bildirimler.length, sayi, argv.join(' '));
+    assert.match(ortam.durum.bildirimler.at(-1).body, desen);
+  }
+  assert.equal(fs.readFileSync(path.join(veri, 'ayarlar.json'), 'utf8'), oncekiAyar, 'ayar dosyası ezilmedi');
+  assert.equal(fs.existsSync(path.join(ortam.durum.appData, 'durum.txt')), false);
+  assert.equal(fs.existsSync(path.join(os.tmpdir(), 'baska-yer.json')), false);
+  assert.deepEqual(postlar(ortam), []);
+});
+
+ortamda('komut satırı (o-19): çıktı klasörü yoksa durum dosyası yazılamaz ve hata söylenir (klasör oluşturulmaz)', dalga3([SALON]), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await ortam.akit();
+  const yol = path.join(ortam.durum.appData, 'yok-klasor', 'd.json');
+  await pencereKomutuGonder(ortam, ['--durum', `--cikti=${yol}`]);
+  assert.equal(ortam.durum.bildirimler.length, 1);
+  assert.match(ortam.durum.bildirimler[0].body, /yazılamadı/);
+  assert.equal(fs.existsSync(path.dirname(yol)), false);
+});
+
+ortamda('komut satırı (o-19): uygulama kapalıyken "--durum --cikti" ile açılış pencere AÇMAZ, durumlar okunduktan sonra dosyayı yazar', {
+  ...dalga3([SALON]),
+  acilisArgv: (gecici) => ['--durum', `--cikti=${path.join(gecici, 'acilis.json')}`],
+  ha: HA_VARLIKLARI,
+}, async (ortam) => {
+  await ortam.akit();
+  assert.equal(ortam.pencere.gorunur, false, 'ana pencere açılmadı');
+  const belge = JSON.parse(fs.readFileSync(path.join(ortam.durum.appData, 'acilis.json'), 'utf8'));
+  assert.equal(belge.favoriSayisi, 1);
+  assert.equal(belge.pencere.ana, 'gizli');
+  assert.deepEqual(postlar(ortam), []);
+  assert.deepEqual(ortam.durum.bildirimler, []);
+});
+
+ortamda('komut satırı (o-19): uygulama kapalıyken "--goster" ile açılış pencereyi komut gösterir; "--gizle" ile açılış gizli kalır', { ...dalga3([SALON]), acilisArgv: ['--goster'], ha: HA_VARLIKLARI }, async (ortam) => {
+  await ortam.akit();
+  assert.equal(ortam.pencere.gorunur, true);
+  assert.equal(ortam.pencere.cagri.show, 1, 'tek gösterim');
+});
+
+ortamda('komut satırı (o-19): uygulama kapalıyken "--gizle" ile açılış pencere göstermez', { ...dalga3([SALON]), acilisArgv: ['--gizle'], ha: HA_VARLIKLARI }, async (ortam) => {
+  await ortam.akit();
+  assert.equal(ortam.pencere.gorunur, false);
+  assert.equal(ortam.pencere.cagri.show, 0);
+});
+
+ortamda('komut satırı (o-19): hazır olmadan gelen --gizle / --durum hazır olunca çalışır (komut kaybolmaz)', dalga3([SALON], {}, { hazirBekle: true }), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const yol = path.join(ortam.durum.appData, 'bekleyen.json');
+  await pencereKomutuGonder(ortam, ['--durum', `--cikti=${yol}`]);
+  assert.equal(fs.existsSync(yol), false, 'hazır değilken yazılmaz');
+  ortam.durum.hazirCoz();
+  await ortam.akit();
+  assert.equal(JSON.parse(fs.readFileSync(yol, 'utf8')).tur, 'durum');
+  assert.deepEqual(postlar(ortam), []);
+});
+
+// --- yeni sürüm denetimi ve Yenilikler (o-40) ----------------------------------------------
+
+const GITHUB_ONEKI = 'https://api.github.com/';
+const GITHUB_SURUM_ADRESI = 'https://api.github.com/repos/emre-pn/ha-tray-panel/releases/latest';
+const SURUM_SAYFASI = 'https://github.com/emre-pn/ha-tray-panel/releases/latest';
+const GUN_MS = 24 * 60 * 60 * 1000;
+const surumYaniti = (etiket = 'v1.4.0', ek = {}) => json({ tag_name: etiket, html_url: `https://github.com/emre-pn/ha-tray-panel/releases/tag/${etiket}`, draft: false, prerelease: false, ...ek });
+/** Sahte ağa GitHub sürüm adresini ekler (yanit: her istekte yeni Response üreten işlev); HA yanıtları olduğu gibi kalır. */
+function githubKur(ortam, yanit) {
+  const onceki = ortam.durum.apiYaniti;
+  ortam.durum.apiYaniti = (url, secenek) => (url.startsWith(GITHUB_ONEKI) ? yanit(url, secenek) : onceki(url, secenek));
+}
+const githubIstekleri = (ortam) => ortam.durum.fetchler.filter((f) => f.url.startsWith(GITHUB_ONEKI));
+const yeniSurumMetni = (surum) => ANA_SOZLUK.tr['surum.yeniCikti'].replace('{surum}', surum);
+const bolumIstekleri = (ortam) => (ortam.ayarlarPenceresi()?.webContents.mesajlar ?? []).filter((m) => m.kanal === 'ayarlar:bolum-ac').map((m) => m.yuk);
+const ACIK_DENETIM = { ...dalga3([SALON], { surumDenetimi: true }, { ha: HA_VARLIKLARI }) };
+
+ortamda('sürüm denetimi (o-40): varsayılan KAPALI; günlerce çalışsa da GitHub\'a hiç istek gitmez, zamanlayıcı kurulmaz', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  githubKur(ortam, () => surumYaniti('v9.9.9'));
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.equal(ozet.surumDenetimi, false);
+  for (let i = 0; i < 6; i += 1) {
+    ortam.ilerle(GUN_MS / 2);
+    await ortam.akit();
+  }
+  assert.deepEqual(githubIstekleri(ortam), []);
+  assert.deepEqual(ortam.durum.bildirimler.filter((b) => /9\.9\.9/.test(b.body)), []);
+  assert.equal(fs.existsSync(path.join(ortam.durum.yollar.get('userData'), 'surum-denetimi.json')), false, 'kapalıyken durum dosyası da yazılmaz');
+});
+
+ortamda('sürüm denetimi (o-40): açıksa açılıştan ~90 sn sonra TEK anahtarsız istek gider; yeni sürüm yalnız bildirilir, tıklayınca sürüm sayfası açılır, indirme yok', ACIK_DENETIM, async (ortam) => {
+  githubKur(ortam, () => surumYaniti('v1.4.0'));
+  ortam.ilerle(60_000);
+  await ortam.akit();
+  assert.equal(githubIstekleri(ortam).length, 0, 'açılıştan hemen sonra istek yok');
+  ortam.ilerle(40_000);
+  await ortam.akit();
+  const istekler = githubIstekleri(ortam);
+  assert.equal(istekler.length, 1);
+  assert.equal(istekler[0].url, GITHUB_SURUM_ADRESI);
+  assert.equal(istekler[0].yontem, 'GET');
+  assert.equal(istekler[0].govde, undefined);
+  assert.doesNotMatch(JSON.stringify(istekler[0].basliklar), /Bearer|Authorization|Cookie|TEST_ANAHTAR/i, 'anahtar ve çerez gitmez');
+  assert.doesNotMatch(JSON.stringify(istekler[0]), /192\.168|ha\.example\.com|1\.3\.0/, 'adres ve sürüm bilgisi gitmez');
+  const bildirim = ortam.durum.bildirimler.find((b) => /1\.4\.0/.test(b.body));
+  assert.ok(bildirim, 'yeni sürüm bildirimi');
+  assert.equal(bildirim.body, yeniSurumMetni('1.4.0'));
+  assert.deepEqual(ortam.durum.disariAcilanlar, [], 'bildirim gösterilince tarayıcı kendiliğinden açılmaz');
+  assert.deepEqual(postlar(ortam), []);
+  ortam.durum.bildirimNesneleri.find((n) => /1\.4\.0/.test(n.secenek.body)).emit('click');
+  await ortam.akit();
+  assert.deepEqual(ortam.durum.disariAcilanlar, ['https://github.com/emre-pn/ha-tray-panel/releases/tag/v1.4.0']);
+  const durum = JSON.parse(fs.readFileSync(path.join(ortam.durum.yollar.get('userData'), 'surum-denetimi.json'), 'utf8'));
+  assert.deepEqual(Object.keys(durum).sort(), ['bildirilen', 'sonDenetim', 'sonSurum']);
+  assert.equal(durum.bildirilen, '1.4.0');
+  assert.doesNotMatch(ortam.gunlukOku(), /api\.github|github\.com|https?:/i, 'günlükte adres yok');
+});
+
+ortamda('sürüm denetimi (o-40): günde en çok bir istek (6 saatlik bakışlar atlanır); aynı sürüm için ikinci bildirim yok; daha yeni sürüm yeniden bildirilir', ACIK_DENETIM, async (ortam) => {
+  let etiket = 'v1.4.0';
+  githubKur(ortam, () => surumYaniti(etiket));
+  ortam.ilerle(100_000);
+  await ortam.akit();
+  assert.equal(githubIstekleri(ortam).length, 1);
+  for (let i = 0; i < 3; i += 1) {
+    ortam.ilerle(6 * 60 * 60_000);
+    await ortam.akit();
+  }
+  assert.equal(githubIstekleri(ortam).length, 1, '18 saatte yeni istek yok');
+  ortam.ilerle(6 * 60 * 60_000 + 60_000); // 24 saat doldu
+  await ortam.akit();
+  assert.equal(githubIstekleri(ortam).length, 2);
+  assert.equal(ortam.durum.bildirimler.filter((b) => /1\.4\.0/.test(b.body)).length, 1, 'aynı sürüm bir kez bildirilir');
+  etiket = 'v1.5.0';
+  for (let i = 0; i < 5; i += 1) {
+    ortam.ilerle(6 * 60 * 60_000);
+    await ortam.akit();
+  }
+  assert.equal(githubIstekleri(ortam).length, 3);
+  assert.equal(ortam.durum.bildirimler.filter((b) => /1\.5\.0/.test(b.body)).length, 1);
+});
+
+ortamda('sürüm denetimi (o-40): ağ hatası, bozuk yanıt ve güncel sürüm sessizdir (bildirim yok, çökme yok); başarısız deneme de günde bir sayılır', ACIK_DENETIM, async (ortam) => {
+  githubKur(ortam, () => json({ tag_name: 'sürüm?' }));
+  ortam.ilerle(100_000);
+  await ortam.akit();
+  assert.equal(githubIstekleri(ortam).length, 1);
+  for (let i = 0; i < 3; i += 1) {
+    ortam.ilerle(6 * 60 * 60_000); // 6 saatlik adımlar: zamanlayıcı her adımda yeniden kurulur
+    await ortam.akit();
+  }
+  assert.equal(githubIstekleri(ortam).length, 1, 'hata sonrası da 24 saat dolmadan yeniden denenmez');
+  assert.deepEqual(ortam.durum.bildirimler.filter((b) => /sürüm|version/i.test(b.body)), []);
+  githubKur(ortam, () => surumYaniti('v1.3.0')); // güncel
+  ortam.ilerle(6 * 60 * 60_000);
+  await ortam.akit();
+  assert.equal(githubIstekleri(ortam).length, 2);
+  assert.deepEqual(ortam.durum.bildirimler.filter((b) => /1\.3\.0/.test(b.body)), []);
+});
+
+ortamda('sürüm denetimi (o-40): Ayarlar\'dan açılınca ilk bakış 3 sn sonra yapılır; kapatılınca zamanlayıcı kalkar', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  githubKur(ortam, () => surumYaniti('v1.4.0'));
+  const kaydet = await ayarlarKaydet(ortam, { surumDenetimi: true });
+  assert.equal(kaydet.ok, true);
+  assert.equal(ortam.ayarOku().surumDenetimi, true);
+  ortam.ilerle(2_000);
+  await ortam.akit();
+  assert.equal(githubIstekleri(ortam).length, 0);
+  ortam.ilerle(1_500);
+  await ortam.akit();
+  assert.equal(githubIstekleri(ortam).length, 1);
+  await ayarlarKaydet(ortam, { surumDenetimi: false });
+  assert.equal(ortam.ayarOku().surumDenetimi, false);
+  ortam.ilerle(3 * GUN_MS);
+  await ortam.akit();
+  assert.equal(githubIstekleri(ortam).length, 1, 'kapatılınca başka istek yok');
+});
+
+ortamda('sürüm denetimi (o-40): ayar dışa/içe aktarmaya girmez (başkasının dosyası dış ağ seçeneğini açamaz) ama ayar özetinde ve kayıtta vardır', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  const { aktarilanAlanlar } = require('../src/lib/ayar-alanlari');
+  assert.equal(aktarilanAlanlar().includes('surumDenetimi'), false);
+  const olay = ayarlarOlayi(ortam);
+  const yanit = await ortam.durum.ipc.get('ayarlar:kaydet')(olay, { yerelAdres: 'http://192.168.1.10:8123', surumDenetimi: 'evet' }); // geçersiz tür
+  assert.ok(yanit.uyarilar.some((u) => u.alan === 'surumDenetimi'), 'geçersiz değer uyarı verir');
+  assert.equal(ortam.ayarOku().surumDenetimi, false, 'geçersiz değer mevcut (kapalı) değeri korur');
+});
+
+ortamda('sürüm denetimi (o-40): tepsi "Güncellemeleri denetle" KAPALIYKEN ağa çıkmaz, nedenini söyler ve Ayarlar\'ın Sürüm bölümünü açar', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  githubKur(ortam, () => surumYaniti('v1.4.0'));
+  ortam.menuOgesi('Güncellemeleri denetle').click();
+  await ortam.akit();
+  ortam.ilerle(300);
+  await ortam.akit();
+  assert.deepEqual(githubIstekleri(ortam), []);
+  assert.ok(koseMesajlari(ortam).some((m) => m.metin === ANA_SOZLUK.tr['sonuc.surumKapali']), 'köşe bildirimi nedeni söyler');
+  const ayarlarPenceresi = ortam.ayarlarPenceresi();
+  assert.ok(ayarlarPenceresi, 'Ayarlar açıldı');
+  assert.deepEqual(bolumIstekleri(ortam), [{ bolum: 'bolumSurum' }], 'sayfa yüklenince Sürüm bölümü istenir');
+  assert.deepEqual(ortam.durum.disariAcilanlar, []);
+});
+
+ortamda('sürüm denetimi (o-40): tepsi "Güncellemeleri denetle" AÇIKKEN sonucu söyler: güncel -> köşe bildirimi, yeni -> Windows bildirimi, hata -> hata bildirimi; art arda basış dakikada bir', ACIK_DENETIM, async (ortam) => {
+  let etiket = 'v1.3.0';
+  githubKur(ortam, () => surumYaniti(etiket));
+  const tikla = async () => {
+    ortam.menuOgesi('Güncellemeleri denetle').click();
+    await ortam.akit();
+    ortam.ilerle(300);
+    await ortam.akit();
+  };
+  await tikla();
+  assert.equal(githubIstekleri(ortam).length, 1);
+  assert.ok(koseMesajlari(ortam).some((m) => m.metin === ANA_SOZLUK.tr['sonuc.surumGuncel'].replace('{surum}', '1.3.0')));
+  await tikla(); // 1 dakikadan kısa
+  assert.equal(githubIstekleri(ortam).length, 1);
+  assert.ok(koseMesajlari(ortam).some((m) => m.metin === ANA_SOZLUK.tr['sonuc.surumCokSik']));
+  ortam.ilerle(61_000);
+  etiket = 'v1.4.0';
+  await tikla();
+  assert.equal(githubIstekleri(ortam).length, 2);
+  assert.ok(ortam.durum.bildirimler.some((b) => b.body === yeniSurumMetni('1.4.0')));
+  ortam.ilerle(61_000);
+  githubKur(ortam, () => json({}, 500));
+  await tikla();
+  assert.ok(ortam.durum.bildirimler.some((b) => b.body === ANA_SOZLUK.tr['sonuc.surumHata']), 'hata Windows bildirimi olarak da düşer');
+});
+
+ortamda('sürüm denetimi (o-40): tepsi "Yenilikler" Ayarlar\'ı açar ve Sürüm bölümünü ister; Ayarlar zaten açıksa olay gönderilir; ağa çıkılmaz', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  githubKur(ortam, () => surumYaniti('v1.4.0'));
+  ortam.menuOgesi('Yenilikler').click();
+  await ortam.akit();
+  assert.deepEqual(bolumIstekleri(ortam), [{ bolum: 'bolumSurum' }]);
+  ortam.menuOgesi('Yenilikler').click(); // pencere açık: doğrudan olay
+  await ortam.akit();
+  assert.equal(bolumIstekleri(ortam).length, 2);
+  ortam.menuOgesi('Ayarlar…').click(); // düz Ayarlar: bölüm istenmez (menü nesnesi bölüm kimliği sanılmaz)
+  await ortam.akit();
+  assert.equal(bolumIstekleri(ortam).length, 2);
+  assert.deepEqual(githubIstekleri(ortam), []);
+});
+
+ortamda('sürüm denetimi (o-40): IPC yalnız Ayarlar sayfasına yanıt verir; kapalıyken surum:denetle ağa çıkmaz; yenilikler paketli CHANGELOG\'dan gelir; sürüm sayfası sabit adreste açılır', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  githubKur(ortam, () => surumYaniti('v1.4.0'));
+  const olay = ayarlarOlayi(ortam);
+  const ipc = ortam.durum.ipc;
+  const bilgi = await ipc.get('surum:durum')(olay);
+  assert.equal(bilgi.ok, true);
+  assert.equal(bilgi.surum, '1.3.0');
+  assert.equal(bilgi.acik, false);
+  assert.equal(bilgi.yeniSurum, null);
+  assert.deepEqual(await ipc.get('surum:denetle')(olay), { ok: true, sonuc: 'kapali' });
+  assert.deepEqual(githubIstekleri(ortam), []);
+  const yenilik = await ipc.get('surum:yenilikler')(olay);
+  assert.equal(yenilik.ok, true);
+  assert.equal(yenilik.bulundu, true);
+  assert.match(yenilik.baslik, /^1\.3\.0/);
+  assert.match(yenilik.metin, /First public release/);
+  assert.doesNotMatch(yenilik.metin, /\*\*|`/, 'işaretler düz metne çevrilmiş');
+  assert.deepEqual(await ipc.get('surum:sayfa-ac')(olay), { ok: true });
+  await ortam.akit();
+  assert.deepEqual(ortam.durum.disariAcilanlar, [SURUM_SAYFASI]);
+  const uzak = { sender: olay.sender, senderFrame: { url: 'http://192.168.1.10:8123/lovelace', parent: null } };
+  const baskaPencere = { sender: ortam.pencere.webContents, senderFrame: olay.senderFrame };
+  for (const kanal of ['surum:durum', 'surum:denetle', 'surum:yenilikler', 'surum:sayfa-ac']) {
+    for (const kotu of [uzak, baskaPencere]) assert.deepEqual(await ipc.get(kanal)(kotu), { ok: false, hata: 'İzin yok.' }, `${kanal} reddedilmeli`);
+  }
+  assert.equal(ortam.durum.disariAcilanlar.length, 1);
+});
+
+ortamda('sürüm denetimi (o-40): sürüm notu bulunamayan sürümde (geliştirme/yeni) yenilikler boş döner, çökmez', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  ortam.durum.surum = '9.9.9';
+  const yenilik = await ortam.durum.ipc.get('surum:yenilikler')(ayarlarOlayi(ortam));
+  assert.deepEqual(yenilik, { ok: true, surum: '9.9.9', bulundu: false, baslik: '', metin: '' });
+});
+
+ortamda('sürüm denetimi (o-40): açıkken elle denetim "surum:denetle" ile çalışır ve Ayarlar yeni sürüm bilgisini hatırlar', ACIK_DENETIM, async (ortam) => {
+  githubKur(ortam, () => surumYaniti('v1.4.0'));
+  const olay = ayarlarOlayi(ortam);
+  const sonuc = await ortam.durum.ipc.get('surum:denetle')(olay);
+  assert.equal(sonuc.ok, true);
+  assert.equal(sonuc.sonuc, 'yeni');
+  assert.equal(sonuc.surum, '1.4.0');
+  assert.equal(githubIstekleri(ortam).length, 1);
+  assert.deepEqual(ortam.durum.bildirimler.filter((b) => /1\.4\.0/.test(b.body)), [], 'Ayarlar düğmesi Windows bildirimi göndermez (sonuç sayfada yazılır)');
+  const bilgi = await ortam.durum.ipc.get('surum:durum')(olay);
+  assert.equal(bilgi.acik, true);
+  assert.equal(bilgi.yeniSurum, '1.4.0');
+});
+
+// --- taşınabilir derleme (o-45) -------------------------------------------------------------
+
+/** electron-builder portable açılış yardımcısı PORTABLE_EXECUTABLE_FILE'ı ayarlar; ortam değişkeni test bitince geri alınır. */
+const tasinabilirOrtam = (ek = {}) => ({
+  ...dalga3([SALON], { otomatikBaslat: true }, { paketli: true, ha: HA_VARLIKLARI }),
+  oncesi: () => {
+    const onceki = process.env.PORTABLE_EXECUTABLE_FILE;
+    process.env.PORTABLE_EXECUTABLE_FILE = 'D:\\USB\\Ev-Paneli-Tasinabilir-1.3.0.exe';
+    return [{ mock: { restore: () => (onceki === undefined ? delete process.env.PORTABLE_EXECUTABLE_FILE : (process.env.PORTABLE_EXECUTABLE_FILE = onceki)) } }];
+  },
+  ...ek,
+});
+
+ortamda('taşınabilir (o-45): kurulu (paketli) sürümde Windows açılışı eskisi gibi yazılır; geçici klasör yolu değil çalışan exe verilir', { ...dalga3([SALON], { otomatikBaslat: true }, { paketli: true, ha: HA_VARLIKLARI }) }, async (ortam) => {
+  assert.equal(ortam.durum.oturumYazimlari.length, 1);
+  assert.deepEqual(ortam.durum.oturumYazimlari[0], { openAtLogin: true, path: process.execPath, args: ['--gizli'], name: 'Ev Paneli', enabled: true });
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.equal(ozet.otomatikBaslatDestekleniyor, true);
+  assert.notEqual(ozet.otomatikBaslatDurumu.durum, 'tasinabilir');
+});
+
+ortamda('taşınabilir (o-45): taşınabilir derlemede Windows açılışına HİÇ yazılmaz ve okunmaz; durum "tasinabilir", destek yok, ayar değeri korunur', tasinabilirOrtam(), async (ortam) => {
+  assert.deepEqual(ortam.durum.oturumYazimlari, []);
+  assert.deepEqual(ortam.durum.oturumOkumalari, []);
+  const olay = ayarlarOlayi(ortam);
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(olay);
+  assert.equal(ozet.otomatikBaslatDestekleniyor, false);
+  assert.equal(ozet.otomatikBaslatDurumu.durum, 'tasinabilir');
+  assert.match(ozet.otomatikBaslatDurumu.mesaj, /Taşınabilir sürümde Windows ile başlatma yoktur/);
+  assert.equal(ozet.otomatikBaslat, true, 'ortak ayar dosyasındaki tercih (kurulu sürümün) olduğu gibi gösterilir');
+  assert.deepEqual(ortam.durum.oturumOkumalari, [], 'durum sorgusu da kayıt defterine bakmaz');
+});
+
+ortamda('taşınabilir (o-45): kutuyu kaydetmek, "yeniden etkinleştir" ve tepsi kutusu ortak ayar değerini DEĞİŞTİRMEZ ve Windows\'a yazmaz; tepsi kutusu kapalı ve nedeni etikette', tasinabilirOrtam(), async (ortam) => {
+  const olay = ayarlarOlayi(ortam);
+  const kaydet = await ortam.durum.ipc.get('ayarlar:kaydet')(olay, {
+    yerelAdres: 'http://192.168.1.10:8123',
+    disAdres: 'https://ha.example.com',
+    kisayol: 'Control+Alt+H',
+    otomatikBaslat: false,
+    pencereBoyutu: 'hizli',
+    odakKaybindaGizle: true,
+    anaPanoyaDonDk: 5,
+  });
+  assert.equal(kaydet.ok, true);
+  assert.equal(ortam.ayarOku().otomatikBaslat, true, 'taşınabilir sürüm kurulu sürümün başlangıç tercihini ezmez');
+  await ortam.durum.ipc.get('otomatik-baslat:etkinlestir')(olay);
+  const oge = ortam.menuAgaci().find((d) => /^Windows açılınca başlat/.test(d.oge.label ?? '')).oge;
+  assert.equal(oge.enabled, false);
+  assert.equal(oge.checked, false);
+  assert.equal(oge.label, 'Windows açılınca başlat (taşınabilir sürümde yok)');
+  oge.click({ checked: true });
+  assert.equal(ortam.ayarOku().otomatikBaslat, true);
+  assert.deepEqual(ortam.durum.oturumYazimlari, []);
+  assert.deepEqual(ortam.durum.oturumOkumalari, []);
+});
+
+ortamda('taşınabilir (o-45): veri klasörü ve tek kopya kilidi kurulu sürümle ortaktır (ayarlar %APPDATA%\\Ev Paneli altında, exe\'nin yanında değil)', tasinabilirOrtam(), async (ortam) => {
+  assert.equal(path.basename(ortam.durum.yollar.get('userData')), 'Ev Paneli');
+  assert.equal(path.dirname(ortam.durum.yollar.get('userData')), ortam.durum.appData);
+  assert.ok(fs.existsSync(path.join(ortam.durum.yollar.get('userData'), 'ayarlar.json')));
+  assert.equal(fs.existsSync('D:\\USB\\Ev Paneli'), false);
+});
+
+ortamda('taşınabilir (o-45): PORTABLE_EXECUTABLE_FILE yoksa (kurulu sürüm) hiçbir şey değişmez; boş değer taşınabilir sayılmaz', { ...dalga3([SALON], { otomatikBaslat: true }, { paketli: true, ha: HA_VARLIKLARI }), oncesi: () => {
+  const onceki = process.env.PORTABLE_EXECUTABLE_FILE;
+  process.env.PORTABLE_EXECUTABLE_FILE = '';
+  return [{ mock: { restore: () => (onceki === undefined ? delete process.env.PORTABLE_EXECUTABLE_FILE : (process.env.PORTABLE_EXECUTABLE_FILE = onceki)) } }];
+} }, async (ortam) => {
+  assert.equal(ortam.durum.oturumYazimlari.length, 1);
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.equal(ozet.otomatikBaslatDestekleniyor, true);
+});
+
+// --- tanılama raporu ve günlük düğmesi (o-41) -----------------------------------------------
+
+const TANILAMA = ['tanilama:getir', 'tanilama:kopyala', 'gunluk:klasor-ac'];
+const gunlukDosyasi = (ortam) => path.join(ortam.durum.appData, 'gunlukler', 'ev-paneli.log');
+const gunluguaYaz = (ortam, ...satirlar) => {
+  fs.mkdirSync(path.dirname(gunlukDosyasi(ortam)), { recursive: true });
+  fs.appendFileSync(gunlukDosyasi(ortam), satirlar.map((s) => `${s}\n`).join(''));
+};
+
+ortamda('tanılama (o-41): rapor ana süreçte kurulur; sürüm, Windows yapısı, adres SINIFI, bağlantı kipi, yetki kesici ve son başarı yazılır; adres, anahtar ve günlük yolu yazılmaz; panoya dokunulmaz', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  ortam.ilerle(400);
+  await ortam.akit();
+  const yanit = await ortam.durum.ipc.get('tanilama:getir')(ayarlarOlayi(ortam));
+  assert.equal(yanit.ok, true);
+  const { metin } = yanit;
+  assert.match(metin, /^Ev Paneli \/ Home Panel diagnostics report\nCreated: \d{4}-\d\d-\d\dT[\d:.]+Z\n/);
+  assert.match(metin, /\nApp version: 1\.3\.0 \(development build\)\n/, 'sahte ortamda paketli değil');
+  assert.match(metin, /\nElectron: \S+, Chrome: \S+, Node: \d+\.\d+\.\d+/);
+  assert.match(metin, /\nSystem: \S+ \S+, \S+\n/);
+  assert.match(metin, /\nHome address: private IP, http\nExternal address: public name, https\nConnection: home network\n/);
+  assert.match(metin, /\nAccess key: added \(the key itself is never included\)\nKey status: ok\nFailed sign-in attempts counted: 0\nBreaker record: ok\n/);
+  assert.match(metin, /\nLast successful contact: \d{4}-\d\d-\d\dT[\d:.]+Z \(\d+ min ago\)\n/, 'REST yenilemesi başarılı oldu');
+  assert.match(metin, /\nRecent log lines \(\d+; secrets, addresses and device names masked\):\n/);
+  for (const sizinti of [TEST_ANAHTAR, '192.168.1.10', 'ha.example.com', ':8123', 'gunlukler', 'ev-paneli.log', ortam.durum.appData]) {
+    assert.equal(metin.includes(sizinti), false, `${sizinti} rapora girdi`);
+  }
+  assert.deepEqual(Object.keys(yanit).sort(), ['gunlukSatiri', 'metin', 'ok'], 'yanıtta yol ya da başka alan yok');
+  assert.deepEqual(ortam.durum.pano, [], 'önizleme panoya yazmaz');
+  assert.deepEqual(ortam.durum.klasordeGosterilenler, []);
+});
+
+ortamda('tanılama (o-41): günlük satırları rapora maskelenmiş girer (URL, IP, varlık kimliği, kullanıcı klasörü, anahtar parmak izi); yalnız son 40 satır', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  await ortam.akit();
+  const satirlar = Array.from({ length: 60 }, (_, i) => `2026-10-16T09:00:00.000Z eski olay ${i + 1}`);
+  gunluguaYaz(
+    ortam,
+    ...satirlar,
+    `2026-10-16T09:10:00.000Z Sayfa yüklenemedi: ${YEREL_KOK}/lovelace/0 light.salon_lambasi 192.168.1.77 C:\\Users\\emres\\AppData\\x parmak izi=ab12cd34 Bearer ${TEST_ANAHTAR}`,
+  );
+  const { metin, gunlukSatiri } = await ortam.durum.ipc.get('tanilama:getir')(ayarlarOlayi(ortam));
+  assert.equal(gunlukSatiri, 40);
+  assert.match(metin, /Recent log lines \(40;/);
+  assert.match(metin, /Sayfa yüklenemedi: \[url\] light\.\[entity\] \[ip\] C:\\Users\\\[user\]\\AppData\\x parmak izi=\[masked\] Bearer \[gizli\]\n/);
+  assert.doesNotMatch(metin, /eski olay (1|2|10|20)\n/, 'eski satırlar rapora girmez');
+  assert.match(metin, /eski olay 60\n/);
+  for (const sizinti of [TEST_ANAHTAR, '192.168.1.77', '192.168.1.10', 'salon_lambasi', 'emres', 'ab12cd34']) assert.equal(metin.includes(sizinti), false, sizinti);
+});
+
+ortamda('tanılama (o-41): "tanilama:kopyala" AYNI metni panoya yazar ve önizleme için geri verir; günlüğe yalnız sabit bir satır düşer', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  ortam.ilerle(400);
+  await ortam.akit();
+  const yanit = await ortam.durum.ipc.get('tanilama:kopyala')(ayarlarOlayi(ortam));
+  assert.equal(yanit.ok, true);
+  assert.equal(ortam.durum.pano.length, 1);
+  assert.equal(ortam.durum.pano[0], yanit.metin, 'kopyalanan metin = gösterilen metin');
+  assert.match(yanit.metin, /^Ev Paneli \/ Home Panel diagnostics report\n/);
+  assert.match(ortam.gunlukOku(), /Tanılama raporu panoya kopyalandı \(\d+ günlük satırı\)\./);
+  assert.equal(ortam.durum.pano[0].includes(TEST_ANAHTAR), false);
+  sirsiz(ortam);
+  // pano kullanılamıyorsa hata yanıtı döner, uygulama çökmez
+  ortam.durum.panoHatasi = true;
+  assert.deepEqual(await ortam.durum.ipc.get('tanilama:kopyala')(ayarlarOlayi(ortam)), { ok: false });
+  assert.equal(ortam.durum.pano.length, 1);
+});
+
+ortamda('tanılama (o-41): anahtar eklenmemişse "no key added" yazılır; bağlantı yoksa "none" ve son başarı "never"', { ...dalga3([SALON]), anahtar: false, yoklama: null }, async (ortam) => {
+  await ortam.akit();
+  const { metin } = await ortam.durum.ipc.get('tanilama:getir')(ayarlarOlayi(ortam));
+  assert.match(metin, /\nConnection: none\n/);
+  assert.match(metin, /\nAccess key: not added \(the key itself is never included\)\nKey status: no key added\n/);
+  assert.match(metin, /\nLast successful contact: never in this session\n/);
+});
+
+ortamda('tanılama (o-41): adres sınıfları ayardan okunur (.local, genel IP, boş); tam adres hiçbir sınıfta yazılmaz', { ...dalga3([SALON], { yerelAdres: 'http://homeassistant.local:8123', disAdres: 'https://203.0.113.9:8443' }), anahtar: false, yoklama: null }, async (ortam) => {
+  await ortam.akit();
+  const { metin } = await ortam.durum.ipc.get('tanilama:getir')(ayarlarOlayi(ortam));
+  assert.match(metin, /\nHome address: local name \(\.local, \.lan or single label\), http\nExternal address: public IP, https\n/);
+  for (const sizinti of ['homeassistant', '203.0.113.9', '8443', '8123']) assert.equal(metin.includes(sizinti), false, sizinti);
+});
+
+ortamda('tanılama (o-41): taşınabilir derlemede rapor "portable build" yazar', tasinabilirOrtam(), async (ortam) => {
+  const { metin } = await ortam.durum.ipc.get('tanilama:getir')(ayarlarOlayi(ortam));
+  assert.match(metin, /\nApp version: 1\.3\.0 \(portable build\)\n/);
+});
+
+ortamda('tanılama (o-41): "gunluk:klasor-ac" günlük dosyasını klasörde gösterir (yol yanıtta yok); dosya yoksa klasörü açar; ikisi de yoksa nedenini söyler', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  await ortam.akit();
+  gunluguaYaz(ortam, '2026-10-16T09:00:00.000Z deneme');
+  const olay = ayarlarOlayi(ortam);
+  const ac = ortam.durum.ipc.get('gunluk:klasor-ac');
+  assert.deepEqual(await ac(olay), { ok: true });
+  assert.deepEqual(ortam.durum.klasordeGosterilenler, [gunlukDosyasi(ortam)]);
+  assert.deepEqual(ortam.durum.acilanKlasorler, []);
+  fs.rmSync(gunlukDosyasi(ortam));
+  assert.deepEqual(await ac(olay), { ok: true, klasor: true });
+  assert.deepEqual(ortam.durum.acilanKlasorler, [path.dirname(gunlukDosyasi(ortam))]);
+  assert.equal(ortam.durum.klasordeGosterilenler.length, 1);
+  fs.rmSync(path.dirname(gunlukDosyasi(ortam)), { recursive: true, force: true });
+  assert.deepEqual(await ac(olay), { ok: false, neden: 'yok' });
+  assert.equal(ortam.durum.acilanKlasorler.length, 1);
+});
+
+ortamda('tanılama (o-41): üç kanal da yalnız Ayarlar sayfasına yanıt verir; uzak sayfa ve başka pencere reddedilir (pano ve klasör etkilenmez)', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  await ortam.akit();
+  gunluguaYaz(ortam, '2026-10-16T09:00:00.000Z deneme');
+  const olay = ayarlarOlayi(ortam);
+  const uzak = { sender: olay.sender, senderFrame: { url: `${YEREL_KOK}/lovelace`, parent: null } };
+  const baskaPencere = { sender: ortam.pencere.webContents, senderFrame: olay.senderFrame };
+  for (const kanal of TANILAMA) {
+    for (const kotu of [uzak, baskaPencere]) assert.deepEqual(await ortam.durum.ipc.get(kanal)(kotu), { ok: false, hata: 'İzin yok.' }, `${kanal} reddedilmeli`);
+  }
+  assert.deepEqual(ortam.durum.pano, []);
+  assert.deepEqual(ortam.durum.klasordeGosterilenler, []);
+  assert.deepEqual(ortam.durum.acilanKlasorler, []);
+});
+
 // --- hazır liste (hiz-07) ------------------------------------------------------------------
 
 ortamda("hazır liste: açılışta TEK read-only GET /api/states ile HA'da bulunanlar eklenir, bulunmayanlar atlanır; sürüm kaydedilir; POST yok", {
@@ -3125,6 +3903,141 @@ ortamda('yetki kesici (j): kesici açıkken tepsi favorisi, eylem kısayolu, kom
   assert.deepEqual(postlar(ortam), []);
   assert.ok(koseMesajlari(ortam).some((m) => m.tur === 'hata' && neden.test(m.metin)), 'köşe bildirimi de nedeni söyler');
   sirsiz(ortam);
+});
+
+ortamda('tanılama (o-41): reddedilmiş anahtar raporda "rejected" ve hatalı deneme sayısı olarak görünür; anahtar parmak izi ve anahtar rapora girmez', { ...dalga3(SEKIZ_ISIK), apiYaniti: hepsiniReddet }, async (ortam) => {
+  await ortam.akit();
+  ortam.ilerle(400);
+  await ortam.akit();
+  const { metin } = await ortam.durum.ipc.get('tanilama:getir')(ayarlarOlayi(ortam));
+  assert.match(metin, /\nKey status: rejected by Home Assistant\nFailed sign-in attempts counted: [1-9]\d*\n/);
+  assert.match(metin, /Yetki kesici: anahtar reddedildi \(neden=HTTP_401, parmak izi=\[masked\],/, 'günlük satırındaki parmak izi maskelenir');
+  assert.equal(metin.includes(TEST_ANAHTAR), false);
+  assert.equal(metin.includes(anahtarParmakIzi(TEST_ANAHTAR).slice(0, 8)), false);
+  assert.match(metin, /\nLive updates \(WebSocket\): not connected\n/);
+});
+
+// --- odadan ilk kurulum önerisi (o-44) ------------------------------------------------------
+
+const ODA_DURUMLARI = [
+  durumNesnesi('light.salon_lambasi', 'Salon Lambası', 'off'),
+  durumNesnesi('switch.salon_priz', 'Salon Priz', 'on'),
+  durumNesnesi('scene.film', 'Film', 'scening'),
+  durumNesnesi('light.giris_kapisi_lambasi', 'Giriş Kapısı Lambası', 'off'), // Kapı Kuralı
+  durumNesnesi('lock.on_kapi', 'Ön Kapı', 'locked'), // Kapı Kuralı (alan)
+  durumNesnesi('sensor.salon_sicaklik', 'Salon Sıcaklık', '21'), // yalnız okunur: önerilmez
+  durumNesnesi('button.salon_zil', 'Salon Zil', 'unknown'), // varsayılan onaylı: önerilmez
+  durumNesnesi('light.mutfak_lambasi', 'Mutfak Lambası', 'on'),
+  durumNesnesi('light.garaj_lambasi', 'Garaj Lambası', 'off'), // oda adı süzgeçte düşer
+  durumNesnesi('light.odasiz', 'Odasız Lamba', 'off'),
+];
+const ODA_WS_YANITLARI = {
+  'config/area_registry/list': { success: true, result: [{ area_id: 'salon', name: 'Salon' }, { area_id: 'mutfak', name: 'Mutfak' }, { area_id: 'garaj', name: 'Garaj' }] },
+  'config/entity_registry/list_for_display': {
+    success: true,
+    result: {
+      entities: [
+        { ei: 'light.salon_lambasi', ai: 'salon' },
+        { ei: 'switch.salon_priz', ai: 'salon' },
+        { ei: 'scene.film', ai: 'salon' },
+        { ei: 'light.giris_kapisi_lambasi', ai: 'salon' },
+        { ei: 'lock.on_kapi', ai: 'salon' },
+        { ei: 'sensor.salon_sicaklik', ai: 'salon' },
+        { ei: 'button.salon_zil', ai: 'salon' },
+        { ei: 'light.mutfak_lambasi', ai: 'mutfak' },
+        { ei: 'light.garaj_lambasi', ai: 'garaj' },
+      ],
+    },
+  },
+  'config/device_registry/list': { success: true, result: [] },
+};
+
+/** Canlı bağlantıda ana sürecin gönderdiği okuma komutlarını yanıtlar (komutlar art arda gider: her turda bekleyenler yanıtlanır). */
+async function odaKomutlariniYanitla(ortam, soket, yanitlar = ODA_WS_YANITLARI) {
+  const yanitlanan = new Set();
+  for (let tur = 0; tur < 8; tur += 1) {
+    await ortam.akit();
+    for (const m of soket.gonderilen) {
+      if (!yanitlar[m.type] || yanitlanan.has(m.id)) continue;
+      yanitlanan.add(m.id);
+      soket.yayinla({ id: m.id, type: 'result', ...yanitlar[m.type] });
+    }
+  }
+  return yanitlanan.size;
+}
+const odaIsteyin = (ortam) => ortam.durum.ipc.get('odalar:getir')(ayarlarOlayi(ortam));
+
+ortamda('odadan kurulum (o-44): canlı bağlantıda odalar ve güvenli öneriler döner; kapı kuralı, okunur alan, onaylı eylem ve oda adı süzgeci uygulanır; HİÇBİR ŞEY yazılmaz ve servis çağrılmaz', { ...dalga3([], {}, { ha: ODA_DURUMLARI }) }, async (ortam) => {
+  const { s } = await canliYap(ortam, ODA_DURUMLARI);
+  const ayarOnce = JSON.stringify(ortam.ayarOku());
+  const sozu = odaIsteyin(ortam);
+  const yanitlanan = await odaKomutlariniYanitla(ortam, s);
+  const yanit = await sozu;
+  assert.equal(yanitlanan, 3, 'oda kaydı, varlık kaydı ve cihaz kaydı okundu');
+  assert.deepEqual(
+    s.gonderilen.filter((m) => m.type?.startsWith('config/')).map((m) => m.type),
+    ['config/area_registry/list', 'config/entity_registry/list_for_display', 'config/device_registry/list'],
+    'yalnız okuma komutları',
+  );
+  assert.equal(yanit.ok, true);
+  assert.deepEqual(
+    yanit.odalar.map((o) => [o.id, o.ad, o.toplam, o.cihazlar.map((c) => c.entity_id)]),
+    [
+      ['mutfak', 'Mutfak', 1, ['light.mutfak_lambasi']],
+      ['salon', 'Salon', 3, ['light.salon_lambasi', 'switch.salon_priz', 'scene.film']],
+    ],
+    'Garaj odası, kapı/kilit, sensör, onaylı düğme ve odasız lamba önerilmez',
+  );
+  assert.deepEqual(yanit.odalar.find((o) => o.id === 'salon').cihazlar[0], { entity_id: 'light.salon_lambasi', ad: 'Salon Lambası', alan: 'light' });
+  assert.equal(yanit.alanSayisi, 2, 'adı süzgeçten geçmeyen oda sayılmaz');
+  assert.equal(JSON.stringify(yanit).includes(TEST_ANAHTAR), false);
+  assert.equal(JSON.stringify(yanit).includes('kapi'), false);
+  assert.deepEqual(postlar(ortam), [], 'hiçbir servis çağrılmadı');
+  assert.equal(s.gonderilen.some((m) => m.type === 'call_service'), false);
+  assert.equal(JSON.stringify(ortam.ayarOku()), ayarOnce, 'ayarlar değişmedi (öneri yalnız sayfada seçime eklenir)');
+  assert.deepEqual(ortam.durum.pano, []);
+});
+
+ortamda('odadan kurulum (o-44): canlı bağlantı yoksa "canli-yok" döner ve HA\'ya durum/oda isteği gitmez', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {
+  await ortam.akit();
+  const tumDurumIstekleri = () => ortam.durum.fetchler.filter((f) => new URL(f.url).pathname === '/api/states').length;
+  const once = tumDurumIstekleri();
+  assert.equal((await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam))).canliDurum === 'canli', false);
+  assert.deepEqual(await odaIsteyin(ortam), { ok: false, neden: 'canli-yok' });
+  assert.equal(tumDurumIstekleri(), once);
+  assert.equal(ortam.durum.soketler.every((k) => !k.gonderilen.some((m) => String(m.type).startsWith('config/'))), true);
+});
+
+ortamda('odadan kurulum (o-44): oda kaydı yönetici gerektiriyorsa "yetki" döner (oturum boyunca kapanır, tekrar sorulmaz); oda yoksa boş liste', { ...dalga3([], {}, { ha: ODA_DURUMLARI }) }, async (ortam) => {
+  const { s } = await canliYap(ortam, ODA_DURUMLARI);
+  const sozu = odaIsteyin(ortam);
+  await odaKomutlariniYanitla(ortam, s, { 'config/area_registry/list': { success: false, error: { code: 'unauthorized', message: 'Unauthorized' } } });
+  assert.deepEqual(await sozu, { ok: false, neden: 'yetki' });
+  const komutSayisi = s.gonderilen.filter((m) => m.type === 'config/area_registry/list').length;
+  const ikinci = await odaIsteyin(ortam);
+  assert.deepEqual(ikinci, { ok: false, neden: 'yetki' });
+  assert.equal(s.gonderilen.filter((m) => m.type === 'config/area_registry/list').length, komutSayisi, 'kapanan uç yeniden sorulmaz');
+});
+
+ortamda('odadan kurulum (o-44): HA oda tanımlamamışsa ok:true ve boş liste döner', { ...dalga3([], {}, { ha: ODA_DURUMLARI }) }, async (ortam) => {
+  const { s } = await canliYap(ortam, ODA_DURUMLARI);
+  const sozu = odaIsteyin(ortam);
+  await odaKomutlariniYanitla(ortam, s, {
+    'config/area_registry/list': { success: true, result: [] },
+    'config/entity_registry/list_for_display': { success: true, result: { entities: [] } },
+    'config/device_registry/list': { success: true, result: [] },
+  });
+  assert.deepEqual(await sozu, { ok: true, odalar: [], alanSayisi: 0 });
+});
+
+ortamda('odadan kurulum (o-44): kanal yalnız Ayarlar sayfasına yanıt verir; uzak sayfa ve başka pencere reddedilir (ağa çıkılmaz)', { ...dalga3([], {}, { ha: ODA_DURUMLARI }) }, async (ortam) => {
+  const { s } = await canliYap(ortam, ODA_DURUMLARI);
+  const olay = ayarlarOlayi(ortam);
+  const uzak = { sender: olay.sender, senderFrame: { url: `${YEREL_KOK}/lovelace`, parent: null } };
+  const baskaPencere = { sender: ortam.pencere.webContents, senderFrame: olay.senderFrame };
+  for (const kotu of [uzak, baskaPencere]) assert.deepEqual(await ortam.durum.ipc.get('odalar:getir')(kotu), { ok: false, hata: 'İzin yok.' });
+  await ortam.akit();
+  assert.equal(s.gonderilen.some((m) => String(m.type).startsWith('config/')), false);
 });
 
 // --- Tur 1 inceleme düzeltmeleri (ana süreç düzeyinde) ------------------------------------------------------------
@@ -4399,6 +5312,29 @@ ortamda('bağlantı (h-35): uygulamanın KENDİ çevrimdışı sayfası (5xx yan
   await ortam.akit();
   assert.doesNotMatch(ortam.gunlukOku(), /geri dönüldü/);
   assert.ok(wc.yuklemeler.some((y) => y.tur === 'dosya' && /offline\.html/.test(y.url)), 'durum sayfası kendi yüklendi');
+});
+
+// --- yazım denetimi ve sözlük indirmesi (o-42) ---------------------------------------------
+
+ortamda('yazım denetimi (o-42): HA oturumunda ve varsayılan oturumda kapalı, dil listesi boş; bu, ilk oturum kullanımından (izin işleyicisi) önce yapılır; sözlük için ağ isteği yok', undefined, async (ortam) => {
+  const ha = ortam.durum.oturumlar.find((o) => o.ad === 'persist:ha');
+  const varsayilan = ortam.durum.oturumlar.find((o) => o.ad === 'varsayilan');
+  assert.ok(ha && varsayilan, 'iki oturum da kullanıldı');
+  for (const oturum of [ha, varsayilan]) {
+    assert.equal(oturum.yazimAcik, false);
+    assert.deepEqual(oturum.yazimDilleri, []);
+    assert.deepEqual(oturum.sira.slice(0, 3), ['yazim-acik', 'yazim-diller', 'izin'], `${oturum.ad}: yazım denetimi kapatma ilk çağrı`);
+  }
+  ortam.ilerle(600_000);
+  await ortam.akit();
+  assert.deepEqual(ortam.durum.fetchler.filter((f) => /dictionar|spell|gstatic|google|hunspell|\.bdic/i.test(f.url)), []);
+  assert.deepEqual(ortam.durum.bildirimler, []);
+});
+
+ortamda('yazım denetimi (o-42): oturum yazım denetimi işlevlerini sunmuyor ya da fırlatıyorsa açılış çökmez', undefined, async (ortam) => {
+  assert.ok(ortam.pencere.gorunur, 'uygulama açıldı');
+  const { yazimDenetiminiKapat } = require('../src/lib/yazim-denetimi');
+  assert.doesNotThrow(() => yazimDenetiminiKapat({ setSpellCheckerEnabled() { throw new Error('x'); } }, () => {}));
 });
 
 // --- h-36: izinler ---------------------------------------------------------------------------------

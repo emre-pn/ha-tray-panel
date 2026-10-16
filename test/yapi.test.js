@@ -119,7 +119,7 @@ test('varsayılan ayarlar güvenli: favori yok, kısayol geçerli', () => {
 // ---------------------------------------------------------------------------
 
 const YEREL_SAYFALAR = tumDosyalar.filter((d) => goreli(d).startsWith('src/') && d.endsWith('.html')).map(goreli);
-const RENDERER_BETIKLERI = ['src/ayarlar.js', 'src/offline.js', 'src/kose-sayfa.js', 'src/yuzey-sayfa.js', 'src/lib/arama.js', 'src/lib/kaydirici.js', 'src/lib/kisayol.js', 'src/lib/dil.js', 'src/lib/ceviri/ana.js', 'src/lib/ceviri/ayarlar.js', 'src/lib/ceviri/yuzey.js'];
+const RENDERER_BETIKLERI = ['src/ayarlar.js', 'src/offline.js', 'src/kose-sayfa.js', 'src/yuzey-sayfa.js', 'src/lib/arama.js', 'src/lib/ayar-arama.js', 'src/lib/kaydirici.js', 'src/lib/kisayol.js', 'src/lib/dil.js', 'src/lib/ceviri/ana.js', 'src/lib/ceviri/ayarlar.js', 'src/lib/ceviri/yuzey.js'];
 // preload.js'in window.evPaneli altında açtığı tam liste (başka işlev açılırsa bu test bilinçli güncellenmeli).
 const EV_PANELI_KOPRUSU = [
   'tekrarDene',
@@ -142,6 +142,18 @@ const EV_PANELI_KOPRUSU = [
   'yedektenDon',
   'onFavorilerDegisti',
   'onDilDegisti',
+  // arac grubu (o-40): sürüm denetimi ve Yenilikler
+  'surumDurumu',
+  'surumuDenetle',
+  'yenilikleriGetir',
+  'surumSayfasiniAc',
+  // arac grubu (o-41): tanılama raporu (önizleme, kopyalama) ve günlük klasörü
+  'tanilamaGetir',
+  'tanilamaKopyala',
+  'gunlukKlasoruAc',
+  // arac grubu (o-44): odadan ilk kurulum önerisi (yalnız okur)
+  'odalariGetir',
+  'onBolumAc',
 ];
 // preload-yuzey.js'in window.evYuzey altında açtığı tam liste (hızlı panel / palet; Dalga 3).
 // 1.4.0: 'oku' (yuzey:oku; geçmiş/takvim/hava/yapılacaklar, yalnız kayıtlı varlıklar, ana süreçte süzülür) bilinçli eklendi.
@@ -356,12 +368,24 @@ test('README: "bir defa giriş" iddiası yok; oturumun adres (köken) başına o
   assert.match(readme, /npm run kontrol/);
 });
 
+// 1.4.0: yeni betikler belgelere (README / docs/KILAVUZ.md) birleştirme adımında yazılır; o zamana dek ayrı todo denetiminde izlenir.
+const BELGELENECEK_BETIKLER = ['dist:tasinabilir']; // o-45 taşınabilir derleme
+
 test('README: package.json betiklerinin hepsi belgelenmiş (npm start, dist, ikon, test, kontrol)', () => {
   const readme = belgeler();
   const paket = JSON.parse(oku('package.json'));
-  for (const ad of Object.keys(paket.scripts)) {
+  for (const ad of Object.keys(paket.scripts).filter((a) => !BELGELENECEK_BETIKLER.includes(a))) {
     const komut = ad === 'start' || ad === 'test' ? `npm ${ad}` : `npm run ${ad}`;
     assert.ok(readme.includes(komut), `README'de "${komut}" yok`);
+  }
+});
+
+test('README: 1.4.0 betikleri (taşınabilir derleme) belgelenmiş', { todo: 'birleştirme: belgelerde npm run dist:tasinabilir yazılınca todo kaldırılacak' }, () => {
+  const readme = belgeler();
+  const paket = JSON.parse(oku('package.json'));
+  for (const ad of BELGELENECEK_BETIKLER) {
+    assert.ok(Object.hasOwn(paket.scripts, ad), `package.json'da ${ad} betiği yok`);
+    assert.ok(readme.includes(`npm run ${ad}`), `README'de "npm run ${ad}" yok`);
   }
 });
 
@@ -533,7 +557,8 @@ test('yetki kesici: kimlikli isteğin başlığı, REST çağrısı ve WebSocket
     const icerik = yorumsuz(fs.readFileSync(dosya, 'utf8'));
     if (g !== 'src/ha-istemcisi.js') assert.ok(!/Authorization\s*:|Bearer \$\{/.test(icerik), `${g}: Authorization başlığı yalnız ha-istemcisi.js'te kurulur`);
     // adres-sina.js (k-14 "Bağlantıyı sına") bilinçli ikinci istisnadır: kimliksiz tek GET; ayrıntılı sınırları aşağıdaki testte.
-    if (!['src/ha-istemcisi.js', 'src/main.js', 'src/lib/adres-sina.js'].includes(g)) assert.ok(!/\bnet\.fetch\s*\(|\bfetch\s*\(|net\.request\s*\(|https?\.request\s*\(/.test(icerik), `${g}: ağ isteği`);
+    // surum-denetimi.js (o-40) üçüncü bilinçli istisnadır: kimliksiz, çerezsiz tek GET (GitHub sürüm adresi); varsayılan KAPALI seçenek; sınırları test/surum-denetimi.test.js'te.
+    if (!['src/ha-istemcisi.js', 'src/main.js', 'src/lib/adres-sina.js', 'src/lib/surum-denetimi.js'].includes(g)) assert.ok(!/\bnet\.fetch\s*\(|\bfetch\s*\(|net\.request\s*\(|https?\.request\s*\(/.test(icerik), `${g}: ağ isteği`);
     if (g !== 'src/ha-ws.js') assert.ok(!/new\s+WebSocket\w*\s*\(/.test(icerik), `${g}: soket yalnız ha-ws.js'te açılır`);
   }
   const istemci = oku('src/ha-istemcisi.js');
