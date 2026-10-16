@@ -165,14 +165,23 @@ test('yüksek karşıtlık (panel): koyu ve açık palet tam; kenarlık ve metin
   assert.equal(acik['--bg'], '#ffffff');
 });
 
+test('köşe bildirimi durum renkleri (--basari, --hata, --bilgi): tema-renk.js iki tema için CSS ile aynı değerleri yazar', () => {
+  const koyu = degiskenler(secicidenGovde(KOSE_KURALLARI, ':root', ''));
+  const acik = degiskenler(secicidenGovde(KOSE_KURALLARI, ':root', ACIK_MEDYA));
+  for (const [sema, css] of [['koyu', koyu], ['acik', acik]]) {
+    const d = T.paletUret({ sema }).degiskenler;
+    for (const ad of ['--basari', '--hata', '--bilgi']) assert.equal(d[ad], css[ad], `${sema} ${ad}`);
+  }
+});
+
 test('yüksek karşıtlık (köşe bildirimi): paleti tam; metin ve ✓/! simgeleri en az 7:1', () => {
   const { koyu, acik } = yuksekKarsitlikPaletleri(KOSE_KURALLARI);
   for (const [ad, p] of [['koyu', koyu], ['açık', acik]]) {
-    for (const d of ['--bg', '--metin', '--basari', '--hata', '--isaret-metin']) assert.ok(d in p, `${ad}: ${d}`);
+    for (const d of ['--bg', '--metin', '--basari', '--hata', '--bilgi', '--isaret-metin']) assert.ok(d in p, `${ad}: ${d}`);
     assert.ok(kontrast(p['--metin'], p['--bg']) >= 7, `${ad}: metin`);
     assert.ok(kontrast(p['--isaret-metin'], p['--basari']) >= 7, `${ad}: ✓ simgesi`);
     assert.ok(kontrast(p['--isaret-metin'], p['--hata']) >= 7, `${ad}: ! simgesi`);
-    assert.ok(kontrast(p['--basari'], p['--bg']) >= 4.5 && kontrast(p['--hata'], p['--bg']) >= 4.5, `${ad}: sol şerit zeminden seçilir`);
+    assert.ok(kontrast(p['--basari'], p['--bg']) >= 4.5 && kontrast(p['--hata'], p['--bg']) >= 4.5 && kontrast(p['--bilgi'], p['--bg']) >= 4.5, `${ad}: sol şerit zeminden seçilir (bilgi türü dahil)`);
   }
 });
 
@@ -323,9 +332,9 @@ test('renderer betikleri (tema-renk, efekt, yuzey-gorunum): HTML ataması, eval,
   assert.doesNotMatch(yorumsuz(kose), /innerHTML|eval\s*\(|fetch\s*\(/);
 });
 
-test('preload köprüleri: tema yeni köprü işlevi eklemez (evYuzey listesi yalnız diğer grupların bilinçli eklediği sagTik ile uzar; evKose aynı)', () => {
+test('preload köprüleri: tema yeni köprü işlevi eklemez (evYuzey listesi yalnız diğer grupların bilinçli eklediği oku, bildirimKapat ve sagTik ile uzar; evKose aynı)', () => {
   const yuzey = [...oku('src/preload-yuzey.js').matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]);
-  assert.deepEqual(yuzey, ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc', 'sagTik']);
+  assert.deepEqual(yuzey, ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc', 'sagTik']);
   const kose = [...oku('src/preload-kose.js').matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]);
   assert.deepEqual(kose, ['onGoster', 'onDilDegisti']);
 });

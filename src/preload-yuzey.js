@@ -29,6 +29,8 @@ if (location.protocol === 'file:') {
     calistir: (yuk) => ipcRenderer.invoke('yuzey:calistir', yuk),
     // 1.4.0 okuma: { tur: 'gecmis'|'takvim'|'hava'|'yapilacak', ... }; yanıt: { ok, veri } (yalnız kayıtlı varlıklar; src/lib/ha-okuma.js)
     oku: (istek) => ipcRenderer.invoke('yuzey:oku', istek),
+    // 1.4.0 bildirim şeridi: modeldeki (opak) öğe anahtarıyla kapatır; yanıt: { ok, tur? } (HA bildirimi HA'ya da gider)
+    bildirimKapat: (anahtar) => ipcRenderer.invoke('yuzey:bildirim-kapat', anahtar),
     basiliBasla: (kimlik) => ipcRenderer.invoke('yuzey:basili-basla', kimlik),
     // Basılı tutma süre dolmadan bırakıldı: ana süreçteki başlangıç kaydı silinir (savunma derinliği)
     basiliBirak: (kimlik) => ipcRenderer.invoke('yuzey:basili-birak', kimlik),

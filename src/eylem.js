@@ -20,7 +20,7 @@
  *    Kaynak yalnız ayardaki kayıtlı kimlikleri döndürmelidir (serbest metin eylem YOK).
  */
 
-const { eylemHattiOlustur, basiliTutmaDeposu } = require('./lib/eylem-hatti');
+const { eylemHattiOlustur, bildirimKapatHattiOlustur, basiliTutmaDeposu } = require('./lib/eylem-hatti');
 const { SINIF, eylemSinifi } = require('./lib/eylem-sinifi');
 const { eylemAdiniCoz } = require('./lib/komut-satiri');
 const { durumuDuzelt } = require('./lib/ha-ws-protokol');
@@ -66,6 +66,8 @@ function eylemHataMetni(sonuc, t = TR) {
       return hataMetni({ tur: sonuc.tur }, t);
     case 'bilinmeyen-favori':
       return t('sonuc.favoridedegil');
+    case 'bilinmeyen-bildirim':
+      return t('sonuc.bildirimYok'); // 1.4.0: kapatılmak istenen bildirim artık listede değil
     case 'gecersiz':
       // 1.4.0 servis eylemi: sınır/adım dışı değer ve cihazın desteklemediği işlem ayrı söylenir (değer/cihaz ayrıntısı yok).
       if (sonuc.neden === 'sinir' || sonuc.neden === 'adim') return t('sonuc.sinirDisi');
@@ -89,6 +91,7 @@ function eylemHataMetni(sonuc, t = TR) {
  * @param {() => boolean} bag.onayAcikMi bir onay penceresi zaten açık mı
  * @param {() => void} bag.onayBekleniyorBildir
  * @param {() => object[]} bag.karolariAl komut satırı adını çözmek için güvenli favori karoları (yuzey-modeli)
+ * @param {(kimlik: string) => boolean} [bag.bildirimKayitliMi] (1.4.0) kimlik şu an panelde gösterilen bir HA bildirimi mi (bildirimKapat için)
  * @param {string} [bag.uygulamaAdi] sabit uygulama adı (t verilmediyse bildirim başlığında kullanılır)
  * @param {Function} [bag.t] çevirmen (src/lib/dil.js); ana süreçte dil değişince kendiliğinden yeni dili izler. Verilmezse Türkçe.
  * @param {(m: string) => void} [bag.gunluk]
@@ -107,6 +110,7 @@ function eylemKatmaniOlustur({
   onayAcikMi,
   onayBekleniyorBildir,
   karolariAl,
+  bildirimKayitliMi = () => false,
   uygulamaAdi = 'Ev Paneli',
   t: tVerilen,
   gunluk = () => {},
@@ -157,6 +161,7 @@ function eylemKatmaniOlustur({
     haIstek,
     basiliOnayi: (kimlik) => basili.tuket(kimlik),
   });
+  const bildirimHatti = bildirimKapatHattiOlustur({ bildirimKayitliMi, haIstek });
 
   function sessizMi(istek) {
     if (!YUZEYLER.includes(istek.kaynak)) return false;
@@ -310,6 +315,21 @@ function eylemKatmaniOlustur({
         const i = kayitKaynaklari.indexOf(kaynak);
         if (i >= 0) kayitKaynaklari.splice(i, 1);
       };
+    },
+
+    /**
+     * 1.4.0 (bildirim grubu): panelde gösterilen HA kalıcı bildirimini kapatır (persistent_notification.dismiss). Yalnız kullanıcının
+     * panelde "kapat" tıklamasından çağrılır (yuzey:bildirim-kapat); aynı tek POST noktasından ve yetki kesiciden geçer.
+     * Başarıda sessizdir (şerit kendini günceller); hatada köşe/Windows hata bildirimi çıkar.
+     * @returns {Promise<{ok: boolean, tur?: string}>}
+     */
+    async bildirimKapat(kimlik) {
+      const sonuc = await bildirimHatti({ kimlik, kaynak: 'panel' });
+      if (sonuc.ok) return { ok: true };
+      gunluk(`Bildirim kapatılamadı: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
+      if (sonuc.tur === 'cok-sik') return { ok: false, tur: sonuc.tur };
+      geriBildirim({ tur: 'hata', metin: hataBildirimiMetni(eylemHataMetni(sonuc, t), t), baslik: adAl() });
+      return { ok: false, tur: sonuc.tur };
     },
 
     /** Kimlik kayıtlı mı (favori ya da kayıt kaynağı)? Okuma uçları (yuzey:oku) izni için. */

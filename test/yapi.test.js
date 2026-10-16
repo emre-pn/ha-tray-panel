@@ -155,7 +155,7 @@ const EV_PANELI_KOPRUSU = [
 ];
 // preload-yuzey.js'in window.evYuzey altında açtığı tam liste (hızlı panel / palet; Dalga 3).
 // 1.4.0: 'oku' (yuzey:oku; geçmiş/takvim/hava/yapılacaklar, yalnız kayıtlı varlıklar, ana süreçte süzülür) bilinçli eklendi.
-const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc', 'sagTik'];
+const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc', 'sagTik'];
 // preload-karo.js'in window.evKaro altında açtığı tam liste (masaüstü karosu, 1.4.0 o-33): yalnız kendi karosunun durumu, tıkla/ön ayar ve kaldır.
 const EV_KARO_KOPRUSU = ['durumAl', 'onDurum', 'onDilDegisti', 'calistir', 'kaldir'];
 

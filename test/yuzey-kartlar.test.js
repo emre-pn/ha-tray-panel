@@ -669,3 +669,18 @@ test('model savunması: bilinmeyen öznitelik anahtarları atılır, uzun metin 
   assert.deepEqual(JSON.parse(JSON.stringify(K.servisListesiDuzelt(['set_hvac_mode', 'BÜYÜK', 5, 'a'.repeat(50), '../x', 'turn_off']))), ['set_hvac_mode', 'turn_off']);
   assert.deepEqual(JSON.parse(JSON.stringify(K.servisListesiDuzelt('x'))), []);
 });
+
+test('birleşik arayüz: cihaz kartları ve bilgi kartları aynı CSS sınıf adını iki ayrı öğe için kullanmaz (kart-etiket / kart-deger yalnız cihaz kartlarındadır)', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const sinifla = (dosya) => {
+    const metin = fs.readFileSync(path.join(__dirname, '..', 'src', dosya), 'utf8');
+    const kume = new Set();
+    for (const m of metin.matchAll(/(?:olustur|el)\(\s*'[a-z0-9]+'\s*,\s*'([^']*)'/g)) m[1].split(/\s+/).filter(Boolean).forEach((s) => kume.add(s));
+    return kume;
+  };
+  const kartSiniflari = sinifla('yuzey-kartlar.js');
+  const bilgiSiniflari = sinifla('yuzey-bilgi.js');
+  assert.ok(kartSiniflari.size > 10 && bilgiSiniflari.size > 10, 'sınıflar okundu');
+  assert.deepEqual([...kartSiniflari].filter((s) => bilgiSiniflari.has(s)), [], 'iki grubun sınıf adları kesişmemeli');
+});

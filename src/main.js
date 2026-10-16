@@ -94,12 +94,16 @@ const {
   HTTP_ANAHTAR_GUNLUK_SATIRI,
   ayarDosyasiBozukMetni,
   ikinciOnayMetni,
+  merkezKoseMetni,
 } = require('./lib/bildirim-metni');
 const { HaHatasi, hataMetni, haIstemcisiOlustur, YERELE_DONUS_YOKLAMA_MS } = require('./ha-istemcisi');
 const { guvenliWebTercihleri, yerelOlaydanMi, yerelPencereOlustur } = require('./yerel-pencere');
 const { koseBildirimiOlustur } = require('./kose-bildirim');
 const { haWsOlustur } = require('./ha-ws');
 const { haOkumaOlustur } = require('./lib/ha-okuma');
+const { bildirimAkisiOlustur } = require('./lib/bildirim-akisi');
+const { kapatilanDeposuOlustur } = require('./lib/bildirim-merkezi');
+const { UYARI_ALANLARI, durumOnerileri, alanSimgesi } = require('./lib/uyari-kurallari');
 const { karoAlaniMi, alanSirasi, varsayilanServis } = require('./lib/alan-kaydi');
 const { eylemKatmaniOlustur } = require('./eylem');
 const { yuzeyYoneticisiOlustur } = require('./yuzey-yoneticisi');
@@ -696,10 +700,10 @@ const tepsiRozeti = tepsiRozetiOlustur({
   gunluk,
 });
 
-/** İzlenen varlıklar: favoriler + salt-okunur yardımcı varlıklar (medya çalıyor, ses çıkışı) + bilgi kartlarının varlıkları (sensör şeridi, hava, takvim, yapılacaklar) + (rozet 'sensor' modunda) seçili sensör. */
+/** İzlenen varlıklar: favoriler + salt-okunur yardımcı varlıklar (medya çalıyor, ses çıkışı) + bilgi kartlarının varlıkları (sensör şeridi, hava, takvim, yapılacaklar) + (rozet 'sensor' modunda) seçili sensör + uyarı kurallarının varlıkları (1.4.0). */
 function izlenenKimlikler() {
   const rozetSensoru = tepsiRozeti.izlenenKimlik();
-  return new Set([...(ayarlar?.favoriler ?? []).map((f) => f.entity_id), ...YARDIMCI_VARLIKLAR, ...bilgiKimlikleri(ayarlar), ...(rozetSensoru ? [rozetSensoru] : [])]);
+  return new Set([...(ayarlar?.favoriler ?? []).map((f) => f.entity_id), ...YARDIMCI_VARLIKLAR, ...bilgiKimlikleri(ayarlar), ...(rozetSensoru ? [rozetSensoru] : []), ...bildirimAkisi.izlenenKimlikler()]);
 }
 
 const ws = haWsOlustur({
@@ -711,6 +715,7 @@ const ws = haWsOlustur({
   etkinMi: () => ayarlar?.canliBaglanti !== false,
   durumDegisti: (d) => {
     if (d.canli) depo.sonHata = null; // canlı bağlantı kuruldu: eski bir REST hatası ("bağlantı yok") artık geçerli değil
+    bildirimAkisi.baglantiDegisti(); // kurulum/kopma sırasındaki toplu durumlar uyarı üretmez (1.4.0)
     yuzey.modelDegisti();
     masaustuKarolari.modelDegisti(); // karolardaki bağlantı durumu (canlı / yedek)
     tepsiyiGuncelle(); // canlı/yedek geçişi ipucundaki "(son bilinen)" notunu değiştirir
@@ -788,6 +793,7 @@ function yuzeyModeli() {
     },
     t,
     sayfalar: ayarlar?.sayfalar ?? [], // 1.4.0 düzen (o-24): panel sekmeleri
+    bildirim: bildirimAkisi.model(), // 1.4.0: bildirim şeridi (HA bildirimleri, düşük pil, güncelleme, uyarılar)
   });
   // Bilgi kartları (o-04, o-07, o-08, o-10): sensör şeridi, sensör karoları, üst kartlar, takvim ve yapılacaklar; renderer'a rendererModeli ile süzülerek gider.
   return bilgiBolumunuEkle(model, { ayarlar, durumAl: (kimlik) => depo.al(kimlik), t });
@@ -839,6 +845,7 @@ const eylem = eylemKatmaniOlustur({
   onayAcikMi: () => acikOnaySayisi > 0,
   onayBekleniyorBildir,
   karolariAl: () => yuzeyModeli().gruplar.flatMap((g) => g.karolar),
+  bildirimKayitliMi: (haKimligi) => bildirimAkisi.bildirimKayitliMi(haKimligi), // yalnız panelde gösterilen HA bildirimi kapatılabilir
   t,
   gunluk,
 });
@@ -853,9 +860,28 @@ eylem.kayitKaynagiEkle(bilgiKaydi(() => ayarlar));
  */
 const haOkuma = haOkumaOlustur({ haIstek, ws, durumAl: (kimlik) => depo.al(kimlik), gunluk });
 
+/**
+ * 1.4.0 bildirim merkezi ve uyarı kuralları (o-36, o-37, o-39; src/lib/bildirim-akisi.js): HA kalıcı bildirimleri (WS, yalnız okuma),
+ * düşük pil / bekleyen güncelleme taraması (10 dk'da bir GET /api/states) ve kullanıcının kurduğu varlık uyarıları tek modelde
+ * toplanır; panelin bildirim şeridine ve (ayarlıysa) köşe/Windows bildirimine gider. Hepsi Kapı Kuralı süzgecinden geçer.
+ */
+const bildirimAkisi = bildirimAkisiOlustur({
+  okumaAl: () => haOkuma,
+  haIstek: (yol) => haIstek(yol), // yalnız GET /api/states (tek bağımsız değişken: yazma yok)
+  depo,
+  ayarAl: () => ayarlar,
+  goster: (g) => bildirimGoster(g),
+  degisti: () => yuzey.modelDegisti(),
+  kapatilan: kapatilanDeposuOlustur({ dosyaYolu: path.join(app.getPath('userData'), 'bildirim-kapatilan.json'), fs, gunluk }),
+  t,
+  gunluk,
+});
+depo.dinle((kimlikler) => bildirimAkisi.depoDegisti(kimlikler));
+
 const yuzey = yuzeyYoneticisiOlustur({
   modelAl: yuzeyModeli,
   eylem,
+  bildirim: bildirimAkisi,
   tepsiSinirlariAl: () => (tepsi && !tepsi.isDestroyed() ? tepsi.getBounds() : null),
   haAc: () => pencereyiGoster(),
   ayarlarAc: () => ayarlarPenceresiniAc(),
@@ -1066,6 +1092,34 @@ function geriBildirim({ tur, metin, baslik = uygulamaAdi() }) {
   let koseGosterildi = false;
   if (koseAcik) koseGosterildi = kose.goster({ tur: hata ? 'hata' : 'ok', metin });
   if (hata || (koseAcik && !koseGosterildi)) bildir(metin, baslik);
+}
+
+/**
+ * Bildirim merkezi ve uyarı kuralı gösterimi (1.4.0; bildirim-akisi.js `goster`): köşe bildirimi ('bilgi' türü, 6 sn, sıralı) ve
+ * yalnız kural "Windows bildirimi de" dediyse Windows bildirimi. Metinler akışta Kapı Kuralı süzgecinden geçmiştir. Ayarlar'daki
+ * "köşe bildirimi" kapalıysa köşe penceresi hiç çıkmaz (öğeler panelin bildirim şeridinde kalır); köşe penceresi oluşturulamazsa
+ * bildirim Windows'a düşer (yedekGoster). Windows bildirimi başlığı kuraldır, gövdesi bildirim metnidir; tıklama işlemi yoktur.
+ */
+function bildirimGoster({ baslik, metin, simge, windows }) {
+  const koseAcik = ayarlar ? !!ayarlar.koseBildirimi : true;
+  let koseGosterildi = false;
+  if (koseAcik) koseGosterildi = kose.goster({ tur: 'bilgi', metin: merkezKoseMetni(baslik, metin, t), simge });
+  if (windows === true) bildir(metin, t('uyari.windowsBaslik'));
+  else if (koseAcik && !koseGosterildi) bildir(metin, baslik);
+}
+
+/** Bildirim akışını başlatır ve ayar değişimlerine bağlar (açılışta bir kez; ayarlar yüklendikten sonra). */
+function bildirimAkisiniBaslat() {
+  for (const ad of ['bildirimKalici', 'bildirimPil', 'bildirimGuncelleme', 'bildirimPilEsigi', 'bildirimMasaustu']) ekAyarDinle(ad, () => bildirimAkisi.ayarDegisti());
+  ekAyarDinle('uyariKurallari', () => {
+    bildirimAkisi.ayarDegisti();
+    // Kuralların varlıkları izlenen kümeye girer/çıkar: depo budanır, canlı abonelik yeni kümeyle yenilenir (REST yedeğinde hemen okunur).
+    depo.buda(izlenenKimlikler());
+    if (ws.canliMi()) ws.abonelikYenile();
+    else if (ayarlar?.canliBaglanti !== false) ws.yenidenBaglan();
+    if (!ws.canliMi()) durumlariYenile({ zorla: true });
+  });
+  bildirimAkisi.baslat();
 }
 
 // ---------------------------------------------------------------------------
@@ -2296,8 +2350,9 @@ function komutSatiriEylemiCalistir(ad) {
  * şey yapmaz: depoyu zaten canlı bağlantı günceller. 25'e kadar varlık için varlık başına istek, fazlası için tek /api/states.
  */
 async function durumlariYenile({ zorla = false } = {}) {
-  // Favori yoksa ama bilgi kartları (sensör şeridi, hava, takvim, yapılacaklar) ya da tepsi rozeti sensörü seçiliyse yine okunur.
-  if (!anahtarDeposu.varMi() || !ayarlar || (ayarlar.favoriler.length === 0 && bilgiKimlikleri(ayarlar).size === 0 && !tepsiRozeti.izlenenKimlik())) {
+  // Favori yoksa ama bilgi kartları (sensör şeridi, hava, takvim, yapılacaklar), tepsi rozeti sensörü ya da uyarı kuralı varlıkları seçiliyse yine okunur
+  // (kural varlıkları REST yedeğinde de okunur; 1.4.0).
+  if (!anahtarDeposu.varMi() || !ayarlar || (ayarlar.favoriler.length === 0 && bilgiKimlikleri(ayarlar).size === 0 && !tepsiRozeti.izlenenKimlik() && bildirimAkisi.izlenenKimlikler().size === 0)) {
     depo.sifirla();
     return undefined;
   }
@@ -3030,6 +3085,8 @@ function ipcKaydet() {
             kisayolUygun: siniflama.sinif === SINIF.ZARARSIZ && varsayilanServis(alan) !== null,
             tekTiklama: varsayilanServis(alan) !== null, // false: karo yalnız panelde ve palette görünür (tepsi menüsü ve kısayol atlar)
             gizli: adayGizliMi(v), // detay-20: panele/favorilere önerilmez; listede varsayılan gizli (güvenlik kuralı DEĞİLDİR)
+            // 1.4.0 uyarı kuralı seçici (Ayarlar): kural kurulabilen alanlar ve o varlık için önerilen durum değerleri (HA'nın yazdığı adlar)
+            ...(UYARI_ALANLARI.includes(alan) ? { uyariUygun: true, durumOnerileri: durumOnerileri(v), uyariSimgesi: alanSimgesi(alan) } : {}),
           };
         })
         .sort((a, b) => alanSirasi(a.alan) - alanSirasi(b.alan) || a.ad.localeCompare(b.ad, etkinDil));
@@ -3121,6 +3178,7 @@ function agDegisti(neden) {
   // hiçbir istek (REST yedeği, canlı bağlantı) o adrese gitmez (ha-istemcisi.js, dogrulamaBekliyor).
   haIstemcisi.secimiSifirla();
   sonAgDenetimi = Date.now();
+  bildirimAkisi.baglantiDegisti(); // uyanış/ağ değişimi: sonraki toplu durum yüklemesi uyarı üretmez (1.4.0)
   clearTimeout(agDegistiZamanlayicisi);
   clearTimeout(agYenidenDenemeZamanlayicisi); // önceki uyanışın yeniden deneme zinciri bırakılır; yenisi başlıyor
   agYenidenDenemeZamanlayicisi = null;
@@ -3206,6 +3264,7 @@ function baslat() {
     cikiliyor = true;
     pencereDurumunuKaydet({ zorla: true });
     ws.durdur();
+    bildirimAkisi.durdur();
     son.bosalt();
     yuzey.kapat();
     kose.kapat();
@@ -3267,6 +3326,7 @@ function baslat() {
     // Canlı durum (hiz-03): tek WebSocket; kurulamazsa REST yedeği 60 sn'de bir yeniler. Hızlı panel arka planda yüklenir.
     ws.baslat();
     durumlariYenile();
+    bildirimAkisiniBaslat();
     yuzey.hazirla();
     masaustuKarolari.hazirla(); // sabitlenmiş karolar açılıştan biraz sonra arka planda açılır (ana pencere ve tepsi önce gelsin)
     // Ekran bağlandı/söküldü ya da çözünürlük değişti: görünmez kalan karolar yerine alınır (kayıtlı konum silinmez, ekran dönünce geçerli olur).

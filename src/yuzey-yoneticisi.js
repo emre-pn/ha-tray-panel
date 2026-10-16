@@ -67,8 +67,9 @@ function varsayilanZaman() {
  *   null ise (varsayılan görünüm) yüke hiç eklenmez
  * @param {() => number} [bag.metinOlcegiAl] Ayarlar > Görünüm > Metin boyutu çarpanı (1, 1.15, 1.3, 1.5): panel ve palet bu yakınlaştırmayla açılır,
  *   Ctrl 0 buna döner (o-25)
+ * @param {{kapat: Function}|null} [bag.bildirim] 1.4.0 bildirim merkezi (src/lib/bildirim-akisi.js); yuzey:bildirim-kapat öğeyi bununla kapatır
  */
-function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, ustteAl = () => false, opaklikAl = () => 100, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null, sagTik = null, gorunumAl = () => null, metinOlcegiAl = () => 1 }) {
+function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, ustteAl = () => false, opaklikAl = () => 100, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null, sagTik = null, gorunumAl = () => null, metinOlcegiAl = () => 1, bildirim = null }) {
   const izinYok = () => ({ ok: false, hata: t('ana.izinYok') });
   let pencere = null;
   let yuklendi = false;
@@ -470,6 +471,14 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
         if (menuAcik === 0 && pencere === bu && !bu.isDestroyed() && bu.isVisible() && !bu.isFocused()) odakKaybiniZamanla(bu);
       }
       return { ok: true };
+    });
+    // 1.4.0 bildirim şeridi: öğeyi kapatır. Yalnız açık HIZLI PANELDEN (palette şerit yok), anahtar yalnız modeldeki opak anahtardır;
+    // HA bildirimi korumalı yoldan (eylem.bildirimKapat: yetki kesici, hız sınırı, tek POST noktası) kapatılır, diğerleri yerelde.
+    ipcMain.handle('yuzey:bildirim-kapat', async (olay, anahtar) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'panel' || !bildirim) return { ok: false, tur: 'gecersiz' };
+      if (typeof anahtar !== 'string' || anahtar.length === 0 || anahtar.length > 40) return { ok: false, tur: 'gecersiz' };
+      return bildirim.kapat(anahtar, (haKimligi) => eylem.bildirimKapat(haKimligi));
     });
     ipcMain.handle('yuzey:ha-ac', (olay) => {
       if (!yuzeydenMi(olay)) return izinYok();

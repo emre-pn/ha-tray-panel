@@ -513,8 +513,8 @@ test('g-10: tek Kaydet çubuğu; anahtar kaydı ayrı; bölüm bağlantıları �
   for (const hedef of baglar) assert.match(HTML, new RegExp(`id="${hedef}"`));
 
   const katlananlar = [...HTML.matchAll(/<details class="bolum" id="(\w+)"/g)].map((m) => m[1]);
-  // 1.4.0: nadir kullanılan bölümler katlanır: tepsi rozeti ve masaüstü karoları (o-27, o-33), "Bilgi kartları ve sensörler" (bolumBilgi).
-  assert.deepEqual(katlananlar, ['bolumPencere', 'bolumTepsiRozeti', 'bolumMasaustu', 'bolumGeriBildirim', 'bolumBilgi', 'bolumBaslangic', 'bolumYedek']);
+  // 1.4.0: nadir kullanılan bölümler katlanır: tepsi rozeti ve masaüstü karoları (o-27, o-33), "Bilgi kartları ve sensörler" (bolumBilgi), bildirim merkezi ve uyarı kuralları (bolumBildirimler).
+  assert.deepEqual(katlananlar, ['bolumPencere', 'bolumTepsiRozeti', 'bolumMasaustu', 'bolumGeriBildirim', 'bolumBilgi', 'bolumBildirimler', 'bolumBaslangic', 'bolumYedek']);
 
   const liste = /\.cihaz-listesi\s*\{([^}]*)\}/.exec(HTML)[1];
   assert.doesNotMatch(liste, /overflow|max-height/, 'cihaz listesi kendi içinde kaydırılmaz');

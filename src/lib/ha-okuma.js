@@ -30,7 +30,8 @@
  *   yapilacaklar(kimlik) -> Promise<{uid, baslik, tamamlandi}[]>  WS todo/item/list; en çok 100 öğe.
  *   yoneticiMi() -> Promise<boolean|null>  WS auth/current_user is_admin (o-43); bilinmiyorsa null.
  *   bildirimAboneOl(dinleyici) -> () => void  WS persistent_notification/subscribe; dinleyici süzülmüş liste alır:
- *       {id, baslik, metin, zaman}[] (en yeni önce, en çok 20). Başlığı ya da metni süzgeçten geçmeyen bildirim HİÇ gösterilmez.
+ *       dinleyici({id, baslik, metin, zaman}[] (en yeni önce, en çok 20), { gizlenen: number }). Başlığı ya da metni süzgeçten
+ *       geçmeyen bildirim HİÇ gösterilmez; yalnız sayısı `gizlenen` olarak verilir ("N gizlendi").
  *   kapaliUclar() -> string[]  oturum boyunca kapanmış uçlar (tanı için; sırsız)
  *
  * Test sahtesi: test/ha-okuma.test.js'teki sahteOkuma() (sahte haIstek + sahte ws.komut/abone + depo).
@@ -349,10 +350,11 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
     bildirimAboneOl(dinleyici) {
       if (typeof dinleyici !== 'function' || typeof ws?.abone !== 'function' || kapali.has('bildirim')) return () => {};
       const bildirimler = new Map(); // id -> { id, baslik, metin, zaman }
+      const gizli = new Set(); // süzgeçten geçmediği için gösterilmeyen bildirim kimlikleri (yalnız SAYISI dinleyiciye gider: "N gizlendi")
       const yay = () => {
         const liste = [...bildirimler.values()].sort((a, b) => (b.zaman ?? '').localeCompare(a.zaman ?? '')).slice(0, EN_COK_BILDIRIM);
         try {
-          dinleyici(liste.map((b) => ({ ...b })));
+          dinleyici(liste.map((b) => ({ ...b })), { gizlenen: gizli.size });
         } catch {
           /* dinleyici hatası aboneliği etkilemesin */
         }
@@ -366,21 +368,27 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
         const tur = olay?.type;
         const ham = olay?.notifications;
         if (!['current', 'added', 'updated', 'removed'].includes(tur) || !ham || typeof ham !== 'object' || Array.isArray(ham)) return;
-        if (tur === 'current') bildirimler.clear();
+        if (tur === 'current') {
+          bildirimler.clear();
+          gizli.clear();
+        }
         for (const [anahtar, b] of Object.entries(ham)) {
           const id = typeof b?.notification_id === 'string' ? b.notification_id : anahtar;
           if (!BILDIRIM_KIMLIGI_DESENI.test(id)) continue;
           if (tur === 'removed') {
             bildirimler.delete(id);
+            gizli.delete(id);
             continue;
           }
           const metin = guvenliMetin(b?.message, 300);
           const baslik = b?.title === undefined || b?.title === null || b?.title === '' ? null : guvenliMetin(b.title, 100);
-          // Metni ya da (varsa) başlığı süzgeçten geçmeyen bildirim HİÇ gösterilmez ("Garaj kapısı açık kaldı").
+          // Metni ya da (varsa) başlığı süzgeçten geçmeyen bildirim HİÇ gösterilmez ("Garaj kapısı açık kaldı"); yalnız sayılır.
           if (!metin || (b?.title && !baslik)) {
             bildirimler.delete(id);
+            if (gizli.size < 200) gizli.add(id);
             continue;
           }
+          gizli.delete(id);
           if (bildirimler.size >= 50 && !bildirimler.has(id)) continue;
           bildirimler.set(id, { id, baslik, metin, zaman: isoAl(b?.created_at) });
         }

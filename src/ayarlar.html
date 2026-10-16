@@ -1263,6 +1263,78 @@
       white-space: nowrap;
     }
 
+    /* Bildirim merkezi: uyarı kuralı kartları (1.4.0). */
+    .kural {
+      padding: 12px;
+      margin-top: 8px;
+      background: var(--chip-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+    }
+
+    .kural-ust {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .kural-ust .checkbox-etiket {
+      margin-bottom: 0;
+    }
+
+    .kural-ust .kural-ust {
+      margin-bottom: 0;
+    }
+
+    .kural-alan {
+      margin-top: 8px;
+    }
+
+    .kural-alan label {
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .kural-ad {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .kural-ikili {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .kural-ikili input[type="time"] {
+      width: 100%;
+    }
+
+    .kural input[type="time"] {
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--text-main);
+      font-size: 13px;
+    }
+
+    .kural-hata {
+      margin-top: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--err-text);
+    }
+
+    .kural-bos {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
     @media (max-width: 640px) {
       body {
         padding: 0 12px;
@@ -1919,6 +1991,66 @@
         <label for="hizliListe" data-i18n="ayar.bilgi.hizli.etiket">Palette hızlı ekleme (“liste süt”) hangi listeye yazsın</label>
         <select id="hizliListe"></select>
         <div class="ipucu" data-i18n="ayar.bilgi.hizli.ipucu">Paletteye “liste süt” yazıp Enter’a basınca “süt” bu listeye eklenir. Yazdığın metin yalnızca bu listeye gider (en çok 200 karakter); palet başka hiçbir serbest metin göndermez.</div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bolum" id="bolumBildirimler">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.bm.baslik">Bildirim merkezi ve uyarı kuralları</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.bm.aciklama">Home Assistant bildirimleri, düşük pil ve bekleyen güncellemeler panelde rozetli bir şeritte görünür; kendi uyarı kurallarını da buradan kurarsın. Kapı, kilit ve alarm gibi cihazlarla ilgili bildirimler hiçbir yerde gösterilmez.</p>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="bildirimKalici">
+          <span data-i18n="ayar.bm.kalici">Home Assistant bildirimlerini panelde göster</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.bm.kaliciIpucu">Home Assistant’ın kalıcı bildirimleri (örn. “çamaşır bitti”). Panelde kapatırsan Home Assistant’ta da kapanır. Bunları okumak için Home Assistant kullanıcısının yönetici olması gerekebilir.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="bildirimPil">
+          <span data-i18n="ayar.bm.pil">Düşük pil bildirimleri</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.bm.pilIpucu">Pil seviyesi eşiğin altına düşen cihazlar (kapı ve kilit pilleri hariç). Bunun için uygulama Home Assistant’tan durumları 10 dakikada bir okur.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="bildirimPilEsigi" data-i18n="ayar.bm.pilEsigi">Düşük pil eşiği (yüzde)</label>
+        <input type="number" id="bildirimPilEsigi" min="5" max="50" step="1" inputmode="numeric" aria-describedby="bildirimPilEsigiIpucu bildirimPilEsigiHata">
+        <div class="ipucu" id="bildirimPilEsigiIpucu" data-i18n="ayar.bm.pilEsigiIpucu">Bu yüzdeye eşit ya da altındaki pil seviyesi düşük sayılır (5-50).</div>
+        <div class="alan-hata" id="bildirimPilEsigiHata" style="display: none;"></div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="bildirimGuncelleme">
+          <span data-i18n="ayar.bm.guncelleme">Bekleyen güncelleme bildirimleri</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.bm.guncellemeIpucu">Home Assistant’ın bildirdiği yeni sürümler (çekirdek, eklentiler, entegrasyonlar). Varsayılan olarak kapalıdır.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="bildirimMasaustu">
+          <span data-i18n="ayar.bm.masaustu">Yeni bildirimleri köşe bildirimi olarak da göster</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.bm.masaustuIpucu">Açıkken yeni bildirimler ekranın sağ altında kısa süre görünür; ilk yükleme sessizdir ve dakikada en çok 3 bildirim gösterilir. Köşe bildirimi (Geri bildirim bölümü) kapalıysa bildirimler yalnız panelde birikir.</div>
+      </div>
+
+      <div class="form-grubu kural-bolumu">
+        <label id="kuralListesiEtiketi" data-i18n="ayar.kural.etiket">Uyarı kuralları (en çok 20)</label>
+        <div class="ipucu" data-i18n="ayar.kural.ipucu">Seçtiğin cihaz için bir kural kur: duruma geçiş, tam durum ya da sayısal eşik. Bildirimde kendi cümlen ve cihaz simgesi çıkar. Kapı, kilit ve alarm gibi cihazlar seçilemez. Kurallar “Kaydet” ile uygulanır.</div>
+        <div id="kuralListesi" role="list" aria-labelledby="kuralListesiEtiketi"></div>
+        <div class="kural-bos" id="kuralBos"></div>
+        <div class="ipucu" id="kuralCihazIpucu"></div>
+        <div class="buton-satiri" style="margin-top: 8px;">
+          <button class="buton buton-ikincil" id="btnKuralEkle" type="button" data-i18n="ayar.kural.ekle">Kural Ekle</button>
+          <button class="buton buton-ikincil" id="btnKuralCihazlar" type="button" data-i18n="ayar.kural.cihazlariYukle">Cihaz listesini yükle</button>
+        </div>
+        <div class="alan-hata" id="kuralHata" role="alert" style="display: none;"></div>
+        <datalist id="kuralVarliklari"></datalist>
       </div>
     </div>
   </details>

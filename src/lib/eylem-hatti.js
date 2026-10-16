@@ -22,12 +22,15 @@
  * öznitelikten) -> hız sınırı (6) -> yetki kesici/kimlikli kapı (haIstek, 7) -> HA. Yalnız okunur alanlarda (sensor,
  * binary_sensor, weather, calendar) hiçbir servis çağrılmaz ('yasak').
  * Parametresiz 1.3.0 servisleri (toggle/turn_on/turn_off/press) IZINLI_SERVISLER ile eskisi gibi kurulur.
+ *
+ * Tek POST noktası servisPostla'dır (bu dosyanın sonunda): varlık eylemi (calistir) ve HA kalıcı bildirimini kapatma
+ * (bildirimKapatHattiOlustur; varlıksız persistent_notification.dismiss) ikisi de oradan geçer.
  */
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
 const { alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
 const { eylemAlaniMi, varsayilanServis } = require('./alan-kaydi');
-const { servisDogrula } = require('./servis-izinleri');
+const { servisDogrula, varliksizServisDogrula } = require('./servis-izinleri');
 const { SINIF, KAYNAKLAR, eylemSinifi, kaynakIzni } = require('./eylem-sinifi');
 
 /**
@@ -237,7 +240,7 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
     // 7. POST tam bir kez
     let yanit;
     try {
-      yanit = await haIstek(`/api/services/${alan}/${kurulan.servis}`, { yontem: 'POST', govde: kurulan.govde });
+      yanit = await servisPostla(haIstek, alan, kurulan.servis, kurulan.govde);
     } catch (hata) {
       return hataSonucu(hata, ad);
     }
@@ -249,13 +252,50 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
   };
 }
 
+const BILDIRIM_ORAN_SINIRI = 4; // saniyede kapatma çağrısı (tüm bildirimler toplamı)
+
+/**
+ * 1.4.0 (bildirim grubu): HA kalıcı bildirimini kapatma — varlıksız TEK servis (persistent_notification.dismiss), AYNI tek POST
+ * noktasından (servisPostla) ve yetki kesici/kimlikli kapıdan (haIstek) geçer. Sıra: kaynak yalnız hızlı panel -> servis izin
+ * listesi + kimlik deseni (servis-izinleri.js varliksizServisDogrula) -> kimlik şu an panelde gösterilen (Kapı Kuralı'ndan geçmiş)
+ * bir HA bildirimi olmalı -> hız sınırı -> POST. Başka servis ya da serbest kimlik gönderilemez.
+ * @param {object} bag
+ * @param {(kimlik: string) => boolean} bag.bildirimKayitliMi kimlik panelde gösterilen bir HA bildirimi mi
+ * @param {(yol: string, secenek: object) => Promise<unknown>} bag.haIstek
+ * @param {{dene: Function}} [bag.hizSiniri]
+ * @returns {(istek: {kimlik: string, kaynak: string}) => Promise<{ok: true, sinif: string} | {ok: false, tur: string, neden?: string}>}
+ */
+function bildirimKapatHattiOlustur({ bildirimKayitliMi, haIstek, hizSiniri = hizSiniriOlustur() }) {
+  return async function bildirimKapat(istek) {
+    const { kimlik, kaynak } = istek && typeof istek === 'object' ? istek : {};
+    if (kaynak !== 'panel') return { ok: false, tur: 'kaynak-izinsiz' };
+    const dogrulama = varliksizServisDogrula('persistent_notification', 'dismiss', { notification_id: kimlik });
+    if (!dogrulama.ok) return { ok: false, tur: 'gecersiz', neden: dogrulama.neden };
+    if (bildirimKayitliMi(kimlik) !== true) return { ok: false, tur: 'bilinmeyen-bildirim' };
+    if (!hizSiniri.dene('bildirim-kapat', { sinir: BILDIRIM_ORAN_SINIRI })) return { ok: false, tur: 'cok-sik' };
+    try {
+      await servisPostla(haIstek, 'persistent_notification', 'dismiss', dogrulama.govde);
+    } catch (hata) {
+      return hataSonucu(hata, '');
+    }
+    return { ok: true, sinif: dogrulama.sinif };
+  };
+}
+
+/** TEK servis çağrısı noktası (REST POST): varlık eylemi ve bildirim kapatma buradan geçer; asla yeniden denenmez (ha-istemcisi.js). */
+function servisPostla(haIstek, alan, servis, govde) {
+  return haIstek(`/api/services/${alan}/${servis}`, { yontem: 'POST', govde });
+}
+
 module.exports = {
   IZINLI_SERVISLER,
   ORAN_SINIRI,
   ORAN_SINIRI_DUGME,
   ORAN_SINIRI_SON,
+  BILDIRIM_ORAN_SINIRI,
   BASILI_SURE_MS,
   basiliTutmaDeposu,
   hizSiniriOlustur,
   eylemHattiOlustur,
+  bildirimKapatHattiOlustur,
 };

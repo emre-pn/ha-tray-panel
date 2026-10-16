@@ -44,14 +44,17 @@
     malzemeAyarla(yuk.malzeme);
     gorunumAyarla(yuk.gorunum);
     const hata = yuk.tur === 'hata';
+    const bilgi = yuk.tur === 'bilgi';
     const sureMs = Number.isFinite(yuk.sureMs) ? Math.min(Math.max(yuk.sureMs, 500), 10000) : 1500;
     metin.textContent = String(yuk.metin ?? '').slice(0, 200);
     // Renge ek simge (g-09): başarı ✓, hata !. Simge süstür (aria-hidden, html'de); duyurulan şey metindir.
-    isaret.textContent = hata ? '!' : '✓';
-    // Ekran okuyucu (k-16): hata hemen duyurulur (alert), başarı sırasını bekler (status).
+    // Bilgi (bildirim merkezi / uyarı kuralı): ana sürecin verdiği kısa simge (düz metin), yoksa "i".
+    isaret.textContent = hata ? '!' : bilgi ? String(yuk.simge || 'i').slice(0, 8) : '✓';
+    // Ekran okuyucu (k-16): hata hemen duyurulur (alert), başarı ve bilgi sırasını bekler (status).
     kutu.setAttribute('role', hata ? 'alert' : 'status');
     kutu.setAttribute('aria-live', hata ? 'assertive' : 'polite');
     kutu.classList.toggle('hata', hata);
+    kutu.classList.toggle('bilgi', bilgi);
     kutu.classList.add('gorunur');
     clearTimeout(solma);
     solma = setTimeout(function () {

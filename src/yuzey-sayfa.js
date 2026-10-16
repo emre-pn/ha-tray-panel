@@ -38,6 +38,12 @@
     eski: document.getElementById('eski'),
     serit: document.getElementById('serit'),
     sekmeler: document.getElementById('sekmeler'),
+    bildirim: document.getElementById('bildirim'),
+    bildirimDugme: document.getElementById('bildirimDugme'),
+    bildirimSayi: document.getElementById('bildirimSayi'),
+    bildirimOzet: document.getElementById('bildirimOzet'),
+    bildirimListe: document.getElementById('bildirimListe'),
+    bildirimGizli: document.getElementById('bildirimGizli'),
     arama: document.getElementById('arama'),
     icerik: document.getElementById('icerik'),
     ipucu: document.getElementById('ipucu'),
@@ -67,7 +73,7 @@
   const OK_TUSLARI = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
 
   let mod = 'panel';
-  let model = { gruplar: [], sonlar: [], bilgi: null, sayfalar: [], ust: { canli: false, baglanti: 'kapali', medyaCaliyor: null, aktifCikis: null, hata: null, uyari: null, anahtarYok: false } };
+  let model = { gruplar: [], sonlar: [], bilgi: null, sayfalar: [], ust: { canli: false, baglanti: 'kapali', medyaCaliyor: null, aktifCikis: null, hata: null, uyari: null, anahtarYok: false }, bildirim: null };
   let sorgu = '';
   let secili = 0;
   let seviyeAcik = false;
@@ -81,6 +87,10 @@
   let paletSatirlari = [];
   let seciliSatirKutusu = null; // palet: seçili satırın öğesi (Enter'a basılı tutma dolum çubuğu burada görünür)
   let seritImzasi = ''; // hata/uyarı şeridinin içeriği: değişmeyen şerit yeniden kurulmaz (ekran okuyucu tekrar okumasın)
+  let bildirimAcik = false; // bildirim şeridinin listesi açık mı; pencere her gösterildiğinde kapalı başlar
+  let bildirimImzasi = ''; // çizilen bildirim şeridinin içeriği: değişmeyen şerit yeniden kurulmaz (odak ve ekran okuyucu bozulmasın)
+  let bildirimDugmeleri = []; // açık listedeki "kapat" düğmeleri (kapatılınca odak sıradaki düğmeye geçer)
+  const bildirimBekleyenler = new Set(); // kapatma isteği yanıt bekleyen öğe anahtarları (çift tıklama iki istek göndermesin)
   let gosterimNo = 0; // pencere her gösterildiğinde artar: eski gösterime ait geç yanıt yeni gösterimi kapatmasın
   let odakHaritasi = new Map(); // panel: odak anahtarı -> öğe (yeniden çizimde odak geri verilir)
   let panelSatirlari = []; // panel: ok tuşu gezintisi için mantıksal satırlar [[öğe, ...], ...] (görsel sırayla)
@@ -110,6 +120,32 @@
   }
 
   // ---------------------------------------------------------------- model
+
+  const BILDIRIM_KAYNAKLARI = ['uyari', 'ha', 'pil', 'guncelleme'];
+
+  /** Bildirim şeridi modeli: { ogeler: [{anahtar, kaynak, baslik, metin, zaman, simge}], sayi, gizlenen } ya da null. Metinler ana süreçte süzülmüştür. */
+  function bildirimDuzelt(ham) {
+    if (!ham || typeof ham !== 'object' || !Array.isArray(ham.ogeler)) return null;
+    const ogeler = ham.ogeler
+      .slice(0, 30)
+      .map(function (o) {
+        if (!o || typeof o.anahtar !== 'string' || o.anahtar === '') return null;
+        return {
+          anahtar: sinirliMetin(o.anahtar, 40),
+          kaynak: BILDIRIM_KAYNAKLARI.indexOf(o.kaynak) >= 0 ? o.kaynak : 'ha',
+          baslik: sinirliMetin(o.baslik, 80),
+          metin: sinirliMetin(o.metin, 200),
+          zaman: typeof o.zaman === 'number' && isFinite(o.zaman) && o.zaman > 0 ? o.zaman : 0,
+          simge: sinirliMetin(o.simge, 8),
+        };
+      })
+      .filter(Boolean);
+    return {
+      ogeler: ogeler,
+      sayi: typeof ham.sayi === 'number' && isFinite(ham.sayi) && ham.sayi >= ogeler.length ? Math.min(Math.floor(ham.sayi), 9999) : ogeler.length,
+      gizlenen: typeof ham.gizlenen === 'number' && isFinite(ham.gizlenen) && ham.gizlenen > 0 ? Math.min(Math.floor(ham.gizlenen), 999) : 0,
+    };
+  }
 
   function modelDuzelt(ham) {
     if (!ham || typeof ham !== 'object' || !Array.isArray(ham.gruplar)) return null;
@@ -152,6 +188,7 @@
       sonlar: sonlar,
       bilgi: BilgiModulu ? BilgiModulu.modelDuzelt(ham.bilgi) : null,
       sayfalar: DuzenModulu ? DuzenModulu.sayfalariDuzelt(ham.sayfalar) : [],
+      bildirim: bildirimDuzelt(ham.bildirim),
       ust: {
         canli: u.canli === true,
         baglanti: Object.prototype.hasOwnProperty.call(BAGLANTI_ANAHTARI, u.baglanti) ? u.baglanti : 'kapali',
@@ -1379,6 +1416,113 @@
       el.medya.title = '';
     }
     seritiCiz();
+    bildirimiCiz();
+  }
+
+  // ---------------------------------------------------------------- bildirim şeridi (1.4.0)
+
+  function bildirimZamani(zaman) {
+    if (!zaman) return '';
+    try {
+      return new Date(zaman).toLocaleTimeString(t.dil === 'en' ? 'en-US' : 'tr-TR', { hour: '2-digit', minute: '2-digit' });
+    } catch (hata) {
+      return '';
+    }
+  }
+
+  function bildirimKapat(oge, dugme) {
+    if (bildirimBekleyenler.has(oge.anahtar)) return;
+    bildirimBekleyenler.add(oge.anahtar);
+    dugme.disabled = true;
+    const birak = function () {
+      bildirimBekleyenler.delete(oge.anahtar);
+      dugme.disabled = false;
+    };
+    kopru.bildirimKapat(oge.anahtar).then(
+      function (yanit) {
+        birak();
+        if (yanit && yanit.ok === true) return; // ana süreç yeni modeli gönderir; öğe listeden kalkar
+        ipucuGoster(t(yanit && yanit.tur === 'cok-sik' ? 'yuzey.ipucu.cokSik' : 'yuzey.ipucu.bildirimKapatilamadi'));
+      },
+      function () {
+        birak();
+        ipucuGoster(t('yuzey.ipucu.bildirimKapatilamadi'));
+      },
+    );
+  }
+
+  /**
+   * Panelin üstündeki bildirim şeridi (rozetli): başlık düğmesi sayıyı ve en yeni bildirimi gösterir, tıklayınca liste açılır; her öğe
+   * tek tıkla kapatılır. Metinler yalnız textContent ile yazılır. Süzgeçten geçmeyen bildirimler hiç gelmez, yalnız "N gizlendi" yazılır.
+   * Palette şerit yoktur (palet yalnız eylem arar).
+   */
+  function bildirimiCiz() {
+    const b = model.bildirim;
+    const gorunur = mod === 'panel' && !!b && (b.ogeler.length > 0 || b.gizlenen > 0);
+    el.bildirim.hidden = !gorunur;
+    if (!gorunur) {
+      // Şerit kalkarken odak kapatılan düğmedeyse içerik alanına geçer (gizlenen öğedeki odak gövdeye düşmesin)
+      if (bildirimDugmeleri.indexOf(document.activeElement) >= 0) el.icerik.focus();
+      bildirimImzasi = '';
+      bildirimDugmeleri = [];
+      el.bildirimListe.replaceChildren();
+      return;
+    }
+    const acik = bildirimAcik && b.ogeler.length > 0;
+    const imza = JSON.stringify([b, acik, t.dil]);
+    if (imza === bildirimImzasi) return;
+    bildirimImzasi = imza;
+    const eskiOdak = bildirimDugmeleri.indexOf(document.activeElement);
+
+    // başlık düğmesi
+    el.bildirimDugme.setAttribute('aria-expanded', acik ? 'true' : 'false');
+    el.bildirimDugme.disabled = b.ogeler.length === 0;
+    el.bildirimSayi.hidden = b.sayi === 0;
+    el.bildirimSayi.textContent = String(b.sayi);
+    el.bildirimSayi.setAttribute('aria-label', t(b.sayi === 1 ? 'yuzey.bildirim.sayi.bir' : 'yuzey.bildirim.sayi', { n: b.sayi }));
+    el.bildirimOzet.textContent = acik || b.ogeler.length === 0 ? '' : b.ogeler[0].metin;
+
+    // liste
+    el.bildirimListe.hidden = !acik;
+    const dugmeler = [];
+    const satirlar = acik
+      ? b.ogeler.map(function (o) {
+          const satir = olustur('li', 'bildirim-oge ' + o.kaynak);
+          const simge = olustur('span', 'bildirim-simge', o.simge);
+          simge.setAttribute('aria-hidden', 'true');
+          const govde = olustur('div', 'bildirim-govde');
+          const baslik = olustur('div', 'bildirim-oge-baslik', o.baslik);
+          const zaman = bildirimZamani(o.zaman);
+          if (zaman) baslik.appendChild(olustur('span', 'bildirim-zaman', zaman));
+          govde.appendChild(baslik);
+          govde.appendChild(olustur('div', 'bildirim-metin', o.metin));
+          const kapat = olustur('button', 'bildirim-oge-kapat', '×');
+          kapat.type = 'button';
+          kapat.setAttribute('aria-label', t('yuzey.bildirim.kapat', { metin: o.metin }));
+          kapat.title = t('yuzey.bildirim.kapat', { metin: o.metin });
+          kapat.disabled = bildirimBekleyenler.has(o.anahtar);
+          kapat.addEventListener('click', function () {
+            bildirimKapat(o, kapat);
+          });
+          dugmeler.push(kapat);
+          satir.appendChild(simge);
+          satir.appendChild(govde);
+          satir.appendChild(kapat);
+          return satir;
+        })
+      : [];
+    el.bildirimListe.replaceChildren.apply(el.bildirimListe, satirlar);
+    bildirimDugmeleri = dugmeler;
+
+    // "N gizlendi" (Kapı Kuralı süzgecine takılan bildirimler; içerikleri hiçbir yerde yazılmaz)
+    el.bildirimGizli.hidden = b.gizlenen === 0;
+    el.bildirimGizli.textContent = b.gizlenen > 0 ? t(b.gizlenen === 1 ? 'yuzey.bildirim.gizlendi.bir' : 'yuzey.bildirim.gizlendi', { n: b.gizlenen }) : '';
+
+    // Kapatılan öğenin düğmesi kalktıysa odak sıradaki düğmeye (hiç kalmadıysa başlık düğmesine, o da pasifse içeriğe) geçer
+    if (eskiOdak >= 0) {
+      const hedef = dugmeler.length > 0 ? dugmeler[Math.min(eskiOdak, dugmeler.length - 1)] : b.ogeler.length > 0 ? el.bildirimDugme : el.icerik;
+      hedef.focus();
+    }
   }
 
   /**
@@ -1438,6 +1582,7 @@
     Dil.sayfayiCevir(document, t);
     seritImzasi = ''; // şerit metni dile bağlı: aynı içerik olsa da yeniden kurulsun
     if (duzen) duzen.dilDegisti(); // sekme metinleri yeniden yazılsın
+    bildirimImzasi = ''; // bildirim şeridinin etiketleri de dile bağlı
     return true;
   }
 
@@ -1487,6 +1632,8 @@
     bekleyenModel = null;
     dilCizimiBekliyor = false; // aşağıdaki ciz() zaten yeni dille çizer
     gosterimNo += 1;
+    bildirimAcik = false; // her gösterimde bildirim listesi kapalı başlar
+    bildirimImzasi = '';
     karoKilitleri.clear();
     odakHaritasi = new Map(); // yeni gösterimde eski gösterimin odağı geri verilmez
     panelSatirlari = [];
@@ -1583,6 +1730,12 @@
 
   // Yakınlaştırma (Ctrl + / Ctrl − / Ctrl 0, ana süreçte) pencere genişliğini sınırlayabilir: yükseklik yeniden ölçülür (g-13).
   window.addEventListener('resize', function () {
+    setTimeout(boyutBildir, 0);
+  });
+
+  el.bildirimDugme.addEventListener('click', function () {
+    bildirimAcik = !bildirimAcik;
+    bildirimiCiz();
     setTimeout(boyutBildir, 0);
   });
 

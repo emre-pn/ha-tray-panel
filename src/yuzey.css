@@ -183,6 +183,7 @@ input:focus-visible,
 
 .ust,
 .serit,
+.bildirim,
 .palet-kutusu,
 .ipucu,
 .palet-serit,
@@ -297,6 +298,144 @@ input:focus-visible,
 .serit-metin {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* ---- bildirim şeridi (1.4.0): HA bildirimleri, düşük pil, güncelleme ve uyarı kuralları; yalnız panelde ---- */
+
+.bildirim {
+  background: var(--bg-ust);
+  border-bottom: 1px solid var(--kenar);
+}
+
+.bildirim-dugme {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.bildirim-dugme:hover {
+  background: var(--karo);
+}
+
+.bildirim-baslik {
+  flex: none;
+  font-weight: 600;
+}
+
+.bildirim-rozet {
+  flex: none;
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: var(--rozet-metin);
+  background: var(--vurgu);
+  border-radius: 9px;
+}
+
+.bildirim-ozet {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--soluk);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bildirim-ok {
+  flex: none;
+  color: var(--soluk);
+}
+
+.bildirim-liste {
+  max-height: 168px;
+  padding: 0 12px 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.bildirim-oge {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-top: 4px;
+  font-size: 12px;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-left: 3px solid var(--vurgu);
+  border-radius: 6px;
+}
+
+.bildirim-oge.uyari {
+  border-left-color: var(--acik);
+}
+
+.bildirim-oge.pil {
+  border-left-color: var(--yedek);
+}
+
+.bildirim-oge.guncelleme {
+  border-left-color: var(--canli);
+}
+
+.bildirim-simge {
+  flex: none;
+  width: 18px;
+  text-align: center;
+}
+
+.bildirim-govde {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bildirim-oge-baslik {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.bildirim-zaman {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--soluk);
+}
+
+.bildirim-metin {
+  overflow-wrap: anywhere;
+}
+
+.bildirim-oge-kapat {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  font-size: 15px;
+  line-height: 20px;
+  text-align: center;
+  color: var(--soluk);
+  border-radius: 4px;
+}
+
+.bildirim-oge-kapat:hover {
+  color: var(--metin);
+  background: var(--karo-uzerinde);
+}
+
+.bildirim-oge-kapat:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.bildirim-gizli {
+  padding: 2px 12px 6px;
+  font-size: 11px;
+  color: var(--soluk);
 }
 
 /* ---- içerik ---- */
@@ -1091,12 +1230,12 @@ button.bilgi-kart:hover {
   align-items: flex-start;
 }
 
-.kart-etiket {
+.bilgi-etiket {
   font-size: 11px;
   color: var(--soluk);
 }
 
-.kart-deger {
+.bilgi-deger {
   font-size: 18px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1119,7 +1258,7 @@ button.bilgi-kart:hover {
   border-color: var(--yedek);
 }
 
-.bilgi-kart.yok .kart-deger,
+.bilgi-kart.yok .bilgi-deger,
 .serit-oge.yok .serit-deger,
 .karo.yok .sensor-deger {
   font-weight: 400;
@@ -1878,6 +2017,7 @@ button.bilgi-kart:hover {
 
 .mod-palet .ust,
 .mod-palet .serit,
+.mod-palet .bildirim,
 .mod-palet .alt {
   display: none;
 }

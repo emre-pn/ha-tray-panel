@@ -272,7 +272,7 @@ test('hızlı panel/palet/tepsi/kısayol/komut satırı/Son/hazır liste: kapı-
 test('yüzey IPC kanallarının hepsi gönderen denetimli; panel/palet penceresi sandbox + contextIsolation, yalnız yerel dosya', () => {
   const yuzey = oku('src/yuzey-yoneticisi.js');
   const kanallar = [...yuzey.matchAll(/ipcMain\.(?:handle|on)\('(yuzey:[\w-]+)'/g)].map((m) => m[1]);
-  assert.deepEqual(kanallar.sort(), ['yuzey:ayarlar-ac', 'yuzey:basili-basla', 'yuzey:basili-birak', 'yuzey:boyut', 'yuzey:calistir', 'yuzey:durum-al', 'yuzey:ha-ac', 'yuzey:kapat', 'yuzey:oku', 'yuzey:sag-tik']);
+  assert.deepEqual(kanallar.sort(), ['yuzey:ayarlar-ac', 'yuzey:basili-basla', 'yuzey:basili-birak', 'yuzey:bildirim-kapat', 'yuzey:boyut', 'yuzey:calistir', 'yuzey:durum-al', 'yuzey:ha-ac', 'yuzey:kapat', 'yuzey:oku', 'yuzey:sag-tik']);
   for (const kanal of kanallar) {
     const yer = yuzey.indexOf(`'${kanal}'`);
     const sonraki = yuzey.indexOf('ipcMain.', yer + 10);

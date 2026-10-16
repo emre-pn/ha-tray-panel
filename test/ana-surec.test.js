@@ -2253,7 +2253,7 @@ async function canliYap(ortam, durumlar) {
   return { s, aboneId: abone.id };
 }
 
-ortamda('canlı bağlantı: anahtar yalnız auth iletisinde gider; canlıyken REST yoklaması YAPILMAZ, durum değişimi açık panele anında yansır', dalga3([SALON]), async (ortam) => {
+ortamda('canlı bağlantı: anahtar yalnız auth iletisinde gider; canlıyken REST yoklaması YAPILMAZ, durum değişimi açık panele anında yansır', dalga3([SALON], { bildirimPil: false /* pil taraması ayrı bir GET /api/states'tir */ }), async (ortam) => {
   haKur(ortam.durum, HA_VARLIKLARI);
   const { s, aboneId } = await canliYap(ortam, [durumNesnesi('light.salon_lambasi', 'Salon Lambası', 'off')]);
   assert.equal(s.url, 'ws://192.168.1.10:8123/api/websocket');
@@ -2431,7 +2431,7 @@ const stateOkumalari = (ortam) => ortam.durum.fetchler.filter((f) => f.yontem ==
 ortamda('hazır liste: HA yeni açılmışken bulunamayan karolar oturum içinde (90 sn arayla) YALNIZ onlar için yeniden denenir', {
   yoklama: 200,
   anahtar: true,
-  tohum: { semaSurumu: 4, hazirListeSurumu: 0, favoriler: [] },
+  tohum: { semaSurumu: 4, hazirListeSurumu: 0, favoriler: [], bildirimPil: false }, // bildirimPil: pil taraması da /api/states okur; bu test yalnız hazır listeyi sayar
   ha: HAZIR_SAHNELER('film'), // HA henüz tam açılmadı: yalnız Film var
 }, async (ortam) => {
   await ortam.akit();
@@ -2482,7 +2482,7 @@ ortamda('hazır liste: yeniden deneme yeni karo eklerse açık Ayarlar sayfasın
 ortamda('hazır liste: HA\'da hiç oluşmayan karolar için yeniden deneme en çok 3 kez yapılır', {
   yoklama: 200,
   anahtar: true,
-  tohum: { semaSurumu: 4, hazirListeSurumu: 0, favoriler: [] },
+  tohum: { semaSurumu: 4, hazirListeSurumu: 0, favoriler: [], bildirimPil: false },
   ha: HAZIR_SAHNELER('film'),
 }, async (ortam) => {
   await ortam.akit();
@@ -5370,4 +5370,426 @@ ortamda('Ayarlar özeti: bağlı ekran listesi, pencere/rozet/karo seçimleri ve
   assert.equal('masaustuKaroKonumlari' in ozet, false);
   assert.equal('pencereKonumlari' in ozet, false);
   assert.doesNotMatch(JSON.stringify(ozet), new RegExp(TEST_ANAHTAR));
+});
+
+// ===========================================================================
+// 1.4.0 bildirim grubu: bildirim merkezi (o-36), varlık uyarı kuralları (o-37), süre / bekleme / sessiz saatler (o-39)
+// ===========================================================================
+
+const SICAKLIK = 'sensor.salon_sicaklik';
+const sicaklikDurumu = (deger) => ({ entity_id: SICAKLIK, state: String(deger), attributes: { friendly_name: 'Salon Sıcaklık', unit_of_measurement: '°C', device_class: 'temperature' } });
+const SICAKLIK_KURALI = { id: 'u1', acik: true, varlik: SICAKLIK, kosul: { tur: 'esik', yon: 'ustunde', deger: 28 }, metin: '{ad} çok sıcak: {durum}', sure: 0, bekleme: 300, sessizSaatler: null, windows: false };
+const ISIK_DURUMU = durumNesnesi('light.salon_lambasi', 'Salon Lambası', 'off');
+/** Pil taraması kapalı (ayrı bir GET /api/states'tir), HA bildirim aboneliği açık; kuralları ve ek ayarı verir. */
+const bildirimAyari = (ek = {}, secenek = {}) => dalga3([SALON], { bildirimPil: false, ...ek }, secenek);
+
+/** Sahte saatin başlangıcındaki yerel dakika: sessiz saat aralıkları buna göre kurulur (testler birkaç dakikadan kısadır). */
+const BASLANGIC_DAKIKASI = new Date(BASLANGIC_ZAMANI).getHours() * 60 + new Date(BASLANGIC_ZAMANI).getMinutes();
+const saatMetni = (dakika) => {
+  const d = ((dakika % 1440) + 1440) % 1440;
+  return `${String(Math.floor(d / 60)).padStart(2, '0')}:${String(d % 60).padStart(2, '0')}`;
+};
+const SESSIZ_SIMDI = { baslangic: saatMetni(BASLANGIC_DAKIKASI - 60), bitis: saatMetni(BASLANGIC_DAKIKASI + 60) };
+const SESSIZ_SONRA = { baslangic: saatMetni(BASLANGIC_DAKIKASI + 120), bitis: saatMetni(BASLANGIC_DAKIKASI + 240) };
+
+const haBildirimi = (kimlik, baslik, metin) => ({ notification_id: kimlik, title: baslik, message: metin, created_at: '2026-10-16T08:00:00+00:00' });
+const haBildirimOlayi = (s, bildirimId, tur, bildirimler) => s.yayinla({ id: bildirimId, type: 'event', event: { type: tur, notifications: bildirimler } });
+const durumOlayi = (s, aboneId, durum) => s.yayinla({ id: aboneId, type: 'event', event: { variables: { trigger: { platform: 'state', entity_id: durum.entity_id, to_state: durum } } } });
+
+/** Canlı bağlantıyı kurar, persistent_notification aboneliğini onaylar ve ilk bildirim listesini verir. */
+async function bildirimliCanli(ortam, ilkBildirimler = {}, durumlar = [ISIK_DURUMU]) {
+  const { s, aboneId } = await canliYap(ortam, durumlar);
+  const abone = s.gonderilen.find((m) => m.type === 'persistent_notification/subscribe');
+  assert.ok(abone, 'bildirim aboneliği canlı bağlantıda kurulur');
+  s.yayinla({ id: abone.id, type: 'result', success: true, result: null });
+  haBildirimOlayi(s, abone.id, 'current', ilkBildirimler);
+  await ortam.akit();
+  return { s, aboneId, bildirimId: abone.id };
+}
+
+const panelBildirimi = (ortam) => yuzeyMesajlari(ortam, 'yuzey:durum').at(-1)?.bildirim;
+const panelOgeleri = (ortam, kaynak) => (panelBildirimi(ortam)?.ogeler ?? []).filter((o) => o.kaynak === kaynak);
+const bildirimKapatIpc = (ortam, anahtar, olay = yuzeyOlayi(ortam)) => ortam.durum.ipc.get('yuzey:bildirim-kapat')(olay, anahtar);
+const kapatmaPostlari = (ortam) => postlar(ortam).filter((f) => f.url.endsWith('/api/services/persistent_notification/dismiss'));
+
+/** Sahte olayı gönderir; deponun 50 ms'lik gruplaması ve panel yenilemesi için zamanı ilerletir. */
+async function durumGonder(ortam, s, aboneId, deger) {
+  durumOlayi(s, aboneId, sicaklikDurumu(deger));
+  ortam.ilerle(100);
+  await ortam.akit();
+}
+
+/** Canlı bağlantıyı koruyarak zamanı ilerletir: ping'lere pong verir (25 sn'de bir ping, 10 sn'de pong beklenir; tek büyük adım bağlantıyı koparırdı). */
+const yanitlananPingler = new WeakSet();
+async function canliIlerle(ortam, s, ms) {
+  for (let kalan = ms; kalan > 0; kalan -= 9000) {
+    ortam.ilerle(Math.min(kalan, 9000));
+    for (const m of s.gonderilen) {
+      if (m.type !== 'ping' || yanitlananPingler.has(m)) continue;
+      yanitlananPingler.add(m);
+      s.yayinla({ id: m.id, type: 'pong' });
+    }
+    await ortam.akit();
+  }
+}
+
+ortamda('bildirim (o-36): HA kalıcı bildirimleri salt-okuma aboneliğiyle gelir; ilk liste sessizdir, sonradan gelen köşe bildirimi olur; panelde opak anahtarla görünür, kapı bildirimi yalnız sayılır', bildirimAyari(), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const { s, bildirimId } = await bildirimliCanli(ortam, { eski: haBildirimi('eski_yedekleme', 'Yedekleme', 'Yedekleme tamamlandı') });
+  assert.deepEqual(s.gonderilen.find((m) => m.id === bildirimId), { id: bildirimId, type: 'persistent_notification/subscribe' });
+  assert.deepEqual(koseMesajlari(ortam), [], 'açılıştaki mevcut bildirimler köşeye taşınmaz');
+  assert.deepEqual(ortam.durum.bildirimler, [], 'Windows bildirimi çıkmaz');
+
+  haBildirimOlayi(s, bildirimId, 'added', {
+    yeni: haBildirimi('yeni_camasir', 'Çamaşır', 'Çamaşır makinesi bitti'),
+    gizli: haBildirimi('gizli_garaj', 'Güvenlik', 'Garaj kapısı açık kaldı'),
+  });
+  await ortam.akit();
+  const kose = koseMesajlari(ortam);
+  assert.equal(kose.length, 1, 'yalnız süzgeçten geçen yeni bildirim köşeye çıkar');
+  assert.equal(kose[0].tur, 'bilgi');
+  assert.match(kose[0].metin, /Çamaşır makinesi bitti/);
+  assert.doesNotMatch(JSON.stringify(kose), /[Gg]araj/);
+  assert.deepEqual(ortam.durum.bildirimler, [], 'masaüstü yansıması köşe penceresidir, Windows bildirimi değil');
+
+  await paneliAc(ortam);
+  const model = panelBildirimi(ortam);
+  assert.equal(model.ogeler.length, 2);
+  assert.equal(model.sayi, 2);
+  assert.equal(model.gizlenen, 1, 'kapı bildirimi panelde yok, yalnız sayılır');
+  assert.deepEqual(model.ogeler.map((o) => o.kaynak), ['ha', 'ha']);
+  for (const oge of model.ogeler) {
+    assert.match(oge.anahtar, /^k[0-9a-f]{16}$/, 'anahtar opak: HA bildirim kimliği panele gitmez');
+    assert.deepEqual(Object.keys(oge).sort(), ['anahtar', 'baslik', 'kaynak', 'metin', 'simge', 'zaman']);
+  }
+  assert.ok(model.ogeler.some((o) => o.metin === 'Çamaşır makinesi bitti'));
+  const hepsi = JSON.stringify(yuzeyMesajlari(ortam, 'yuzey:durum'));
+  assert.doesNotMatch(hepsi, /[Gg]araj|eski_yedekleme|yeni_camasir|gizli_garaj|notification_id/);
+});
+
+ortamda('bildirim (o-36): HA bildirimi paneldeki kapat ile korumalı yoldan kapanır (tek POST, yalnız notification_id); başarıda listeden çıkar', bildirimAyari(), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const { s, bildirimId } = await bildirimliCanli(ortam, { a: haBildirimi('yedek_tamam', 'Yedekleme', 'Yedekleme tamamlandı') });
+  await paneliAc(ortam);
+  const [oge] = panelOgeleri(ortam, 'ha');
+  assert.ok(oge);
+
+  const sonuc = await bildirimKapatIpc(ortam, oge.anahtar);
+  assert.deepEqual(sonuc, { ok: true });
+  const gonderilen = kapatmaPostlari(ortam);
+  assert.equal(gonderilen.length, 1, 'tek POST');
+  assert.equal(gonderilen[0].url, 'http://192.168.1.10:8123/api/services/persistent_notification/dismiss');
+  assert.deepEqual(JSON.parse(gonderilen[0].govde), { notification_id: 'yedek_tamam' });
+  assert.equal(gonderilen[0].basliklar.Authorization, `Bearer ${TEST_ANAHTAR}`);
+  assert.doesNotMatch(ortam.gunlukOku(), new RegExp(TEST_ANAHTAR));
+  ortam.ilerle(100);
+  await ortam.akit();
+  assert.equal(panelOgeleri(ortam, 'ha').length, 0, 'kapatılan bildirim şeritten çıktı');
+
+  // HA da kaldırıldı olayını gönderse tutarlı kalır; tekrar kapatma isteği bilinmeyen anahtar olarak reddedilir.
+  haBildirimOlayi(s, bildirimId, 'removed', { a: haBildirimi('yedek_tamam', 'Yedekleme', 'Yedekleme tamamlandı') });
+  await ortam.akit();
+  assert.equal((await bildirimKapatIpc(ortam, oge.anahtar)).ok, false);
+  assert.equal(kapatmaPostlari(ortam).length, 1, 'ikinci istek HA\'ya gitmez');
+});
+
+ortamda('bildirim (o-36): kapatma yalnız açık hızlı panelden ve modeldeki opak anahtarla çalışır; yabancı gönderen, ham kimlik, bilinmeyen ve bozuk anahtar HİÇ POST üretmez', bildirimAyari(), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await bildirimliCanli(ortam, { a: haBildirimi('yedek_tamam', 'Yedekleme', 'Yedekleme tamamlandı') });
+  const kapali = await bildirimKapatIpc(ortam, 'k0000000000000000', { sender: { yok: true }, senderFrame: { url: 'https://evil.example/', parent: null } });
+  assert.equal(kapali.ok, false, 'panel hiç açılmadıysa yuzey gönderen yok');
+
+  await paneliAc(ortam);
+  const [oge] = panelOgeleri(ortam, 'ha');
+  assert.equal((await bildirimKapatIpc(ortam, oge.anahtar, ayarlarOlayi(ortam))).ok, false, 'Ayarlar penceresi paneli yerine kapatamaz');
+  assert.equal((await bildirimKapatIpc(ortam, oge.anahtar, { sender: ortam.yuzeyPenceresi().webContents, senderFrame: { url: 'https://evil.example/', parent: null } })).ok, false, 'dış sayfadan gelen istek reddedilir');
+  for (const kotu of ['yedek_tamam', 'persistent_notification.yedek_tamam', 'k0000000000000000', '', 'a'.repeat(41), 5, null, { anahtar: oge.anahtar }]) {
+    assert.equal((await bildirimKapatIpc(ortam, kotu)).ok, false, `reddedilir: ${String(kotu).slice(0, 20)}`);
+  }
+  assert.equal(kapatmaPostlari(ortam).length, 0, 'hiçbir geçersiz istek HA\'ya gitmedi');
+  assert.equal(panelOgeleri(ortam, 'ha').length, 1, 'bildirim yerinde');
+});
+
+ortamda('bildirim (o-36): kapatma HA tarafında başarısız olursa bildirim listede kalır ve kullanıcıya hata bildirilir; sınırsız yeniden deneme yok', bildirimAyari(), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI, { postDurumu: 500 });
+  await bildirimliCanli(ortam, { a: haBildirimi('yedek_tamam', 'Yedekleme', 'Yedekleme tamamlandı') });
+  await paneliAc(ortam);
+  const [oge] = panelOgeleri(ortam, 'ha');
+  const sonuc = await bildirimKapatIpc(ortam, oge.anahtar);
+  assert.equal(sonuc.ok, false);
+  assert.equal(kapatmaPostlari(ortam).length, 1, 'başarısız POST yeniden denenmez');
+  assert.equal(panelOgeleri(ortam, 'ha').length, 1, 'başarısız kapatma şeridi değiştirmez');
+  assert.ok(koseMesajlari(ortam).some((m) => m.tur === 'hata'), 'köşede hata görünür');
+});
+
+ortamda('bildirim (o-36): bildirimKalici kapatılınca abonelik bırakılır ve panelde HA bildirimi kalmaz; masaüstü yansıması kapalıyken yeni bildirim yalnız panelde görünür', bildirimAyari({ bildirimMasaustu: false }), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const { s, bildirimId } = await bildirimliCanli(ortam, {});
+  haBildirimOlayi(s, bildirimId, 'added', { n: haBildirimi('yeni_bildirim', 'Çamaşır', 'Çamaşır makinesi bitti') });
+  await ortam.akit();
+  assert.deepEqual(koseMesajlari(ortam), [], 'bildirimMasaustu kapalı: köşe penceresi çıkmaz');
+  await paneliAc(ortam);
+  assert.equal(panelOgeleri(ortam, 'ha').length, 1, 'panelde yine görünür');
+
+  const sonuc = await ayarlarKaydet(ortam, { bildirimKalici: false });
+  assert.equal(sonuc.ok, true);
+  assert.equal(ortam.ayarOku().bildirimKalici, false);
+  ortam.ilerle(100);
+  await ortam.akit();
+  assert.ok(s.gonderilen.some((m) => m.type === 'unsubscribe_events' && m.subscription === bildirimId), 'abonelik HA\'da bırakılır');
+  assert.equal(panelOgeleri(ortam, 'ha').length, 0, 'HA bildirimleri panelden kalkar');
+});
+
+ortamda('bildirim: abonelik reddedilirse (yönetici değil) özellik sessizce kapalı kalır; panel ve favoriler çalışmaya devam eder', bildirimAyari(), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const { s } = await canliYap(ortam, [ISIK_DURUMU]);
+  const abone = s.gonderilen.find((m) => m.type === 'persistent_notification/subscribe');
+  s.yayinla({ id: abone.id, type: 'result', success: false, error: { code: 'unauthorized', message: 'Unauthorized' } });
+  await ortam.akit();
+  assert.equal((await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam))).canliDurum, 'canli');
+  await paneliAc(ortam);
+  assert.deepEqual(panelBildirimi(ortam).ogeler, []);
+  assert.equal(yuzeyMesajlari(ortam, 'yuzey:durum').at(-1).gruplar.flatMap((g) => g.karolar).length, 1, 'favori karosu yerinde');
+  assert.doesNotMatch(ortam.gunlukOku(), new RegExp(TEST_ANAHTAR));
+});
+
+ortamda('bildirim (o-36): düşük pil taraması 10 dakikada bir GET /api/states okur; ilk tarama sessiz, kapı cihazının pili görünmez; eşik ayarı uygulanır', dalga3([SALON], { bildirimPil: true }), async (ortam) => {
+  haKur(ortam.durum, [
+    ...HA_VARLIKLARI,
+    { entity_id: 'sensor.telefon_pil', state: '12', attributes: { friendly_name: 'Telefon Pil', device_class: 'battery', unit_of_measurement: '%' } },
+    { entity_id: 'sensor.tablet_pil', state: '45', attributes: { friendly_name: 'Tablet Pil', device_class: 'battery', unit_of_measurement: '%' } },
+    { entity_id: 'sensor.garaj_kapisi_pil', state: '3', attributes: { friendly_name: 'Garaj Kapısı Pil', device_class: 'battery', unit_of_measurement: '%' } },
+  ]);
+  await ortam.akit();
+  ortam.ilerle(21_000); // açılıştan sonraki ilk tarama (20 sn)
+  await ortam.akit();
+  assert.ok(stateOkumalari(ortam) >= 1, 'tarama GET /api/states okur');
+  assert.equal(postlar(ortam).length, 0, 'tarama HA\'ya hiçbir şey yazmaz');
+  assert.deepEqual(koseMesajlari(ortam), [], 'ilk tarama sessiz');
+
+  await paneliAc(ortam);
+  const piller = panelOgeleri(ortam, 'pil');
+  assert.equal(piller.length, 1);
+  assert.match(piller[0].metin, /Telefon Pil/);
+  assert.doesNotMatch(JSON.stringify(yuzeyMesajlari(ortam, 'yuzey:durum')), /[Gg]araj|Tablet/);
+
+  // Eşik 50'ye çıkınca tablet de düşük sayılır; mevcutlar yeni sayılmadığından köşe bildirimi çıkmaz.
+  assert.equal((await ayarlarKaydet(ortam, { bildirimPilEsigi: 50 })).ok, true);
+  ortam.ilerle(100);
+  await ortam.akit();
+  assert.equal(panelOgeleri(ortam, 'pil').length, 2);
+  assert.deepEqual(koseMesajlari(ortam), []);
+
+  // Yerelde kapatılan pil bildirimi HA'ya hiçbir istek göndermeden kapanır ve geri gelmez.
+  const [telefon] = panelOgeleri(ortam, 'pil').filter((o) => /Telefon/.test(o.metin));
+  assert.deepEqual(await bildirimKapatIpc(ortam, telefon.anahtar), { ok: true });
+  assert.equal(kapatmaPostlari(ortam).length, 0);
+  assert.equal(postlar(ortam).length, 0);
+  ortam.ilerle(11 * 60_000); // sonraki tarama: kapatılan yeniden eklenmez
+  await ortam.akit();
+  assert.deepEqual(panelOgeleri(ortam, 'pil').map((o) => /Tablet/.test(o.metin)), [true]);
+});
+
+ortamda('bildirim (o-36): pil ve güncelleme kapalıyken hiç /api/states taraması yapılmaz (varsayılan olarak yalnız pil açık)', dalga3([SALON], { bildirimPil: false, bildirimGuncelleme: false }), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  await ortam.akit();
+  ortam.ilerle(25 * 60_000);
+  await ortam.akit();
+  assert.equal(stateOkumalari(ortam), 0);
+});
+
+ortamda('uyarı kuralı (o-37, o-39): eşik geçişi bildirim üretir; ilk görülen durum ve ısınma süresindeki değişim üretmez; koşul sürerken tekrar yok; bekleme dolmadan yeni geçiş bastırılır, dolunca bildirir', bildirimAyari({ uyariKurallari: [SICAKLIK_KURALI] }), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const { s, aboneId } = await bildirimliCanli(ortam, {}, [ISIK_DURUMU, sicaklikDurumu(30)]);
+  assert.match(JSON.stringify(s.gonderilen.find((m) => m.id === aboneId)), /sensor\.salon_sicaklik/, 'kuralın varlığı canlı aboneliğe girdi');
+  await paneliAc(ortam);
+  assert.equal(panelOgeleri(ortam, 'uyari').length, 0, 'ilk görülen durum (30, eşiğin üstünde) yalnız taban çizgisidir');
+
+  await durumGonder(ortam, s, aboneId, 20); // ısınma süresi (8 sn) içinde: yalnız taban güncellenir
+  await durumGonder(ortam, s, aboneId, 31);
+  assert.equal(panelOgeleri(ortam, 'uyari').length, 0, 'ısınma süresindeki geçiş uyarı üretmez');
+  await durumGonder(ortam, s, aboneId, 20);
+  ortam.ilerle(9000);
+  await durumGonder(ortam, s, aboneId, 31);
+  const uyarilar = () => panelOgeleri(ortam, 'uyari');
+  assert.equal(uyarilar().length, 1, 'ısınma bitti: 20 -> 31 geçişi bildirir');
+  assert.match(uyarilar()[0].metin, /^Salon Sıcaklık çok sıcak: 31/);
+  const kose = koseMesajlari(ortam);
+  assert.equal(kose.length, 1);
+  assert.equal(kose[0].tur, 'bilgi');
+  assert.match(kose[0].metin, /Salon Sıcaklık çok sıcak: 31/);
+  assert.deepEqual(ortam.durum.bildirimler, [], 'windows kapalıyken Windows bildirimi çıkmaz');
+
+  await durumGonder(ortam, s, aboneId, 33);
+  assert.equal(uyarilar().length, 1, 'koşul sürerken tekrar bildirim yok');
+  await durumGonder(ortam, s, aboneId, 20);
+  await durumGonder(ortam, s, aboneId, 31);
+  assert.equal(uyarilar().length, 1, 'bekleme (300 sn) dolmadan yeni geçiş bastırılır');
+  await canliIlerle(ortam, s, 300_000);
+  await durumGonder(ortam, s, aboneId, 20);
+  await durumGonder(ortam, s, aboneId, 31);
+  assert.equal(uyarilar().length, 2, 'bekleme dolunca yeni geçiş bildirir');
+});
+
+ortamda('uyarı kuralı (o-39): süre koşulu kesintisiz sürmeden bildirim çıkmaz; koşul süre dolmadan kalkarsa hiç çıkmaz', bildirimAyari({ uyariKurallari: [{ ...SICAKLIK_KURALI, sure: 120 }] }), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const { s, aboneId } = await bildirimliCanli(ortam, {}, [ISIK_DURUMU, sicaklikDurumu(20)]);
+  await paneliAc(ortam);
+  ortam.ilerle(9000);
+  const uyarilar = () => panelOgeleri(ortam, 'uyari');
+
+  await durumGonder(ortam, s, aboneId, 31);
+  await canliIlerle(ortam, s, 60_000);
+  await durumGonder(ortam, s, aboneId, 20); // süre dolmadan koşul kalktı
+  await canliIlerle(ortam, s, 180_000);
+  assert.equal(uyarilar().length, 0, 'koşul 120 sn sürmedi: bildirim yok');
+
+  await durumGonder(ortam, s, aboneId, 31);
+  await canliIlerle(ortam, s, 110_000);
+  assert.equal(uyarilar().length, 0, 'süre dolmadı');
+  await canliIlerle(ortam, s, 11_000);
+  assert.equal(uyarilar().length, 1, 'koşul 120 sn kesintisiz sürdü: bildirir');
+  assert.match(uyarilar()[0].metin, /Salon Sıcaklık çok sıcak: 31/);
+});
+
+ortamda('uyarı kuralı (o-39): sessiz saatte uyarı açılır pencere olmaz (köşe de, Windows da) ama panelin bildirim şeridine eklenir; sessiz saat dışında windows seçeneği Windows bildirimi de çıkarır', bildirimAyari({
+  uyariKurallari: [
+    { ...SICAKLIK_KURALI, id: 'u1', windows: true, sessizSaatler: SESSIZ_SIMDI },
+    { ...SICAKLIK_KURALI, id: 'u2', varlik: 'sensor.mutfak_sicaklik', metin: 'Mutfak ısındı: {durum}', windows: true, sessizSaatler: SESSIZ_SONRA },
+  ],
+}), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const mutfak = (deger) => ({ entity_id: 'sensor.mutfak_sicaklik', state: String(deger), attributes: { friendly_name: 'Mutfak Sıcaklık', unit_of_measurement: '°C', device_class: 'temperature' } });
+  const { s, aboneId } = await bildirimliCanli(ortam, {}, [ISIK_DURUMU, sicaklikDurumu(20), mutfak(20)]);
+  await paneliAc(ortam);
+  ortam.ilerle(9000);
+
+  durumOlayi(s, aboneId, sicaklikDurumu(31));
+  ortam.ilerle(100);
+  await ortam.akit();
+  assert.equal(panelOgeleri(ortam, 'uyari').length, 1, 'sessiz saatte bile panelin şeridinde');
+  assert.deepEqual(koseMesajlari(ortam), [], 'sessiz saatte köşe penceresi çıkmaz');
+  assert.deepEqual(ortam.durum.bildirimler, [], 'sessiz saatte Windows bildirimi de çıkmaz');
+
+  durumOlayi(s, aboneId, mutfak(31));
+  ortam.ilerle(100);
+  await ortam.akit();
+  assert.equal(panelOgeleri(ortam, 'uyari').length, 2);
+  assert.equal(koseMesajlari(ortam).length, 1, 'sessiz saat dışında köşe bildirimi çıkar');
+  assert.match(koseMesajlari(ortam)[0].metin, /Mutfak ısındı: 31 °C/);
+  assert.equal(ortam.durum.bildirimler.length, 1, 'kural "Windows bildirimi de" dedi');
+  assert.equal(ortam.durum.bildirimler[0].body, 'Mutfak ısındı: 31 °C');
+});
+
+ortamda('uyarı kuralı (o-37): "ulaşılamıyor" ve "tam durum" kuralları; köşe bildirimi kapalıyken uyarı yalnız panelde kalır', bildirimAyari({
+  koseBildirimi: false,
+  uyariKurallari: [
+    { id: 'u1', acik: true, varlik: SICAKLIK, kosul: { tur: 'ulasilamiyor' }, metin: '', sure: 0, bekleme: 300, sessizSaatler: null, windows: false },
+    { id: 'u2', acik: true, varlik: 'light.salon_lambasi', kosul: { tur: 'durum', deger: 'on' }, metin: '{ad} yandı', sure: 0, bekleme: 0, sessizSaatler: null, windows: false },
+  ],
+}), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const { s, aboneId } = await bildirimliCanli(ortam, {}, [ISIK_DURUMU, sicaklikDurumu(20)]);
+  await paneliAc(ortam);
+  ortam.ilerle(9000);
+  durumOlayi(s, aboneId, { ...sicaklikDurumu('unavailable') });
+  durumOlayi(s, aboneId, durumNesnesi('light.salon_lambasi', 'Salon Lambası', 'on'));
+  ortam.ilerle(100);
+  await ortam.akit();
+  const metinler = panelOgeleri(ortam, 'uyari').map((o) => o.metin).sort();
+  assert.equal(metinler.length, 2);
+  assert.ok(metinler.includes('Salon Lambası yandı'));
+  assert.ok(metinler.some((m) => /Salon Sıcaklık/.test(m) && /ulaşılamıyor/i.test(m)), `varsayılan cümle: ${metinler.join(' | ')}`);
+  assert.deepEqual(koseMesajlari(ortam), [], 'koseBildirimi kapalı: köşe penceresi hiç çıkmaz');
+  assert.deepEqual(ortam.durum.bildirimler, []);
+});
+
+ortamda('uyarı kuralı (o-37, Kapı Kuralı): kapı/kilit/örtü varlıkları ve kapı sözcüklü adlar için kural kaydedilmez; geçerli kural kaydedilir ve izlenen kümeye girip canlı abonelik yenilenir', bildirimAyari(), async (ortam) => {
+  haKur(ortam.durum, HA_VARLIKLARI);
+  const { s, aboneId } = await bildirimliCanli(ortam, {}, [ISIK_DURUMU]);
+  assert.doesNotMatch(JSON.stringify(s.gonderilen.find((m) => m.id === aboneId)), /sicaklik/);
+  const kural = (id, varlik, ek = {}) => ({ id, acik: true, varlik, kosul: { tur: 'ulasilamiyor' }, metin: '', sure: 0, bekleme: 300, sessizSaatler: null, windows: false, ...ek });
+  const sonuc = await ayarlarKaydet(ortam, {
+    uyariKurallari: [
+      kural('a1', 'lock.on_kapi'),
+      kural('a2', 'cover.perde'),
+      kural('a3', 'alarm_control_panel.ev'),
+      kural('a4', 'sensor.garaj_kapisi_sicaklik'),
+      kural('a5', 'binary_sensor.salon_sicaklik', { metin: 'Garaj kapısı açık' }),
+      kural('a6', SICAKLIK),
+    ],
+  });
+  assert.equal(sonuc.ok, true);
+  const kayitli = ortam.ayarOku().uyariKurallari;
+  assert.deepEqual(kayitli.map((k) => k.varlik), [SICAKLIK], 'yalnız süzgeçten geçen kural saklandı');
+  assert.doesNotMatch(JSON.stringify(kayitli), /[Gg]araj|lock\.|cover\.|alarm/);
+
+  // Yeni izlenen küme canlı aboneliğe girer (soket kapanmadan abonelik yenilenir).
+  const yeniAbone = s.gonderilen.filter((m) => m.type === 'subscribe_trigger').at(-1);
+  assert.notEqual(yeniAbone.id, aboneId, 'abonelik yeniden kuruldu');
+  assert.match(JSON.stringify(yeniAbone), /sensor\.salon_sicaklik/);
+  assert.doesNotMatch(JSON.stringify(yeniAbone), /lock\.|cover\.|alarm|garaj/);
+});
+
+ortamda('ayarlar (o-36, o-37): yeni bildirim ayarları varsayılanlarıyla gelir, kaydedilir ve geçersiz değer reddedilir (eski değer korunur)', undefined, async (ortam) => {
+  const ilk = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.equal(ilk.ok, true);
+  assert.deepEqual(
+    [ilk.bildirimKalici, ilk.bildirimPil, ilk.bildirimGuncelleme, ilk.bildirimPilEsigi, ilk.bildirimMasaustu, ilk.uyariKurallari],
+    [true, true, false, 20, true, []],
+  );
+
+  const sonuc = await ayarlarKaydet(ortam, { bildirimKalici: false, bildirimPil: false, bildirimGuncelleme: true, bildirimPilEsigi: 35, bildirimMasaustu: false });
+  assert.equal(sonuc.ok, true);
+  const kayit = ortam.ayarOku();
+  assert.deepEqual(
+    [kayit.bildirimKalici, kayit.bildirimPil, kayit.bildirimGuncelleme, kayit.bildirimPilEsigi, kayit.bildirimMasaustu],
+    [false, false, true, 35, false],
+  );
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.deepEqual([ozet.bildirimGuncelleme, ozet.bildirimPilEsigi, ozet.bildirimMasaustu], [true, 35, false]);
+
+  const kotu = await ayarlarKaydet(ortam, { bildirimPilEsigi: 90, bildirimKalici: 'evet' });
+  assert.equal(kotu.ok, true, 'ek alan sorunu diğer ayarların kaydını durdurmaz');
+  assert.ok(kotu.uyarilar.some((u) => u.alan === 'bildirimPilEsigi'));
+  assert.equal(ortam.ayarOku().bildirimPilEsigi, 35, 'aralık dışı eşik reddedildi');
+  assert.equal(ortam.ayarOku().bildirimKalici, false, 'mantıksal olmayan değer reddedildi');
+});
+
+ortamda('ayarlar (o-37): cihazlar listesi uyarı kurabilen varlıklara durum önerisi ve simge ekler; kilit/kapı/örtü ve kapı adlı varlıklar listede hiç yer almaz', { ...dalga3([SALON]) }, async (ortam) => {
+  haKur(ortam.durum, [
+    ...HA_VARLIKLARI,
+    sicaklikDurumu(21),
+    durumNesnesi('lock.on_kapi', 'Ön Kapı', 'locked'),
+    durumNesnesi('cover.perde', 'Salon Perde', 'open'),
+    durumNesnesi('binary_sensor.garaj_hareket', 'Garaj Hareket', 'off'),
+  ]);
+  await ortam.akit();
+  const sonuc = await ortam.durum.ipc.get('cihazlar:getir')(ayarlarOlayi(ortam));
+  assert.equal(sonuc.ok, true);
+  const liste = JSON.parse(JSON.stringify(sonuc.cihazlar));
+  const sicaklik = liste.find((c) => c.entity_id === SICAKLIK);
+  assert.equal(sicaklik.uyariUygun, true);
+  assert.ok(Array.isArray(sicaklik.durumOnerileri));
+  assert.equal(typeof sicaklik.uyariSimgesi, 'string');
+  assert.ok(sicaklik.uyariSimgesi.length > 0);
+  assert.deepEqual(liste.filter((c) => /^(lock|cover)\.|garaj/.test(c.entity_id)), [], 'kapı kuralı: bu varlıklar renderer ayar sayfasına hiç gitmez');
+  assert.doesNotMatch(JSON.stringify(liste.map((c) => c.uyariSimgesi ?? '')), /🔒|🚪/);
+});
+
+ortamda('bildirim: yalnız uyarı kuralı olan (favorisiz) kullanıcıda canlı bağlantı yokken REST yedeği kural varlığını okur ve uyarı üretir', dalga3([], { bildirimPil: false, canliBaglanti: false, uyariKurallari: [SICAKLIK_KURALI] }), async (ortam) => {
+  const varliklar = [sicaklikDurumu(20)];
+  haKur(ortam.durum, varliklar);
+  await ortam.akit();
+  ortam.ilerle(70_000); // REST yedeği turu (60 sn)
+  await ortam.akit();
+  assert.ok(ortam.durum.fetchler.some((f) => f.url.endsWith('/api/states/sensor.salon_sicaklik')), 'kural varlığı REST ile okundu');
+  await paneliAc(ortam);
+  varliklar[0] = sicaklikDurumu(31);
+  ortam.ilerle(70_000);
+  await ortam.akit();
+  ortam.ilerle(100);
+  await ortam.akit();
+  assert.equal(panelOgeleri(ortam, 'uyari').length, 1, 'REST ile gelen geçiş de uyarı üretir');
+  assert.equal(postlar(ortam).length, 0, 'uyarı yolu HA\'ya hiçbir şey yazmaz');
 });

@@ -69,7 +69,7 @@
   const DEGISKEN_ADLARI = Object.freeze([
     '--bg', '--bg-ust', '--karo', '--karo-uzerinde', '--kenar', '--metin', '--soluk', '--soluk-eski', '--soluk-secili',
     '--acik', '--acik-eski', '--canli', '--yedek', '--hata', '--vurgu', '--yikici', '--vurgu-metin', '--yikici-metin',
-    '--rozet-metin', '--basari', '--isaret-metin',
+    '--rozet-metin', '--basari', '--bilgi', '--isaret-metin',
     ...KARO_RENK_ADLARI.map((ad) => `--renk-${ad}`),
     ...SERI_RENKLERI.koyu.map((_, i) => `--seri-${i}`),
     ...Object.keys(ISIK_RENKLERI).map((ad) => `--isik-renk-${ad}`),
@@ -77,8 +77,8 @@
 
   // Tema başına sabit durum renkleri (yuzey.css ile aynı değerler). Metin gibi kullanılanlar yine de kontrasta uydurulur.
   const DURUM_RENKLERI = Object.freeze({
-    koyu: Object.freeze({ canli: '#10b981', yedek: '#f59e0b', hata: '#ef4444', yikici: '#f87171', rozetMetin: '#0b1220' }),
-    acik: Object.freeze({ canli: '#047857', yedek: '#9a4a06', hata: '#b91c1c', yikici: '#b91c1c', rozetMetin: '#ffffff' }),
+    koyu: Object.freeze({ canli: '#10b981', yedek: '#f59e0b', hata: '#ef4444', bilgi: '#60a5fa', yikici: '#f87171', rozetMetin: '#0b1220' }),
+    acik: Object.freeze({ canli: '#047857', yedek: '#9a4a06', hata: '#b91c1c', bilgi: '#1d4ed8', yikici: '#b91c1c', rozetMetin: '#ffffff' }),
   });
   const METIN_TABANLARI = Object.freeze({
     koyu: Object.freeze({ metin: '#f1f5f9', soluk: '#94a3b8', solukEski: '#8d9bb1', solukSecili: '#a3b1c6', acik: '#fbbf24', acikEski: '#e0b038', yikiciMetin: '#fca5a5' }),
@@ -239,6 +239,7 @@
       '--yikici-metin': uydur(m.yikiciMetin),
       '--rozet-metin': rozetMetin,
       '--basari': d.canli, // köşe bildirimi
+      '--bilgi': d.bilgi, // köşe bildirimi, bilgi türü (bildirim merkezi, uyarı kuralları)
       '--isaret-metin': rozetMetin, // köşe bildirimi
     };
     for (const ad of KARO_RENK_ADLARI) degiskenler[`--renk-${ad}`] = uydur(KARO_RENKLERI[s][ad]); // karo şeridi / simgesi (zeminde okunur)

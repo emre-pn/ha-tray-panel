@@ -396,6 +396,27 @@
     ['kisayol.favoriSiniri', 'En çok {n} favoriye kısayol atanabilir.', 'Shortcuts can be assigned to at most {n} favorites.'],
     ['kisayol.panoSiniri', 'En çok {n} HA panosu tanımlanabilir.', 'At most {n} HA dashboards can be defined.'],
 
+    // --- Bildirim merkezi ve uyarı kuralları (1.4.0; src/lib/bildirim-merkezi.js, uyari-kurallari.js, bildirim-akisi.js) ---
+    ['merkez.ha.baslik', 'Home Assistant', 'Home Assistant'],
+    ['merkez.pil.baslik', 'Düşük pil', 'Low battery'],
+    ['merkez.pil.yuzde', '{ad}: %{yuzde}', '{ad}: {yuzde}%'],
+    ['merkez.pil.dusuk', '{ad}: pil düşük', '{ad}: battery is low'],
+    ['merkez.guncelleme.baslik', 'Güncelleme var', 'Update available'],
+    ['merkez.guncelleme.surum', '{ad}: {surum} sürümü hazır', '{ad}: version {surum} is available'],
+    ['merkez.guncelleme.metin', '{ad}: güncelleme hazır', '{ad}: an update is available'],
+    ['merkez.uyari.baslik', 'Uyarı', 'Alert'],
+    ['merkez.kose', '{baslik}: {metin}', '{baslik}: {metin}'],
+    ['merkez.biriken', 'Ve {n} bildirim daha — panelden bak', 'And {n} more notifications — see the panel'],
+    ['merkez.biriken.bir', 'Ve 1 bildirim daha — panelden bak', 'And 1 more notification — see the panel'],
+    ['uyari.metin.gecis', '{ad}: {durum}', '{ad}: {durum}'],
+    ['uyari.metin.durum', '{ad}: {durum}', '{ad}: {durum}'],
+    ['uyari.metin.ustunde', '{ad}, {esik} değerini geçti ({durum})', '{ad} went above {esik} ({durum})'],
+    ['uyari.metin.altinda', '{ad}, {esik} değerinin altına düştü ({durum})', '{ad} dropped below {esik} ({durum})'],
+    ['uyari.metin.ulasilamiyor', '{ad} ulaşılamıyor', '{ad} is unavailable'],
+    ['uyari.metin.bilinmiyor', '{ad} durumu bilinmiyor', '{ad} state is unknown'],
+    ['uyari.windowsBaslik', 'Ev Paneli — Uyarı', 'Home Panel — Alert'],
+    ['sonuc.bildirimYok', 'Bu bildirim artık listede değil.', 'This notification is no longer in the list.'],
+
     // --- Dışa / içe aktarma ve yedekten dönme (src/lib/ayar-aktar.js, ayar-yedegi.js) ---
     ['aktar.suzgecAdi', 'Ev Paneli ayar yedeği (JSON)', 'Home Panel settings backup (JSON)'],
     ['aktar.disaBaslik', 'Ayarları dışa aktar', 'Export settings'],

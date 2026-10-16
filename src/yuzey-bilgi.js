@@ -450,8 +450,8 @@
 
     function varlikKarti(karo) {
       const s = sensorDugmesi(karo, 'bilgi-kart kart-varlik', 'bi:kart:');
-      s.dugme.appendChild(el('span', 'kart-etiket', karo.etiket));
-      s.dugme.appendChild(el('span', 'kart-deger', s.deger));
+      s.dugme.appendChild(el('span', 'bilgi-etiket', karo.etiket));
+      s.dugme.appendChild(el('span', 'bilgi-deger', s.deger));
       if (s.neden) s.dugme.appendChild(el('span', 'kart-uyari', '! ' + dikkatMetni(s.neden)));
       return s.dugme;
     }

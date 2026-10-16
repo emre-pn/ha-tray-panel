@@ -41,6 +41,7 @@ const { sayfalariDuzelt } = require('./sayfalar');
 const { KONUM_MODLARI, VARSAYILAN_KONUM_MODU, OPAKLIK_SINIRI, konumlariDuzelt, tercihEkranDuzelt } = require('./pencere-yerlesim');
 const { EN_COK_KARO, SABITLENEBILIR_ALANLAR, karoKonumlariniDuzelt } = require('./masaustu-karo');
 const { METIN_OLCEKLERI, VARSAYILAN_METIN_OLCEGI, HAZIR_TEMA_ADLARI, HAVA_EFEKTI_DEGERLERI, MEVSIM_EFEKTI_DEGERLERI, vurguRengiDuzelt } = require('./gorunum');
+const { kurallariDuzelt } = require('./uyari-kurallari');
 
 const GUNCEL_EK_SURUM = 6;
 const KORUNAN_ADLAR = new Set(['__proto__', 'constructor', 'prototype', 'semaSurumu']);
@@ -226,6 +227,13 @@ const AYAR_ALANLARI = Object.freeze([
 
   // --- tema grubu: görünüm (o-25 metin boyutu ve yüksek karşıtlık, o-29 tema ve renkler, o-34 animasyonlar) ---
   ...TEMA_ALANLARI,
+  // --- Bildirim grubu (o-36, o-37, o-39): bildirim merkezi ve varlık uyarı kuralları (src/lib/bildirim-akisi.js) ---
+  mantiksalAlan('bildirimKalici', true), // HA kalıcı bildirimlerini panelde göster (WS persistent_notification/subscribe, yalnız okuma)
+  mantiksalAlan('bildirimPil', true), // düşük pil bildirimleri (10 dakikada bir GET /api/states)
+  mantiksalAlan('bildirimGuncelleme', false), // bekleyen güncelleme bildirimleri (update.* varlıkları)
+  tamsayiAlan('bildirimPilEsigi', 5, 50, 20), // bu yüzdenin altı/eşiti "düşük pil" sayılır
+  mantiksalAlan('bildirimMasaustu', true), // yeni merkez bildirimlerini köşe bildirimi olarak da göster
+  nesneAlan('uyariKurallari', { varsayilan: [], duzelt: (ham) => kurallariDuzelt(ham) }), // varlık uyarı kuralları (uyari-kurallari.js)
 ]);
 
 /**

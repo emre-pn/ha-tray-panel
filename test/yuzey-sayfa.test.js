@@ -200,7 +200,7 @@ const MODEL = {
  * `dil`: durumAl yanıtındaki etkin arayüz dili (verilmezse yanıtta yoktur: sayfa Türkçe kalır). Sayfadaki data-i18n / data-i18n-attr
  * öğeleri HTML'den okunur (document.querySelectorAll), böylece sayfayiCevir gerçek sayfadaki gibi çalışır.
  */
-function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true }, malzeme, aramaYama, dil, okuYaniti = (istek) => ({ ok: true, veri: istek.tur === 'gecmis' ? {} : [] }) } = {}) {
+function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true }, malzeme, aramaYama, dil, okuYaniti = (istek) => ({ ok: true, veri: istek.tur === 'gecmis' ? {} : [] }), bildirimYaniti = { ok: true } } = {}) {
   const odak = { aktif: null };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
@@ -250,6 +250,10 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
     oku: async (istek) => {
       cagrilar.push(['oku', JSON.parse(JSON.stringify(istek))]);
       return typeof okuYaniti === 'function' ? okuYaniti(istek) : okuYaniti;
+    },
+    bildirimKapat: async (anahtar) => {
+      cagrilar.push(['bildirimKapat', anahtar]);
+      return typeof bildirimYaniti === 'function' ? bildirimYaniti(anahtar) : bildirimYaniti;
     },
     kapat: () => cagrilar.push(['kapat']),
     boyut: (h) => cagrilar.push(['boyut', h]),
@@ -2331,4 +2335,234 @@ test('bilgi (CSS): grafik çizgileri ve gösterge yayları kartlarında WCAG 1.4
   assert.match(kuralGovdesi(css, '.seri-isaret.seri-4'), /dashed/);
   assert.match(kuralGovdesi(css, '.seri-isaret.seri-5'), /dotted/);
   assert.match(oku('src/lib/grafik.js'), /SERI_KESIK_DESENLERI/);
+});
+
+// ------------------------------------------------------------------ bildirim şeridi (1.4.0)
+
+const BILDIRIM_ZAMANI = Date.UTC(2026, 9, 15, 7, 5);
+const bildirimOgesi = (anahtar, ek = {}) => ({ anahtar, kaynak: 'ha', baslik: 'Başlık ' + anahtar, metin: 'Metin ' + anahtar, zaman: BILDIRIM_ZAMANI, simge: '🔔', ...ek });
+const BILDIRIMLI = (bildirim) => ({ ...MODEL, bildirim });
+const UC_BILDIRIM = { ogeler: [bildirimOgesi('ka1', { kaynak: 'uyari', simge: '⚠' }), bildirimOgesi('kb2', { kaynak: 'pil', simge: '🪫' }), bildirimOgesi('kc3', { kaynak: 'guncelleme', simge: '⬆' })], sayi: 3, gizlenen: 0 };
+const bildirimKapatDugmeleri = (sayfa) => sayfa.oge('bildirimListe').bul((o) => o.etiket === 'button');
+const bildirimSatirlari = (sayfa) => sayfa.oge('bildirimListe').bul((o) => o.etiket === 'li');
+const bildirimSaati = (dil) => new Date(BILDIRIM_ZAMANI).toLocaleTimeString(dil, { hour: '2-digit', minute: '2-digit' });
+
+test('bildirim: modelde bildirim yoksa, boşsa ya da bozuksa şerit gizli kalır', async () => {
+  const yok = await panelAc({ model: MODEL });
+  assert.equal(yok.oge('bildirim').hidden, true);
+  const bos = await panelAc({ model: BILDIRIMLI({ ogeler: [], sayi: 0, gizlenen: 0 }) });
+  assert.equal(bos.oge('bildirim').hidden, true);
+  const bozuk = await panelAc({ model: BILDIRIMLI('merhaba') });
+  assert.equal(bozuk.oge('bildirim').hidden, true);
+});
+
+test('bildirim: kapalı şeritte rozet sayıyı, özet en yeni bildirimin metnini gösterir; liste kapalıdır', async () => {
+  const sayfa = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM) });
+  assert.equal(sayfa.oge('bildirim').hidden, false);
+  assert.equal(sayfa.oge('bildirimSayi').hidden, false);
+  assert.equal(sayfa.oge('bildirimSayi').textContent, '3');
+  assert.equal(sayfa.oge('bildirimSayi').attributes['aria-label'], '3 bildirim');
+  assert.equal(sayfa.oge('bildirimOzet').textContent, 'Metin ka1');
+  assert.equal(sayfa.oge('bildirimListe').hidden, true);
+  assert.equal(sayfa.oge('bildirimDugme').attributes['aria-expanded'], 'false');
+  assert.equal(sayfa.oge('bildirimGizli').hidden, true);
+});
+
+test('bildirim: tek bildirimde rozet etiketi tekil yazılır', async () => {
+  const sayfa = await panelAc({ model: BILDIRIMLI({ ogeler: [bildirimOgesi('ka1')], sayi: 1, gizlenen: 0 }) });
+  assert.equal(sayfa.oge('bildirimSayi').attributes['aria-label'], '1 bildirim');
+});
+
+test('bildirim: başlık düğmesi listeyi açıp kapatır; öğeler başlık, metin, saat ve kaynak sınıfıyla çizilir', async () => {
+  const sayfa = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM) });
+  sayfa.oge('bildirimDugme').gonder('click');
+  assert.equal(sayfa.oge('bildirimListe').hidden, false);
+  assert.equal(sayfa.oge('bildirimDugme').attributes['aria-expanded'], 'true');
+  assert.equal(sayfa.oge('bildirimOzet').textContent, '', 'açıkken özet tekrarlanmaz');
+  const satirlar = bildirimSatirlari(sayfa);
+  assert.equal(satirlar.length, 3);
+  assert.deepEqual(satirlar.map((s) => s.className), ['bildirim-oge uyari', 'bildirim-oge pil', 'bildirim-oge guncelleme']);
+  const saat = bildirimSaati('tr-TR');
+  const ilk = satirlar[0];
+  assert.equal(ilk.bul((o) => o.className === 'bildirim-oge-baslik')[0].textContent, 'Başlık ka1' + saat);
+  assert.equal(ilk.bul((o) => o.className === 'bildirim-zaman')[0].textContent, saat);
+  assert.equal(ilk.bul((o) => o.className === 'bildirim-metin')[0].textContent, 'Metin ka1');
+  const simge = ilk.bul((o) => o.className === 'bildirim-simge')[0];
+  assert.equal(simge.textContent, '⚠');
+  assert.equal(simge.attributes['aria-hidden'], 'true', 'simge süstür');
+  const kapat = bildirimKapatDugmeleri(sayfa)[0];
+  assert.equal(kapat.attributes['aria-label'], 'Bildirimi kapat: Metin ka1');
+  assert.equal(kapat.type, 'button');
+  sayfa.oge('bildirimDugme').gonder('click');
+  assert.equal(sayfa.oge('bildirimListe').hidden, true);
+  assert.equal(sayfa.oge('bildirimOzet').textContent, 'Metin ka1');
+});
+
+test('bildirim: zamanı olmayan öğede saat yazılmaz', async () => {
+  const sayfa = await panelAc({ model: BILDIRIMLI({ ogeler: [bildirimOgesi('ka1', { zaman: 0 })], sayi: 1, gizlenen: 0 }) });
+  sayfa.oge('bildirimDugme').gonder('click');
+  assert.equal(sayfa.oge('bildirimListe').bul((o) => o.className === 'bildirim-zaman').length, 0);
+});
+
+test('bildirim: kapat düğmesi köprüye opak anahtarı iletir; yanıt beklerken düğme pasiftir ve çift tıklama tek istek gönderir', async () => {
+  let coz;
+  const bekle = new Promise((c) => (coz = c));
+  const sayfa = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM), bildirimYaniti: () => bekle });
+  sayfa.oge('bildirimDugme').gonder('click');
+  const kapat = bildirimKapatDugmeleri(sayfa)[1];
+  kapat.gonder('click');
+  kapat.gonder('click');
+  assert.deepEqual(sayfa.cagrilar.filter((c) => c[0] === 'bildirimKapat'), [['bildirimKapat', 'kb2']]);
+  assert.equal(kapat.disabled, true);
+  coz({ ok: true });
+  await akit();
+  assert.equal(kapat.disabled, false);
+  assert.equal(sayfa.oge('ipucu').textContent, '', 'başarıda uyarı yok');
+});
+
+test('bildirim: kapatma başarısızsa ipucu satırı söyler; "çok sık" ayrı mesajdır; köprü hatası da yakalanır', async () => {
+  const cokSik = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM), bildirimYaniti: { ok: false, tur: 'cok-sik' } });
+  cokSik.oge('bildirimDugme').gonder('click');
+  bildirimKapatDugmeleri(cokSik)[0].gonder('click');
+  await akit();
+  assert.equal(cokSik.oge('ipucu').textContent, 'Çok sık; biraz bekleyin.');
+
+  const olmadi = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM), bildirimYaniti: { ok: false, tur: 'gecersiz' } });
+  olmadi.oge('bildirimDugme').gonder('click');
+  bildirimKapatDugmeleri(olmadi)[0].gonder('click');
+  await akit();
+  assert.equal(olmadi.oge('ipucu').textContent, 'Bildirim kapatılamadı.');
+  assert.equal(bildirimKapatDugmeleri(olmadi)[0].disabled, false, 'yeniden denenebilir');
+
+  const patladi = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM), bildirimYaniti: () => Promise.reject(new Error('ipc')) });
+  patladi.oge('bildirimDugme').gonder('click');
+  bildirimKapatDugmeleri(patladi)[0].gonder('click');
+  await akit();
+  assert.equal(patladi.oge('ipucu').textContent, 'Bildirim kapatılamadı.');
+});
+
+test('bildirim: kapatılan öğe yeni modelden kalkınca odak sıradaki düğmeye, hiç kalmayınca içeriğe geçer; liste açık kalır', async () => {
+  const sayfa = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM) });
+  sayfa.oge('bildirimDugme').gonder('click');
+  sayfa.odakVer(bildirimKapatDugmeleri(sayfa)[1]);
+  sayfa.durum(BILDIRIMLI({ ogeler: [UC_BILDIRIM.ogeler[0], UC_BILDIRIM.ogeler[2]], sayi: 2, gizlenen: 0 }));
+  assert.equal(sayfa.oge('bildirimListe').hidden, false, 'liste açık kalır');
+  assert.equal(bildirimSatirlari(sayfa).length, 2);
+  assert.equal(sayfa.odakta(), bildirimKapatDugmeleri(sayfa)[1], 'odak sıradaki düğmede');
+  sayfa.durum(BILDIRIMLI({ ogeler: [UC_BILDIRIM.ogeler[0]], sayi: 1, gizlenen: 0 }));
+  assert.equal(sayfa.odakta(), bildirimKapatDugmeleri(sayfa)[0], 'son düğmeye kayar');
+  sayfa.durum(BILDIRIMLI({ ogeler: [], sayi: 0, gizlenen: 0 }));
+  assert.equal(sayfa.oge('bildirim').hidden, true);
+  assert.equal(sayfa.odakta(), sayfa.oge('icerik'), 'şerit kalkınca odak içerik alanına döner');
+});
+
+test('bildirim: odak şeritte değilse yeniden çizim odağı çalmaz; aynı model şeridi yeniden kurmaz', async () => {
+  const sayfa = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM) });
+  sayfa.oge('bildirimDugme').gonder('click');
+  const eski = bildirimKapatDugmeleri(sayfa)[0];
+  sayfa.odakVer(sayfa.oge('haAc'));
+  const yeni = BILDIRIMLI({ ogeler: [UC_BILDIRIM.ogeler[1], UC_BILDIRIM.ogeler[2]], sayi: 2, gizlenen: 0 });
+  sayfa.durum(yeni);
+  assert.equal(sayfa.odakta(), sayfa.oge('haAc'));
+  const once = bildirimKapatDugmeleri(sayfa)[0];
+  sayfa.durum(yeni);
+  assert.equal(bildirimKapatDugmeleri(sayfa)[0], once, 'değişmeyen bildirim DOM’u yeniden kurmaz');
+  assert.notEqual(once, eski);
+});
+
+test('bildirim: yalnız gizlenen varsa "N bildirim gizlendi" satırı çıkar, başlık düğmesi pasif olur; içerik hiçbir yerde yazılmaz', async () => {
+  const sayfa = await panelAc({ model: BILDIRIMLI({ ogeler: [], sayi: 0, gizlenen: 3 }) });
+  assert.equal(sayfa.oge('bildirim').hidden, false);
+  assert.equal(sayfa.oge('bildirimGizli').hidden, false);
+  assert.equal(sayfa.oge('bildirimGizli').textContent, '3 bildirim gizlendi');
+  assert.equal(sayfa.oge('bildirimDugme').disabled, true);
+  assert.equal(sayfa.oge('bildirimSayi').hidden, true);
+  sayfa.oge('bildirimDugme').gonder('click');
+  assert.equal(sayfa.oge('bildirimListe').hidden, true, 'boş liste açılmaz');
+  const bir = await panelAc({ model: BILDIRIMLI({ ogeler: [bildirimOgesi('ka1')], sayi: 1, gizlenen: 1 }) });
+  assert.equal(bir.oge('bildirimGizli').textContent, '1 bildirim gizlendi');
+  assert.equal(bir.oge('bildirimDugme').disabled, false);
+});
+
+test('bildirim: palet kipinde şerit gizlidir, panele dönünce yeniden çıkar; her gösterimde liste kapalı başlar', async () => {
+  const palet = await paletAc({ model: BILDIRIMLI(UC_BILDIRIM) });
+  assert.equal(palet.oge('bildirim').hidden, true);
+  const sayfa = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM) });
+  sayfa.oge('bildirimDugme').gonder('click');
+  assert.equal(sayfa.oge('bildirimListe').hidden, false);
+  sayfa.goster('palet');
+  assert.equal(sayfa.oge('bildirim').hidden, true);
+  sayfa.goster('panel');
+  assert.equal(sayfa.oge('bildirim').hidden, false);
+  assert.equal(sayfa.oge('bildirimListe').hidden, true, 'yeni gösterimde kapalı');
+  assert.equal(sayfa.oge('bildirimDugme').attributes['aria-expanded'], 'false');
+});
+
+test('bildirim: metinler yalnız textContent ile yazılır; etiketli metin etiket olarak yorumlanmaz, öğe çocuğu oluşmaz', async () => {
+  const kotu = '<img src=x onerror=alert(1)>';
+  const sayfa = await panelAc({ model: BILDIRIMLI({ ogeler: [bildirimOgesi('ka1', { baslik: kotu, metin: kotu, simge: kotu })], sayi: 1, gizlenen: 0 }) });
+  assert.equal(sayfa.oge('bildirimOzet').textContent, kotu);
+  sayfa.oge('bildirimDugme').gonder('click');
+  const satir = bildirimSatirlari(sayfa)[0];
+  assert.equal(satir.bul((o) => o.className === 'bildirim-metin')[0].textContent, kotu);
+  assert.equal(satir.bul((o) => o.etiket === 'img').length, 0);
+  assert.equal(sayfa.oge('bildirimOzet').textContent, '', 'açıkken özet boş');
+});
+
+test('bildirim: bozuk öğeler (anahtarsız, nesne olmayan, bilinmeyen kaynak) ayıklanır; uzun metin ve tuhaf sayılar sınırlanır', async () => {
+  const uzun = 'a'.repeat(500);
+  const sayfa = await panelAc({
+    model: BILDIRIMLI({
+      ogeler: [null, 5, { anahtar: '', metin: 'x' }, { metin: 'anahtarsız' }, bildirimOgesi('ka1', { kaynak: 'baska', metin: uzun, baslik: uzun, simge: uzun, zaman: 'dün' })],
+      sayi: -4,
+      gizlenen: 'çok',
+    }),
+  });
+  sayfa.oge('bildirimDugme').gonder('click');
+  const satirlar = bildirimSatirlari(sayfa);
+  assert.equal(satirlar.length, 1);
+  assert.equal(satirlar[0].className, 'bildirim-oge ha', 'bilinmeyen kaynak "ha" olur');
+  assert.equal(satirlar[0].bul((o) => o.className === 'bildirim-metin')[0].textContent.length, 200);
+  assert.equal(satirlar[0].bul((o) => o.className === 'bildirim-simge')[0].textContent.length, 8);
+  assert.equal(satirlar[0].bul((o) => o.className === 'bildirim-zaman').length, 0);
+  assert.equal(sayfa.oge('bildirimSayi').textContent, '1', 'geçersiz sayı öğe sayısına döner');
+  assert.equal(sayfa.oge('bildirimGizli').hidden, true);
+});
+
+test('bildirim: çok öğeli listeden ilk 30 çizilir', async () => {
+  const cok = Array.from({ length: 45 }, (_, i) => bildirimOgesi('k' + String(i).padStart(2, '0')));
+  const sayfa = await panelAc({ model: BILDIRIMLI({ ogeler: cok, sayi: 45, gizlenen: 0 }) });
+  sayfa.oge('bildirimDugme').gonder('click');
+  assert.equal(bildirimSatirlari(sayfa).length, 30);
+  assert.equal(sayfa.oge('bildirimSayi').textContent, '45');
+});
+
+test('dil en: bildirim şeridi etiketleri İngilizce; dil çalışma anında değişince şerit yeniden yazılır', async () => {
+  const sayfa = await panelAc({ model: BILDIRIMLI({ ogeler: UC_BILDIRIM.ogeler, sayi: 3, gizlenen: 2 }), dil: 'en' });
+  assert.equal(sayfa.oge('bildirimBaslik').textContent, 'Notifications');
+  assert.equal(sayfa.oge('bildirimSayi').attributes['aria-label'], '3 notifications');
+  assert.equal(sayfa.oge('bildirimGizli').textContent, '2 notifications hidden');
+  sayfa.oge('bildirimDugme').gonder('click');
+  assert.equal(bildirimKapatDugmeleri(sayfa)[0].attributes['aria-label'], 'Dismiss notification: Metin ka1');
+  assert.equal(sayfa.oge('bildirimListe').bul((o) => o.className === 'bildirim-zaman')[0].textContent, bildirimSaati('en-US'));
+  sayfa.dilDegisti({ dil: 'tr' });
+  assert.equal(sayfa.oge('bildirimBaslik').textContent, 'Bildirimler');
+  assert.equal(sayfa.oge('bildirimGizli').textContent, '2 bildirim gizlendi');
+  assert.equal(bildirimKapatDugmeleri(sayfa)[0].attributes['aria-label'], 'Bildirimi kapat: Metin ka1');
+  const hata = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM), dil: 'en', bildirimYaniti: { ok: false, tur: 'gecersiz' } });
+  hata.oge('bildirimDugme').gonder('click');
+  bildirimKapatDugmeleri(hata)[0].gonder('click');
+  await akit();
+  assert.equal(hata.oge('ipucu').textContent, 'The notification could not be dismissed.');
+  const tekil = await panelAc({ model: BILDIRIMLI({ ogeler: [bildirimOgesi('ka1')], sayi: 1, gizlenen: 1 }), dil: 'en' });
+  assert.equal(tekil.oge('bildirimSayi').attributes['aria-label'], '1 notification');
+  assert.equal(tekil.oge('bildirimGizli').textContent, '1 notification hidden');
+});
+
+test('bildirim: yuzey.css palette şeridi gizler ve bildirim kurallarına renk kodu gömmez (yalnız tema değişkenleri)', () => {
+  const css = oku('src/yuzey.css');
+  assert.match(css, /\.mod-palet \.bildirim\b[^{]*\{[^}]*display:\s*none/);
+  const kurallar = [...css.matchAll(/(^|\n)\s*([^{}\n]*\.bildirim[^{}]*)\{([^}]*)\}/g)];
+  assert.ok(kurallar.length >= 8, 'bildirim kuralları bulundu');
+  for (const [, , secici, govde] of kurallar) assert.doesNotMatch(govde, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `${secici.trim()} renk kodu gömüyor`);
 });
