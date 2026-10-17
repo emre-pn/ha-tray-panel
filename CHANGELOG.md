@@ -2,22 +2,53 @@
 
 Release notes before 1.3.0 are in Turkish. / 1.3.0 öncesi sürüm notları Türkçedir.
 
-### 1.4.0 — 2026-10-16
+### 1.4.0 — 2026-10-17
 
-Update by running `Ev-Paneli-Kurulum-1.4.0.exe` over the installed version. The settings schema is now 6: only new fields were added, so your settings, favorites and token stay as they are. The code is checked with `npm test` and `npm run kontrol`; it has not been tried in a real window or against a real Home Assistant yet, so open the tray, the quick panel, the palette and Settings once before relying on it.
+Update by running `Ev-Paneli-Kurulum-1.4.0.exe` over the installed version. The settings schema is still 6: only new fields were added, so your settings, favorites and token stay as they are. The code is checked with `npm test` and `npm run kontrol`; it has not been tried in a real window, on a real Windows setup or against a real Home Assistant yet, so open the tray, the quick panel, the palette and Settings once before relying on it. Everything that reaches outside the app (external triggers, local API, `evpaneli://` links, mobile notifications, in-app updates, folder sync, camera snapshots) is off until you switch it on.
+
+**Devices**
 
 - **Device cards:** Climate, media player, vacuum, fan, dehumidifier, select, number and timer entities get their own cards. Lights get colour and white-tone controls. The palette and the command line use the same words for the same things.
-- **Info cards:** A sensor strip with charts and history, a clock with weather, a read-only calendar and to-do lists. All of them are off until you pick them in Settings.
-- **Layout:** Right-click menu, a detail pane, pages (tabs), tile icon, colour and size, "add to tray" for a favorite, reordering with an undo history (the last 20 layouts), and a repair for favorites that disappeared from Home Assistant.
-- **Window:** Always on top, remembered position and screen, opacity, a badge on the tray icon and tiles pinned to the desktop.
-- **Interface languages:** German, French and Spanish join Türkçe and English. Pick one under Settings → Appearance → Language; System language follows Windows for all five. The palette's command words stay Turkish and English.
+- **Curtains, valves and automations:** Curtain and blind cards (open, stop, close, a position slider that sends only the final value), valve cards (open, close) and automation cards (run, enable, disable). Only the curtain, blind, shade and awning device classes count as covers; garage doors, gates, shutters and anything with a door word in its name stay blocked. Valves and automations always need a press-and-hold and never run from a hotkey, the command line, a desktop tile or an external trigger.
+- **Camera snapshots:** Off by default. You approve each camera (at most 8) in Settings → Camera. Door, doorbell, intercom and entrance cameras are never listed. The picture is fetched by the main process, starts blurred, stays in memory only (at most one capture every 5 seconds per camera), and the panel is hidden from screen capture while a camera is allowed. The camera choice is not exported.
+- **Media:** Media cards show the album cover, fetched by the main process only from Home Assistant's own proxy path (never from an outside address). The top card can show a primary media player with its own controls.
+
+**Panel and window**
+
+- **Info cards:** A sensor strip with charts and history, a clock with weather and a daily or hourly forecast strip, a read-only calendar and to-do lists. Sensor favorites also work in custom pages. All of them are off until you pick them in Settings.
+- **Layout:** Right-click menu, a detail pane, pages (tabs), tile icon, colour and size, "add to tray" for a favorite, reordering with an undo history (the last 20 layouts), a repair for favorites that disappeared from Home Assistant, and an optional grouping of tiles by room.
+- **Window:** Always on top, remembered position and screen, opacity, a badge on the tray icon, tiles pinned to the desktop, and a pin that keeps the quick panel open.
+- **Interaction:** Mouse wheel over a light tile or a media card changes brightness or volume; a tray-icon middle click runs one harmless favorite you choose; the main hotkey can work as "show while held" (off by default, not tried on real hardware); a notice appears when Home Assistant has been unreachable for a while; Settings warns when the token belongs to an administrator.
+- **Interface languages:** German, French and Spanish join Türkçe and English, including the palette's command words. Pick one under Settings → Appearance → Language; System language follows Windows for all five.
 - **Look:** Text size, high contrast, preset or custom colours with a 4.5:1 contrast check, and optional animations (off by default).
-- **Notifications:** A strip in the panel for Home Assistant notifications, low batteries and updates. Alert rules with a duration, a cooldown and quiet hours. Desktop notifications are an extra option.
+
+**Actions**
+
+- **Undo and delayed actions:** `Ctrl+Alt+Z` (or the panel and tray menu) undoes the last harmless actions for a few minutes. In the palette, `desk off in 10 min` (or `salon 10 dk sonra kapat`) schedules a delayed off or on; pending actions live in memory only and are cancelled when the app closes.
+- **Activity history:** A local list of the last 200 actions with their source (panel, palette, hotkey, delayed, undo, external trigger, notification button) and result. It holds no address, token or parameter values and is not exported.
+- **Palette:** `@` lists what changed recently; `*` searches harmless devices that are not favorites (off by default); a room can be switched off from its group header (only favorites that are on and harmless).
 - **Tools:** Settings search, directional actions (`led +10`, `salon kapat`) for hotkeys and the command line, `--goster`, `--gizle`, `--degistir` and `--durum` commands, a starter list built from one room, a diagnostics report without secrets and a "what's new" view. The spell-check dictionary download is switched off.
-- **Portable build:** `npm run dist:tasinabilir` makes `Ev-Paneli-Tasinabilir-<version>.exe`. It uses the same settings as the installed app and has no "start with Windows".
+
+**Outside the app (all off by default)**
+
+- **External triggers:** Jump List tasks, desktop shortcuts, `evpaneli://` links, a local API on `127.0.0.1`, PC events (lock, unlock, sleep, wake) and a meeting light that follows microphone or camera use. Each has its own switch in Settings → External triggers. They pick a favorite by name, run only harmless favorites, are rate limited, and pass through one common gate and the normal safe action path. Locks, doors, valves, automations, cameras, covers, climate mode changes and anything that asks for confirmation can never be started this way. Links ask for permission in the panel for each favorite; the local API needs a token stored with `safeStorage`.
+- **Mobile notifications:** After you register this PC as a Home Assistant mobile app, notifications arrive as Windows notifications or as a small card with up to 3 action buttons. A button press sends only the standard notification-action event back. No sensors or location are sent.
+- **In-app updates:** Separate from the update check and off by default. The app downloads the installer from GitHub Releases only when you press Download, checks its sha512 before installing, and installs only after a second confirmation.
 - **Update check:** Off by default. When you turn it on, the app asks GitHub for the latest release at most once a day. Your address and token are never sent, nothing is downloaded and the release page opens only when you click.
+
+**Connection**
+
+- **Custom headers:** Extra HTTP headers for your Home Assistant addresses (for example Cloudflare Access service tokens). The values are stored with `safeStorage` and never exported or logged.
+- **Private certificates:** Trust a private root CA or pin a server certificate by its SHA-256 fingerprint. It applies to your Home Assistant host only; there is no "ignore certificate errors" mode.
+- **Browser sign-in:** Sign in through your browser instead of pasting a long-lived token. The refresh token is stored with `safeStorage`.
+- **Folder sync:** Optionally sync preferences (favorites, pages, hotkeys, appearance, info cards, notifications) through a folder of your choice, with per-section timestamps and an optional passphrase. Addresses, tokens, headers, certificates and trigger settings are never written. Everything read from the folder goes through the same checks as an import, door rule included.
+
+**Notifications and safety**
+
+- **Notifications:** A strip in the panel for Home Assistant notifications, low batteries and updates. Alert rules with a duration, a cooldown and quiet hours. Desktop notifications are an extra option.
 - **Safety rule:** "siren" is now a blocked word, as the siren domain already was. Anything with it in the name or id is never listed, run or added to favorites.
 - **Safety rule in German, French and Spanish:** The door rule now also blocks door, gate, lock, shutter and intercom words in these languages (for example `Türöffner`, `portail`, `cerradura`). Before, these names could be run from the tray, a hotkey or the command line without a confirmation. The rule text in Settings now lists them.
+- **Portable build:** `npm run dist:tasinabilir` makes `Ev-Paneli-Tasinabilir-<version>.exe`. It uses the same settings as the installed app and has no "start with Windows".
 - **Older version on the same settings folder:** If 1.3.0 or older runs on the same folder and drops newer favorites, tile fields or the interface language, the next start restores them from the saved older-version backup and says so. The app now keeps up to 5 such backups instead of one.
 - **Smaller fixes:** `--durum` and `--liste` only overwrite an empty file or an earlier status file, never another `.json` file. The diagnostics report also masks any host name, your Windows user name and the hosts from your settings in log lines. A top card can only be a sensor or binary sensor (other types were never shown) and is no longer registered as an entity the panel can run.
 

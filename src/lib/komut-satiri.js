@@ -13,6 +13,10 @@
  * 1.4.0 (o-19) pencere ve durum komutları (aşağıda pencereDurumKomutu): `--goster` / `--gizle` / `--degistir` (isteğe bağlı
  * `--hedef=ana|panel|palet`, varsayılan ana pencere) ve `--durum` / `--liste` ile `--cikti=<dosya.json>`. Bu komutlar HİÇBİR servis
  * çağrısı yapmaz; yalnız pencere gösterir/gizler ya da durumu bir JSON dosyasına yazar. `--eylem` ile birlikte verilemez.
+ *
+ * 1.4.0 dış tetikler (dis grubu, aşağıda): `--kaynak=jumplist|kisayol` (o-21: görev çubuğu atlama listesi ve masaüstü kısayolu
+ * `--eylem` ile birlikte verir; eylem o zaman dış tetik kapısından, Ayarlar'daki seçenek açıksa geçer) ve `evpaneli://eylem?ad=...`
+ * bağlantısı (o-54). Bağlantı YALNIZ favori ADI taşır (varlık kimliği değil); ek olarak en çok bir değiştirici (parlaklik, islem, adim).
  */
 
 const { anahtarKatla, adAnahtari } = require('./metin');
@@ -241,14 +245,189 @@ function pencereDurumKomutu(argv, dizin = null) {
   return { tur: 'durum', liste: durumAdlari.includes('liste'), cikti, dizin: typeof dizin === 'string' && dizin ? dizin : null };
 }
 
+// --- dış tetikler (1.4.0, dis grubu: o-21 Jump List ve masaüstü kısayolu, o-54 evpaneli:// bağlantısı) -------------------------
+
+const KAYNAK_DESENI = /^--kaynak(=|$)/i;
+/** `--kaynak=` değeri -> eylem-sinifi.js DIS_KAYNAKLAR adı. Başka değer kabul edilmez. */
+const KOMUT_SATIRI_KAYNAKLARI = Object.freeze({ jumplist: 'jumplist', kisayol: 'kisayol-dosyasi' });
+const PROTOKOL = 'evpaneli';
+const PROTOKOL_ONEKI = `${PROTOKOL}:`;
+const PROTOKOL_SINIRI = 400; // bağlantının tamamı (kodlanmış) en çok bu kadar karakter
+const PROTOKOL_ANAHTARLARI = Object.freeze(['ad', 'parlaklik', 'islem', 'adim']);
+const PROTOKOL_ISLEMLERI = Object.freeze(['ac', 'kapat', 'degistir']);
+/** Komut satırına (Jump List, .lnk) yazılan adda bulunamayacak karakterler: tırnak, ters bölü, kabuk ve ortam değişkeni işaretleri. */
+const ARGUMAN_YASAK_DESENI = /["\\%^&|<>!`\u0000-\u001F\u007F-\u009F]/;
+/** HA varlık kimliği biçimi (`light.salon`): dış tetikler favori ADI taşır, kimlik kabul edilmez (o-54). */
+const KIMLIK_BICIMI = /^[a-z_]+\.[a-z0-9_]+$/i;
+
+/** Metin bir varlık kimliği biçiminde mi? Dış tetiklerde (bağlantı, Jump List, kısayol, yerel API) böyle ad reddedilir. */
+function kimlikBicimindeMi(ad) {
+  return typeof ad === 'string' && KIMLIK_BICIMI.test(ad.trim());
+}
+
+/**
+ * argv içindeki `--kaynak` değeri: yoksa null; `jumplist` -> 'jumplist', `kisayol` -> 'kisayol-dosyasi'; birden çok, değersiz ya da
+ * bilinmeyen değer -> 'gecersiz' (çağıran eylemi ÇALIŞTIRMAZ; komut satırı kaynağına düşülmez).
+ * @param {unknown} argv
+ * @returns {'jumplist'|'kisayol-dosyasi'|'gecersiz'|null}
+ */
+function eylemKaynagi(argv) {
+  if (!Array.isArray(argv)) return null;
+  const ham = argv.filter((a) => typeof a === 'string' && KAYNAK_DESENI.test(a));
+  if (ham.length === 0) return null;
+  if (ham.length > 1 || !ham[0].includes('=')) return 'gecersiz';
+  let deger = ham[0].slice(ham[0].indexOf('=') + 1).trim();
+  if (deger.length >= 2 && /^(["']).*\1$/.test(deger)) deger = deger.slice(1, -1).trim();
+  deger = deger.toLowerCase();
+  return Object.hasOwn(KOMUT_SATIRI_KAYNAKLARI, deger) ? KOMUT_SATIRI_KAYNAKLARI[deger] : 'gecersiz';
+}
+
+/**
+ * Ad komut satırına (`--eylem="<ad>"`) güvenle yazılabilir mi? Tırnak, ters bölü, %, ^, &, |, <, >, !, ters tırnak ve denetim karakteri
+ * içermez; `-` ile başlamaz (seçenek sanılmasın); boş değildir ve EN_COK_AD karakteri aşmaz.
+ * @param {unknown} ad
+ */
+function argumanAdiGuvenliMi(ad) {
+  if (typeof ad !== 'string') return false;
+  const kirpik = ad.trim();
+  if (kirpik === '' || kirpik !== ad || ad.length > EN_COK_AD) return false;
+  if (ARGUMAN_YASAK_DESENI.test(ad) || ad.startsWith('-') || kimlikBicimindeMi(ad)) return false;
+  return anahtarKatla(ad) !== '';
+}
+
+/**
+ * Karoyu komut satırında TEK BAŞINA geri bulduran ad: önce etiket, sonra HA'daki ad denenir. Aday güvenli bir argüman olmalı ve
+ * eylemAdiniCoz ile aynı karoya, değiştiricisiz (parlaklık, yön, servis yok) çözülmelidir; yoksa null (karo Jump List'e, kısayola
+ * ya da bağlantıya konmaz). Varlık kimliği aday DEĞİLDİR: dış bağlantılar favori adı taşır.
+ * @param {{id: string, etiket?: string, ad?: string}} karo
+ * @param {object[]} karolar güvenli favori karoları
+ * @returns {string|null}
+ */
+function komutSatiriAdi(karo, karolar) {
+  if (!karo || typeof karo.id !== 'string') return null;
+  for (const aday of [karo.etiket, karo.ad]) {
+    if (!argumanAdiGuvenliMi(aday)) continue;
+    const cozum = eylemAdiniCoz(aday, karolar);
+    if (cozum.id === karo.id && Object.keys(cozum).length === 1) return aday;
+  }
+  return null;
+}
+
+/**
+ * Jump List görevi ve masaüstü kısayolu için argüman dizgesi: `--eylem="<ad>" --kaynak=jumplist|kisayol`. Ad güvenli değilse null.
+ * @param {string} ad komutSatiriAdi sonucu
+ * @param {'jumplist'|'kisayol'} kaynak
+ */
+function eylemArgumanlari(ad, kaynak) {
+  if (!argumanAdiGuvenliMi(ad) || !Object.hasOwn(KOMUT_SATIRI_KAYNAKLARI, kaynak)) return null;
+  return `${EYLEM_ONEKI}"${ad}" --kaynak=${kaynak}`;
+}
+
+/** argv'deki evpaneli: bağlantısı: yoksa null, tek ise metni, birden çok ise { cakisma: true }. */
+function protokolArgumani(argv) {
+  if (!Array.isArray(argv)) return null;
+  const bulunan = argv.filter((a) => typeof a === 'string' && a.slice(0, PROTOKOL_ONEKI.length).toLowerCase() === PROTOKOL_ONEKI);
+  if (bulunan.length === 0) return null;
+  if (bulunan.length > 1) return { cakisma: true };
+  return bulunan[0];
+}
+
+/**
+ * `evpaneli://eylem?ad=<favori adı>[&parlaklik=0-100 | &islem=ac|kapat|degistir | &adim=±1-100]` bağlantısını çözer. Saf; hiçbir şey
+ * çalıştırmaz. Sıkı: başka ana bilgisayar/yol, kullanıcı adı, port, # parçası, bilinmeyen ya da yinelenen anahtar, birden çok
+ * değiştirici, denetim karakteri, PROTOKOL_SINIRI'nı aşan bağlantı ve EN_COK_AD'ı aşan ad reddedilir.
+ * @param {unknown} metin
+ * @returns {{ad: string, islem?: 'ac'|'kapat'|'degistir', parlaklik?: number, adim?: number}|{hata: 'gecersiz'}}
+ */
+function protokolBaglantisiCoz(metin) {
+  const gecersiz = { hata: 'gecersiz' };
+  if (typeof metin !== 'string' || metin.length > PROTOKOL_SINIRI || /[\u0000-\u0020\u007F-\u009F]/.test(metin)) return gecersiz;
+  let url;
+  try {
+    url = new URL(metin);
+  } catch {
+    return gecersiz;
+  }
+  if (url.protocol !== PROTOKOL_ONEKI || url.username !== '' || url.password !== '' || url.port !== '' || url.hash !== '') return gecersiz;
+  if (url.hostname.toLowerCase() !== 'eylem' || (url.pathname !== '' && url.pathname !== '/')) return gecersiz;
+  const anahtarlar = [...url.searchParams.keys()];
+  if (anahtarlar.some((k) => !PROTOKOL_ANAHTARLARI.includes(k)) || new Set(anahtarlar).size !== anahtarlar.length) return gecersiz;
+  const ad = (url.searchParams.get('ad') ?? '').replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim();
+  if (ad === '' || ad.length > EN_COK_AD || anahtarKatla(ad) === '' || kimlikBicimindeMi(ad)) return gecersiz;
+  const degistiriciler = anahtarlar.filter((k) => k !== 'ad');
+  if (degistiriciler.length > 1) return gecersiz;
+  const sonuc = { ad };
+  if (degistiriciler.length === 0) return sonuc;
+  const deger = url.searchParams.get(degistiriciler[0]);
+  if (degistiriciler[0] === 'islem') {
+    if (!PROTOKOL_ISLEMLERI.includes(deger)) return gecersiz;
+    sonuc.islem = deger;
+  } else if (degistiriciler[0] === 'parlaklik') {
+    if (!/^\d{1,3}$/.test(deger) || Number(deger) > 100) return gecersiz;
+    sonuc.parlaklik = Number(deger);
+  } else {
+    // "+" sorgu dizgesinde boşluğa çözülür: "adim=+10" ile "adim=%2B10" aynıdır.
+    const m = /^([ +-]?)(\d{1,3})$/.exec(deger);
+    if (!m || Number(m[2]) < 1 || Number(m[2]) > 100) return gecersiz;
+    sonuc.adim = m[1] === '-' ? -Number(m[2]) : Number(m[2]);
+  }
+  return sonuc;
+}
+
+/**
+ * Favori adı için bağlantı (Ayarlar'daki "Bağlantıyı kopyala"). Ad güvenli bir argüman değilse null.
+ * @param {string} ad
+ */
+function protokolBaglantisi(ad) {
+  if (!argumanAdiGuvenliMi(ad)) return null;
+  return `${PROTOKOL}://eylem?ad=${encodeURIComponent(ad)}`;
+}
+
+/**
+ * Açılış ya da ikinci kopyadan gelen DIŞ tetik isteği (1.4.0 dis grubu). `ek` ikinci kopyanın requestSingleInstanceLock ile gönderdiği
+ * ek veridir ({ eylem?, kaynak?, protokol? }); verilmişse argv'nin yerine geçer.
+ *  - evpaneli:// bağlantısı TEK BAŞINA gelmelidir: yanında `--eylem`, `--kaynak` ya da pencere/durum komutu varsa (ör. tırnak kaçırarak
+ *    eklenmiş argüman) { tur: 'cakisma' } döner ve HİÇBİRİ çalışmaz. Birden çok bağlantı da çakışmadır.
+ *  - `--kaynak=jumplist|kisayol` (Jump List görevi, masaüstü kısayolu): { tur: 'kaynak', kaynak } ('gecersiz' olabilir); eylem adı
+ *    yine komutSatiriEylemi ile okunur.
+ *  - Hiçbiri yoksa null (olağan komut satırı akışı).
+ * @param {unknown} argv
+ * @param {unknown} [ek]
+ * @returns {{tur: 'protokol', metin: string}|{tur: 'cakisma'}|{tur: 'kaynak', kaynak: string}|null}
+ */
+function disIstegi(argv, ek = null) {
+  const ekNesne = ek && typeof ek === 'object' ? ek : {};
+  const protokol = ekNesne.protokol !== undefined ? ekNesne.protokol : protokolArgumani(argv);
+  const kaynak = ekNesne.kaynak !== undefined ? ekNesne.kaynak : eylemKaynagi(argv);
+  if (protokol !== null && protokol !== undefined) {
+    if (typeof protokol !== 'string') return { tur: 'cakisma' };
+    const baska = (kaynak !== null && kaynak !== undefined) || eylemIstendiMi(argv) || ekNesne.eylem !== undefined || pencereDurumKomutu(argv, null) !== null;
+    return baska ? { tur: 'cakisma' } : { tur: 'protokol', metin: protokol };
+  }
+  if (kaynak === null || kaynak === undefined) return null;
+  return { tur: 'kaynak', kaynak: typeof kaynak === 'string' && (kaynak === 'jumplist' || kaynak === 'kisayol-dosyasi') ? kaynak : 'gecersiz' };
+}
+
 module.exports = {
   EYLEM_ARGI,
   EYLEM_ONEKI,
   EN_COK_AD,
   EN_AZ_ONEK_HARFI,
   PENCERE_HEDEFLERI,
+  KOMUT_SATIRI_KAYNAKLARI,
+  PROTOKOL,
+  PROTOKOL_SINIRI,
   eylemIstendiMi,
   komutSatiriEylemi,
   eylemAdiniCoz,
   pencereDurumKomutu,
+  eylemKaynagi,
+  argumanAdiGuvenliMi,
+  kimlikBicimindeMi,
+  komutSatiriAdi,
+  eylemArgumanlari,
+  protokolArgumani,
+  protokolBaglantisiCoz,
+  protokolBaglantisi,
+  disIstegi,
 };

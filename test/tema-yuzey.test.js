@@ -332,9 +332,11 @@ test('renderer betikleri (tema-renk, efekt, yuzey-gorunum): HTML ataması, eval,
   assert.doesNotMatch(yorumsuz(kose), /innerHTML|eval\s*\(|fetch\s*\(/);
 });
 
-test('preload köprüleri: tema yeni köprü işlevi eklemez (evYuzey listesi yalnız diğer grupların bilinçli eklediği oku, bildirimKapat ve sagTik ile uzar; evKose aynı)', () => {
+test('preload köprüleri: tema yeni köprü işlevi eklemez (evYuzey listesi yalnız diğer grupların bilinçli eklediği oku, bildirimKapat, kamera, sagTik, dis onayı ve eylem grubu işlevleriyle uzar; evKose aynı)', () => {
   const yuzey = [...oku('src/preload-yuzey.js').matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]);
-  assert.deepEqual(yuzey, ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc', 'sagTik']);
+  // dis grubu (o-54) bilinçli ekledi: disOnayAl, disOnayYanitla, onDisOnay (evpaneli:// bağlantı izni; test/yapi.test.js)
+  // eylem grubu bilinçli ekledi: geriAl, geciktir, gecikmeliIptal, odaKapat, digerCihazlar, digerCalistir, digerFavoriEkle
+  assert.deepEqual(yuzey, ['durumAl', 'onDurum', 'onGoster', 'onEtkilesim', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'kamera', 'basiliBasla', 'basiliBirak', 'kapat', 'sabitle', 'boyut', 'haAc', 'ayarlarAc', 'sagTik', 'disOnayAl', 'disOnayYanitla', 'onDisOnay', 'geriAl', 'geciktir', 'gecikmeliIptal', 'odaKapat', 'digerCihazlar', 'digerCalistir', 'digerFavoriEkle']);
   const kose = [...oku('src/preload-kose.js').matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]);
   assert.deepEqual(kose, ['onGoster', 'onDilDegisti']);
 });

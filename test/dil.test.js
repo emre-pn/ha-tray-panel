@@ -301,7 +301,7 @@ function kullanilanAnahtarlar(kaynakHam) {
 }
 
 test('ana süreç ve src/lib kaynaklarında kullanılan her sabit t("anahtar") ana sözlükte (beş dilin hepsinde) tanımlı', () => {
-  const dosyalar = ['src/main.js', 'src/eylem.js', 'src/ha-istemcisi.js', 'src/yuzey-yoneticisi.js', 'src/kose-bildirim.js']
+  const dosyalar = ['src/main.js', 'src/eylem.js', 'src/ha-istemcisi.js', 'src/yuzey-yoneticisi.js', 'src/kose-bildirim.js', 'src/baglanti-yoneticisi.js']
     .concat(fs.readdirSync(path.join(KOK, 'src/lib')).filter((d) => d.endsWith('.js') && d !== 'dil.js').map((d) => `src/lib/${d}`));
   let toplam = 0;
   for (const dosya of dosyalar) {
@@ -421,13 +421,14 @@ test("ayar kaydetme: girdideki 'dil' yalnız sistem/tr/en/de/fr/es ise kabul edi
 
 // --- HTML: data-i18n anahtarları ve İngilizce görünür metin ---------------------------------------------
 
-const HTML_SAYFALARI = ['src/ayarlar.html', 'src/offline.html', 'src/kose-bildirim.html', 'src/yuzey.html'];
+const HTML_SAYFALARI = ['src/ayarlar.html', 'src/offline.html', 'src/kose-bildirim.html', 'src/yuzey.html', 'src/itme-kart.html'];
 /** Sayfalar hangi sözlüklerden çevrilir (sayfa -> sözlükler). Ayarlar ve panel kendi sözlüğünü, ortak kısayol iletileri için ana sözlüğü de yükleyebilir. */
 const SAYFA_SOZLUKLERI = {
   'src/ayarlar.html': [AYARLAR, ANA],
   'src/offline.html': [ANA, AYARLAR, YUZEY],
   'src/kose-bildirim.html': [ANA, YUZEY, AYARLAR],
   'src/yuzey.html': [YUZEY, ANA],
+  'src/itme-kart.html': [YUZEY, ANA], // o-61: düğmeli itme bildirimi kartı
 };
 
 function htmlAnahtarlari(html) {

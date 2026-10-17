@@ -29,9 +29,9 @@ function onbellegiTemizle() {
 const akit = () => new Promise((coz) => setImmediate(coz));
 
 /** Sahte Electron + yönetici. `zoomVar`: webContents.setZoomFactor var mı (eski sürüm/sahte ortam davranışı). */
-function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {}, sagTik = null, ayar = {}, gorunumAl, metinOlcegiAl, bildirim = null } = {}) {
+function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {}, sagTik = null, ayar = {}, gorunumAl, metinOlcegiAl, bildirim = null, kamera = null, korumaVar = true, disOnay = null, geriAl = null, eylemEk = null } = {}) {
   // 1.4.0 (o-22, o-32): ustteAl / opaklikAl / malzemeAl ayarları; testler `ayarlar` nesnesini değiştirir
-  const ayarlar = { ust: false, opaklik: 100, malzeme: 'yok', ...ayar };
+  const ayarlar = { ust: false, opaklik: 100, malzeme: 'yok', koru: false, ...ayar };
   const pencereler = [];
   const ipcIsleyicileri = new Map();
   class SahteWebContents extends EventEmitter {
@@ -59,6 +59,8 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
       this.sinirlar = [];
       this.ustCagrilari = []; // setAlwaysOnTop(deger, seviye)
       this.opakliklar = []; // setOpacity(oran)
+      this.korumalar = []; // setContentProtection(deger) (1.4.0 kamera)
+      if (korumaVar) this.setContentProtection = (deger) => this.korumalar.push(deger);
       pencereler.push(this);
       if (getBoundsVar) this.getBounds = () => ({ ...(this.sinirlar.at(-1) ?? { x: 0, y: 0, width: 0, height: 0 }) });
     }
@@ -139,6 +141,11 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
     okuma,
     sagTik,
     bildirim,
+    kamera,
+    korumaAl: () => ayarlar.koru,
+    disOnay,
+    ...(geriAl ? { geriAl } : {}),
+    ...(eylemEk ? { eylemEk } : {}),
     tepsiSinirlariAl: () => TEPSI,
     ustteAl: () => ayarlar.ust,
     opaklikAl: () => ayarlar.opaklik,
@@ -826,5 +833,480 @@ test('1.4.0 yuzey:bildirim-kapat: yalnız açık hızlı panelden; anahtar doğr
     assert.deepEqual(await bildirimsiz.ipcIsleyicileri.get('yuzey:bildirim-kapat')(bildirimsiz.yuzeyOlayi(p), 'k0123456789abcdef'), { ok: false, tur: 'gecersiz' });
   } finally {
     bildirimsiz.temizle();
+  }
+});
+
+// ---- 1.4.0 kamera (o-48): yuzey:kamera kanalı, ekran görüntüsü koruması, bellek temizliği ---------------------------------
+
+function sahteKamera() {
+  const cagrilar = [];
+  return {
+    cagrilar,
+    temizlemeler: { sayi: 0 },
+    al: async (kimlik) => {
+      cagrilar.push(kimlik);
+      return { ok: true, veri: 'data:image/png;base64,AAAA', yas: 0, onbellek: false };
+    },
+    temizle() {
+      this.temizlemeler.sayi += 1;
+    },
+  };
+}
+
+test('kamera: yuzey:kamera yalnız açık hızlı panelden çalışır; palette, gizliyken ve yüzey dışı gönderenden reddedilir', async () => {
+  const kamera = sahteKamera();
+  const o = kur({ kamera });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:kamera');
+    assert.ok(isle, 'kanal kayıtlı');
+    const p = await panelAc(o);
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'camera.salon'), { ok: true, veri: 'data:image/png;base64,AAAA', yas: 0, onbellek: false });
+    assert.deepEqual(kamera.cagrilar, ['camera.salon']);
+    // yüzey dışı gönderen (başka çerçeve / başka sayfa)
+    const yabanci = { sender: p.webContents, senderFrame: { parent: null, url: 'https://ornek.com/' } };
+    const izinsiz = await isle(yabanci, 'camera.salon');
+    assert.equal(izinsiz.ok, false);
+    assert.equal(kamera.cagrilar.length, 1, 'yabancı gönderen kamera servisine ulaşamaz');
+    // palet kipi
+    o.yonetici.gizle('test');
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'camera.salon'), { ok: false, tur: 'gecersiz' });
+    // gizliyken
+    o.yonetici.gizle('test');
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'camera.salon'), { ok: false, tur: 'gecersiz' });
+    assert.equal(kamera.cagrilar.length, 1);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('kamera: yük yalnız kısa metin kimliktir (nesne, dizi, boş, 120+ karakter reddedilir); servis kimliği ayrıca doğrular', async () => {
+  const kamera = sahteKamera();
+  const o = kur({ kamera });
+  try {
+    const p = await panelAc(o);
+    const isle = o.ipcIsleyicileri.get('yuzey:kamera');
+    for (const kotu of [undefined, null, 42, {}, [], ['camera.salon'], '', 'x'.repeat(121), { kimlik: 'camera.salon' }]) {
+      assert.deepEqual(await isle(o.yuzeyOlayi(p), kotu), { ok: false, tur: 'gecersiz' }, JSON.stringify(kotu)?.slice(0, 30));
+    }
+    assert.equal(kamera.cagrilar.length, 0);
+    assert.equal((await isle(o.yuzeyOlayi(p), 'camera.' + 'a'.repeat(100))).ok, true, '120 karaktere kadar servise gider');
+  } finally {
+    o.temizle();
+  }
+});
+
+test('kamera: kamera servisi verilmediyse yuzey:kamera "gecersiz" döner (özellik kapalı)', async () => {
+  const o = kur();
+  try {
+    const p = await panelAc(o);
+    assert.deepEqual(await o.ipcIsleyicileri.get('yuzey:kamera')(o.yuzeyOlayi(p), 'camera.salon'), { ok: false, tur: 'gecersiz' });
+  } finally {
+    o.temizle();
+  }
+});
+
+test('kamera: panel gizlenince, kapanınca ve yok edilince bellekteki kareler silinir', async () => {
+  const kamera = sahteKamera();
+  const o = kur({ kamera });
+  try {
+    const p = await panelAc(o);
+    const once = kamera.temizlemeler.sayi;
+    o.yonetici.gizle('test');
+    assert.ok(kamera.temizlemeler.sayi > once, 'gizlenince temizlendi');
+    const ara = kamera.temizlemeler.sayi;
+    o.yonetici.kapat();
+    assert.ok(kamera.temizlemeler.sayi > ara, 'kapanınca temizlendi');
+    assert.ok(p);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('kamera: kameraDegisti() eski kareleri siler ve ekran görüntüsü korumasını açık pencereye hemen uygular', async () => {
+  const kamera = sahteKamera();
+  const o = kur({ kamera });
+  try {
+    const p = await panelAc(o);
+    assert.equal(p.korumalar.at(-1), false, 'kamera izni yokken koruma kapalı');
+    o.ayarlar.koru = true;
+    const once = kamera.temizlemeler.sayi;
+    o.yonetici.kameraDegisti();
+    assert.equal(p.korumalar.at(-1), true, 'izin verilince koruma açılır');
+    assert.ok(kamera.temizlemeler.sayi > once);
+    o.ayarlar.koru = false;
+    o.yonetici.kameraDegisti();
+    assert.equal(p.korumalar.at(-1), false);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('kamera: her gösterimde koruma ayara göre yeniden uygulanır; setContentProtection yoksa (eski ortam) sessizce atlanır', async () => {
+  const o = kur({ ayar: { koru: true } });
+  try {
+    const p = await panelAc(o);
+    assert.equal(p.korumalar.at(-1), true);
+    o.yonetici.gizle('test');
+    o.ayarlar.koru = false;
+    o.yonetici.panelAcKapat('tepsi');
+    await akit();
+    assert.equal(p.korumalar.at(-1), false);
+  } finally {
+    o.temizle();
+  }
+  const yok = kur({ ayar: { koru: true }, korumaVar: false });
+  try {
+    const p = await panelAc(yok);
+    assert.equal(p.korumalar.length, 0);
+    assert.doesNotThrow(() => yok.yonetici.kameraDegisti());
+  } finally {
+    yok.temizle();
+  }
+});
+
+test('1.4.0 dis (o-54) bağlantı izni: soru yalnız açık panelde ve disOnayGoster ile okunur; karar bilet ile iletilir; kapanış / palete geçiş reddeder', async () => {
+  const cagrilar = [];
+  const SORU = { bilet: 'b-1', ad: 'Salon', islem: 'ac', bekleMs: 0 };
+  const disOnay = {
+    al: () => (cagrilar.push(['al']), { ...SORU }),
+    yanitla: (bilet, karar) => (cagrilar.push(['yanitla', bilet, karar]), bilet === 'b-1'),
+    kapandi: () => cagrilar.push(['kapandi']),
+  };
+  const o = kur({ disOnay });
+  try {
+    const al = o.ipcIsleyicileri.get('yuzey:dis-onay-al');
+    const yanitla = o.ipcIsleyicileri.get('yuzey:dis-onay-yanit');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await al(yabanci)).ok, false);
+    assert.equal((await yanitla(yabanci, 'b-1', 'izin')).ok, false);
+
+    // panel olağan yoldan açıkken soru yok (disOnay.al çağrılmaz)
+    const p = await panelAc(o);
+    assert.deepEqual(await al(o.yuzeyOlayi(p)), { ok: true, soru: null });
+    assert.deepEqual(await yanitla(o.yuzeyOlayi(p), 'b-1', 'izin'), { ok: false, tur: 'gecersiz' });
+    assert.deepEqual(cagrilar, []);
+
+    assert.equal(o.yonetici.disOnayGoster(), true);
+    assert.equal(o.yonetici.kip(), 'panel');
+    assert.equal(o.mesajlar(p, 'yuzey:dis-onay').length, 1, 'yüklü sayfaya soru dürtüsü gider (yük yok)');
+    assert.equal(o.mesajlar(p, 'yuzey:dis-onay')[0], undefined);
+    assert.deepEqual(await al(o.yuzeyOlayi(p)), { ok: true, soru: SORU });
+    assert.deepEqual(await yanitla(o.yuzeyOlayi(p), 'yanlis', 'izin'), { ok: false });
+    assert.deepEqual(await yanitla(o.yuzeyOlayi(p), 'b-1', 'herZaman'), { ok: true });
+    assert.deepEqual(await al(o.yuzeyOlayi(p)), { ok: true, soru: null }, 'yanıtlanan soru yeniden okunmaz');
+    o.yonetici.gizle('odak');
+    assert.equal(cagrilar.filter((c) => c[0] === 'kapandi').length, 0, 'yanıtlanmış soru kapanışta reddedilmez');
+
+    // açık soru: panel kapanınca reddedilir
+    assert.equal(o.yonetici.disOnayGoster(), true);
+    o.yonetici.gizle('odak');
+    assert.equal(cagrilar.filter((c) => c[0] === 'kapandi').length, 1);
+    // açık soru: palete geçince reddedilir
+    assert.equal(o.yonetici.disOnayGoster(), true);
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    assert.equal(cagrilar.filter((c) => c[0] === 'kapandi').length, 2);
+    assert.deepEqual(await al(o.yuzeyOlayi(p)), { ok: true, soru: null }, 'palette soru okunmaz');
+    // soru başka yoldan bitti (zaman aşımı): panel dürtülür, sonraki kapanış yeniden reddetmez
+    assert.equal(o.yonetici.disOnayGoster(), true);
+    const once = o.mesajlar(p, 'yuzey:dis-onay').length;
+    o.yonetici.disOnayBitti();
+    assert.equal(o.mesajlar(p, 'yuzey:dis-onay').length, once + 1);
+    o.yonetici.gizle('odak');
+    assert.equal(cagrilar.filter((c) => c[0] === 'kapandi').length, 2);
+  } finally {
+    o.temizle();
+  }
+  const onaysiz = kur();
+  try {
+    assert.equal(onaysiz.yonetici.disOnayGoster(), false, 'köprü verilmezse panel açılmaz (yedek iletişim kutusuna düşülür)');
+    assert.equal(onaysiz.pencereler.length, 0);
+  } finally {
+    onaysiz.temizle();
+  }
+});
+
+test('1.4.0 dis (o-54): panel sayfası henüz yüklenmemişken istenen soru, sayfa yüklenince gösterim olayıyla okunur', async () => {
+  const disOnay = { al: () => ({ bilet: 'b-2', ad: 'Film', islem: 'calistir', bekleMs: 600 }), yanitla: () => true, kapandi() {} };
+  const o = kur({ disOnay });
+  try {
+    assert.equal(o.yonetici.disOnayGoster(), true);
+    await akit();
+    const p = o.pencereler[0];
+    assert.equal(o.yonetici.kip(), 'panel');
+    assert.equal(o.mesajlar(p, 'yuzey:goster').length, 1);
+    assert.equal((await o.ipcIsleyicileri.get('yuzey:dis-onay-al')(o.yuzeyOlayi(p))).soru.bilet, 'b-2');
+  } finally {
+    o.temizle();
+  }
+});
+
+test('1.4.0 yuzey:geri-al (o-12): yalnız açık panel/paletten, yüksüz; kaynak pencere kipinden gelir ve sonuç yalnız { ok, tur } olarak döner', async () => {
+  const cagrilar = [];
+  const geriAl = async (kaynak) => {
+    cagrilar.push(kaynak);
+    return { ok: false, tur: 'kismi', adim: 3, basarisiz: 1, ad: 'sizmamali' };
+  };
+  const o = kur({ geriAl });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:geri-al');
+    assert.equal(typeof isle, 'function');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await isle(yabanci)).ok, false);
+    assert.deepEqual(cagrilar, [], 'yabancı gönderici: geri alma çalışmaz');
+
+    // pencere henüz açılmamış / gizli: kaynak yok, istek kabul edilmez
+    const p = await panelAc(o);
+    o.yonetici.gizle('test');
+    assert.deepEqual(await isle(o.yuzeyOlayi(p)), { ok: false, tur: 'gecersiz' });
+    assert.deepEqual(cagrilar, []);
+
+    assert.equal(o.yonetici.panelAcKapat('test'), 'acildi');
+    await akit();
+    // renderer yük gönderse bile yok sayılır: kaynak yalnız açık kipten gelir
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), { kaynak: 'kisayol', kimlik: 'light.x' }), { ok: false, tur: 'kismi' });
+    assert.deepEqual(cagrilar, ['panel']);
+    o.yonetici.gizle('test');
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    await isle(o.yuzeyOlayi(p));
+    assert.deepEqual(cagrilar, ['panel', 'palet']);
+  } finally {
+    o.temizle();
+  }
+  const geriAlsiz = kur();
+  try {
+    const p = await panelAc(geriAlsiz);
+    assert.deepEqual(await geriAlsiz.ipcIsleyicileri.get('yuzey:geri-al')(geriAlsiz.yuzeyOlayi(p)), { ok: false, tur: 'gecersiz' });
+  } finally {
+    geriAlsiz.temizle();
+  }
+});
+
+test('1.4.0 yuzey:geciktir (o-15): yalnız açık panel/paletten; yük biçimce doğrulanır; kaynak pencere kipinden gelir; sonuç yalnız { ok, tur } döner', async () => {
+  const cagrilar = [];
+  const eylemEk = {
+    gecikmeliPlanla: async (kaynak, yuk) => {
+      cagrilar.push([kaynak, yuk]);
+      return { ok: false, tur: 'dolu', id: 'g1', bitis: 5, gizli: 'sizmamali' };
+    },
+    gecikmeliIptal: () => true,
+  };
+  const o = kur({ eylemEk });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:geciktir');
+    assert.equal(typeof isle, 'function');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await isle(yabanci, { kimlik: 'light.x', yon: 'kapat', dakika: 5 })).ok, false);
+    assert.deepEqual(cagrilar, [], 'yabancı gönderici: çalışmaz');
+
+    const p = await panelAc(o);
+    o.yonetici.gizle('test');
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), { kimlik: 'light.x', yon: 'kapat', dakika: 5 }), { ok: false, tur: 'gecersiz' }, 'pencere gizliyken kabul edilmez');
+    assert.equal(o.yonetici.panelAcKapat('test'), 'acildi');
+    await akit();
+
+    for (const kotu of [undefined, null, 'x', 5, [], {}, { kimlik: 'light.x' }, { kimlik: 5, yon: 'kapat', dakika: 5 }, { kimlik: 'l'.repeat(121), yon: 'kapat', dakika: 5 }, { kimlik: 'light.x', yon: 'toggle', dakika: 5 }, { kimlik: 'light.x', yon: 'kapat', dakika: '5' }, { kimlik: 'light.x', yon: 'kapat', dakika: 1.5 }]) {
+      assert.deepEqual(await isle(o.yuzeyOlayi(p), kotu), { ok: false, tur: 'gecersiz' }, JSON.stringify(kotu));
+    }
+    assert.deepEqual(cagrilar, [], 'bozuk yük bağlayıcıya hiç ulaşmaz');
+
+    // geçerli yük: fazladan alanlar atılır; kaynak açık kipten gelir
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), { kimlik: 'light.x', yon: 'kapat', dakika: 5, kaynak: 'kisayol', servis: 'unlock' }), { ok: false, tur: 'dolu' });
+    assert.deepEqual(cagrilar, [['panel', { kimlik: 'light.x', yon: 'kapat', dakika: 5 }]]);
+    o.yonetici.gizle('test');
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    await isle(o.yuzeyOlayi(p), { kimlik: 'fan.x', yon: 'sureli', dakika: 30 });
+    assert.deepEqual(cagrilar.at(-1), ['palet', { kimlik: 'fan.x', yon: 'sureli', dakika: 30 }]);
+  } finally {
+    o.temizle();
+  }
+  const baglayicisiz = kur();
+  try {
+    const p = await panelAc(baglayicisiz);
+    assert.deepEqual(await baglayicisiz.ipcIsleyicileri.get('yuzey:geciktir')(baglayicisiz.yuzeyOlayi(p), { kimlik: 'light.x', yon: 'kapat', dakika: 5 }), { ok: false, tur: 'gecersiz' });
+  } finally {
+    baglayicisiz.temizle();
+  }
+});
+
+test('1.4.0 yuzey:gecikmeli-iptal (o-15): yalnız opak kimlik (g<n>) kabul edilir; varlık kimliği ya da bozuk kimlik bağlayıcıya ulaşmaz', async () => {
+  const cagrilar = [];
+  const eylemEk = {
+    gecikmeliPlanla: async () => ({ ok: true }),
+    gecikmeliIptal: (id, kaynak) => {
+      cagrilar.push([id, kaynak]);
+      return id === 'g1';
+    },
+  };
+  const o = kur({ eylemEk });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:gecikmeli-iptal');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await isle(yabanci, 'g1')).ok, false);
+    const p = await panelAc(o);
+    o.yonetici.gizle('test');
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'g1'), { ok: false, tur: 'gecersiz' });
+    assert.equal(o.yonetici.panelAcKapat('test'), 'acildi');
+    await akit();
+    for (const kotu of [undefined, null, 5, {}, 'light.salon', 'g', 'g1x', 'x1', 'G1', 'g1234567890', '']) {
+      assert.deepEqual(await isle(o.yuzeyOlayi(p), kotu), { ok: false, tur: 'gecersiz' }, JSON.stringify(kotu));
+    }
+    assert.deepEqual(cagrilar, []);
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'g1'), { ok: true });
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'g2'), { ok: false });
+    assert.deepEqual(cagrilar, [['g1', 'panel'], ['g2', 'panel']]);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('1.4.0 yuzey:oda-kapat (o-14): yalnız açık PANELDEN; yük yalnız grup kodu (oda-<8 onaltılık>); palet, yabancı gönderici ve bozuk kod bağlayıcıya ulaşmaz; yanıt süzülür', async () => {
+  const cagrilar = [];
+  const eylemEk = {
+    gecikmeliPlanla: async () => ({ ok: true }),
+    gecikmeliIptal: () => true,
+    odaKapat: async (kaynak, kod) => {
+      cagrilar.push([kaynak, kod]);
+      return { ok: true, adet: 3, toplam: 3, gizli: 'sizmamali', tur: 'x' };
+    },
+  };
+  const o = kur({ eylemEk });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:oda-kapat');
+    assert.equal(typeof isle, 'function');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await isle(yabanci, 'oda-0123abcd')).ok, false);
+    assert.deepEqual(cagrilar, [], 'yabancı gönderici: çalışmaz');
+
+    const p = await panelAc(o);
+    for (const kotu of [undefined, null, 5, {}, [], 'light.salon', 'oda-0123ABCD', 'oda-0123abc', 'oda-0123abcde', 'oda-', '', 'Oda-0123abcd']) {
+      assert.deepEqual(await isle(o.yuzeyOlayi(p), kotu), { ok: false, tur: 'gecersiz' }, JSON.stringify(kotu));
+    }
+    assert.deepEqual(cagrilar, [], 'bozuk yük bağlayıcıya hiç ulaşmaz');
+
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'oda-0123abcd'), { ok: true, tur: 'x', adet: 3 }, 'yanıt beyaz listeden geçer');
+    assert.deepEqual(cagrilar, [['panel', 'oda-0123abcd']]);
+
+    // palet penceresinden gelen istek reddedilir (yalnız panel)
+    o.yonetici.gizle('test');
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'oda-0123abcd'), { ok: false, tur: 'gecersiz' });
+    assert.equal(cagrilar.length, 1);
+  } finally {
+    o.temizle();
+  }
+  const baglayicisiz = kur();
+  try {
+    const p = await panelAc(baglayicisiz);
+    assert.deepEqual(await baglayicisiz.ipcIsleyicileri.get('yuzey:oda-kapat')(baglayicisiz.yuzeyOlayi(p), 'oda-0123abcd'), { ok: false, tur: 'gecersiz' });
+  } finally {
+    baglayicisiz.temizle();
+  }
+});
+
+test('1.4.0 yuzey:diger-* (o-46): yalnız açık PALETTEN; panel, yabancı gönderici ve bozuk yük bağlayıcıya ulaşmaz; liste ve yanıtlar beyaz listeden geçer', async () => {
+  const cagrilar = [];
+  const eylemEk = {
+    gecikmeliPlanla: async () => ({ ok: true }),
+    gecikmeliIptal: () => true,
+    digerListe: async (kaynak) => {
+      cagrilar.push(['liste', kaynak]);
+      return {
+        ok: true,
+        liste: [
+          { kimlik: 'light.mutfak', ad: 'Mutfak lambası', alan: 'light', durum: 'acik', oda: 'Mutfak', gizli: 'sizmamali' },
+          { kimlik: 'lock.on_kapi', ad: 'Ön kapı', alan: 'lock', durum: 'acik' }, // alan beyaz listede değil
+          { kimlik: 'light.x', ad: 'X', alan: 'light', durum: 'garip' }, // durum beyaz listede değil
+          { kimlik: 5, ad: 'Y', alan: 'light', durum: 'acik' },
+          null,
+          { kimlik: 'scene.sinema', ad: 'Sinema', alan: 'scene', durum: 'notr' },
+        ],
+      };
+    },
+    digerCalistir: async (kaynak, yuk) => {
+      cagrilar.push(['calistir', kaynak, yuk]);
+      return { ok: false, tur: 'cok-sik', gizli: 'sizmamali' };
+    },
+    digerFavoriEkle: async (kaynak, kimlik) => {
+      cagrilar.push(['favori', kaynak, kimlik]);
+      return { ok: true, gizli: 'sizmamali' };
+    },
+  };
+  const o = kur({ eylemEk });
+  try {
+    const liste = o.ipcIsleyicileri.get('yuzey:diger-cihazlar');
+    const calistir = o.ipcIsleyicileri.get('yuzey:diger-calistir');
+    const favori = o.ipcIsleyicileri.get('yuzey:diger-favori-ekle');
+    assert.equal(typeof liste, 'function');
+    assert.equal(typeof calistir, 'function');
+    assert.equal(typeof favori, 'function');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await liste(yabanci)).ok, false);
+    assert.equal((await calistir(yabanci, { kimlik: 'light.mutfak', islem: 'ac' })).ok, false);
+    assert.equal((await favori(yabanci, 'light.mutfak')).ok, false);
+    assert.deepEqual(cagrilar, [], 'yabancı gönderici: hiçbiri çalışmaz');
+
+    // PANELDE yok: yalnız palet kipi
+    const p = await panelAc(o);
+    assert.deepEqual(await liste(o.yuzeyOlayi(p)), { ok: false, tur: 'gecersiz' });
+    assert.deepEqual(await calistir(o.yuzeyOlayi(p), { kimlik: 'light.mutfak', islem: 'ac' }), { ok: false, tur: 'gecersiz' });
+    assert.deepEqual(await favori(o.yuzeyOlayi(p), 'light.mutfak'), { ok: false, tur: 'gecersiz' });
+    assert.deepEqual(cagrilar, [], 'panel kipi: bağlayıcıya ulaşmaz');
+
+    o.yonetici.gizle('test');
+    assert.deepEqual(await liste(o.yuzeyOlayi(p)), { ok: false, tur: 'gecersiz' }, 'pencere gizliyken kaynak yok');
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+
+    assert.deepEqual(await liste(o.yuzeyOlayi(p)), {
+      ok: true,
+      liste: [
+        { kimlik: 'light.mutfak', ad: 'Mutfak lambası', alan: 'light', durum: 'acik', oda: 'Mutfak' },
+        { kimlik: 'scene.sinema', ad: 'Sinema', alan: 'scene', durum: 'notr' },
+      ],
+    });
+    assert.deepEqual(cagrilar, [['liste', 'palet']]);
+
+    for (const kotu of [undefined, null, 5, 'light.mutfak', [], {}, { kimlik: 'light.mutfak' }, { islem: 'ac' }, { kimlik: 5, islem: 'ac' }, { kimlik: 'a'.repeat(121), islem: 'ac' }, { kimlik: 'light.mutfak', islem: 'turn_on' }, { kimlik: 'light.mutfak', islem: 'toggle' }, { kimlik: 'light.mutfak', islem: '__proto__' }, { kimlik: 'light.mutfak', islem: ['ac'] }]) {
+      assert.deepEqual(await calistir(o.yuzeyOlayi(p), kotu), { ok: false, tur: 'gecersiz' }, JSON.stringify(kotu));
+    }
+    for (const kotu of [undefined, null, 5, {}, [], 'a'.repeat(121)]) assert.deepEqual(await favori(o.yuzeyOlayi(p), kotu), { ok: false, tur: 'gecersiz' }, JSON.stringify(kotu));
+    assert.equal(cagrilar.length, 1, 'bozuk yük bağlayıcıya hiç ulaşmaz');
+
+    // geçerli yük: yalnız { kimlik, islem } gider (fazladan alan ve kaynak beyanı atılır); yanıt süzülür
+    assert.deepEqual(await calistir(o.yuzeyOlayi(p), { kimlik: 'light.mutfak', islem: 'degistir', kaynak: 'panel', servis: 'unlock', veri: { x: 1 } }), { ok: false, tur: 'cok-sik' });
+    assert.deepEqual(cagrilar.at(-1), ['calistir', 'palet', { kimlik: 'light.mutfak', islem: 'degistir' }]);
+    assert.deepEqual(await favori(o.yuzeyOlayi(p), 'light.mutfak'), { ok: true });
+    assert.deepEqual(cagrilar.at(-1), ['favori', 'palet', 'light.mutfak']);
+  } finally {
+    o.temizle();
+  }
+
+  // liste hata/kapalı yanıtı kısa kodla geçer; bağlayıcı yoksa "gecersiz"
+  const hatali = kur({ eylemEk: { gecikmeliPlanla: async () => ({ ok: true }), gecikmeliIptal: () => true, digerListe: async () => ({ ok: false, tur: 'kapali', ayrinti: 'x' }) } });
+  try {
+    const p = await panelAc(hatali);
+    hatali.yonetici.gizle('test');
+    assert.equal(hatali.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    assert.deepEqual(await hatali.ipcIsleyicileri.get('yuzey:diger-cihazlar')(hatali.yuzeyOlayi(p)), { ok: false, tur: 'kapali' });
+  } finally {
+    hatali.temizle();
+  }
+  const baglayicisiz = kur();
+  try {
+    const p = await panelAc(baglayicisiz);
+    baglayicisiz.yonetici.gizle('test');
+    assert.equal(baglayicisiz.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    assert.deepEqual(await baglayicisiz.ipcIsleyicileri.get('yuzey:diger-cihazlar')(baglayicisiz.yuzeyOlayi(p)), { ok: false, tur: 'gecersiz' });
+    assert.deepEqual(await baglayicisiz.ipcIsleyicileri.get('yuzey:diger-calistir')(baglayicisiz.yuzeyOlayi(p), { kimlik: 'light.x', islem: 'ac' }), { ok: false, tur: 'gecersiz' });
+    assert.deepEqual(await baglayicisiz.ipcIsleyicileri.get('yuzey:diger-favori-ekle')(baglayicisiz.yuzeyOlayi(p), 'light.x'), { ok: false, tur: 'gecersiz' });
+  } finally {
+    baglayicisiz.temizle();
   }
 });

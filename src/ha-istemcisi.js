@@ -59,12 +59,14 @@
  *    kapıda bekleyen, önceden doğrulanmış sayılmış istekler gönderilmez ('belirsiz').
  */
 
-const { sinirliOku, yoklamaDegerlendir, YOKLAMA_GOVDE_SINIRI_BAYT } = require('./lib/yoklama');
+const { sinirliOku, sinirliBaytOku, yoklamaDegerlendir, YOKLAMA_GOVDE_SINIRI_BAYT } = require('./lib/yoklama');
 const { anahtarIcinGuvenliAdresMi } = require('./lib/dogrulama');
 const { kapiOlustur } = require('./lib/kimlikli-kapi');
 const { TR } = require('./lib/ceviri-varsayilan');
+const { webhookKimligiGecerliMi, webhookGovdesiGecerliMi } = require('./lib/mobil-kayit');
 
 const API_ZAMAN_ASIMI_MS = 8000;
+const OAUTH_GOVDE_SINIRI_BAYT = 64 * 1024; // /auth/token yanıtı küçüktür (iki JWT); büyüğü reddedilir
 const SECIM_GECERLILIK_MS = 60_000;
 const SECIM_BASARISIZ_BEKLEME_MS = 15_000;
 const AKTIF_KISAYOL_GECERLILIK_MS = 5 * 60_000; // h-08: ana pencere adresi en çok bu kadar yoklamasız kullanılır
@@ -92,7 +94,7 @@ function gonderimOncesiHatasiMi(hata) {
 
 class HaHatasi extends Error {
   /**
-   * @param {'anahtar-yok'|'baglanti'|'yetki'|'reddedildi'|'duraklatildi'|'dogrulanamadi'|'yerel-yasak'|'ikinci-onay'|'yasak-erisim'|'bulunamadi'|'sunucu'|'engelli'|'ulasilamiyor'|'kaynak-izinsiz'|'onay-gerekli'|'belirsiz'|'gecikti'} tur
+   * @param {'anahtar-yok'|'baglanti'|'yetki'|'reddedildi'|'duraklatildi'|'dogrulanamadi'|'yerel-yasak'|'ikinci-onay'|'yasak-erisim'|'bulunamadi'|'sunucu'|'engelli'|'ulasilamiyor'|'kaynak-izinsiz'|'onay-gerekli'|'belirsiz'|'gecikti'|'gecersiz'} tur
    *   ikinci-onay: hata bütçesi dolu (>= 2 hatalı deneme) ya da kesici kaydı güvenilmez: yeni anahtar doğrulaması AÇIK ikinci onay ister (istek gönderilmedi);
    *   dogrulanamadi: belirsiz (yanıtsız) deneme sınırı aşıldı: kullanıcı "Yeniden dene" diyene kadar istek gönderilmez;
    *   yerel-yasak: ev içi yoklama 403 verdi ve anahtar daha önce doğrulanmadı: anahtar dış adrese gönderilmedi;
@@ -533,7 +535,7 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
    * Tek kimlikli (ya da kesicisiz) HTTP isteği. Ağa çıkmadan önce kesiciden ve uçuş sınırından geçer. Yanıtın DURUMU gövdeden ve
    * gövde iptalinden bağımsız değerlendirilir: başlık gelmişse bu istek ağ hatası sayılmaz (401/403/2xx ne ise odur).
    */
-  async function tekIstek(taban, yol, yontem, govde, anahtar, { zamanAsimiMs = API_ZAMAN_ASIMI_MS, dogrulama = false, oncelik = 'normal', sonDenetim = null } = {}) {
+  async function tekIstek(taban, yol, yontem, govde, anahtar, { zamanAsimiMs = API_ZAMAN_ASIMI_MS, dogrulama = false, oncelik = 'normal', sonDenetim = null, ikili = null } = {}) {
     if (!anahtarIcinGuvenliAdresMi(taban)) {
       // Savunma derinliği: ayar dosyası elle düzenlenmiş olsa bile anahtar herkese açık bir ada düz http ile gitmez.
       gunluk('Erişim anahtarı ev ağı dışındaki http adresine gönderilmedi.');
@@ -555,14 +557,14 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
         yoldaIsaretli = true;
       }
       const tazeServis = taze && !dogrulama && yontem !== 'GET'; // h-09: anahtar az önce doğrulandı ve bu bir servis çağrısı (POST)
-      return await istekGonder(taban, yol, yontem, govde, anahtar, parmakIzi, zamanAsimiMs, dogrulama, tazeServis);
+      return await istekGonder(taban, yol, yontem, govde, anahtar, parmakIzi, zamanAsimiMs, dogrulama, tazeServis, ikili);
     } finally {
       if (yoldaIsaretli) yetkiKesici.yoldaBitir(parmakIzi); // kesin sonuç (yanıt başlığı / gönderim öncesi hata); belirsizse zaten sayaca döndü
       birak();
     }
   }
 
-  async function istekGonder(taban, yol, yontem, govde, anahtar, parmakIzi, zamanAsimiMs, dogrulama, tazeServis = false) {
+  async function istekGonder(taban, yol, yontem, govde, anahtar, parmakIzi, zamanAsimiMs, dogrulama, tazeServis = false, ikili = null) {
     const url = new URL(yol, taban).toString();
     let sonuc;
     let alinanDurum = null; // yanıt BAŞLIĞI geldiği anda yazılır
@@ -575,8 +577,8 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
           redirect: 'error', // anahtarlı istek başka bir adrese yönlenmesin
           headers: {
             Authorization: `Bearer ${anahtar}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
+            // ikili GET (albüm kapağı): gövde yok, JSON başlığı yok; yalnız beklenen resim türleri istenir
+            ...(ikili ? { Accept: 'image/jpeg, image/png, image/webp' } : { 'Content-Type': 'application/json', Accept: 'application/json' }),
           },
           body: govde === undefined ? undefined : JSON.stringify(govde),
         });
@@ -589,6 +591,19 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
             /* gövde zaten kapalı */
           }
           return { durum: alinanDurum, metin: '' };
+        }
+        if (ikili) {
+          if (alinanDurum < 200 || alinanDurum >= 300) {
+            try {
+              Promise.resolve(yanit.body?.cancel()).catch(() => {});
+            } catch {
+              /* gövde zaten kapalı */
+            }
+            return { durum: alinanDurum, metin: '' };
+          }
+          // Gövde sınırlı okunur (büyük yanıt belleği şişirmesin); içerik türü yalnız başlıktan, parametresiz ve küçük harfle alınır.
+          const tur = String(yanit.headers?.get?.('content-type') ?? '').split(';')[0].trim().toLowerCase();
+          return { durum: alinanDurum, metin: '', bayt: await sinirliBaytOku(yanit, ikili.enCokBayt), icerikTuru: tur };
         }
         return { durum: alinanDurum, metin: await yanit.text() };
       });
@@ -630,6 +645,11 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
       throw new HaHatasi('belirsiz', durum);
     }
     if (durum < 200 || durum >= 300) throw new HaHatasi('sunucu', durum);
+    if (ikili) {
+      // İkili yanıt (albüm kapağı): gövde yok ya da sınırı aştıysa hata. Bir resim yanıtı bunun HA olduğunu KANITLAMAZ: basariliYanit çağrılmaz.
+      if (!sonuc.bayt) throw new HaHatasi('sunucu', durum);
+      return { icerikTuru: sonuc.icerikTuru, bayt: sonuc.bayt };
+    }
     let sonuc2;
     try {
       sonuc2 = metin ? JSON.parse(metin) : null;
@@ -695,7 +715,10 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
    * nedeni YALNIZ ağ hatasıdır; 401/403 değildir). POST (servis çağrısı) asla tekrarlanmaz: aç/kapa iki kez çalışmasın.
    * Kimlikli istek önce yetki kesiciden ve tek doğrulama geçidinden geçer.
    */
-  async function haIstek(yol, { yontem = 'GET', govde, anahtar, oncelik = 'normal' } = {}) {
+  async function haIstek(yol, { yontem = 'GET', govde, anahtar, oncelik = 'normal', ikili = false, enCokBayt = 0 } = {}) {
+    // ikili: yalnız GET ve yalnız sınırı (enCokBayt) olan çağrı; { icerikTuru, bayt } döner (JSON ayrıştırılmaz). Geçersiz birleşim ağa çıkmaz.
+    const ikiliSecenek = ikili === true && yontem === 'GET' && Number.isInteger(enCokBayt) && enCokBayt > 0 ? { enCokBayt } : null;
+    if (ikili === true && !ikiliSecenek) throw new HaHatasi('sunucu', 0);
     const kullanilacakAnahtar = anahtar ?? (await anahtarAl());
     if (!kullanilacakAnahtar) throw new HaHatasi('anahtar-yok');
     kesiciDenetle(undefined, yetkiKesici ? yetkiKesici.parmakIzi(kullanilacakAnahtar) : null); // reddedilmiş anahtarla adres yoklaması bile yapılmaz
@@ -706,7 +729,7 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
     if (!taban) throw new HaHatasi('baglanti');
     const dene = async (hedef) => {
       await dogrulamaGecidi(hedef, kullanilacakAnahtar);
-      return tekIstek(hedef, yol, yontem, govde, kullanilacakAnahtar, { oncelik });
+      return tekIstek(hedef, yol, yontem, govde, kullanilacakAnahtar, { oncelik, ikili: ikiliSecenek });
     };
     try {
       return await dene(taban);
@@ -715,6 +738,60 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
       const yeniTaban = await apiTabaniBul(true);
       if (!yeniTaban) throw hata;
       return dene(yeniTaban); // yeni adres de önce tek doğrulamadan geçer
+    }
+  }
+
+  /**
+   * o-61: mobile_app webhook'una TEK ileti. Yalnız mobile_app_notification_action olayını tetikleyen fire_event gövdesi gider
+   * (src/lib/mobil-kayit.js webhookGovdesiGecerliMi son kapıdır; sensör, konum ya da başka bir webhook türü gönderilemez). Webhook
+   * kimliği URL'dedir ve erişim anahtarı gibi korunur: Authorization başlığı YOKTUR (kimlik doğrulaması webhook kimliğidir), yönlendirme
+   * izlenmez, ev ağı dışındaki düz http adresine gönderilmez, günlüğe/hata metnine yazılmaz. İstek yine yetki kesiciden (anahtar
+   * reddedilmişse/adres duraklatılmışsa hiçbir şey gitmez) ve küresel kapıdan geçer; ASLA yeniden denenmez. 410 (HA kaydı silmiş):
+   * HaHatasi('bulunamadi', 410). Zaman aşımı: HaHatasi('gecikti') (olay HA'ya ulaşmış olabilir).
+   * @param {string} webhookKimligi
+   * @param {object} govde
+   * @returns {Promise<{durum: number}>}
+   */
+  async function webhookGonder(webhookKimligi, govde) {
+    if (!webhookKimligiGecerliMi(webhookKimligi) || !webhookGovdesiGecerliMi(govde)) throw new HaHatasi('gecersiz');
+    const anahtar = await anahtarAl();
+    if (!anahtar) throw new HaHatasi('anahtar-yok');
+    const parmakIzi = yetkiKesici ? yetkiKesici.parmakIzi(anahtar) : null;
+    kesiciDenetle(undefined, parmakIzi);
+    let taban = await apiTabaniBul();
+    if (!taban && !secimBeklemesindeMi()) taban = await apiTabaniBul(true);
+    if (!taban) throw new HaHatasi('baglanti');
+    if (!anahtarIcinGuvenliAdresMi(taban)) {
+      gunluk('Webhook kimliği ev ağı dışındaki http adresine gönderilmedi.');
+      throw new HaHatasi('baglanti');
+    }
+    const birak = await kapiAl(taban, parmakIzi, 'yuksek');
+    try {
+      const url = new URL(`/api/webhook/${webhookKimligi}`, taban).toString();
+      const durum = await zamanAsimiIle(API_ZAMAN_ASIMI_MS, async (signal) => {
+        const yanit = await fetch(url, {
+          method: 'POST',
+          signal,
+          credentials: 'omit',
+          redirect: 'error',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(govde),
+        });
+        try {
+          Promise.resolve(yanit.body?.cancel()).catch(() => {});
+        } catch {
+          /* gövde zaten kapalı */
+        }
+        return yanit.status;
+      });
+      if (durum === 410) throw new HaHatasi('bulunamadi', 410);
+      if (durum < 200 || durum >= 300) throw new HaHatasi('sunucu', durum);
+      return { durum };
+    } catch (hata) {
+      if (hata instanceof HaHatasi) throw hata.zamanAsimi ? new HaHatasi('gecikti') : hata;
+      throw new HaHatasi('baglanti');
+    } finally {
+      birak();
     }
   }
 
@@ -755,11 +832,101 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
     }
   }
 
+  /**
+   * Tarayıcıyla giriş (1.4.0, o-57): HA'nın /auth/token ucuna FORM isteği (kod değişimi, yenileme anahtarıyla yenileme, iptal). Authorization
+   * başlığı taşımaz ama yenileme anahtarı/kod taşıdığı için kimlikli işlemle aynı korumalardan geçer: ayardaki köken, güvenli adres (herkese açık
+   * ada düz http yok), yetki kesici (duraklatılmış adres, "kayıt güvenilmez" kapısı), küresel kapı (aynı anda en çok 1 kimlikli işlem) ve
+   * yönlendirme reddi. HA bu uçta hatalı jetonu IP sayacına yazmaz; bu yüzden belirsiz/ban sayaçları işletilmez, 403 yine adresi 15 dk duraklatır.
+   * Gövde sınırlıdır; ağ, 403 ve 5xx HaHatasi fırlatır, 200/400/401 yanıtı { durum, govde } olarak döner (yorum çağıranındır).
+   * `taban` verilmezse adres, REST isteğiyle aynı yoldan (anahtarsız yoklama) seçilir. Form gövdesi sır içerir: hiçbir yere yazılmaz.
+   * @returns {Promise<{durum: number, govde: object|null, taban: string}>}
+   */
+  async function oauthIstegi({ form, taban: istenen = null }) {
+    if (typeof form !== 'string' || form.length === 0 || form.length > 16_384) throw new HaHatasi('baglanti');
+    let taban = istenen;
+    if (!taban) {
+      taban = await apiTabaniBul();
+      if (!taban && !secimBeklemesindeMi()) taban = await apiTabaniBul(true);
+    }
+    if (!taban) throw new HaHatasi('baglanti');
+    if (!izinliKokenMi(taban)) throw new HaHatasi('kaynak-izinsiz');
+    if (!anahtarIcinGuvenliAdresMi(taban)) {
+      gunluk('Tarayıcı girişi isteği ev ağı dışındaki http adresine gönderilmedi.');
+      throw new HaHatasi('baglanti');
+    }
+    const denetle = () => {
+      if (!yetkiKesici) return;
+      const karar = yetkiKesici.karar({ taban });
+      if (karar.izin) return;
+      if (karar.neden === 'reddedildi' || karar.neden === 'dogrulanamadi') throw new HaHatasi(karar.neden);
+      throw new HaHatasi('duraklatildi', 403);
+    };
+    denetle();
+    const ayar = ayarlarAl() ?? {};
+    const zamanAsimiMs = taban === ayar.disAdres && taban !== ayar.yerelAdres ? DOGRULAMA_ZAMAN_ASIMI_DIS_MS : DOGRULAMA_ZAMAN_ASIMI_YEREL_MS;
+    const birak = await kapi.al({ oncelik: 'yuksek' });
+    try {
+      denetle(); // kapıyı beklerken adres duraklatılmış olabilir
+      const sonuc = await zamanAsimiIle(zamanAsimiMs, async (signal) => {
+        const yanit = await fetch(new URL('/auth/token', taban).toString(), {
+          method: 'POST',
+          signal,
+          credentials: 'omit',
+          redirect: 'error', // kod/yenileme anahtarı başka bir adrese yönlenmesin
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+          body: form,
+        });
+        const durum = yanit.status;
+        if (durum !== 200 && durum !== 400 && durum !== 401) {
+          try {
+            Promise.resolve(yanit.body?.cancel()).catch(() => {});
+          } catch {
+            /* gövde zaten kapalı */
+          }
+          return { durum, govde: null };
+        }
+        let metin = null;
+        if (typeof yanit.body?.getReader === 'function') metin = await sinirliOku(yanit, OAUTH_GOVDE_SINIRI_BAYT);
+        else {
+          const tam = await yanit.text();
+          metin = typeof tam === 'string' && tam.length <= OAUTH_GOVDE_SINIRI_BAYT ? tam : null;
+        }
+        let govde = null;
+        try {
+          const ayristirilan = metin ? JSON.parse(metin) : null;
+          govde = ayristirilan && typeof ayristirilan === 'object' && !Array.isArray(ayristirilan) ? ayristirilan : null;
+        } catch {
+          govde = null;
+        }
+        return { durum, govde };
+      });
+      if (sonuc.durum === 403) {
+        adresiDuraklat(taban); // anahtar geçersiz DEĞİL (ban ya da Cloudflare engeli olabilir): yalnız o adres 15 dk durur
+        throw new HaHatasi('yasak-erisim', 403);
+      }
+      if (sonuc.durum !== 200 && sonuc.durum !== 400 && sonuc.durum !== 401) throw new HaHatasi('sunucu', sonuc.durum);
+      return { durum: sonuc.durum, govde: sonuc.govde, taban };
+    } catch (hata) {
+      throw hata instanceof HaHatasi ? hata : new HaHatasi('baglanti'); // ağ hatasının ayrıntısı (adres, jeton) dışarı taşınmaz
+    } finally {
+      birak();
+    }
+  }
+
   return {
     adresSec,
     apiTabaniBul,
     haIstek,
+    webhookGonder,
     anahtariDogrula,
+    oauthIstegi,
+    /**
+     * HA'nın az önce verdiği erişim anahtarı (kod değişimi/yenileme yanıtı): HA onu verdiği için geçerlidir; yetki kesici onu "doğrulanmış" sayar
+     * ve ilk kimlikli istek ayrıca GET /api/ doğrulaması yapmaz (her yenilemede ek istek gitmez; yeni anahtarın ilk yanıtsızlığı da durdurmaz).
+     */
+    yeniErisimAnahtari(taban, anahtar) {
+      if (yetkiKesici && typeof anahtar === 'string' && anahtar) dogrulandi(taban, yetkiKesici.parmakIzi(anahtar));
+    },
     /**
      * Canlı bağlantı (src/ha-ws.js) için kesici köprüsü: soketi açmadan önce tek doğrulama, auth iletisinden önce ve
      * auth_invalid sonrasında kesici denetimi. Kesici yoksa null (eski davranış).

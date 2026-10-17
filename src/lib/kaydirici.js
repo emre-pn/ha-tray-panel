@@ -7,6 +7,8 @@
  *    bırakmalar tek gönderimde, EN SON değerle birleşir: ok tuşu basılı tutulan kaydırıcı HA'yı boğmaz).
  *  - tekrarlayici: ses -/+ düğmesi basılı tutulunca ~4 basış/sn (ilk basış hemen, 400 ms sonra 250 ms aralıkla).
  *  - basiliTutma: yıkıcı eylem onayı; düğme ~0,8 sn kesintisiz basılı tutulursa tamamlanır, önce bırakılırsa iptal olur.
+ *  - tekerlekKapisi (o-20): fare tekerleği ışık parlaklığını / medya sesini ±TEKERLEK_ADIMI değiştirir; sayfa kaydırmayla karışmasın diye
+ *    bir tekerlek dizisi yalnız "boşta" başlayabilir (kaydırma sürerken bir karo tekerleği çalmaz) ve başladığı denetimde kalır.
  *
  * Bu dosya hem Node'da (require) hem renderer'da (<script src="lib/kaydirici.js">) çalışır: `require` kullanmaz.
  */
@@ -19,6 +21,9 @@
   const TEKRAR_ILK_GECIKME_MS = 400;
   const TEKRAR_ARALIK_MS = 250;
   const BASILI_TUTMA_MS = 800;
+  const TEKERLEK_ADIMI = 5; // bir tekerlek çentiği = ±5 (parlaklık yüzdesi, ses yüzdesi)
+  const TEKERLEK_BOS_MS = 400; // bu kadar tekerlek olayı gelmediyse yeni bir dizi başlayabilir
+  const TEKERLEK_BITIS_MS = 250; // tekerlek durduktan bu kadar sonra son değer (sonDeger) gönderilir
 
   /** Varsayılan zamanlayıcılar çağrı anında okunur (test saatleri küresel işlevleri değiştirebilir). */
   function varsayilanZaman() {
@@ -158,5 +163,57 @@
     };
   }
 
-  return { KISMA_MS, TEKRAR_ILK_GECIKME_MS, TEKRAR_ARALIK_MS, BASILI_TUTMA_MS, kisici, tekrarlayici, basiliTutma };
+  /** Bir tekerlek olayının çentik karşılığı (yukarı = negatif deltaY = artır → burada işaret çevrilmez): piksel 100, satır 3, sayfa 1. */
+  function tekerlekCentigi(deltaY, deltaMode) {
+    if (typeof deltaY !== 'number' || !isFinite(deltaY)) return 0;
+    if (deltaMode === 1) return deltaY / 3;
+    if (deltaMode === 2) return deltaY;
+    return deltaY / 100;
+  }
+
+  /**
+   * Tekerlek kapısı: kaydırma ile karo tekerleği arasındaki çakışmayı çözer. dene(sahip, deltaY, deltaMode, izinli):
+   *  - önceki tekerlek olayından beri bosMs geçtiyse (boşta) ve `izinli` ise YENİ dizi `sahip` için başlar;
+   *  - dizi sürerken (bosMs dolmadan) yalnız aynı sahip devam eder; başka bir sahip ya da başlatılamayan olay `ele: false` alır,
+   *    yani sayfa normal kaydırılır (bir karodan geçerken kaydırma kesilmez ve kaydırma sırasında karo değer değiştirmez);
+   *  - küçük (dokunmatik yüzey) olaylar birikir; her tam çentik bir adım üretir. Yukarı kaydırma (deltaY < 0) artırır.
+   * @returns {{ele: boolean, adim: number}} ele: olay bu denetimce işlendi (preventDefault); adim: bu olayda eklenecek tam adım (±)
+   */
+  function tekerlekKapisi({ bosMs = TEKERLEK_BOS_MS, zaman = varsayilanZaman() } = {}) {
+    let son = -Infinity; // en son tekerlek olayı (kim işlerse işlesin)
+    let sonSahip = null; // son olayı işleyen denetim (işlenmediyse null)
+    let birikim = 0;
+    return {
+      dene(sahip, deltaY, deltaMode, izinli) {
+        const t = zaman.simdi();
+        const bosta = t - son >= bosMs;
+        const surer = !bosta && sonSahip !== null && sonSahip === sahip;
+        son = t;
+        if (!(surer || (bosta && izinli === true))) {
+          sonSahip = null;
+          birikim = 0;
+          return { ele: false, adim: 0 };
+        }
+        if (!surer) birikim = 0;
+        sonSahip = sahip;
+        birikim += tekerlekCentigi(deltaY, deltaMode);
+        const tam = Math.trunc(birikim);
+        birikim -= tam;
+        return { ele: true, adim: tam === 0 ? 0 : -tam };
+      },
+      sifirla() {
+        son = -Infinity;
+        sonSahip = null;
+        birikim = 0;
+      },
+    };
+  }
+
+  /** Değeri adımla değiştirir ve [en_az, en_cok] içinde tutar. */
+  function tekerlekDegeri(mevcut, adim, enAz, enCok, birim = TEKERLEK_ADIMI) {
+    if (typeof mevcut !== 'number' || !isFinite(mevcut) || !Number.isInteger(adim)) return null;
+    return Math.min(enCok, Math.max(enAz, Math.round(mevcut + adim * birim)));
+  }
+
+  return { TEKERLEK_ADIMI, TEKERLEK_BOS_MS, TEKERLEK_BITIS_MS, tekerlekCentigi, tekerlekKapisi, tekerlekDegeri, KISMA_MS, TEKRAR_ILK_GECIKME_MS, TEKRAR_ARALIK_MS, BASILI_TUTMA_MS, kisici, tekrarlayici, basiliTutma };
 });

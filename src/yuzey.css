@@ -182,11 +182,13 @@ input:focus-visible,
 }
 
 .ust,
+.dis-onay,
 .serit,
 .bildirim,
 .palet-kutusu,
 .ipucu,
 .palet-serit,
+.gecikmeli-serit,
 .alt {
   flex: 0 0 auto;
 }
@@ -246,6 +248,37 @@ input:focus-visible,
 .baglanti.yedek::before,
 .baglanti.baglaniyor::before {
   background: var(--yedek);
+}
+
+/* Panel sabitleme (o-23): bağlantı göstergesinin yanındaki küçük iğne düğmesi; basılıyken vurgu rengiyle dolar */
+.sabitle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--soluk);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.sabitle:hover {
+  color: var(--metin);
+  background: var(--karo);
+}
+
+.sabitle.basili,
+.sabitle[aria-pressed="true"] {
+  color: var(--vurgu);
+  background: var(--karo);
+  border-color: var(--vurgu);
+}
+
+.sabitle-simge {
+  display: block;
 }
 
 /* Yedek modda durumlar eski olabilir (g-04): başlıkta ikinci satırda ince rozet */
@@ -438,6 +471,60 @@ input:focus-visible,
   color: var(--soluk);
 }
 
+/* ---- bağlantı izni (1.4.0 dis grubu, o-54): evpaneli:// bağlantısı bir favoriyi çalıştırmak isteyince; yalnız panelde ---- */
+
+.dis-onay {
+  padding: 10px 12px;
+  background: var(--bg-ust);
+  border-bottom: 2px solid var(--vurgu);
+}
+
+.dis-onay-baslik {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dis-onay-soru {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.dis-onay-islem {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--soluk);
+}
+
+.dis-onay-ayrinti {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--soluk);
+}
+
+.dis-onay-dugmeler {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dis-onay-dugme {
+  flex: 1;
+  padding: 6px 4px;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.dis-onay-dugme:hover:not(:disabled) {
+  background: var(--karo-uzerinde);
+}
+
+.dis-onay-dugme:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---- içerik ---- */
 
 .icerik {
@@ -479,6 +566,16 @@ input:focus-visible,
 .grup-iklim .bolum-baslik::before {
   content: "🌡";
   content: "🌡" / "";
+}
+
+.grup-perde .bolum-baslik::before {
+  content: "🪟";
+  content: "🪟" / "";
+}
+
+.grup-kamera .bolum-baslik::before {
+  content: "📷";
+  content: "📷" / "";
 }
 
 .grup-yardimci .bolum-baslik::before {
@@ -770,6 +867,26 @@ input:focus-visible,
   font-size: 12px;
 }
 
+/* Medya kartı: albüm kapağı (ana süreç çeker; yoksa ya da gelmediyse gizli) ve çalan parça yan yana */
+.kart-medya-ust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kart-kapak {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--karo);
+}
+
+.kart-kapak[hidden] {
+  display: none;
+}
+
 .kart-satir {
   display: flex;
   flex-wrap: wrap;
@@ -1037,6 +1154,114 @@ input:focus-visible,
   background: var(--karo-uzerinde);
 }
 
+/* 1.4.0 eylem grubu (o-15): bekleyen zamanlı eylemler; her öğenin × düğmesi iptal eder */
+.gecikmeli-serit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px 0;
+  border-top: 1px solid var(--kenar);
+}
+
+.gecikmeli-serit[hidden] {
+  display: none;
+}
+
+.gecikmeli-oge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 4px 2px 10px;
+  font-size: 12px;
+  color: var(--soluk);
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 999px;
+}
+
+.gecikmeli-metin {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gecikmeli-iptal {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 1;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+}
+
+.gecikmeli-iptal:hover:not(:disabled) {
+  background: var(--karo-uzerinde);
+  color: var(--metin);
+}
+
+.gecikmeli-iptal:disabled {
+  opacity: 0.5;
+}
+
+/* 1.4.0 eylem grubu (o-14): odaya göre gruplamada oda başlığı + "Odayı kapat" (iki adımlı; ilk tıklamada uyarı rengi) */
+.bolum-ust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.bolum-ust .bolum-baslik {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oda-kapat {
+  flex: 0 1 auto;
+  max-width: 60%;
+  padding: 2px 10px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--soluk);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 999px;
+}
+
+.oda-kapat:hover:not(:disabled) {
+  color: var(--metin);
+  background: var(--karo-uzerinde);
+}
+
+.oda-kapat.onay {
+  color: var(--yikici-metin);
+  border-color: var(--yikici);
+}
+
+.oda-kapat:disabled {
+  opacity: 0.5;
+}
+
+/* 1.4.0 eylem grubu (o-12): "Geri al" yalnız geri alınacak bir girdi varken görünür; diğer iki düğmeyi sıkıştırmasın */
+.alt-geri-al {
+  flex: 0 1 auto;
+  max-width: 40%;
+  padding: 7px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- palet kipi ---- */
 
 .palet-kutusu {
@@ -1162,6 +1387,17 @@ input:focus-visible,
   background: var(--karo-uzerinde);
 }
 
+/* palet "*" cihaz menüsü (o-46): uzun etiketler (ör. "Home Assistant'ta aç") alt satıra sarar */
+.seviye.diger-menu {
+  flex-wrap: wrap;
+}
+
+.seviye.diger-menu .seviye-oge {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 10px;
+}
+
 /* ---- bilgi bölümleri (src/yuzey-bilgi.js): üst kartlar, sensör şeridi ve karoları, yapılacaklar, takvim, geçmiş grafiği ---- */
 
 .bilgi-kartlar {
@@ -1188,6 +1424,16 @@ input:focus-visible,
 
 button.bilgi-kart:hover {
   background: var(--karo-uzerinde);
+}
+
+/* Medya üst kartı: oynatıcının kendi cihaz kartı iki sütunu da kaplar; dış çerçeveyi cihaz kartı taşır */
+.bilgi-kart.bilgi-medya {
+  display: block;
+  grid-column: 1 / -1;
+  padding: 0;
+  overflow: visible;
+  background: none;
+  border: 0;
 }
 
 .saat-deger {
@@ -1221,6 +1467,85 @@ button.bilgi-kart:hover {
 .hava-ek,
 .kart-not {
   flex: 1 0 100%;
+  font-size: 11px;
+  color: var(--soluk);
+}
+
+/* Hava tahmini şeridi (src/yuzey-bilgi.js): günlük 5 gün, saatlik 8 saat; başlık yanında Günlük / Saatlik seçici */
+.bilgi-tahmin {
+  margin-bottom: 8px;
+  padding: 6px 8px 8px;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 8px;
+}
+
+.tahmin-ust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.tahmin-baslik {
+  font-size: 11px;
+  color: var(--soluk);
+}
+
+.aralik-sira.tahmin-tur {
+  flex: none;
+  gap: 4px;
+  margin-bottom: 0;
+}
+
+.tahmin-tur .aralik-dugme {
+  flex: none;
+  padding: 2px 10px;
+  font-size: 11px;
+}
+
+.tahmin-liste {
+  display: grid;
+  gap: 4px;
+}
+
+.tahmin-liste.gunluk {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.tahmin-liste.saatlik {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tahmin-oge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 4px 2px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.tahmin-zaman {
+  font-size: 11px;
+  color: var(--soluk);
+}
+
+.tahmin-simge {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.tahmin-sicaklik {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tahmin-dusuk,
+.tahmin-yagis {
   font-size: 11px;
   color: var(--soluk);
 }
@@ -2018,6 +2343,8 @@ button.bilgi-kart:hover {
 .mod-palet .ust,
 .mod-palet .serit,
 .mod-palet .bildirim,
+.mod-palet .dis-onay,
+.mod-palet .gecikmeli-serit,
 .mod-palet .alt {
   display: none;
 }
@@ -2154,6 +2481,7 @@ button.bilgi-kart:hover {
 :root[data-karsitlik] .hazir,
 :root[data-karsitlik] .son-oge,
 :root[data-karsitlik] .alt-dugme,
+:root[data-karsitlik] .dis-onay-dugme,
 :root[data-karsitlik] .bos-dugme,
 :root[data-karsitlik] .arama,
 :root[data-karsitlik] .seviye-oge,
@@ -2185,6 +2513,7 @@ button.bilgi-kart:hover {
 :root[data-karsitlik] .ust,
 :root[data-karsitlik] .serit,
 :root[data-karsitlik] .alt,
+:root[data-karsitlik] .gecikmeli-serit,
 :root[data-karsitlik] .palet-serit {
   border-color: var(--kenar);
 }
@@ -2323,4 +2652,110 @@ button.bilgi-kart:hover {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* ---- 1.4.0 cihaz grubu (o-48): kamera anlık görüntüsü (src/yuzey-kamera.js). Görüntü varsayılan olarak bulanıktır. ---- */
+.kamera-not {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--soluk);
+}
+
+.kamera-izgara {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.kamera-karo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 8px;
+}
+
+.kamera-ad {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kamera-cerceve {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.kamera-cerceve[hidden],
+.kamera-durum[hidden] {
+  display: none;
+}
+
+.kamera-goruntu {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 160px;
+  object-fit: contain;
+}
+
+.kamera-goruntu.kamera-bulanik {
+  filter: blur(18px);
+}
+
+.kamera-durum {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding: 6px;
+  font-size: 11px;
+  color: var(--soluk);
+  text-align: center;
+  background: var(--bg);
+  border: 1px dashed var(--kenar);
+  border-radius: 6px;
+}
+
+.kamera-durum.kamera-hata {
+  color: var(--yikici-metin);
+}
+
+.kamera-alt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.kamera-yenile {
+  padding: 3px 10px;
+  font-size: 11px;
+  background: var(--karo-uzerinde);
+  border: 1px solid var(--kenar);
+  border-radius: 6px;
+}
+
+.kamera-yenile:hover:not(:disabled) {
+  background: var(--kenar);
+}
+
+.kamera-yenile:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.kamera-yas {
+  font-size: 10px;
+  color: var(--soluk);
 }

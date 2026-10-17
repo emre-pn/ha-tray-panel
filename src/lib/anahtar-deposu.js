@@ -22,11 +22,12 @@
 const path = require('node:path');
 
 /**
- * @param {{ dosyaYolu: string, fs: object, safe: object, gunluk?: (m: string) => void }} girdi
+ * @param {{ dosyaYolu: string, fs: object, safe: object, gunluk?: (m: string) => void, etiket?: string }} girdi
+ *   etiket: günlükteki sabit başlık (boşsa 'Erişim anahtarı'); aynı depo başka sırlar için de kullanılır (özel üstbilgiler, OAuth yenileme anahtarı; 1.4.0)
  * @returns {{ varMi: () => boolean, kullanilabilirMi: () => Promise<boolean>, anahtarAl: () => Promise<string|null>,
  *             yaz: (anahtar: string) => Promise<void>, sil: () => Promise<{silindi: boolean}> }}
  */
-function anahtarDeposuOlustur({ dosyaYolu, fs, safe, gunluk = () => {} }) {
+function anahtarDeposuOlustur({ dosyaYolu, fs, safe, gunluk = () => {}, etiket = '' }) {
   const yazmaGecicisi = `${dosyaYolu}.tmp`;
   const gocGecicisi = `${dosyaYolu}.gocu.tmp`; // yazma ile göç aynı geçici dosyayı ezmesin
   const eskiYedek = `${dosyaYolu}.eski`; // göç öncesi özgün dosya
@@ -121,8 +122,8 @@ function anahtarDeposuOlustur({ dosyaYolu, fs, safe, gunluk = () => {} }) {
         cozmeHatasiBildirildi = true;
         gunluk(
           yedekten
-            ? 'Erişim anahtarı ana dosyadan çözülemedi; göç öncesi yedekten okundu.'
-            : 'Erişim anahtarı çözülemedi (başka kullanıcı/bilgisayardan kopyalanmış olabilir).',
+            ? `${etiket || 'Erişim anahtarı'} ana dosyadan çözülemedi; göç öncesi yedekten okundu.`
+            : `${etiket || 'Erişim anahtarı'} çözülemedi (başka kullanıcı/bilgisayardan kopyalanmış olabilir).`,
         );
       }
       return yedekten;

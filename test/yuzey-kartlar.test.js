@@ -320,7 +320,7 @@ test('medya: ilerleme çubuğu çalarken saniyede bir ilerler, duraklatılmışs
   assert.equal(sureYok.bul((o) => o.etiket === 'progress').length, 0);
 });
 
-test('medya: albüm kapağı için görsel öğesi hiç yoktur (img/picture/canvas çizilmez); model dışı anahtarlar (entity_picture) atılır', async () => {
+test('medya: kapak bayrağı yokken görsel öğesi çizilmez (img/picture/canvas; kapak yalnız ana süreçten gelen data adresiyle, bkz. eksik-medya-panel); model dışı anahtarlar (entity_picture) atılır', async () => {
   const sayfa = await panelAc({ model: modelYap(varyant(TV, 'media_player.tv', 'Salon TV', { ozellik: { ...MEDYA_OZ, entity_picture: '/api/media_player_proxy/x?token=gizli', media_image_url: 'http://x/y.jpg' } })) });
   assert.equal(sayfa.bul((o) => ['img', 'picture', 'canvas', 'video', 'audio', 'iframe'].includes(o.etiket)).length, 0);
   assert.doesNotMatch(JSON.stringify(sayfa.bul(() => true).map((o) => [o.attributes, o.title])), /gizli|media_player_proxy|y\.jpg/);

@@ -118,13 +118,13 @@ test('bilgiModeliOlustur: şerit, kartlar, takvim, liste ve ayar; sayısal değe
   assert.deepEqual(m.takvimler, [{ id: 'calendar.ev', etiket: 'Ev Takvimi', kullanilabilir: true, mesgul: false }]);
   assert.deepEqual(m.listeler, [{ id: 'todo.alisveris', etiket: 'Alışveriş', kullanilabilir: true, acikSayisi: 3 }]);
   assert.equal(m.hizliListe, 'todo.alisveris');
-  assert.deepEqual(m.ayar, { saatBicimi: '24', tarihBicimi: 'kisa', takvimGunSayisi: 5, sensorGrafik: false, sensorGrafikSaat: 24, pilEsigi: 25 });
+  assert.deepEqual(m.ayar, { saatBicimi: '24', tarihBicimi: 'kisa', takvimGunSayisi: 5, sensorGrafik: false, sensorGrafikSaat: 24, pilEsigi: 25, havaTahmini: 'gunluk' });
 });
 
 test('bilgiModeliOlustur: boş ayar boş bölüm üretir, varsayılan ayarlar döner', () => {
   const m = M.bilgiModeliOlustur({ ayarlar: {}, durumAl });
   assert.deepEqual(m, {
-    ayar: { saatBicimi: 'sistem', tarihBicimi: 'orta', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20 },
+    ayar: { saatBicimi: 'sistem', tarihBicimi: 'orta', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20, havaTahmini: 'gunluk' },
     kartlar: [],
     serit: [],
     sensorler: [],
@@ -209,9 +209,9 @@ test('rendererBilgi: karolar RENDERER_KARO_ALANLARI ile süzülür (HA adı gitm
   assert.equal(m.serit[0].ozellik.sayi, 21.456);
   // bozuk girdi
   const bos = M.rendererBilgi(null);
-  assert.deepEqual(bos, { ayar: { saatBicimi: 'sistem', tarihBicimi: 'orta', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20 }, kartlar: [], serit: [], sensorler: [], takvimler: [], listeler: [], hizliListe: '' });
+  assert.deepEqual(bos, { ayar: { saatBicimi: 'sistem', tarihBicimi: 'orta', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20, havaTahmini: 'gunluk' }, kartlar: [], serit: [], sensorler: [], takvimler: [], listeler: [], hizliListe: '' });
   const kirli = M.rendererBilgi({ ayar: { saatBicimi: 'x', tarihBicimi: 5, sensorGrafikSaat: 99, pilEsigi: 'a', takvimGunSayisi: 2.5 }, kartlar: [{ yuva: 7, tur: 'kamera', karo: null }], serit: 'x', hizliListe: 5 });
-  assert.deepEqual(kirli.ayar, { saatBicimi: 'sistem', tarihBicimi: 'orta', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20 });
+  assert.deepEqual(kirli.ayar, { saatBicimi: 'sistem', tarihBicimi: 'orta', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20, havaTahmini: 'gunluk' });
   assert.deepEqual(kirli.kartlar, [{ yuva: 1, tur: 'saat', karo: null, secilmedi: false }]);
   assert.equal(kirli.hizliListe, '');
 });

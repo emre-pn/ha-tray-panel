@@ -202,10 +202,11 @@ test('lock ve alarm_control_panel alanları ve kapı/garaj/geçit cihaz sınıfl
 });
 
 test('bilinmeyen alanlar ve geçersiz girdiler engellenir', () => {
-  assert.ok(!guvenliVarlikMi(varlik('cover.perde', 'Perde')));
+  assert.ok(!guvenliVarlikMi(varlik('cover.perde', 'Perde')), '1.4.0: sınıfı bilinmeyen cover güvenli sayılmaz (yalnız perde/jaluzi sınıfı)');
+  assert.ok(guvenliVarlikMi(varlik('cover.perde', 'Perde', { device_class: 'curtain' })));
   assert.ok(guvenliVarlikMi(varlik('sensor.sicaklik', 'Sıcaklık')), '1.4.0: sensor kayıtlı (yalnız okunur) alan');
-  assert.ok(!guvenliVarlikMi(varlik('camera.salon', 'Salon')));
-  assert.ok(!guvenliVarlikMi(varlik('valve.ana', 'Ana vana')));
+  assert.ok(!guvenliVarlikMi(varlik('camera.salon', 'Salon')), 'kamera genel süzgeçten HİÇ geçmez (kameraGuvenliMi ayrı yoldur)');
+  assert.ok(guvenliVarlikMi(varlik('valve.ana', 'Ana vana')), '1.4.0 cihaz grubu: vana kayıtlı (zorunlu onaylı)');
   assert.ok(!guvenliVarlikMi(varlik('siren.ev', 'Ev')));
   assert.ok(!guvenliVarlikMi(varlik('Light.X', 'Büyük harf')));
   assert.ok(!guvenliVarlikMi(varlik('light', 'Noktasız')));
@@ -444,7 +445,7 @@ test('1.4.0: binary_sensor kapı/pencere/açıklık/kilit/kurcalama/güvenlik s�
 
 test('1.4.0: yeni alanlarda da Türkçe/İngilizce kapı adları ve kimlikleri yasak', () => {
   const { guvenliVarlikMi } = require('../src/lib/suzgec');
-  const alanlar = ['climate', 'media_player', 'humidifier', 'vacuum', 'input_select', 'select', 'input_number', 'number', 'timer', 'todo', 'sensor', 'binary_sensor', 'weather', 'calendar'];
+  const alanlar = ['climate', 'media_player', 'humidifier', 'vacuum', 'input_select', 'select', 'input_number', 'number', 'timer', 'todo', 'sensor', 'binary_sensor', 'weather', 'calendar', 'valve', 'automation'];
   for (const alan of alanlar) {
     assert.equal(guvenliVarlikMi({ entity_id: `${alan}.salon`, state: 'on', attributes: { friendly_name: 'Salon' } }), true, alan);
     for (const ad of ['Ön kapı', 'Garaj', 'Front door', 'Gate opener', 'Kilidi aç', 'Diafon', 'Intercom', 'Kepengi', 'Alarm', 'Bariyer']) {
@@ -454,8 +455,12 @@ test('1.4.0: yeni alanlarda da Türkçe/İngilizce kapı adları ve kimlikleri y
       assert.equal(guvenliVarlikMi({ entity_id: kimlik, state: 'on', attributes: {} }), false, kimlik);
     }
   }
-  for (const alan of ['cover', 'camera', 'valve', 'siren', 'lock', 'alarm_control_panel', 'lawn_mower', 'automation']) {
+  for (const alan of ['cover', 'camera', 'siren', 'lock', 'alarm_control_panel', 'lawn_mower']) {
     assert.equal(guvenliVarlikMi({ entity_id: `${alan}.salon`, state: 'on', attributes: { friendly_name: 'Salon' } }), false, alan);
+  }
+  // cover yalnız perde/jaluzi/gölgelik sınıfıyla ve kapı adı taşımadan geçer (ayrıntılı matris: test/cihaz-suzgec.test.js)
+  for (const ad of ['Ön kapı', 'Garaj', 'Front door', 'Gate opener', 'Kilidi aç', 'Kepengi', 'Bariyer']) {
+    assert.equal(guvenliVarlikMi({ entity_id: 'cover.x', state: 'open', attributes: { friendly_name: ad, device_class: 'curtain' } }), false, `cover ${ad}`);
   }
   // indoor/outdoor istisnası yeni alanlarda da aynı
   assert.equal(guvenliVarlikMi({ entity_id: 'sensor.outdoor_temperature', state: '5', attributes: {} }), true);

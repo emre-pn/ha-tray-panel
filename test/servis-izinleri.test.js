@@ -11,14 +11,67 @@ const S = require('../src/lib/servis-izinleri');
 const v = (kimlik, attributes = {}, state = 'on') => ({ entity_id: kimlik, state, attributes });
 const ret = (sonuc) => (sonuc.ok ? 'ok' : sonuc.neden);
 
-test('KAPI KURALI: kilit/kapı/kepenk/alarm/siren servisleri ve alanları izin tablosunda hiç yok', () => {
-  const yasakServisler = /lock|unlock|open|close|cover|alarm|arm|disarm|siren|trigger|gate|garage/;
+test('KAPI KURALI: kilit/kapı/kepenk/alarm/siren servisleri ve alanları izin tablosunda hiç yok; cover/valve/automation yalnız bilinçli eklenen servisleriyle', () => {
+  const yasakServisler = /lock|unlock|alarm|arm|disarm|siren|gate|garage|door/;
+  // cover (perde/jaluzi), valve ve automation servisleri 1.4.0 cihaz grubunda BİLİNÇLİ eklendi; başka alanda açma/kapama/tetikleme servisi yok.
+  const CIHAZ_ALANLARI = { cover: ['close_cover', 'open_cover', 'set_cover_position', 'stop_cover'], valve: ['close_valve', 'open_valve'], automation: ['trigger', 'turn_off', 'turn_on'] };
+  const cihazServisi = /^(open|close|stop)_(cover|valve)$|^set_cover_position$|^trigger$/;
   for (const [alan, servisler] of Object.entries(S.SERVIS_IZINLERI)) {
-    for (const servis of Object.keys(servisler)) assert.doesNotMatch(servis, yasakServisler, `${alan}.${servis}`);
+    for (const servis of Object.keys(servisler)) {
+      assert.doesNotMatch(servis, yasakServisler, `${alan}.${servis}`);
+      if (cihazServisi.test(servis)) assert.ok(Object.hasOwn(CIHAZ_ALANLARI, alan), `${alan}.${servis}: açma/kapama/tetikleme servisi yalnız cover, valve, automation alanında`);
+    }
   }
-  for (const alan of ['lock', 'cover', 'alarm_control_panel', 'siren', 'camera', 'valve', 'automation', 'homeassistant', 'shell_command', 'rest_command', 'notify', 'persistent_notification']) {
+  for (const [alan, servisler] of Object.entries(CIHAZ_ALANLARI)) assert.deepEqual([...S.izinliServisler(alan)].sort(), servisler, alan);
+  for (const alan of ['lock', 'alarm_control_panel', 'siren', 'camera', 'homeassistant', 'shell_command', 'rest_command', 'notify', 'persistent_notification']) {
     assert.deepEqual(S.izinliServisler(alan), [], alan);
     assert.equal(ret(S.servisDogrula(alan, 'turn_on', {}, v(`${alan}.x`))), 'servis', alan);
+  }
+});
+
+test('1.4.0 cihaz grubu: cover servisleri zararsız; konum 0-100 tamsayı; valve ve automation servisleri HEPSİ yıkıcı (zorunlu onay)', () => {
+  const perde = v('cover.salon', { device_class: 'curtain', current_position: 40 }, 'open');
+  for (const servis of ['open_cover', 'close_cover', 'stop_cover']) {
+    assert.deepEqual(S.servisDogrula('cover', servis, undefined, perde), { ok: true, govde: { entity_id: 'cover.salon' }, sinif: 'zararsiz' }, servis);
+    assert.equal(ret(S.servisDogrula('cover', servis, { position: 5 }, perde)), 'parametre', `${servis}: parametresiz`);
+  }
+  assert.deepEqual(S.servisDogrula('cover', 'set_cover_position', { position: 40 }, perde).govde, { entity_id: 'cover.salon', position: 40 });
+  assert.equal(S.servisDogrula('cover', 'set_cover_position', { position: 0 }, perde).ok, true);
+  assert.equal(S.servisDogrula('cover', 'set_cover_position', { position: 100 }, perde).ok, true);
+  assert.equal(ret(S.servisDogrula('cover', 'set_cover_position', { position: 101 }, perde)), 'sinir');
+  assert.equal(ret(S.servisDogrula('cover', 'set_cover_position', { position: -1 }, perde)), 'sinir');
+  assert.equal(ret(S.servisDogrula('cover', 'set_cover_position', { position: 40.5 }, perde)), 'parametre', 'tamsayı olmalı');
+  assert.equal(ret(S.servisDogrula('cover', 'set_cover_position', {}, perde)), 'eksik');
+  for (const kotu of ['40', NaN, Infinity, null, true]) assert.equal(ret(S.servisDogrula('cover', 'set_cover_position', { position: kotu }, perde)), 'parametre', String(kotu));
+  assert.equal(ret(S.servisDogrula('cover', 'set_cover_position', { position: 40, tilt_position: 50 }, perde)), 'parametre', 'eğim konumu yok');
+  for (const [alan, servisler] of [['valve', ['open_valve', 'close_valve']], ['automation', ['trigger', 'turn_on', 'turn_off']]]) {
+    for (const servis of servisler) {
+      const sonuc = S.servisDogrula(alan, servis, undefined, v(`${alan}.x`));
+      assert.equal(sonuc.ok, true, `${alan}.${servis}`);
+      assert.equal(sonuc.sinif, 'yikici', `${alan}.${servis} yıkıcı`);
+      assert.equal(S.servisSinifi(alan, servis), 'yikici');
+      assert.equal(ret(S.servisDogrula(alan, servis, { x: 1 }, v(`${alan}.x`))), 'parametre', `${alan}.${servis}: parametresiz`);
+    }
+  }
+  // automation: turn_on/turn_off dışında HA'nın başka otomasyon servisi (reload, toggle) yok; valve: konum ve toggle servisi yok
+  for (const servis of ['reload', 'toggle']) assert.equal(ret(S.servisDogrula('automation', servis, {}, v('automation.x'))), 'servis', servis);
+  for (const servis of ['set_valve_position', 'toggle', 'stop_valve']) assert.equal(ret(S.servisDogrula('valve', servis, {}, v('valve.x'))), 'servis', servis);
+});
+
+test('1.4.0 dış tetik yardımcısı disTetigeUygunServisMi: yalnız zararsız servisler; valve, automation, camera ve klima modu hiçbir dış yoldan tetiklenemez', () => {
+  assert.equal(S.disTetigeUygunServisMi('light', 'turn_on'), true);
+  assert.equal(S.disTetigeUygunServisMi('switch', 'toggle'), true);
+  assert.equal(S.disTetigeUygunServisMi('cover', 'open_cover'), true, 'perde zararsız');
+  assert.equal(S.disTetigeUygunServisMi('cover', 'set_cover_position'), true);
+  for (const servis of ['open_valve', 'close_valve']) assert.equal(S.disTetigeUygunServisMi('valve', servis), false, servis);
+  for (const servis of ['trigger', 'turn_on', 'turn_off']) assert.equal(S.disTetigeUygunServisMi('automation', servis), false, servis);
+  assert.equal(S.disTetigeUygunServisMi('camera', 'snapshot'), false);
+  assert.equal(S.disTetigeUygunServisMi('climate', 'set_hvac_mode'), false, 'iklim modu dış tetikten çalışmaz');
+  assert.equal(S.disTetigeUygunServisMi('climate', 'set_temperature'), true);
+  // Servis düzeyi denetim: varlığın kendi onay sınıfı (PC kapat betiği gibi) ayrıca eylemSinifi / kaynakIzni ile denetlenir; bu işlev ek bir kapıdır.
+  assert.equal(S.disTetigeUygunServisMi('script', 'turn_on'), true);
+  for (const kotu of [[undefined, 'turn_on'], ['light', undefined], [null, null], [5, {}], ['__proto__', 'x'], ['light', 'yok_boyle_servis'], ['LIGHT', 'turn_on']]) {
+    assert.equal(S.disTetigeUygunServisMi(...kotu), false, JSON.stringify(kotu));
   }
 });
 

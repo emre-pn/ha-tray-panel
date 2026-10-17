@@ -41,6 +41,10 @@
   const EN_COK_ACIK_OGE = 8;
   const EN_COK_BITEN_OGE = 6;
   const EN_COK_SERI = 7;
+  const TAHMIN_YENILEME_MS = 600_000; // ana süreç önbelleği de 10 dk
+  const TAHMIN_ISTEK = { gunluk: 'daily', saatlik: 'hourly' }; // yuzey:oku { tur: 'hava', tahmin }
+  const EN_COK_TAHMIN = { gunluk: 5, saatlik: 8 };
+  const TAHMIN_GIRDI_SINIRI = 48;
   const ARALIKLAR = Object.freeze([1, 6, 24, 168]);
   const VARSAYILAN_DETAY_SAATI = 24;
   const GRAFIK_GENISLIK = 320;
@@ -129,16 +133,26 @@
     };
   }
 
-  /** Ana süreçten gelen bilgi modelini (rendererBilgi) sınırlı ve türü doğrulanmış hâle getirir; bozuk girdide null. */
-  function modelDuzelt(ham) {
+  /**
+   * Ana süreçten gelen bilgi modelini (rendererBilgi) sınırlı ve türü doğrulanmış hâle getirir; bozuk girdide null.
+   * medyaKaroDuzelt (isteğe bağlı): 'medya' üst kartının tam karosunu (cihaz kartı alanlarıyla) doğrulayan işlev; verilmezse medya kartı
+   * oynatıcısız sayılır ("kullanılamıyor" notu).
+   */
+  function modelDuzelt(ham, medyaKaroDuzelt) {
     if (!ham || typeof ham !== 'object' || Array.isArray(ham)) return null;
     const a = ham.ayar && typeof ham.ayar === 'object' ? ham.ayar : {};
     const SENSORLER = ['sensor', 'binary_sensor'];
     const kartlar = [];
     dizi(ham.kartlar).slice(0, GIRDI_SINIRI).forEach(function (k) {
       if (!k || typeof k !== 'object') return;
-      const tur = k.tur === 'hava' || k.tur === 'varlik' ? k.tur : 'saat';
-      const karo = k.karo ? karoDuzelt(k.karo, tur === 'hava' ? ['weather'] : SENSORLER) : null;
+      const tur = k.tur === 'hava' || k.tur === 'varlik' || k.tur === 'medya' ? k.tur : 'saat';
+      let karo = null;
+      if (tur === 'medya') {
+        karo = k.karo && typeof medyaKaroDuzelt === 'function' ? medyaKaroDuzelt(k.karo) : null;
+        if (karo && karo.alan !== 'media_player') karo = null; // medya yuvası yalnız oynatıcı gösterir
+      } else if (k.karo) {
+        karo = karoDuzelt(k.karo, tur === 'hava' ? ['weather'] : SENSORLER);
+      }
       if (tur === 'varlik' && !karo) return;
       if (kartlar.length < 2) kartlar.push({ yuva: k.yuva === 2 ? 2 : 1, tur: tur, karo: karo, secilmedi: k.secilmedi === true });
     });
@@ -156,6 +170,7 @@
         sensorGrafik: a.sensorGrafik !== false,
         sensorGrafikSaat: [1, 6, 24].indexOf(a.sensorGrafikSaat) >= 0 ? a.sensorGrafikSaat : 6,
         pilEsigi: Number.isInteger(a.pilEsigi) && a.pilEsigi >= 1 && a.pilEsigi <= 100 ? a.pilEsigi : 20,
+        havaTahmini: ['kapali', 'gunluk', 'saatlik'].indexOf(a.havaTahmini) >= 0 ? a.havaTahmini : 'kapali', // alan hiç gelmediyse (eski model) tahmin şeridi çizilmez
       },
       kartlar: kartlar,
       serit: dizi(ham.serit).slice(0, GIRDI_SINIRI).map(function (k) { return karoDuzelt(k, SENSORLER); }).filter(Boolean).slice(0, EN_COK_SERIT),
@@ -195,7 +210,10 @@
     const gecmis = new Map(); // kimlik -> { t, durum: 'tamam' | 'hata', noktalar }   (mini grafik, ayardaki saat)
     const takvim = new Map(); // kimlik -> { t, durum, etkinlikler }
     const listeler = new Map(); // kimlik -> { t, durum, ogeler }
-    const ucta = new Set(); // süren istekler ('g:kimlik', 't:kimlik', 'l:kimlik')
+    const ucta = new Set(); // süren istekler ('g:kimlik', 't:kimlik', 'l:kimlik', 'h:kimlik|tur')
+    const tahminler = new Map(); // 'kimlik|tur' -> { t, durum: 'tamam' | 'hata', ogeler }   (hava tahmini)
+    let tahminTuru = null; // paneldeki "Günlük / Saatlik" seçimi (null: ayardaki değer); ayar değişince bırakılır
+    let tahminAyari = ''; // en son görülen havaTahmini ayarı
     const taslak = new Map(); // liste kimliği -> yazılmakta olan metin
     const tazeIstenen = new Set(); // sonraki okumada önbelleği atlanacak listeler (palet hızlı eklemesinden sonra)
     const bitenAcik = new Set(); // "Tamamlananlar" açılmış listeler
@@ -364,12 +382,59 @@
       });
     }
 
+    // Hava tahmini: hava kartı gösteriliyorsa ve ayar kapalı değilse seçili türün (günlük / saatlik) tahmini ana süreçten istenir
+    // (yuzey:oku { tur: 'hava' }: kimlik kayıtlı olmalı, Kapı Kuralı ve hız sınırı ana süreçtedir). Boş ya da hatalı yanıt "alınamadı" demektir.
+
+    /** Tahmin şeridinin gösterileceği hava karosu (ilk kullanılabilir hava kartı); ayar kapalıysa ya da kart yoksa null. */
+    function tahminHedefi() {
+      if (!bilgi || bilgi.ayar.havaTahmini === 'kapali') return null;
+      const kart = bilgi.kartlar.find(function (k) { return k.tur === 'hava' && !k.secilmedi && k.karo && k.karo.kullanilabilir && !k.karo.ulasilamiyor; });
+      return kart ? kart.karo : null;
+    }
+
+    function aktifTahminTuru() {
+      return tahminTuru || (bilgi && bilgi.ayar.havaTahmini === 'saatlik' ? 'saatlik' : 'gunluk');
+    }
+
+    /** Ana süreçten gelen tahmin satırları: yalnız bilinen alanlar, sınırlı sayıda, zamanı çözülebilenler. */
+    function tahminDuzelt(ham) {
+      return dizi(ham).slice(0, TAHMIN_GIRDI_SINIRI).map(function (f) {
+        if (!f || typeof f.zaman !== 'string' || !Number.isFinite(Date.parse(f.zaman))) return null;
+        return {
+          zaman: f.zaman.slice(0, 40),
+          durum: typeof f.durum === 'string' && Object.prototype.hasOwnProperty.call(HAVA_METIN, f.durum) ? f.durum : null,
+          sicaklik: sayiVeyaNull(f.sicaklik),
+          enDusuk: sayiVeyaNull(f.enDusuk),
+          yagisOlasiligi: sayiVeyaNull(f.yagisOlasiligi),
+        };
+      }).filter(Boolean);
+    }
+
+    function tahminIste() {
+      const hedef = tahminHedefi();
+      if (!hedef) return;
+      const tur = aktifTahminTuru();
+      const anahtar = hedef.id + '|' + tur;
+      if (ucta.has('h:' + anahtar) || !eskidiMi(tahminler.get(anahtar), TAHMIN_YENILEME_MS)) return;
+      ucta.add('h:' + anahtar);
+      Promise.resolve()
+        .then(function () { return ctx.oku({ tur: 'hava', kimlik: hedef.id, tahmin: TAHMIN_ISTEK[tur] }); })
+        .then(function (y) { return y && y.ok === true && Array.isArray(y.veri) ? tahminDuzelt(y.veri) : []; }, function () { return []; })
+        .then(function (ogeler) {
+          ucta.delete('h:' + anahtar);
+          if (tahminler.size >= 8) tahminler.clear();
+          tahminler.set(anahtar, { t: simdi(), durum: ogeler.length > 0 ? 'tamam' : 'hata', ogeler: ogeler });
+          cizimIste();
+        });
+    }
+
     /** Panel açıkken gereken okumaları ister (yeterince taze olanlar atlanır; hatalar 30 sn sonra yeniden denenir). */
     function veriIste() {
       if (!bilgi || !ctx.acikMi()) return;
       miniGrafikleriIste();
       takvimleriIste();
       listeleriIste();
+      tahminIste();
     }
 
     // ------------------------------------------------------------ saat kartı
@@ -434,6 +499,104 @@
       return kart;
     }
 
+    // ------------------------------------------------------------ hava tahmini şeridi
+
+    function tahminSayisi(n, ek) {
+      return Bicim.sayiBicimle(n, { hassasiyet: 0, dil: dil() }) + (ek || '');
+    }
+
+    /** Günlük görünümde bugünden başlayan, saatlik görünümde şu andan (yarım saat tolerans) başlayan satırlar. */
+    function gorunenTahminler(kayit, tur) {
+      const simdiMs = simdi();
+      const secilen = kayit.ogeler.filter(function (o) {
+        if (tur === 'saatlik') return Date.parse(o.zaman) >= simdiMs - 1_800_000;
+        const fark = Bicim.gunFarki(Bicim.tahminGunKismi(o.zaman), simdiMs);
+        return fark !== null && fark >= 0;
+      });
+      return secilen.slice(0, EN_COK_TAHMIN[tur]);
+    }
+
+    function tahminOgesi(o, tur) {
+      const hucre = el('div', 'tahmin-oge');
+      const ms = Date.parse(o.zaman);
+      let zaman;
+      if (tur === 'saatlik') zaman = Bicim.saatMetni(ms, { saatBicimi: bilgi.ayar.saatBicimi });
+      else zaman = Bicim.gunFarki(Bicim.tahminGunKismi(o.zaman), simdi()) === 0 ? t('yuzey.bilgi.takvim.bugun') : Bicim.tahminGunu(o.zaman, { dil: dil() });
+      hucre.appendChild(el('span', 'tahmin-zaman', zaman));
+      const simge = el('span', 'tahmin-simge', (o.durum && Bicim.HAVA_SIMGELERI[o.durum]) || '');
+      simge.setAttribute('aria-hidden', 'true');
+      hucre.appendChild(simge);
+      const parcalar = [];
+      const durum = o.durum ? t(HAVA_METIN[o.durum]) : '';
+      if (sonluMu(o.sicaklik)) {
+        hucre.appendChild(el('span', 'tahmin-sicaklik', tahminSayisi(o.sicaklik, '°')));
+        parcalar.push(t('yuzey.bilgi.hava.tahmin.sicaklik', { n: tahminSayisi(o.sicaklik, '°') }));
+      }
+      if (sonluMu(o.enDusuk)) {
+        hucre.appendChild(el('span', 'tahmin-dusuk', tahminSayisi(o.enDusuk, '°')));
+        parcalar.push(t('yuzey.bilgi.hava.tahmin.enDusuk', { n: tahminSayisi(o.enDusuk, '°') }));
+      }
+      if (sonluMu(o.yagisOlasiligi) && o.yagisOlasiligi >= 1) {
+        const yagis = Bicim.yuzdeMetni(o.yagisOlasiligi, { hassasiyet: 0, dil: dil() });
+        hucre.appendChild(el('span', 'tahmin-yagis', '☂ ' + yagis));
+        parcalar.push(t('yuzey.bilgi.hava.tahmin.yagis', { n: yagis }));
+      }
+      hucre.setAttribute('role', 'group');
+      hucre.setAttribute('aria-label', [zaman, durum].filter(Boolean).join(' · ') + (parcalar.length > 0 ? ', ' + parcalar.join(', ') : ''));
+      return hucre;
+    }
+
+    function tahminTuruDugmeleri() {
+      const grup = el('div', 'aralik-sira tahmin-tur');
+      grup.setAttribute('role', 'group');
+      grup.setAttribute('aria-label', t('yuzey.bilgi.hava.tahmin.turEtiket'));
+      const aktif = aktifTahminTuru();
+      const dugmeler = [];
+      [['gunluk', 'yuzey.bilgi.hava.tahmin.gunluk'], ['saatlik', 'yuzey.bilgi.hava.tahmin.saatlik']].forEach(function (c) {
+        const d = el('button', 'aralik-dugme' + (aktif === c[0] ? ' secili' : ''), t(c[1]));
+        d.type = 'button';
+        d.setAttribute('aria-pressed', aktif === c[0] ? 'true' : 'false');
+        ctx.odakKaydet('bi:tahmin:' + c[0], d);
+        d.addEventListener('click', function () {
+          if (aktifTahminTuru() === c[0]) return;
+          tahminTuru = c[0];
+          tahminIste();
+          ctx.odakIste('bi:tahmin:' + c[0]);
+          ctx.yenidenCiz();
+        });
+        grup.appendChild(d);
+        dugmeler.push(d);
+      });
+      ctx.satirEkle(dugmeler);
+      return grup;
+    }
+
+    function tahminBolumu() {
+      const hedef = tahminHedefi();
+      if (!hedef) return null;
+      const tur = aktifTahminTuru();
+      const bolum = el('section', 'bilgi-tahmin');
+      bolum.setAttribute('aria-label', t('yuzey.bilgi.hava.tahmin.baslik'));
+      const ust = el('div', 'tahmin-ust');
+      ust.appendChild(el('span', 'tahmin-baslik', t('yuzey.bilgi.hava.tahmin.baslik')));
+      ust.appendChild(tahminTuruDugmeleri());
+      bolum.appendChild(ust);
+      const kayit = tahminler.get(hedef.id + '|' + tur);
+      if (!kayit) {
+        bolum.appendChild(el('p', 'bilgi-not', t('yuzey.bilgi.hava.tahmin.yukleniyor')));
+        return bolum;
+      }
+      const ogeler = kayit.durum === 'tamam' ? gorunenTahminler(kayit, tur) : [];
+      if (ogeler.length === 0) {
+        bolum.appendChild(el('p', 'bilgi-not', t('yuzey.bilgi.hava.tahmin.alinamadi')));
+        return bolum;
+      }
+      const liste = el('div', 'tahmin-liste ' + tur);
+      ogeler.forEach(function (o) { liste.appendChild(tahminOgesi(o, tur)); });
+      bolum.appendChild(liste);
+      return bolum;
+    }
+
     /** Sensör düğmesi (kart ve şerit ortak): tıklayınca geçmiş açılır. */
     function sensorDugmesi(karo, sinif, anahtar) {
       const neden = dikkat(karo);
@@ -456,6 +619,25 @@
       return s.dugme;
     }
 
+    /**
+     * Medya üst kartı: oynatıcının kendi cihaz kartı (albüm kapağı, çal / duraklat, ses, kaynak). Kart yuzey-kartlar.js'te çizilir
+     * (ctx.medyaKarti); oynatıcı seçilmemişse ya da alınamıyorsa kısa bir not gösterilir.
+     */
+    function medyaUstKarti(k) {
+      const kart = el('div', 'bilgi-kart bilgi-medya');
+      if (k.secilmedi) {
+        kart.appendChild(el('span', 'kart-not', t('yuzey.bilgi.medya.secilmedi')));
+        return kart;
+      }
+      const ic = k.karo && !k.karo.ulasilamiyor && typeof ctx.medyaKarti === 'function' ? ctx.medyaKarti(k.karo) : null;
+      if (!ic) {
+        kart.appendChild(el('span', 'kart-not', t('yuzey.bilgi.medya.yok')));
+        return kart;
+      }
+      kart.appendChild(ic);
+      return kart;
+    }
+
     function kartBolumu() {
       const bolum = el('section', 'bilgi-kartlar');
       bolum.setAttribute('aria-label', t('yuzey.bilgi.kartlar.etiket'));
@@ -465,6 +647,7 @@
         let kart;
         if (k.tur === 'saat') kart = saatKarti();
         else if (k.tur === 'hava') kart = havaKarti(k);
+        else if (k.tur === 'medya') kart = medyaUstKarti(k);
         else {
           kart = varlikKarti(k.karo);
           dugmeler.push(kart);
@@ -502,6 +685,8 @@
       saatOgeleri = null;
       if (bilgi.kartlar.length > 0) parcalar.push(kartBolumu());
       else saatSurucusunuKur();
+      const tahmin = tahminBolumu();
+      if (tahmin) parcalar.push(tahmin);
       if (bilgi.serit.length > 0) parcalar.push(seritBolumu());
       return parcalar;
     }
@@ -1070,10 +1255,13 @@
     return {
       /** Yeni model geldi (ya da dil/çizim yenilendi): model saklanır, gereken okumalar istenir. */
       ayarla(ham) {
-        bilgi = ham ? modelDuzelt(ham) : null;
+        bilgi = ham ? modelDuzelt(ham, ctx.medyaKaroDuzelt) : null; // medya üst kartının tam karosu sayfanın doğrulayıcısından geçer
         if (!bilgi) {
           saatOgeleri = null;
           saatSurucusunuKur();
+        } else if (bilgi.ayar.havaTahmini !== tahminAyari) {
+          tahminAyari = bilgi.ayar.havaTahmini;
+          tahminTuru = null; // ayar değişti: paneldeki geçici seçim bırakılır
         }
         veriIste();
         return bilgi;
@@ -1083,6 +1271,19 @@
       ustParcalar,
       altParcalar,
       detayParcalari,
+      /** Favori sensör karoları ("Sensör" grubu); özel sayfalar (o-24) sensör üyelerini bunlardan bulur. */
+      sensorKarolari() {
+        return bilgi ? bilgi.sensorler.slice() : [];
+      },
+      /**
+       * Özel sayfada (o-24) bir sensör favorisinin karosu: "Tümü" görünümündeki sensör karosunun aynısı (değer, mini grafik, gösterge,
+       * dikkat vurgusu; tıklayınca geçmiş açılır). Karo bilgi modelindeki favori sensörlerden biri değilse null (başka kimlik çizilmez).
+       */
+      sayfaSensoru(karo) {
+        if (!bilgi || !karo || typeof karo.id !== 'string') return null;
+        const kayit = bilgi.sensorler.find(function (k) { return k.id === karo.id; });
+        return kayit ? sensorKarosu(kayit) : null;
+      },
       detayAcikMi() {
         return detay !== null;
       },
@@ -1092,7 +1293,7 @@
       gosterildi() {
         detay = null;
         yazim = 0;
-        [gecmis, takvim, listeler].forEach(function (harita) {
+        [gecmis, takvim, listeler, tahminler].forEach(function (harita) {
           Array.from(harita.keys()).forEach(function (k) {
             if (harita.get(k).durum === 'hata') harita.delete(k);
           });

@@ -115,6 +115,26 @@
   }
 
   /**
+   * Hava tahmini satırının TAKVİM GÜNÜ ('YYYY-MM-DD'): ISO tarih-saatin tarih kısmı alınır (hava varlığı kendi saat diliminde gün başı
+   * verir; "2026-10-17T00:00:00-07:00" yerel saat diliminde 16'sına kaysa da gün 17'sidir). Geçersiz girdide null.
+   */
+  function tahminGunKismi(zaman) {
+    const e = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/.exec(typeof zaman === 'string' ? zaman : '');
+    if (!e) return null;
+    const ay = Number(e[2]);
+    const gun = Number(e[3]);
+    return ay >= 1 && ay <= 12 && gun >= 1 && gun <= 31 ? `${e[1]}-${e[2]}-${e[3]}` : null;
+  }
+
+  /** Tahmin gününün kısa haftaiçi adı ("Cmt", "Sat"); tarih kısmından (tahminGunKismi) hesaplanır, saat dilimine bağlı değildir. */
+  function tahminGunu(zaman, { dil = 'tr' } = {}) {
+    const gun = tahminGunKismi(zaman);
+    if (gun === null) return '';
+    const b = bicimleyici(yerelAdi(dil), { weekday: 'short' }, 'UTC');
+    return b ? b.format(Date.parse(`${gun}T12:00:00Z`)) : '';
+  }
+
+  /**
    * Etkinliğin saat metni: tüm gün etkinliğinde null (çağıran "Tüm gün" yazar), değilse saat. Bitiş varsa "09:00–10:00".
    */
   function etkinlikSaati(etkinlik, { saatBicimi = 'sistem', saatDilimi } = {}) {
@@ -247,6 +267,8 @@
     eksenZamani,
     gunFarki,
     gunMetni,
+    tahminGunKismi,
+    tahminGunu,
     etkinlikSaati,
     dikkatNedeni,
     gostergeAraligi,

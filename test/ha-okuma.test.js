@@ -21,6 +21,9 @@ const DURUMLAR = {
   'weather.ev': { entity_id: 'weather.ev', state: 'sunny', attributes: {} },
   'todo.alisveris': { entity_id: 'todo.alisveris', state: '2', attributes: {} },
   'lock.on_kapi': { entity_id: 'lock.on_kapi', state: 'locked', attributes: {} },
+  'cover.perde': { entity_id: 'cover.perde', state: 'open', attributes: { device_class: 'curtain', friendly_name: 'Salon perde' } },
+  'cover.garaj': { entity_id: 'cover.garaj', state: 'closed', attributes: { device_class: 'garage', friendly_name: 'Depo' } },
+  'cover.sinifsiz': { entity_id: 'cover.sinifsiz', state: 'closed', attributes: { friendly_name: 'Bir şey' } },
 };
 
 const akit = async () => {
@@ -153,7 +156,7 @@ test('geçmiş: en çok 7 varlık, en uzun 7 gün; 500 noktadan fazlası seyrelt
 
 test('KAPI KURALI: kapı/pencere sınıflı ikili sensör, kapı adlı varlık, kilit ve kayıtsız alan okunamaz; ağa çıkılmaz', async () => {
   const o = sahteOkuma({ rest: { '/api/history/period/': gecmisYaniti, '/api/calendars/': [] } });
-  for (const k of ['binary_sensor.on_kapi', 'binary_sensor.pencere', 'sensor.garaj_sicaklik', 'lock.on_kapi', 'cover.perde', 'camera.kapi', 'sensor.SICAKLIK', 'sensor.a/../../x']) {
+  for (const k of ['binary_sensor.on_kapi', 'binary_sensor.pencere', 'sensor.garaj_sicaklik', 'lock.on_kapi', 'camera.kapi', 'sensor.SICAKLIK', 'sensor.a/../../x']) {
     assert.deepEqual(await o.okuma.gecmis([k]), {}, k);
   }
   assert.deepEqual(await o.okuma.gecmis(['sensor.sicaklik', 'binary_sensor.on_kapi']), {}, 'bir yasak varlık bütün isteği düşürür');
@@ -162,6 +165,14 @@ test('KAPI KURALI: kapı/pencere sınıflı ikili sensör, kapı adlı varlık, 
   assert.equal(o.istekler.length, 0);
   assert.deepEqual(await o.okuma.gecmis(['binary_sensor.hareket']), { 'binary_sensor.hareket': [] }, 'hareket sensörü serbest (yanıtta yok: boş dönem)');
   assert.equal(o.istekler.length, 1);
+});
+
+test('1.4.0 cihaz grubu: cover geçmişi yalnız HA\'daki GÜNCEL perde sınıfıyla okunur; garaj sınıfı ve sınıfsız cover okunamaz', async () => {
+  const o = sahteOkuma({ rest: { '/api/history/period/': gecmisYaniti } });
+  for (const k of ['cover.garaj', 'cover.sinifsiz']) assert.deepEqual(await o.okuma.gecmis([k]), {}, k);
+  assert.equal(o.istekler.filter((i) => i.yol.startsWith('/api/history/')).length, 0, 'yasak cover için geçmiş isteği hiç gitmez');
+  const perde = await o.okuma.gecmis(['cover.perde']);
+  assert.deepEqual(Object.keys(perde), ['cover.perde']);
 });
 
 test('geçmiş: boş dönem (başarılı ama kayıt yok) boş dizidir; hata ve hız sınırında anahtar hiç yoktur', async () => {
@@ -323,7 +334,7 @@ test('alanlar: adı süzgeçten geçmeyen alan düşer; varlık alanı ya da cih
       'config/area_registry/list': { ok: true, sonuc: [{ area_id: 'salon', name: 'Salon', picture: 'x' }, { area_id: 'garaj', name: 'Garaj' }, { area_id: 'kotu id', name: 'Mutfak' }, { area_id: 'mutfak', name: 'Mutfak' }] },
       'config/entity_registry/list_for_display': {
         ok: true,
-        sonuc: { entities: [{ ei: 'light.a', ai: 'salon' }, { ei: 'sensor.b', di: 'cihaz1' }, { ei: 'light.c', ai: 'garaj' }, { ei: 'lock.on', ai: 'salon' }, { ei: 'cover.perde', ai: 'salon' }, { ei: 'light.d' }] },
+        sonuc: { entities: [{ ei: 'light.a', ai: 'salon' }, { ei: 'sensor.b', di: 'cihaz1' }, { ei: 'light.c', ai: 'garaj' }, { ei: 'lock.on', ai: 'salon' }, { ei: 'camera.kapi', ai: 'salon' }, { ei: 'cover.perde', ai: 'salon' }, { ei: 'light.d' }] },
       },
       'config/device_registry/list': { ok: true, sonuc: [{ id: 'cihaz1', area_id: 'mutfak' }] },
     },
@@ -333,7 +344,7 @@ test('alanlar: adı süzgeçten geçmeyen alan düşer; varlık alanı ya da cih
       { id: 'salon', ad: 'Salon' },
       { id: 'mutfak', ad: 'Mutfak' },
     ],
-    varlikAlanlari: { 'light.a': 'salon', 'sensor.b': 'mutfak' },
+    varlikAlanlari: { 'light.a': 'salon', 'sensor.b': 'mutfak', 'cover.perde': 'salon' }, // 1.4.0: cover kayıtlı alan (perde); kilit ve kamera kayıtsız
   });
   await o.okuma.alanlar();
   assert.equal(o.komutlar.length, 3, 'önbellekten');

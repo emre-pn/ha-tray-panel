@@ -14,11 +14,17 @@ English | [Türkçe](README.tr.md)
 - Home and external addresses: the app tries the home address first and falls back to the external one.
 - Command line actions for Stream Deck, Task Scheduler and scripts: `"Ev Paneli.exe" --eylem="desk 40"`.
 - Cards for climate, media players, vacuums, fans, dehumidifiers, selects, numbers and timers, and colour and white-tone controls for lights.
-- Optional info cards: a sensor strip with charts, a clock with weather, a read-only calendar and to-do lists.
-- Right-click menu, pages (tabs), tile icon, colour and size, reordering with an undo history, and tiles pinned to the desktop.
+- Curtain and blind cards (open, stop, close, position), valve and automation cards. Valves and automations always need a press-and-hold, and they never run from a hotkey or the command line.
+- Optional camera snapshots (a still picture, no live video): off by default, you approve each camera in Settings, the picture starts blurred, stays in memory only, and the panel is hidden from screen capture while a camera is allowed.
+- Optional info cards: a sensor strip with charts, a clock with weather and a forecast, a read-only calendar and to-do lists. Media cards show the album cover.
+- Right-click menu, pages (tabs), grouping by room, tile icon, colour and size, reordering with an undo history, and tiles pinned to the desktop.
+- Undo (`Ctrl+Alt+Z`), delayed actions (`desk off in 10 min`) and a local activity history that shows which action ran from where.
 - Notifications in the panel for Home Assistant messages, low batteries and updates, with alert rules and quiet hours. Desktop notifications are optional.
+- Optional external triggers, all off by default: Jump List tasks, desktop shortcuts, `evpaneli://` links, a local API on 127.0.0.1, PC events (lock, sleep) and a meeting light. They run only harmless favorites that you pick by name.
+- Optional Home Assistant mobile app registration, so notifications from `notify.mobile_app_*` arrive on the PC with action buttons.
+- Connection options for harder setups: custom HTTP headers (for example Cloudflare Access), a private root CA or a pinned certificate, browser sign-in, and settings sync through a folder you choose.
 - Light, dark and high-contrast themes with preset or custom colours, text size, Windows 11 mica/acrylic, and an interface in English, Turkish, German, French and Spanish.
-- Settings search, settings export/import with automatic backups, a diagnostics report without secrets, and an opt-in update check (off by default).
+- Settings search, settings export/import with automatic backups, a diagnostics report without secrets, and an update check and in-app updates that are both off by default.
 - A portable build that needs no installation. It shares its settings folder with the installed app, so avoid running 1.3.0 or older next to this version: they rewrite the settings file without the newer fields (favorites, tile fields, language). The app restores them from the saved older-version backup on its next start.
 
 ## Safety
@@ -26,9 +32,12 @@ English | [Türkçe](README.tr.md)
 The app controls real devices, so a few rules are built in and are not configurable:
 
 - Locks, alarm panels, sirens, doors, garage doors, gates, intercoms, shutters and similar devices are never listed, added to favorites, bound to a hotkey or run. Scenes that contain them are blocked too.
-- Actions such as shutting down a PC need a press-and-hold (about one second) to run.
+- Doorbell, door, entrance and intercom cameras are never listed or shown. Only curtains, blinds, shades and awnings count as covers; garage doors, gates and shutters stay blocked.
+- Actions such as shutting down a PC, closing a valve or running an automation need a press-and-hold (about one second) to run.
 - The access token is encrypted with Electron `safeStorage` (Windows DPAPI). It never goes into logs or exports, and an address is checked without the token before the token is sent to it.
+- Valves, automations and cameras, and anything that asks for confirmation, can never be started from outside the app (external triggers, local API, links, PC events).
 - If Home Assistant rejects the token, the app stops using it everywhere instead of retrying, so it will not trigger Home Assistant's IP ban.
+- Nothing is sent to anyone but your Home Assistant unless you opt in (update check, in-app updates). There is no telemetry, and your address and token never go to a third party.
 - Plain `http://` is only accepted for local network addresses.
 
 ## Requirements

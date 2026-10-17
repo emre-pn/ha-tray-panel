@@ -181,7 +181,11 @@ function htmlAgaci(html) {
     oge.parentNode = simdiki;
     simdiki.childNodes.push(oge);
     if (HAM_METIN_ETIKETLERI.has(ad)) {
-      const bitis = html.toLowerCase().indexOf(`</${ad}`, son);
+      // toLowerCase() dizgeyi uzatabilir (İ -> i̇), bu yüzden dizinler kaymasın diye büyük/küçük harf duyarsız düzenli ifade kullanılır.
+      const kapatRe = new RegExp(`</${ad}`, 'gi');
+      kapatRe.lastIndex = son;
+      const kapatan = kapatRe.exec(html);
+      const bitis = kapatan ? kapatan.index : -1;
       const ham = html.slice(son, bitis === -1 ? html.length : bitis);
       const t = new MiniMetin(ham);
       t.parentNode = oge;

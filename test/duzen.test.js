@@ -86,7 +86,7 @@ test('favoriyiOnar: kısayol yeni varlıkta da zararsız eylem kuralından geçe
 
 test('duzeniDogrula: geçmiş noktası şemadan yeniden geçer — kapı/kilit favorisi, geçersiz alan, yinelenen ve favori olmayan sayfa varlığı elenir', () => {
   const anlik = {
-    favoriler: [fav('light.salon', 'Salon'), fav('lock.on_kapi', 'Ön kapı'), fav('cover.perde', 'Perde'), fav('light.salon', 'Yinelenen'), fav('light.kapi_isigi', 'Kapı ışığı'), fav('camera.x', 'Kamera'), 'sacma'],
+    favoriler: [fav('light.salon', 'Salon'), fav('lock.on_kapi', 'Ön kapı'), fav('lawn_mower.bahce', 'Bahçe'), fav('light.salon', 'Yinelenen'), fav('light.kapi_isigi', 'Kapı ışığı'), fav('camera.x', 'Kamera'), 'sacma'],
     sayfalar: [sayfa('aaa', 'Garaj kapısı', ['light.salon', 'lock.on_kapi', 'scene.baska'])],
   };
   const d = D.duzeniDogrula(anlik);

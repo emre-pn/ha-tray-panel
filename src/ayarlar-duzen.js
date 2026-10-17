@@ -257,6 +257,7 @@
       tepsi.setAttribute('aria-label', t('ayar.gorunum.tepsiEtiket', { ad: ad }));
       tepsi.addEventListener('change', function () {
         alanAyarla(kimlik, 'tepsi', tepsi.checked);
+        if (typeof ortak.siraYenile === 'function') ortak.siraYenile(); // "Tepsi menüsünde (n/8)" sayacı tepsiye sabitlenenleri öne alır
       });
       tepsiKutusu.appendChild(tepsi);
       tepsiKutusu.appendChild(el('span', '', t('ayar.gorunum.tepsi')));
@@ -933,6 +934,10 @@
       favorileriYukle: favorileriYukle,
       favoriGorunumuKirli: favoriGorunumuKirli,
       favoriYukunuEkle: favoriYukunuEkle,
+      /** Kayıtlı + henüz kaydedilmemiş değişiklikle "tepsiye sabitle" açık mı? (Sıra ve tepsi sayacı için) */
+      tepsideMi: function (kimlik) {
+        return etkinGorunum(kimlik).tepsi === true;
+      },
       gorunumKur: gorunumKur,
       // sıra
       siraTutamaciEkle: siraTutamaciEkle,

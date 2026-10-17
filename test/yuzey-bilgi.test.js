@@ -228,7 +228,7 @@ test('modelDuzelt: bozuk girdi null; sınırlar uygulanır; bilinmeyen / yasak a
     listeler: [{ id: 5 }, null, { id: 'todo.a', etiket: 'A', kullanilabilir: true, acikSayisi: 2.5 }],
     hizliListe: 7,
   });
-  assert.deepEqual(m.ayar, { saatBicimi: 'sistem', tarihBicimi: 'orta', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20 });
+  assert.deepEqual(m.ayar, { saatBicimi: 'sistem', tarihBicimi: 'orta', takvimGunSayisi: 3, sensorGrafik: true, sensorGrafikSaat: 6, pilEsigi: 20, havaTahmini: 'kapali' });
   assert.deepEqual(m.kartlar.map((k) => k.tur), ['hava', 'saat'], 'kilit varlık kartı düşer (kota harcamaz); hava kartında sensör karo yok sayılır (karo null); en çok 2 kart');
   assert.equal(m.kartlar[0].karo, null);
   assert.equal(Bilgi.modelDuzelt({ kartlar: [{ yuva: 1, tur: 'saat' }, { yuva: 2, tur: 'saat' }, { yuva: 2, tur: 'saat' }] }).kartlar.length, 2, 'en çok 2 yuva');

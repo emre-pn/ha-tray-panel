@@ -14,8 +14,13 @@ const {
   SURUM_SAYFASI,
   DENETIM_ARALIGI_MS,
   ELLE_ARALIK_MS,
+  SURUM_LISTE_API_ADRESI,
   surumCoz,
   surumKarsilastir,
+  surumAyristir,
+  surumMetniOn,
+  surumKarsilastirOn,
+  listeyiCoz,
   surumSayfasiGecerliMi,
   yanitiCoz,
   durumuDuzelt,
@@ -260,4 +265,57 @@ test('modül dış ağa yalnız verilen fetch ile çıkar; sabit adresler yalnı
   assert.doesNotMatch(kaynak, /require\(\s*['"](?:node:)?(?:https?|net|tls|dns|dgram)['"]\s*\)/);
   assert.doesNotMatch(kaynak, /(?<![\w.])fetch\s*\(\s*['"`]/, 'adres doğrudan fetch içine yazılmaz');
   for (const adres of [...kaynak.matchAll(/'(https?:\/\/[^']+)'/g)].map((m) => m[1]).filter((a) => a !== 'https://api.github.com/')) assert.match(adres, /^https:\/\/(api\.)?github\.com\/(repos\/)?emre-pn\/ha-tray-panel\//, adres);
+});
+
+// ---------------------------------------------------------------------------
+// "Ön sürümleri de göster" (o-51)
+// ---------------------------------------------------------------------------
+
+test('surumAyristir / surumKarsilastirOn: ön sürüm ekini çözer; semver önceliği (kararlı > ön sürüm, sayısal parça sayısal)', () => {
+  assert.deepEqual(surumAyristir('1.5.0-beta.1'), { ana: 1, alt: 5, yama: 0, on: 'beta.1' });
+  assert.deepEqual(surumAyristir('v1.5.0'), { ana: 1, alt: 5, yama: 0, on: null });
+  assert.equal(surumMetniOn(surumAyristir('v1.5.0-rc.2')), '1.5.0-rc.2');
+  for (const kotu of ['1.5', '1.5.0-', '1.5.0-beta..1', '1.5.0-be ta', '1.5.0+build', `1.5.0-${'a'.repeat(40)}`, '', null, 7]) assert.equal(surumAyristir(kotu), null, String(kotu));
+  assert.equal(surumKarsilastirOn('1.5.0', '1.5.0-beta.1'), 1);
+  assert.equal(surumKarsilastirOn('1.5.0-beta.1', '1.5.0'), -1);
+  assert.equal(surumKarsilastirOn('1.5.0-beta.10', '1.5.0-beta.9'), 1);
+  assert.equal(surumKarsilastirOn('1.5.0-beta', '1.5.0-beta.1'), -1);
+  assert.equal(surumKarsilastirOn('1.5.0-rc.1', '1.5.0-beta.9'), 1);
+  assert.equal(surumKarsilastirOn('1.5.0-1', '1.5.0-alpha'), -1, 'sayısal parça metinselden küçük');
+  assert.equal(surumKarsilastirOn('1.5.0-beta.1', '1.5.0-beta.1'), 0);
+  assert.equal(surumKarsilastirOn('1.10.0', '1.9.0'), 1);
+  assert.equal(surumKarsilastirOn('1.5.0', 'x'), null);
+});
+
+test('listeyiCoz: en yüksek sürüm (ön sürüm dahil) seçilir; taslak ve çözülemeyen etiket atlanır; sayfa adresi yine denetlenir', () => {
+  const kayit = (etiket, ek = {}) => ({ tag_name: etiket, html_url: `https://github.com/emre-pn/ha-tray-panel/releases/tag/${etiket}`, draft: false, prerelease: /-/.test(etiket), ...ek });
+  const govde = JSON.stringify([kayit('v1.5.0-beta.1'), kayit('v1.4.0'), kayit('v9.9.9', { draft: true }), kayit('sürüm'), kayit('v1.5.0-beta.2', { html_url: 'https://evil.example/x' }), null, 'x']);
+  assert.deepEqual(listeyiCoz(govde), { surum: '1.5.0-beta.2', sayfa: SURUM_SAYFASI, onSurum: true });
+  assert.deepEqual(listeyiCoz(JSON.stringify([kayit('v1.4.0'), kayit('v1.5.0-beta.1')])), { surum: '1.5.0-beta.1', sayfa: 'https://github.com/emre-pn/ha-tray-panel/releases/tag/v1.5.0-beta.1', onSurum: true });
+  assert.deepEqual(listeyiCoz(JSON.stringify([kayit('v1.5.0'), kayit('v1.5.0-rc.1')])), { surum: '1.5.0', sayfa: 'https://github.com/emre-pn/ha-tray-panel/releases/tag/v1.5.0', onSurum: false });
+  for (const kotu of ['', 'yok', '{}', 'null', '[]', JSON.stringify([{ tag_name: 'x' }])]) assert.equal(listeyiCoz(kotu), null, kotu);
+});
+
+test('onSurumlerMi açıkken sürüm LİSTESİ okunur (sabit adres, aynı kısıtlar); kapalıyken "en son sürüm" adresi ve ön sürüm hiç önerilmez', async () => {
+  const liste = JSON.stringify([{ tag_name: 'v1.4.0-beta.1', html_url: 'https://github.com/emre-pn/ha-tray-panel/releases/tag/v1.4.0-beta.1', draft: false, prerelease: true }]);
+  const acik = surumDenetleyicisiOlustur({
+    fetch: async (url) => { acik.url = url; return yanit({ govde: liste, url }); },
+    mevcutSurum: '1.3.0',
+    acikMi: () => true,
+    onSurumlerMi: () => true,
+    depo: { oku: () => null, yaz() {} },
+    simdi: () => T0,
+    zamanAsimi: () => undefined,
+  });
+  const sonuc = await acik.denetle();
+  assert.equal(sonuc.sonuc, 'yeni');
+  assert.equal(sonuc.surum, '1.4.0-beta.1');
+  assert.equal(acik.url, SURUM_LISTE_API_ADRESI);
+  assert.match(SURUM_LISTE_API_ADRESI, /^https:\/\/api\.github\.com\/repos\/emre-pn\/ha-tray-panel\/releases\?per_page=\d+$/);
+  assert.equal(acik.bilgi().yeniSurum, '1.4.0-beta.1');
+  const { ortam, denetleyici } = kur({ yanitlar: [yanit({ govde: surumGovdesi('v1.4.0-beta.1', { prerelease: true }) })] });
+  assert.equal((await denetleyici.denetle()).sonuc, 'hata', 'seçenek kapalıyken ön sürüm yanıtı reddedilir');
+  assert.equal(ortam.istekler[0].url, SURUM_API_ADRESI);
+  const yedek = kur({ mevcut: '1.5.0-beta.1', yanitlar: [yanit({ govde: surumGovdesi('v1.5.0') })] });
+  assert.equal((await yedek.denetleyici.denetle()).sonuc, 'yeni', 'ön sürümde çalışan kullanıcıya kararlı sürüm önerilir');
 });

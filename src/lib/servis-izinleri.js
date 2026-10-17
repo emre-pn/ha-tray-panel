@@ -6,8 +6,12 @@
  * Eylem hattı (src/lib/eylem-hatti.js) "servis eylemi" yolunda HA'ya gidecek gövdeyi YALNIZ buradan kurar: alan başına sabit
  * servis listesi, her servisin parametre şeması ve sınırları. Listede olmayan servis, bilinmeyen parametre, sınır dışı değer,
  * adıma uymayan sayı, cihazın kendi listesinde olmayan seçenek REDDEDİLİR (sessizce düzeltilmez; yalnız `kirp: true` olan
- * renk sıcaklığı cihazın kendi aralığına kırpılır). Kilit/kapı/kepenk/alarm servisleri bu tabloya HİÇBİR zaman girmez
+ * renk sıcaklığı cihazın kendi aralığına kırpılır). Kilit/alarm/siren servisleri bu tabloya HİÇBİR zaman girmez
  * (test/servis-izinleri.test.js).
+ *
+ * 1.4.0 cihaz grubu: cover (YALNIZ perde/jaluzi sınıfları; suzgec.js süzer): open_cover, close_cover, stop_cover, set_cover_position
+ * (zararsız); valve: open_valve, close_valve (YIKICI: basılı tut onayı kapatılamaz); automation: trigger, turn_on, turn_off (YIKICI).
+ * Garaj kapısı, kepenk, geçit ve kapı servisleri bu alanlar üzerinden de çağrılamaz: cover süzgeçte cihaz sınıfı ve ada bakar.
  *
  * Şema (SERVIS_IZINLERI[alan][servis]):
  *   parametreler  { ad: parametreSemasi }  (yoksa parametresiz servis; gelen her parametre reddedilir)
@@ -34,6 +38,7 @@
 
 const { metinGuvenliMi, metinListesiSuz } = require('./suzgec');
 const { kisalt } = require('./metin');
+const { disTetikYasakAlanMi } = require('./alan-kaydi');
 
 const HVAC_MODLARI = Object.freeze(['off', 'heat', 'cool', 'heat_cool', 'auto', 'dry', 'fan_only']);
 const RENK_MODLARI = Object.freeze(['hs', 'rgb', 'rgbw', 'rgbww', 'xy']);
@@ -127,6 +132,25 @@ const SERVIS_IZINLERI = Object.freeze({
     }),
   }),
   timer: Object.freeze({ start: parametresiz, pause: parametresiz, cancel: parametresiz }),
+  // 1.4.0 cihaz grubu. cover: yalnız perde/jaluzi (süzgeç); konum 0..100 tamsayı (cihaz konum desteklemiyorsa HA reddeder, kart kaydırıcıyı çizmez).
+  cover: Object.freeze({
+    open_cover: parametresiz,
+    close_cover: parametresiz,
+    stop_cover: parametresiz,
+    set_cover_position: Object.freeze({ parametreler: Object.freeze({ position: Object.freeze({ tur: 'sayi', gerekli: true, tamsayi: true, min: 0, max: 100 }) }) }),
+  }),
+  // valve: açma ve kapama YIKICI sınıftır (eylem-sinifi.js eylemSinifi zorunlu onay); gaz/su ana vanası olabilir, dış tetikleyicilerden hiç çalışmaz.
+  valve: Object.freeze({
+    open_valve: Object.freeze({ sinif: 'yikici' }),
+    close_valve: Object.freeze({ sinif: 'yikici' }),
+  }),
+  // automation: tetikle / etkinleştir / devre dışı bırak YIKICI sınıftır (otomasyonun ne yaptığı uygulamaca bilinemez). Parametre yok:
+  // HA'nın skip_condition seçeneği gönderilemez, koşullar her zaman çalışır.
+  automation: Object.freeze({
+    trigger: Object.freeze({ sinif: 'yikici' }),
+    turn_on: Object.freeze({ sinif: 'yikici' }),
+    turn_off: Object.freeze({ sinif: 'yikici' }),
+  }),
   todo: Object.freeze({
     add_item: Object.freeze({ parametreler: Object.freeze({ item: Object.freeze({ tur: 'metin', gerekli: true, enUzun: 200 }) }) }),
     update_item: Object.freeze({
@@ -327,6 +351,18 @@ function varliksizServisDogrula(alan, servis, veri) {
 }
 
 /**
+ * Dış tetikleyiciler (Jump List, masaüstü kısayolu, yerel API, evpaneli:// bağlantısı, PC olayları, toplantı ışığı) bu servisi
+ * çalıştırabilir mi? Yalnız "zararsız" sınıf VE alan dış tetik yasaklı değil (vana, otomasyon) VE klima mod değişimi değil.
+ * Dış tetik kapısı bu işlevi eylem sınıfından BAĞIMSIZ ek bir denetim olarak da uygular: favoride onay:false yazılmış olsa bile
+ * vana, otomasyon ve klima modu dışarıdan çalışmaz.
+ */
+function disTetigeUygunServisMi(alan, servis) {
+  if (disTetikYasakAlanMi(alan)) return false;
+  if (alan === 'climate' && servis === 'set_hvac_mode') return false;
+  return servisSinifi(alan, servis) === 'zararsiz';
+}
+
+/**
  * Renderer'a güvenle verilebilecek seçenek listesi (karo modelinde açılır liste için): cihazın listesi süzgeçten geçer.
  * @returns {string[]}
  */
@@ -348,6 +384,7 @@ module.exports = {
   izinliServisler,
   servisSemasi,
   servisSinifi,
+  disTetigeUygunServisMi,
   servisDogrula,
   varliksizServisDogrula,
   secilebilirListe,

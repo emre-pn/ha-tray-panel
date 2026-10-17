@@ -2,6 +2,8 @@
  * Hızlı panelin cihaz kartları (renderer; 1.4.0): klima / termostat (o-01), ışık rengi (o-02), medya oynatıcı (o-03), vantilatör hızı,
  * nem alıcı hedefi ve süpürge (o-05), seçici / sayı / zamanlayıcı (o-06). Köprü yok: bu betik yalnız yuzey-sayfa.js'in verdiği
  * `baglam` işlevleriyle konuşur (calistir, basili tutma, odak, çizim dondurma); ana sürece kendisi hiçbir şey göndermez.
+ *  - 1.4.0 cihaz grubu: perde / jaluzi (cover; aç, dur, kapat, konum kaydırıcısı: tek tıklama), vana (valve) ve otomasyon (automation):
+ *    ikisinin de HER servisi ana süreçte ZORUNLU onaylıdır (onayliServisler), bu yüzden düğmeleri ~0,8 sn BASILI TUTMAYLA çalışır.
  *
  *  - Tüm metin textContent ile yazılır (HTML olarak yorumlanan atama yok); dinamik stil yok (renk düğmeleri CSS sınıfıdır).
  *  - Karo verisi `karo.ozellik` (src/lib/varlik-ozellik.js güvenli alt kümesi) ve `karo.onayliServisler`dir. Bu sayfa bir eylemi
@@ -21,7 +23,14 @@
   if (!Arama || !Kaydirici) return;
 
   // Her zaman kart olarak çizilen alanlar (tek tıklama eylemi yok). Vantilatör, nem alıcı ve ışık yalnız kendi denetimi varsa kart olur.
-  const KART_ALANLARI = ['climate', 'media_player', 'vacuum', 'input_select', 'select', 'input_number', 'number', 'timer'];
+  const KART_ALANLARI = ['climate', 'media_player', 'vacuum', 'input_select', 'select', 'input_number', 'number', 'timer', 'cover', 'valve', 'automation'];
+  const KAPAK_DURUMLARI = ['open', 'closed', 'opening', 'closing']; // cover / valve durumu
+  const KAPAK_ACIK_DURUMLARI = ['open', 'opening'];
+  // supported_features bitleri (cover ve valve aynı): 1 aç, 2 kapat, 4 konum, 8 dur. Bilinmiyorsa (destek null) bütün düğmeler görünür.
+  const DESTEK_AC = 1;
+  const DESTEK_KAPAT = 2;
+  const DESTEK_KONUM = 4;
+  const DESTEK_DUR = 8;
   const ARTIM_BEKLEME_MS = 400; // ± düğmelerine art arda basış tek gönderimde birleşir
   const UYGULA_OMRU_MS = 15000; // onay bekleyen yerel değer (basılı tutup uygulanmazsa geri alınır)
   const SAYAC_MS = 1000;
@@ -35,7 +44,7 @@
   const SUPURGE_DURUMLARI = ['cleaning', 'docked', 'returning', 'paused', 'idle', 'error'];
   const ZAMANLAYICI_DURUMLARI = ['idle', 'active', 'paused'];
   const HVAC_MODLARI = ['off', 'heat', 'cool', 'heat_cool', 'auto', 'dry', 'fan_only'];
-  const ORNEK_ALANLARI = ['media_player', 'fan', 'humidifier', 'vacuum', 'timer', 'light']; // yuzey.ornek.<alan> sözlük satırı olan alanlar
+  const ORNEK_ALANLARI = ['media_player', 'fan', 'humidifier', 'vacuum', 'timer', 'light', 'cover', 'valve']; // yuzey.ornek.<alan> sözlük satırı olan alanlar
 
   // ---------------------------------------------------------------- model ve ortak yardımcılar (bağlamdan bağımsız)
 
@@ -45,13 +54,18 @@
     renkSicakligi: 'n', enAzKelvin: 'n', enCokKelvin: 'n', rgb: 'r', renkModlari: 'l',
     yuzde: 'n', adimYuzde: 'n', salinim: 'b', onAyar: 's', onAyarlar: 'l',
     mevcutSicaklik: 'n', hedefSicaklik: 'n', hedefAlt: 'n', hedefUst: 'n', enAz: 'n', enCok: 'n', adim: 'n', mod: 's', modlar: 'l', hvacEylemi: 's', mevcutNem: 'n',
-    durum: 's', baslik: 's', sanatci: 's', album: 's', ses: 'n', sessiz: 'b', kaynak: 's', kaynaklar: 'l', sure: 'x', konum: 'n', konumZamani: 's',
+    durum: 's', baslik: 's', sanatci: 's', album: 's', ses: 'n', sessiz: 'b', kaynak: 's', kaynaklar: 'l', sure: 'x', konum: 'n', konumZamani: 's', kapak: 'b', kapakAnahtari: 's',
     hedefNem: 'n', pil: 'n', secenek: 's', secenekler: 'l', deger: 'x', birim: 's', kip: 's', kalan: 's', bitis: 's',
     acikSayisi: 'n', sayi: 'n', sinif: 's', durumSinifi: 's', hassasiyet: 'n', acik: 'b',
     sicaklik: 'n', nem: 'n', ruzgar: 'n', ruzgarBirim: 's', basinc: 'n', mesgul: 'b',
+    destek: 'n', sonTetik: 's', // 1.4.0 cihaz grubu: supported_features bit alanı, otomasyonun son çalışma zamanı (ISO)
   });
   const METIN_SINIRI = 120;
   const LISTE_SINIRI = 100;
+  const KAPAK_ADRESI = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+  const KAPAK_EN_UZUN = 900000; // 600 KB resmin base64 hâli ~800 KB
+  const KAPAK_YENIDEN_MS = 60000; // alınamayan kapak bu sürede yeniden istenmez
+  const KAPAK_EN_COK = 6;
 
   function ozellikDegeri(tur, ham) {
     switch (tur) {
@@ -111,6 +125,10 @@
   };
   const sayiMi = function (d) {
     return typeof d === 'number' && isFinite(d);
+  };
+  /** supported_features biti var mı? Bit alanı bilinmiyorsa (null) düğme görünür; cihaz reddederse hata kutusu çıkar. */
+  const destekVar = function (oz, bit) {
+    return !Number.isInteger(oz.destek) || (oz.destek & bit) !== 0;
   };
 
   /** Bu karo, panelde kendi denetim kartıyla çizilir mi? */
@@ -193,7 +211,9 @@
    * @param {object} b yuzey-sayfa.js'in verdiği işlevler:
    *   olustur(etiket, sinif, metin), ceviri() -> t, calistir(yuk, karo, oge) -> söz, tekIstek(karo, oge, yuk, anahtar),
    *   basiliTutmaOlustur(karo, gorsel, bitti, yukEk) -> { basla, birak } (yukEk işlev olabilir), odakKaydet(anahtar, oge),
-   *   satirEkle(ogeler) (ok tuşu gezintisi satırı), donukBaslat(), donukBitir(), temizlikEkle(fn), karoDugmesi(karo)
+   *   satirEkle(ogeler) (ok tuşu gezintisi satırı), donukBaslat(), donukBitir(), temizlikEkle(fn), karoDugmesi(karo),
+   *   kapakIste(kimlik) -> Promise<string|null> (isteğe bağlı: medya albüm kapağı `data:` adresi; resmi ana süreç çeker, HA adresi/anahtarı burada yok)
+   *   tekerlekBagla(oge, secenek) (o-20, isteğe bağlı: fare tekerleği ±5; yoksa tekerlek özelliği yoktur)
    */
   function kur(b) {
     const olustur = b.olustur;
@@ -205,6 +225,8 @@
     };
     const bekleyenler = new Map(); // 'kimlik|ad' -> { deger, bitis }: onay bekleyen yerel değer (çizimler arasında korunur)
     const sayaclar = []; // { guncelle() }: saniyede bir tazelenen geri sayım / ilerleme
+    const kapaklar = new Map(); // 'kimlik|kapakAnahtari' -> { t, adres }: albüm kapağı önbelleği (adres null: alınamadı, 60 sn sonra yeniden denenir)
+    const kapakIstekleri = new Map(); // süren kapak istekleri (aynı kapak için tek istek)
     let sayacZamanlayicisi = null;
 
     // -- yerel (onay bekleyen) değer
@@ -346,7 +368,8 @@
      * yapar, kaydırıcı sürüklenirken kısılır (araDeger), bırakınca son değer gider. Onay isteyen serviste değişiklik YEREL kalır ve
      * "Uygula" düğmesi ~0,8 sn basılı tutulunca gönderilir (kaydırıcıda basılı tutma uygulanamaz).
      * @param {{servis: string, veriYap: Function, deger: number|null, min: number, max: number, adim: number, artim?: number, hizaAdimi?: number,
-     *   adimDugmeleri?: boolean, kaydirici?: boolean, goster: Function, azaltAria: string, artirAria: string, kaydiriciAria?: string, gostergeSinifi?: string}} s
+     *   adimDugmeleri?: boolean, kaydirici?: boolean, yalnizSon?: boolean, goster: Function, azaltAria: string, artirAria: string, kaydiriciAria?: string, gostergeSinifi?: string}} s
+     *   yalnizSon: kaydırıcı sürüklenirken ara değer gönderilmez, yalnız bırakınca son değer gider (perde gibi fiziksel hareket eden cihazlar)
      * @returns {{kok: HTMLElement, dugmeler: HTMLElement[], gosterge: HTMLElement}}
      */
     function sayisalDenetim(karo, ad, s) {
@@ -469,6 +492,19 @@
             degistir(Number(aralik.value), 'kaydirici');
           });
           aralik.addEventListener('change', suruklemeyiBitir);
+        } else if (s.yalnizSon === true) {
+          // Fiziksel hareket eden cihaz (perde): sürüklerken ara değer GÖNDERİLMEZ (motor her ara konuma gitmesin); bırakınca yalnız son değer gider.
+          aralik.addEventListener('input', function () {
+            guncel = Number(aralik.value);
+            goster();
+            suruklemeyiAc();
+          });
+          aralik.addEventListener('change', function () {
+            guncel = Number(aralik.value);
+            goster();
+            gonder(guncel, true, false);
+            suruklemeyiBitir();
+          });
         } else {
           const kisici = Kaydirici.kisici(function (deger, son) {
             gonder(deger, son === true, son !== true);
@@ -515,7 +551,29 @@
         kok.appendChild(uygula);
         dugmeler.push(uygula);
       }
-      return { kok: kok, dugmeler: dugmeler, gosterge: gosterge };
+      // o-20: fare tekerleği (±5). Yalnız spec tekerlek:true, onay istemeyen servis ve geçerli aralıkta; tekerlek denetimini yuzey-sayfa.js bağlar.
+      const tekerlek =
+        s.tekerlek === true && !onayli && aralikGecerli
+          ? {
+              dar: kok,
+              kullanilabilir: function () {
+                return kullanilabilir && sayiMi(guncel);
+              },
+              oku: function () {
+                return sayiMi(guncel) ? guncel : null;
+              },
+              enAz: s.min,
+              enCok: s.max,
+              goster: function (deger) {
+                guncel = deger;
+                goster();
+              },
+              gonder: function (deger, son) {
+                gonder(deger, son === true, son !== true);
+              },
+            }
+          : null;
+      return { kok: kok, dugmeler: dugmeler, gosterge: gosterge, tekerlek: tekerlek };
     }
 
     /**
@@ -697,6 +755,54 @@
       return cubuk;
     }
 
+    /**
+     * Albüm kapağı: ana süreç `kapak: true` dediyse küçük bir <img> kurulur, resim gelene kadar gizlidir. Adres yalnız `data:image/(jpeg|png|webp)`
+     * olabilir (başka şema ya da büyük metin reddedilir); resim ağdan değil ana süreçten gelen veridir (CSP img-src 'self' data:).
+     * Önbellek kapak anahtarına bağlıdır: parça değişince anahtar değişir, yeniden çizimde aynı kapak yeniden istenmez.
+     */
+    function kapakOgesi(karo, oz) {
+      if (oz.kapak !== true || typeof oz.kapakAnahtari !== 'string' || typeof b.kapakIste !== 'function') return null;
+      const anahtar = karo.id + '|' + oz.kapakAnahtari;
+      const resim = olustur('img', 'kart-kapak');
+      resim.alt = '';
+      resim.setAttribute('aria-hidden', 'true'); // süs: parça adı yazıyla zaten var
+      resim.draggable = false;
+      resim.hidden = true;
+      const goster = function (adres) {
+        if (!adres) return;
+        resim.src = adres;
+        resim.hidden = false;
+      };
+      const kayit = kapaklar.get(anahtar);
+      if (kayit && (kayit.adres || Date.now() - kayit.t < KAPAK_YENIDEN_MS)) {
+        goster(kayit.adres);
+        return resim;
+      }
+      if (!kapakIstekleri.has(anahtar)) {
+        const soz = Promise.resolve()
+          .then(function () {
+            return b.kapakIste(karo.id);
+          })
+          .then(
+            function (adres) {
+              return typeof adres === 'string' && adres.length <= KAPAK_EN_UZUN && KAPAK_ADRESI.test(adres) ? adres : null;
+            },
+            function () {
+              return null;
+            },
+          )
+          .then(function (adres) {
+            kapakIstekleri.delete(anahtar);
+            if (kapaklar.size >= KAPAK_EN_COK && !kapaklar.has(anahtar)) kapaklar.delete(kapaklar.keys().next().value);
+            kapaklar.set(anahtar, { t: Date.now(), adres: adres });
+            return adres;
+          });
+        kapakIstekleri.set(anahtar, soz);
+      }
+      kapakIstekleri.get(anahtar).then(goster);
+      return resim;
+    }
+
     function medyaKarti(karo) {
       const oz = ozellikAl(karo);
       const kutu = kartKutusu(karo, 'medya');
@@ -713,7 +819,16 @@
       const calan = [oz.baslik, oz.sanatci].filter(function (d) {
         return typeof d === 'string' && d !== '';
       });
-      if (calan.length > 0) kutu.appendChild(olustur('div', 'kart-bilgi kart-calan', calan.join(' — ')));
+      const calanOge = calan.length > 0 ? olustur('div', 'kart-bilgi kart-calan', calan.join(' — ')) : null;
+      const kapak = kapakOgesi(karo, oz);
+      if (kapak) {
+        const ust = olustur('div', 'kart-medya-ust');
+        ust.appendChild(kapak);
+        if (calanOge) ust.appendChild(calanOge);
+        kutu.appendChild(ust);
+      } else if (calanOge) {
+        kutu.appendChild(calanOge);
+      }
       const cubuk = ilerlemeKur(karo, oz);
       if (cubuk) kutu.appendChild(cubuk);
 
@@ -754,6 +869,7 @@
           adim: SES_ADIMI,
           adimDugmeleri: false,
           kaydirici: true,
+          tekerlek: true,
           goster: function (d) {
             return t('yuzey.yuzde', { n: Math.round(d) });
           },
@@ -763,6 +879,7 @@
         });
         kutu.appendChild(ses.kok);
         if (ses.dugmeler.length > 0) b.satirEkle(ses.dugmeler);
+        if (ses.tekerlek && typeof b.tekerlekBagla === 'function') b.tekerlekBagla(kutu, ses.tekerlek); // o-20: kartın üstünde tekerlek sesi ±5 değiştirir
       }
       const kaynaklar = listeAl(oz.kaynaklar);
       if (kaynaklar.length > 0) {
@@ -965,6 +1082,115 @@
       return kutu;
     }
 
+    // -- 1.4.0 cihaz grubu: perde (o-50), vana (o-59), otomasyon (o-49)
+
+    function kapakDurumu(oz) {
+      return KAPAK_DURUMLARI.indexOf(oz.durum) >= 0 ? t('yuzey.kapak.durum.' + oz.durum) : '';
+    }
+
+    /** Perde / jaluzi: aç, dur, kapat (tek tıklama) ve cihaz konum bildiriyorsa kaydırıcı (yalnız bırakınca gider). */
+    function perdeKarti(karo) {
+      const oz = ozellikAl(karo);
+      const kutu = kartKutusu(karo, 'perde');
+      const parcalar = [kapakDurumu(oz)];
+      if (sayiMi(oz.konum)) parcalar.push(t('yuzey.yuzde', { n: Math.round(oz.konum) }));
+      kutu.appendChild(baslikSatiri(karo, karo.ulasilamiyor ? t('yuzey.durum.ulasilamiyor') : parcalar.filter(Boolean).join(' · ')).satir);
+      const dugmeler = [];
+      if (destekVar(oz, DESTEK_AC)) dugmeler.push({ metin: t('yuzey.perde.ac'), aria: t('yuzey.perde.acAra', { etiket: karo.etiket }), servis: 'open_cover', vurgu: oz.durum === 'open' || oz.durum === 'opening' });
+      if (destekVar(oz, DESTEK_DUR)) dugmeler.push({ metin: t('yuzey.perde.dur'), aria: t('yuzey.perde.durAra', { etiket: karo.etiket }), servis: 'stop_cover' });
+      if (destekVar(oz, DESTEK_KAPAT)) dugmeler.push({ metin: t('yuzey.perde.kapat'), aria: t('yuzey.perde.kapatAra', { etiket: karo.etiket }), servis: 'close_cover', vurgu: oz.durum === 'closed' || oz.durum === 'closing' });
+      if (dugmeler.length > 0) {
+        const sira = secenekSatiri(karo, 'islem', t('yuzey.perde.islemler', { etiket: karo.etiket }), dugmeler);
+        kutu.appendChild(sira.satir);
+        b.satirEkle(sira.dugmeler);
+      }
+      if (destekVar(oz, DESTEK_KONUM) && sayiMi(oz.konum)) {
+        const konum = sayisalDenetim(karo, 'konum', {
+          servis: 'set_cover_position',
+          veriYap: function (d) {
+            return { position: Math.round(d) };
+          },
+          deger: oz.konum,
+          min: 0,
+          max: 100,
+          adim: 1,
+          adimDugmeleri: false,
+          kaydirici: true,
+          yalnizSon: true,
+          goster: function (d) {
+            return t('yuzey.yuzde', { n: Math.round(d) });
+          },
+          azaltAria: t('yuzey.perde.konum', { etiket: karo.etiket }),
+          artirAria: t('yuzey.perde.konum', { etiket: karo.etiket }),
+          kaydiriciAria: t('yuzey.perde.konum', { etiket: karo.etiket }),
+        });
+        kutu.appendChild(konum.kok);
+        if (konum.dugmeler.length > 0) b.satirEkle(konum.dugmeler);
+      }
+      return kutu;
+    }
+
+    /** Vana (su / gaz): aç ve kapat; ikisi de ana süreçte zorunlu onaylıdır, yani düğmeler ~0,8 sn basılı tutulur (kart sonunda hatırlatma yazılır). */
+    function vanaKarti(karo) {
+      const oz = ozellikAl(karo);
+      const kutu = kartKutusu(karo, 'vana');
+      const parcalar = [kapakDurumu(oz)];
+      if (sayiMi(oz.konum)) parcalar.push(t('yuzey.yuzde', { n: Math.round(oz.konum) }));
+      kutu.appendChild(baslikSatiri(karo, karo.ulasilamiyor ? t('yuzey.durum.ulasilamiyor') : parcalar.filter(Boolean).join(' · ')).satir);
+      const dugmeler = [];
+      if (destekVar(oz, DESTEK_AC)) dugmeler.push({ metin: t('yuzey.vana.ac'), aria: t('yuzey.vana.acAra', { etiket: karo.etiket }), servis: 'open_valve', vurgu: KAPAK_ACIK_DURUMLARI.indexOf(oz.durum) >= 0 });
+      if (destekVar(oz, DESTEK_KAPAT)) dugmeler.push({ metin: t('yuzey.vana.kapat'), aria: t('yuzey.vana.kapatAra', { etiket: karo.etiket }), servis: 'close_valve', vurgu: oz.durum === 'closed' || oz.durum === 'closing' });
+      if (dugmeler.length > 0) {
+        const sira = secenekSatiri(karo, 'islem', t('yuzey.vana.islemler', { etiket: karo.etiket }), dugmeler);
+        kutu.appendChild(sira.satir);
+        b.satirEkle(sira.dugmeler);
+      }
+      return kutu;
+    }
+
+    /** "3 saat önce" gibi göreli zaman (Intl.RelativeTimeFormat; arayüz diline göre); çözülemezse boş. */
+    function goreceZaman(iso) {
+      const ms = zamanMs(iso);
+      if (ms === null) return '';
+      const saniye = Math.round((ms - Date.now()) / 1000);
+      const mutlak = Math.abs(saniye);
+      const birim = mutlak < 60 ? 'second' : mutlak < 3600 ? 'minute' : mutlak < 86400 ? 'hour' : 'day';
+      const bolen = { second: 1, minute: 60, hour: 3600, day: 86400 }[birim];
+      try {
+        return new Intl.RelativeTimeFormat(yerelAdi(dilAl().dil), { numeric: 'auto' }).format(Math.round(saniye / bolen), birim);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function otomasyonDurumu(oz) {
+      const parcalar = [];
+      if (oz.acik === true) parcalar.push(t('yuzey.durum.acik'));
+      else if (oz.acik === false) parcalar.push(t('yuzey.durum.kapali'));
+      if (typeof oz.sonTetik === 'string' && oz.sonTetik !== '') {
+        const zaman = goreceZaman(oz.sonTetik);
+        if (zaman !== '') parcalar.push(t('yuzey.otomasyon.son', { zaman: zaman }));
+      } else if (oz.sonTetik === null) {
+        parcalar.push(t('yuzey.otomasyon.hicCalismadi'));
+      }
+      return parcalar.join(' · ');
+    }
+
+    /** Otomasyon: çalıştır (trigger), aç, kapat (turn_on / turn_off). Üçü de zorunlu onaylıdır: düğmeler ~0,8 sn basılı tutulur. */
+    function otomasyonKarti(karo) {
+      const oz = ozellikAl(karo);
+      const kutu = kartKutusu(karo, 'otomasyon');
+      kutu.appendChild(baslikSatiri(karo, karo.ulasilamiyor ? t('yuzey.durum.ulasilamiyor') : otomasyonDurumu(oz)).satir);
+      const sira = secenekSatiri(karo, 'islem', t('yuzey.otomasyon.islemler', { etiket: karo.etiket }), [
+        { metin: t('yuzey.otomasyon.calistir'), aria: t('yuzey.otomasyon.calistirAra', { etiket: karo.etiket }), servis: 'trigger' },
+        { metin: t('yuzey.otomasyon.ac'), aria: t('yuzey.otomasyon.acAra', { etiket: karo.etiket }), servis: 'turn_on', vurgu: oz.acik === true },
+        { metin: t('yuzey.otomasyon.kapat'), aria: t('yuzey.otomasyon.kapatAra', { etiket: karo.etiket }), servis: 'turn_off', vurgu: oz.acik === false },
+      ]);
+      kutu.appendChild(sira.satir);
+      b.satirEkle(sira.dugmeler);
+      return kutu;
+    }
+
     function kartCiz(karo) {
       kartOnayli = false;
       return hatirlatmaEkle(kartYap(karo));
@@ -990,6 +1216,12 @@
           return fanKarti(karo);
         case 'humidifier':
           return nemKarti(karo);
+        case 'cover':
+          return perdeKarti(karo);
+        case 'valve':
+          return vanaKarti(karo);
+        case 'automation':
+          return otomasyonKarti(karo);
         default:
           return null;
       }
@@ -1070,6 +1302,11 @@
           return sayiMi(oz.yuzde) && karo.durum === 'acik' ? t('yuzey.yuzde', { n: Math.round(oz.yuzde) }) : '';
         case 'humidifier':
           return sayiMi(oz.hedefNem) && karo.durum === 'acik' ? t('yuzey.yuzde', { n: Math.round(oz.hedefNem) }) : '';
+        case 'cover':
+        case 'valve':
+          return [kapakDurumu(oz), sayiMi(oz.konum) ? t('yuzey.yuzde', { n: Math.round(oz.konum) }) : ''].filter(Boolean).join(' · ');
+        case 'automation':
+          return oz.acik === true ? t('yuzey.durum.acik') : oz.acik === false ? t('yuzey.durum.kapali') : '';
         default:
           return '';
       }
@@ -1124,6 +1361,16 @@
           return t('yuzey.supurge.sarj');
         case 'iptal':
           return t('yuzey.zamanlayici.iptal');
+        case 'dur':
+          return t('yuzey.rozet.dur');
+        case 'konum':
+          return t('yuzey.rozet.konum', { n: e.deger });
+        case 'kapak-ac':
+          return t('yuzey.rozet.kapakAc');
+        case 'kapak-kapat':
+          return t('yuzey.rozet.kapakKapat');
+        case 'calistir':
+          return t('yuzey.rozet.calistir');
         default:
           return '';
       }

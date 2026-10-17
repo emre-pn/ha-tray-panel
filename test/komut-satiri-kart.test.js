@@ -104,11 +104,11 @@ test('Kapı Kuralı: komut sözlüğü kapı / kilit / kepenk / alarm sözcüğ�
   const kapi = [
     { id: 'lock.on', etiket: 'Ön', alan: 'lock', varsayilanEylem: false },
     { id: 'alarm_control_panel.ev', etiket: 'Ev alarmı', alan: 'alarm_control_panel', varsayilanEylem: false },
-    { id: 'cover.garaj', etiket: 'Garaj', alan: 'cover', varsayilanEylem: false },
     { id: 'siren.x', etiket: 'Siren', alan: 'siren', varsayilanEylem: false },
     { id: 'camera.x', etiket: 'Kamera', alan: 'camera', varsayilanEylem: false },
   ];
-  for (const komut of ['on ac', 'on kilitle', 'ev alarmi kapat', 'garaj ac', 'garaj 50', 'siren ac', 'kamera ac', 'on']) {
+  // (cover: perde komutları 1.4.0'da var; garaj/kepenk/kapı cover'ı karo listesine hiç girmez ve eylem hattı sınıfı denetler, test/cihaz-suzgec.test.js)
+  for (const komut of ['on ac', 'on kilitle', 'ev alarmi kapat', 'siren ac', 'kamera ac', 'on']) {
     const c = eylemAdiniCoz(komut, kapi);
     assert.equal(c.servis, undefined, komut);
     assert.equal(c.id, undefined, komut);

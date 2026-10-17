@@ -21,6 +21,7 @@ const BETIKLER = [
   ['lib/arama.js', oku('src/lib/arama.js')],
   ['lib/kaydirici.js', oku('src/lib/kaydirici.js')],
   ['yuzey-kartlar.js', oku('src/yuzey-kartlar.js')],
+  ['yuzey-kamera.js', oku('src/yuzey-kamera.js')], // 1.4.0 cihaz (o-48): sayfa bu modülü window.EvYuzeyKamera ile bulur
   ['yuzey-sayfa.js', oku('src/yuzey-sayfa.js')],
 ];
 
@@ -197,7 +198,7 @@ const modelYap = (...karolar) => ({
  * `dil`: durumAl yanıtındaki etkin dil. `calistirYaniti`: sabit yanıt ya da (yuk) => yanıt/söz.
  * Dönen nesne: oge(kimlik), cagrilar, zaman, durum(model), calistirmalar() ...
  */
-function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, kartlarYok = false } = {}) {
+function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, kartlarYok = false, kameraYaniti = null, etkilesim, sabitleYaniti = (istenen) => ({ ok: true, sabit: istenen }) } = {}) {
   const odak = { aktif: null };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
@@ -216,8 +217,9 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
   let durumDinleyici = null;
   let gosterDinleyici = null;
   let dilDinleyici = null;
+  let etkilesimDinleyici = null;
   const kopru = {
-    durumAl: async () => ({ ok: true, mod, model, ...(dil !== undefined ? { dil } : {}) }),
+    durumAl: async () => ({ ok: true, mod, model, ...(dil !== undefined ? { dil } : {}), ...(etkilesim !== undefined ? { etkilesim } : {}) }),
     onDurum: (cb) => {
       durumDinleyici = cb;
       return () => {};
@@ -229,6 +231,15 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
     onDilDegisti: (cb) => {
       dilDinleyici = cb;
       return () => {};
+    },
+    // 1.4.0 etkileşim (o-20, o-23): ayar değişti olayı ve iğne düğmesi (yuzey:sabitle)
+    onEtkilesim: (cb) => {
+      etkilesimDinleyici = cb;
+      return () => {};
+    },
+    sabitle: async (istenen) => {
+      cagrilar.push(['sabitle', istenen]);
+      return typeof sabitleYaniti === 'function' ? sabitleYaniti(istenen) : sabitleYaniti;
     },
     calistir: async (yuk) => {
       cagrilar.push(['calistir', JSON.parse(JSON.stringify(yuk))]);
@@ -242,6 +253,15 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
       cagrilar.push(['basiliBirak', kimlik]);
       return { ok: true };
     },
+    // 1.4.0 (o-48): yuzey:kamera köprüsü; kameraYaniti verilmezse köprüde kamera yoktur (sayfa kamerasız çalışır)
+    ...(kameraYaniti !== null
+      ? {
+          kamera: async (kimlik) => {
+            cagrilar.push(['kamera', kimlik]);
+            return typeof kameraYaniti === 'function' ? kameraYaniti(kimlik) : kameraYaniti;
+          },
+        }
+      : {}),
     kapat: () => cagrilar.push(['kapat']),
     boyut: (h) => cagrilar.push(['boyut', h]),
     haAc: async () => cagrilar.push(['haAc']),
@@ -290,6 +310,9 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
     durum: (yeniModel) => durumDinleyici(yeniModel),
     goster: (kip) => gosterDinleyici({ mod: kip }),
     dilDegisti: (yuk) => dilDinleyici(yuk),
+    /** Ana sürecin 'yuzey:etkilesim' iletisi ({ tekerlek, sabit }) */
+    etkilesimDegisti: (yuk) => etkilesimDinleyici(yuk),
+    sabitlemeler: () => cagrilar.filter((c) => c[0] === 'sabitle').map((c) => c[1]),
     belgeOlayi: (tip, ek) => {
       const olay = { type: tip, preventDefault() { this.onlendi = true; }, ...ek };
       (belgeDinleyicileri[tip] ?? []).forEach((fn) => fn(olay));
@@ -298,6 +321,7 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
     pencereOlayi: (tip) => (pencereDinleyicileri[tip] ?? []).forEach((fn) => fn({ type: tip })),
     calistirmalar: () => cagrilar.filter((c) => c[0] === 'calistir').map((c) => c[1]),
     basiliBaslamalar: () => cagrilar.filter((c) => c[0] === 'basiliBasla').map((c) => c[1]),
+    kameraIstekleri: () => cagrilar.filter((c) => c[0] === 'kamera').map((c) => c[1]),
     /** İçerikte koşula uyan ilk / tüm öğeler */
     bul: (kosul) => ogeler.get('icerik').bul(kosul),
     ipucu: () => ogeler.get('ipucu').textContent,

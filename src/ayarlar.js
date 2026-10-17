@@ -23,7 +23,13 @@
   const SozlukAyarlar = window.EvCeviriAyarlar || null;
   const SozlukAna = window.EvCeviriAna || null;
   const DuzenModulu = window.EvAyarlarDuzen || null; // 1.4.0 düzen (ayarlar-duzen.js): karo görünümü, sayfalar, geçmiş, onarım; yoksa Ayarlar bugünkü gibi çalışır
+  const EylemModulu = window.EvAyarlarEylem || null; // 1.4.0 eylem grubu (ayarlar-eylem.js): etkinlik geçmişi, geri al, gecikmeli eylem...; yoksa Ayarlar bugünkü gibi çalışır
   const TemaRenk = window.EvTemaRenk || null; // panel renk önizlemesi (lib/tema-renk.js); yoksa önizleme çizilmez
+  const DisModulu = window.EvAyarlarDis || null; // 1.4.0 dis grubu (ayarlar-dis.js): Dış tetikler bölümü; yoksa Ayarlar o bölüm olmadan çalışır
+  const OturumModulu = window.EvAyarlarOturum || null; // 1.4.0 (o-57): tarayıcıyla giriş (ayarlar-oturum.js); yoksa bu bölüm çalışmaz, Ayarlar bugünkü gibi çalışır
+  const SertifikaModulu = window.EvAyarlarSertifika || null; // 1.4.0 (o-56): sertifika güveni (ayarlar-sertifika.js); yoksa bu bölüm çalışmaz, Ayarlar bugünkü gibi çalışır
+  const BaglantiModulu = window.EvAyarlarBaglanti || null; // 1.4.0 bağlantı katmanı (ayarlar-baglanti.js): özel üstbilgiler, sertifika güveni, tarayıcıyla giriş, klasör eşitleme; yoksa Ayarlar bugünkü gibi çalışır
+  const EsitlemeModulu = window.EvAyarlarEsitleme || null; // 1.4.0 (o-58): klasörle eşitleme (ayarlar-esitleme.js); yoksa bu bölüm çalışmaz, Ayarlar bugünkü gibi çalışır
 
   // --- Arayüz dili -------------------------------------------------------------------------------------------------------------
   const DIL_ANAHTARI = 'evPaneli.ayarlar.dil'; // son etkin dil ('tr' | 'en' | 'de' | 'fr' | 'es'): sayfa ilk boyamadan önce doğru dilde açılsın diye
@@ -205,6 +211,7 @@
         gecmisListesi: $('duzenGecmisiListesi'),
         duyuru: $('duzenDuyuru'),
         siraKabi: favoriSirasiListesi,
+        siraYenile: function () { siraCiz(); },
         kirliGuncelle: function () { kirliGuncelle(); },
         kirliMi: function () { return kirliMi(); },
         bildirimGoster: function (mesaj, tur) { bildirimGoster(mesaj, tur); },
@@ -219,6 +226,113 @@
         favoriOnarildi: function (eski, yeni) { return favoriOnarildi(eski, yeni); },
         onarmaAdaylari: function (eski) { return onarmaAdaylari(eski); },
         cihazlarYuklendi: function () { return cihazlarYuklendi; },
+      });
+    } catch (err) {
+      return null;
+    }
+  })();
+
+  // 1.4.0 dis grubu (o-21, o-47, o-52, o-53, o-54): ayarlar-dis.js. Kur başarısız olursa ya da dosya yoksa Ayarlar bu bölüm olmadan çalışır.
+  const dis = (function () {
+    if (!DisModulu) return null;
+    try {
+      return DisModulu.kur({
+        $: function (kimlik) { return $(kimlik); },
+        el: function (etiket, sinif, metin) { return el(etiket, sinif, metin); },
+        t: function (anahtar, degiskenler) { return t(anahtar, degiskenler); },
+        kopru: window.evPaneli,
+        kirliGuncelle: function () { kirliGuncelle(); },
+        odakla: function (oge) { odakla(oge); },
+        onayIste: function (metin) { return confirm(metin); },
+      });
+    } catch (err) {
+      return null;
+    }
+  })();
+
+  // 1.4.0 bağlantı katmanı (o-55..o-58): ayarlar-baglanti.js. Kur başarısız olursa ya da dosya yoksa Ayarlar bu bölümler olmadan çalışır.
+  const baglanti = (function () {
+    if (!BaglantiModulu) return null;
+    try {
+      return BaglantiModulu.kur({
+        belge: document,
+        kopru: window.evPaneli,
+        cevir: function (anahtar, degiskenler) { return t(anahtar, degiskenler); },
+        cogul: function (anahtar, n, degiskenler) { return cogul(anahtar, n, degiskenler); },
+        dil: function () { return dil; },
+        onayIste: function (metin) { return confirm(metin); },
+        bildirimGoster: function (mesaj, tur) { bildirimGoster(mesaj, tur); },
+      });
+    } catch (err) {
+      return null;
+    }
+  })();
+
+  // 1.4.0 sertifika güveni (o-56): ayarlar-sertifika.js (yalnız HA adresleri; "hataları yok say" seçeneği yoktur).
+  const sertifikaBolumu = (function () {
+    if (!SertifikaModulu) return null;
+    try {
+      return SertifikaModulu.kur({
+        belge: document,
+        kopru: window.evPaneli,
+        cevir: function (anahtar, degiskenler) { return t(anahtar, degiskenler); },
+        onayIste: function (metin) { return confirm(metin); },
+      });
+    } catch (err) {
+      return null;
+    }
+  })();
+
+  // 1.4.0 eylem grubu (o-17, o-12, o-15, o-14, o-46): ayarlar-eylem.js. Kur başarısız olursa ya da dosya yoksa Ayarlar eylem bölümü olmadan çalışır.
+  const eylemBolumu = (function () {
+    if (!EylemModulu) return null;
+    try {
+      return EylemModulu.kur({
+        belge: document,
+        kopru: window.evPaneli,
+        cevir: function (anahtar, degiskenler) { return t(anahtar, degiskenler); },
+        cogul: function (anahtar, n, degiskenler) { return cogul(anahtar, n, degiskenler); },
+        dil: function () { return dil; },
+        kirliGuncelle: function () { kirliGuncelle(); },
+        bildirimGoster: function (mesaj, tur) { bildirimGoster(mesaj, tur); },
+        kisayolBagla: function (girdi, secenek) { kisayolKutusunuBagla(girdi, secenek); },
+        kisayolNormal: function (metin) { return kisNorm(metin); },
+        kisayolGoster: function (metin) { return kisGoster(metin); },
+        uyariKutusu: function (kutu, mesajlar) { uyariKutusuDoldur(kutu, mesajlar); },
+      });
+    } catch (err) {
+      return null;
+    }
+  })();
+
+  // 1.4.0 tarayıcıyla giriş (o-57): ayarlar-oturum.js. Giriş bitince/oturum sona erince anahtar bölümü (rozet, cihaz listesi) tazelenir.
+  const oturumBolumu = (function () {
+    if (!OturumModulu) return null;
+    try {
+      return OturumModulu.kur({
+        belge: document,
+        kopru: window.evPaneli,
+        cevir: function (anahtar, degiskenler) { return t(anahtar, degiskenler); },
+        onayIste: function (metin) { return confirm(metin); },
+        elleAnahtarVarMi: function () { return !!(mevcutAyarlar && mevcutAyarlar.girisTuru === 'anahtar'); },
+        degisti: function () { oturumDegisti(); },
+      });
+    } catch (err) {
+      return null;
+    }
+  })();
+
+  // 1.4.0 klasörle eşitleme (o-58): ayarlar-esitleme.js. Klasörden bölüm alınınca sayfa (kaydedilmemiş değişiklik yoksa) yeni ayarlarla yenilenir.
+  const esitlemeBolumu = (function () {
+    if (!EsitlemeModulu) return null;
+    try {
+      return EsitlemeModulu.kur({
+        belge: document,
+        kopru: window.evPaneli,
+        cevir: function (anahtar, degiskenler) { return t(anahtar, degiskenler); },
+        onayIste: function (metin) { return confirm(metin); },
+        zamanBicimle: function (zaman) { return yedekZamani(zaman); },
+        degisti: function (tur) { esitlemeDegisti(tur); },
       });
     } catch (err) {
       return null;
@@ -265,9 +379,23 @@
   const tepsiRozetSensoru = $('tepsiRozetSensoru');
   const masaustuKaroListesi = $('masaustuKaroListesi');
   const masaustuKaroUstte = $('masaustuKaroUstte');
+  // Etkileşim grubu (1.4.0: o-20 tekerlek ve orta tık, o-23 sabitleme, o-60 basılı tut, o-38 bağlantı bildirimi, o-43 yönetici anahtarı uyarısı)
+  const kisayolBasiliTut = $('kisayolBasiliTut');
+  const panelSabit = $('panelSabit');
+  const karoTekerlegi = $('karoTekerlegi');
+  const tepsiOrtaTik = $('tepsiOrtaTik');
+  const baglantiBildirimi = $('baglantiBildirimi');
+  const baglantiBildirimSn = $('baglantiBildirimSn');
+  const baglantiBildirimSnHata = $('baglantiBildirimSnHata');
+  const anahtarYoneticiUyari = $('anahtarYoneticiUyari');
+  const anahtarYoneticiDegil = $('anahtarYoneticiDegil');
   // Masaüstüne sabitlenebilen alanlar: src/lib/masaustu-karo.js SABITLENEBILIR_ALANLAR ile aynı (ana süreç yine süzer).
   const MASAUSTU_ALANLARI = ['light', 'switch', 'fan', 'input_boolean', 'scene', 'sensor', 'binary_sensor'];
   const EN_COK_MASAUSTU_KARO = 6;
+  // Orta tık adayları ana süreçten gelir (ayar özeti: ortaTikAlanlari; src/lib/orta-tik.js); bu liste yalnız yedektir. Ana süreç yine denetler.
+  const ORTA_TIK_YEDEK_ALANLAR = ['light', 'switch', 'fan', 'input_boolean', 'scene', 'script', 'button', 'input_button', 'humidifier'];
+  const BAGLANTI_SN_ARALIGI = { en_az: 15, en_cok: 600 }; // src/lib/baglanti-bildirimi.js GECIKME_SINIRI ile aynı
+  let ortaTikAlanlari = ORTA_TIK_YEDEK_ALANLAR;
   let masaustuSecili = []; // ayardaki ve işaretlenen karo kimlikleri (ham liste; kayıtta yalnız seçili, sabitlenebilir favoriler gider)
   let tercihEkranKaydi = {}; // ayardaki tercih edilen ekran ({} = yok)
   let bagliEkranlar = []; // ayar özetindeki bağlı ekranlar: { id, etiket, x, y, genislik, yukseklik }
@@ -278,6 +406,19 @@
   const btnSurumDenetle = $('btnSurumDenetle');
   const btnSurumSayfasi = $('btnSurumSayfasi');
   const yenilikMetni = $('yenilikMetni');
+  // Uygulama içi güncelleme (o-51)
+  const uygulamaGuncelleme = $('uygulamaGuncelleme');
+  const onSurumler = $('onSurumler');
+  const btnGuncellemeIndir = $('btnGuncellemeIndir');
+  const btnGuncellemeKur = $('btnGuncellemeKur');
+  const guncellemeIlerleme = $('guncellemeIlerleme');
+  const guncellemeDurum = $('guncellemeDurum');
+  // Mobil bildirimler (o-61)
+  const mobilBildirimler = $('mobilBildirimler');
+  const mobilCihazAdi = $('mobilCihazAdi');
+  const btnMobilKaydol = $('btnMobilKaydol');
+  const btnMobilKaydiSil = $('btnMobilKaydiSil');
+  const mobilDurum = $('mobilDurum');
 
   // Odadan başla (o-44)
   const btnOdalariGetir = $('btnOdalariGetir');
@@ -318,6 +459,7 @@
     kisayol: { girdi: kisayol, kutu: kisayolUyarilari },
     paletKisayol: { girdi: paletKisayol, kutu: paletKisayolUyarilari },
     bildirimPilEsigi: { girdi: bildirimPilEsigi, hata: bildirimPilEsigiHata, detay: 'bolumBildirimler' },
+    baglantiBildirimSn: { girdi: baglantiBildirimSn, hata: baglantiBildirimSnHata, detay: 'bolumBildirimler' },
     uyariKurallari: { girdi: btnKuralEkle, hata: kuralHata, detay: 'bolumBildirimler' },
   };
 
@@ -472,23 +614,32 @@
   const ustKart1 = $('ustKart1');
   const ustKart2 = $('ustKart2');
   const havaVarligi = $('havaVarligi');
+  const havaTahmini = $('havaTahmini');
+  const birincilMedya = $('birincilMedya');
+  const medyaKapagi = $('medyaKapagi');
   const saatBicimi = $('saatBicimi');
   const tarihBicimi = $('tarihBicimi');
   const takvimGunSayisi = $('takvimGunSayisi');
   const takvimGunHata = $('takvimGunHata');
   const hizliListe = $('hizliListe');
   const bilgiYuklemeIpucu = $('bilgiYuklemeIpucu');
+  // 1.4.0 cihaz grubu (o-48): kamera anlık görüntüsü. Kamera onay listesi bilgi listeleriyle aynı mekanizmayı kullanır (seç, ekle, kaldır);
+  // adaylar cihazlar:getir yanıtındaki kameraAdaylari'dır (ana süreçte kapı/zil/giriş kameraları elenmiş). Doğrulama ana süreçtedir.
+  const kameraBulanik = $('kameraBulanik');
+  const kameraYenilemeSn = $('kameraYenilemeSn');
 
-  const BILGI_SINIRLARI = { sensorSeridi: 6, takvimler: 4, yapilacakListeleri: 4 }; // src/lib/ayar-alanlari.js enCok değerleriyle aynı
+  const BILGI_SINIRLARI = { sensorSeridi: 6, takvimler: 4, yapilacakListeleri: 4, kameraIzinleri: 8 }; // src/lib/ayar-alanlari.js enCok değerleriyle aynı
   const BILGI_LISTELERI = {
     sensorSeridi: { kap: $('sensorSeridiListesi'), sec: $('sensorSeridiEkle'), dugme: $('btnSensorSeridiEkle'), ilkKaldir: null },
     takvimler: { kap: $('takvimlerListesi'), sec: $('takvimlerEkle'), dugme: $('btnTakvimlerEkle'), ilkKaldir: null },
     yapilacakListeleri: { kap: $('yapilacakListeleriListesi'), sec: $('yapilacakListeleriEkle'), dugme: $('btnYapilacakListeleriEkle'), ilkKaldir: null },
+    kameraIzinleri: { kap: $('kameraIzinleriListesi'), sec: $('kameraIzinleriEkle'), dugme: $('btnKameraIzinleriEkle'), ilkKaldir: null },
   };
-  const KART_SABITLERI = [['yok', 'ayar.bilgi.kart.yok'], ['saat', 'ayar.bilgi.kart.saat'], ['hava', 'ayar.bilgi.kart.hava']];
-  const bilgiSecim = { sensorSeridi: [], takvimler: [], yapilacakListeleri: [] }; // seçili kimlikler (şeritte sıra önemli)
+  const KAMERA_YENILEME_SECENEKLERI = [0, 5, 10, 30, 60]; // src/lib/kamera.js YENILEME_SECENEKLERI ile aynı
+  const KART_SABITLERI = [['yok', 'ayar.bilgi.kart.yok'], ['saat', 'ayar.bilgi.kart.saat'], ['hava', 'ayar.bilgi.kart.hava'], ['medya', 'ayar.bilgi.kart.medya']];
+  const bilgiSecim = { sensorSeridi: [], takvimler: [], yapilacakListeleri: [], kameraIzinleri: [] }; // seçili kimlikler (şeritte sıra önemli)
   const bilgiAdlari = new Map(); // kimlik -> ad (yüklenen cihaz ve bilgi varlıkları)
-  let bilgiAdaylari = null; // null: seçenekler henüz yüklenmedi; sonra { sensorSeridi, havalar, takvimler, yapilacakListeleri }
+  let bilgiAdaylari = null; // null: seçenekler henüz yüklenmedi; sonra { sensorSeridi, havalar, medyalar, takvimler, yapilacakListeleri }
 
   Object.assign(ALAN_KUTULARI, {
     pilEsigi: { girdi: pilEsigi, hata: pilEsigiHata, detay: 'bolumBilgi' },
@@ -522,12 +673,18 @@
       ustKart1: bilgiMetni(ustKart1.value, 'yok'),
       ustKart2: bilgiMetni(ustKart2.value, 'yok'),
       havaVarligi: bilgiMetni(havaVarligi.value, ''),
+      havaTahmini: String(havaTahmini.value),
+      birincilMedya: bilgiMetni(birincilMedya.value, ''),
+      medyaKapagi: medyaKapagi.checked,
       saatBicimi: String(saatBicimi.value),
       tarihBicimi: String(tarihBicimi.value),
       takvimler: bilgiSecim.takvimler.slice(),
       takvimGunSayisi: String(takvimGunSayisi.value).trim(),
       yapilacakListeleri: bilgiSecim.yapilacakListeleri.slice(),
       hizliListe: bilgiMetni(hizliListe.value, ''),
+      kameraIzinleri: bilgiSecim.kameraIzinleri.slice(),
+      kameraBulanik: kameraBulanik.checked,
+      kameraYenilemeSn: String(kameraYenilemeSn.value),
     };
   }
 
@@ -542,12 +699,18 @@
       ustKart1: bilgiMetni(sonuc.ustKart1, 'yok'),
       ustKart2: bilgiMetni(sonuc.ustKart2, 'yok'),
       havaVarligi: bilgiMetni(sonuc.havaVarligi, ''),
+      havaTahmini: bilgiSecenektenBiri(['kapali', 'gunluk', 'saatlik'], sonuc.havaTahmini, 'gunluk'),
+      birincilMedya: bilgiMetni(sonuc.birincilMedya, ''),
+      medyaKapagi: sonuc.medyaKapagi !== false,
       saatBicimi: bilgiSecenektenBiri(['sistem', '24', '12'], sonuc.saatBicimi, 'sistem'),
       tarihBicimi: bilgiSecenektenBiri(['orta', 'kisa', 'uzun', 'yok'], sonuc.tarihBicimi, 'orta'),
       takvimler: bilgiDizisi(sonuc.takvimler, BILGI_SINIRLARI.takvimler),
       takvimGunSayisi: String(Number.isInteger(sonuc.takvimGunSayisi) ? sonuc.takvimGunSayisi : 3),
       yapilacakListeleri: bilgiDizisi(sonuc.yapilacakListeleri, BILGI_SINIRLARI.yapilacakListeleri),
       hizliListe: bilgiMetni(sonuc.hizliListe, ''),
+      kameraIzinleri: bilgiDizisi(sonuc.kameraIzinleri, BILGI_SINIRLARI.kameraIzinleri),
+      kameraBulanik: sonuc.kameraBulanik !== false,
+      kameraYenilemeSn: String(bilgiSecenektenBiri(KAMERA_YENILEME_SECENEKLERI, sonuc.kameraYenilemeSn, 0)),
     };
   }
 
@@ -563,12 +726,18 @@
       ustKart1: a.ustKart1,
       ustKart2: a.ustKart2,
       havaVarligi: a.havaVarligi,
+      havaTahmini: a.havaTahmini,
+      birincilMedya: a.birincilMedya,
+      medyaKapagi: a.medyaKapagi,
       saatBicimi: a.saatBicimi,
       tarihBicimi: a.tarihBicimi,
       takvimler: a.takvimler,
       takvimGunSayisi: sayi(a.takvimGunSayisi),
       yapilacakListeleri: a.yapilacakListeleri,
       hizliListe: a.hizliListe,
+      kameraIzinleri: a.kameraIzinleri,
+      kameraBulanik: a.kameraBulanik,
+      kameraYenilemeSn: Number(a.kameraYenilemeSn),
     };
   }
 
@@ -594,8 +763,8 @@
 
   /** Üst kart, hava ve hızlı liste kutularını kurar. degerler verilmezse kutulardaki şimdiki seçimler korunur. */
   function bilgiSecenekleriniCiz(degerler) {
-    const simdi = degerler || { ustKart1: ustKart1.value, ustKart2: ustKart2.value, havaVarligi: havaVarligi.value, hizliListe: hizliListe.value };
-    const adaylar = bilgiAdaylari || { sensorSeridi: [], havalar: [], takvimler: [], yapilacakListeleri: [] };
+    const simdi = degerler || { ustKart1: ustKart1.value, ustKart2: ustKart2.value, havaVarligi: havaVarligi.value, birincilMedya: birincilMedya.value, hizliListe: hizliListe.value };
+    const adaylar = bilgiAdaylari || { sensorSeridi: [], havalar: [], medyalar: [], takvimler: [], yapilacakListeleri: [], kameraIzinleri: [] };
     const ogeler = function (liste) {
       return liste.map(function (c) { return { deger: c.entity_id, metin: bilgiAdiMetni(c.entity_id) }; });
     };
@@ -603,6 +772,7 @@
     bilgiSecimKutusunuKur(ustKart1, kartlar, bilgiMetni(simdi.ustKart1, 'yok'));
     bilgiSecimKutusunuKur(ustKart2, kartlar, bilgiMetni(simdi.ustKart2, 'yok'));
     bilgiSecimKutusunuKur(havaVarligi, [{ deger: '', metin: t('ayar.bilgi.hava.yok') }].concat(ogeler(adaylar.havalar)), bilgiMetni(simdi.havaVarligi, ''));
+    bilgiSecimKutusunuKur(birincilMedya, [{ deger: '', metin: t('ayar.bilgi.hava.yok') }].concat(ogeler(adaylar.medyalar)), bilgiMetni(simdi.birincilMedya, ''));
     bilgiSecimKutusunuKur(hizliListe, [{ deger: '', metin: t('ayar.bilgi.hizli.ilk') }].concat(ogeler(adaylar.yapilacakListeleri)), bilgiMetni(simdi.hizliListe, ''));
     bilgiYuklemeIpucu.style.display = bilgiAdaylari === null ? 'block' : 'none';
   }
@@ -662,8 +832,9 @@
   function bilgiAdaylariniKur(sonuc) {
     const cihazlar = Array.isArray(sonuc.cihazlar) ? sonuc.cihazlar : [];
     const bilgiVarliklari = Array.isArray(sonuc.bilgiVarliklari) ? sonuc.bilgiVarliklari : [];
+    const kameralar = Array.isArray(sonuc.kameraAdaylari) ? sonuc.kameraAdaylari : [];
     const gecerli = function (c) { return !!c && typeof c.entity_id === 'string'; };
-    cihazlar.concat(bilgiVarliklari).forEach(function (c) {
+    cihazlar.concat(bilgiVarliklari, kameralar).forEach(function (c) {
       if (gecerli(c)) bilgiAdlari.set(c.entity_id, typeof c.ad === 'string' && c.ad !== '' ? c.ad : c.entity_id);
     });
     const sec = function (liste, alanlar) {
@@ -672,8 +843,10 @@
     bilgiAdaylari = {
       sensorSeridi: sec(cihazlar, ['sensor', 'binary_sensor']),
       havalar: sec(cihazlar, ['weather']),
+      medyalar: sec(cihazlar, ['media_player']),
       takvimler: sec(bilgiVarliklari, ['calendar']),
       yapilacakListeleri: sec(bilgiVarliklari, ['todo']),
+      kameraIzinleri: kameralar.filter(gecerli), // ana süreç kapı/zil/diafon/giriş kameralarını zaten eler
     };
     bilgiMetinleriniYenile();
   }
@@ -690,6 +863,10 @@
     sensorGrafik.checked = d.sensorGrafik;
     sensorGrafikSaat.value = d.sensorGrafikSaat;
     sensorTepsiIpucu.checked = d.sensorTepsiIpucu;
+    kameraBulanik.checked = d.kameraBulanik;
+    kameraYenilemeSn.value = d.kameraYenilemeSn;
+    havaTahmini.value = d.havaTahmini;
+    medyaKapagi.checked = d.medyaKapagi;
     saatBicimi.value = d.saatBicimi;
     tarihBicimi.value = d.tarihBicimi;
     if (!korunan.has('pilEsigi')) {
@@ -700,13 +877,13 @@
       takvimGunSayisi.value = d.takvimGunSayisi;
       alanTemizle('takvimGunSayisi');
     }
-    bilgiSecenekleriniCiz({ ustKart1: d.ustKart1, ustKart2: d.ustKart2, havaVarligi: d.havaVarligi, hizliListe: d.hizliListe });
+    bilgiSecenekleriniCiz({ ustKart1: d.ustKart1, ustKart2: d.ustKart2, havaVarligi: d.havaVarligi, birincilMedya: d.birincilMedya, hizliListe: d.hizliListe });
     Object.keys(BILGI_LISTELERI).forEach(bilgiListesiCiz);
   }
 
   [
-    sensorGrafik, sensorGrafikSaat, pilEsigi, sensorTepsiIpucu, ustKart1, ustKart2, havaVarligi, saatBicimi, tarihBicimi,
-    takvimGunSayisi, hizliListe,
+    sensorGrafik, sensorGrafikSaat, pilEsigi, sensorTepsiIpucu, ustKart1, ustKart2, havaVarligi, havaTahmini, birincilMedya, medyaKapagi, saatBicimi, tarihBicimi,
+    takvimGunSayisi, hizliListe, kameraBulanik, kameraYenilemeSn,
   ].forEach(function (girdi) {
     girdi.addEventListener('input', kirliGuncelle);
     girdi.addEventListener('change', kirliGuncelle);
@@ -876,6 +1053,63 @@
     tepsiRozetSensoru.disabled = tepsiRozeti.value !== 'sensor';
   }
 
+  /** Orta tık adayı mı: seçili favori, onay istemeyen, tek tıklama eylemi olan ve orta tık alanlarından birinde (ana süreç yine denetler). */
+  function ortaTikAdayiMi(kimlik, engelli) {
+    if (engelli.has(kimlik) || ortaTikAlanlari.indexOf(alanKodu(kimlik)) < 0 || onayliMi(kimlik)) return false;
+    if (eksikFavoriler.some(function (e) { return e.entity_id === kimlik; })) return false; // Home Assistant'ta artık bulunamayan favori çalışmaz
+    const cihaz = cihazHaritasi.get(kimlik);
+    return !(cihaz && cihaz.tekTiklama === false);
+  }
+
+  /**
+   * Tepsi orta tık seçicisi (o-20): seçili, onay istemeyen, zararsız alandaki favoriler. Ayardaki seçim aday olmasa bile listede kalır
+   * ("artık uygun değil" notuyla) ki sessizce silinmesin; ana süreç uygun olmayan seçimi çalıştırmaz.
+   */
+  function ortaTikSecenekleriniKur(secilecek) {
+    tepsiOrtaTik.replaceChildren();
+    const goruldu = new Set(['']);
+    const ekle = function (deger, metin) {
+      const secenek = document.createElement('option');
+      secenek.value = deger;
+      secenek.textContent = metin;
+      tepsiOrtaTik.appendChild(secenek);
+    };
+    ekle('', t('ayar.etk.ortaTikYok'));
+    const engelli = engelliKimlikleri();
+    seciliSira.forEach(function (kimlik) {
+      if (goruldu.has(kimlik) || !ortaTikAdayiMi(kimlik, engelli)) return;
+      goruldu.add(kimlik);
+      ekle(kimlik, gorunenAd(kimlik));
+    });
+    if (secilecek && !goruldu.has(secilecek)) ekle(secilecek, t('ayar.etk.ortaTikArtikYok', { ad: gorunenAd(secilecek) }));
+    tepsiOrtaTik.value = secilecek;
+    if (tepsiOrtaTik.value !== secilecek) tepsiOrtaTik.value = '';
+  }
+
+  /** Bağlantı bildirimi bekleme süresi geçerli mi (tam sayı, 15-600)? Geçersizse alan işaretlenir. */
+  function baglantiSnDenetle() {
+    const ham = String(baglantiBildirimSn.value).trim();
+    const gecerli = /^\d{1,4}$/.test(ham) && Number(ham) >= BAGLANTI_SN_ARALIGI.en_az && Number(ham) <= BAGLANTI_SN_ARALIGI.en_cok;
+    if (!gecerli) alanIsaretle('baglantiBildirimSn', t('ayar.etk.baglantiSnHata'));
+    return gecerli;
+  }
+
+  /** Anahtar bölümündeki yönetici uyarısı (o-43): true = uyarı, false = olumlu not, null/bilinmiyor = ikisi de gizli. */
+  function anahtarYoneticisiniGoster(yonetici, goster) {
+    anahtarYoneticiUyari.style.display = goster && yonetici === true ? 'block' : 'none';
+    anahtarYoneticiDegil.style.display = goster && yonetici === false ? 'block' : 'none';
+  }
+
+  /** panelSabit yalnız Ayarlar'da DEĞİŞTİRİLDİYSE gönderilir: panelin iğne düğmesiyle yapılan değişikliği eski bir form ezmesin (o-23). */
+  function panelSabitDegisti(anlik) {
+    if (bazGenel === null) return false;
+    try {
+      return JSON.parse(bazGenel).panelSabit !== anlik.panelSabit;
+    } catch {
+      return false;
+    }
+  }
+
   /** Sabitlenebilir adaylar: seçili (kaydedilecek) favorilerden uygun alandakiler, seçim sırasıyla. */
   function masaustuAdaylari() {
     const engelli = engelliKimlikleri();
@@ -940,6 +1174,7 @@
     if (mevcutAyarlar) bagliEkranlar = ekranListesiniAl(mevcutAyarlar);
     ekranSecenekleriniKur(tercihEkran.value);
     rozetSensorSecenekleriniKur(tepsiRozetSensoru.value);
+    ortaTikSecenekleriniKur(tepsiOrtaTik.value);
     opaklikYazisiniGuncelle();
   }
 
@@ -990,7 +1225,12 @@
       mevsimEfekti: mevsimEfekti.value,
       hareketiAzalt: hareketiAzalt.checked,
       surumDenetimi: surumDenetimi.checked,
+      uygulamaGuncelleme: uygulamaGuncelleme.checked,
+      onSurumler: onSurumler.checked,
+      mobilBildirimler: mobilBildirimler.checked,
+      mobilCihazAdi: mobilCihazAdi.value.trim(),
       panolar: panoYuku(),
+      ...(eylemBolumu ? eylemBolumu.anlik() : {}), // 1.4.0 eylem grubu
       ...bilgiAnlik(),
       sayfalar: duzen ? duzen.sayfalarAnlik() : [],
       // Pencere grubu (1.4.0)
@@ -1002,6 +1242,14 @@
       tepsiRozetSensoru: tepsiRozetSensoru.value,
       masaustuKarolari: masaustuSecili.slice(),
       masaustuKaroUstte: masaustuKaroUstte.checked,
+      // Etkileşim grubu (1.4.0)
+      kisayolBasiliTut: kisayolBasiliTut.checked,
+      panelSabit: panelSabit.checked,
+      karoTekerlegi: karoTekerlegi.checked,
+      tepsiOrtaTik: tepsiOrtaTik.value,
+      baglantiBildirimi: baglantiBildirimi.checked,
+      baglantiBildirimSn: String(baglantiBildirimSn.value).trim(),
+      ...(dis ? dis.anlik() : {}), // 1.4.0 dis grubu: Dış tetikler
     };
   }
 
@@ -1041,9 +1289,14 @@
       mevsimEfekti: MEVSIM_EFEKTLERI.indexOf(sonuc.mevsimEfekti) >= 0 ? sonuc.mevsimEfekti : 'yok',
       hareketiAzalt: sonuc.hareketiAzalt === true,
       surumDenetimi: sonuc.surumDenetimi === true,
+      uygulamaGuncelleme: sonuc.uygulamaGuncelleme === true,
+      onSurumler: sonuc.onSurumler === true,
+      mobilBildirimler: sonuc.mobilBildirimler === true,
+      mobilCihazAdi: typeof sonuc.mobilCihazAdi === 'string' ? sonuc.mobilCihazAdi.trim() : '',
       panolar: (Array.isArray(sonuc.panolar) ? sonuc.panolar : []).map(function (p) {
         return { ad: String(p.ad || '').trim(), yol: String(p.yol || '').trim(), kisayol: kisNorm(p.kisayol) };
       }),
+      ...(eylemBolumu ? eylemBolumu.degerleri(sonuc) : {}), // 1.4.0 eylem grubu
       ...bilgiDegerleri(sonuc),
       sayfalar: duzen ? duzen.sayfalarDegerleri(sonuc.sayfalar) : [],
       // Pencere grubu (1.4.0)
@@ -1055,6 +1308,14 @@
       tepsiRozetSensoru: typeof sonuc.tepsiRozetSensoru === 'string' ? sonuc.tepsiRozetSensoru : '',
       masaustuKarolari: (Array.isArray(sonuc.masaustuKarolari) ? sonuc.masaustuKarolari : []).filter(function (k) { return typeof k === 'string'; }),
       masaustuKaroUstte: sonuc.masaustuKaroUstte === true,
+      // Etkileşim grubu (1.4.0)
+      kisayolBasiliTut: sonuc.kisayolBasiliTut === true,
+      panelSabit: sonuc.panelSabit === true,
+      karoTekerlegi: sonuc.karoTekerlegi !== false,
+      tepsiOrtaTik: typeof sonuc.tepsiOrtaTik === 'string' ? sonuc.tepsiOrtaTik : '',
+      baglantiBildirimi: sonuc.baglantiBildirimi !== false,
+      baglantiBildirimSn: String(Number.isInteger(sonuc.baglantiBildirimSn) ? sonuc.baglantiBildirimSn : 60),
+      ...(dis ? dis.degerler(sonuc) : {}), // 1.4.0 dis grubu: Dış tetikler
     };
   }
 
@@ -1278,6 +1539,7 @@
    */
   function genelIletileriniYenile(sonuc) {
     kisayolDurumlari = Array.isArray(sonuc.kisayolDurumlari) ? sonuc.kisayolDurumlari : [];
+    if (eylemBolumu) eylemBolumu.kisayolDurumlari(kisayolDurumlari); // 1.4.0 eylem grubu: geri alma kısayolunun sorunu
     const d = genelDegerleri(sonuc);
     canliDurumMetni.textContent = canliDurumAciklamasi(d.canliBaglanti, sonuc.canliDurum);
     uyariKutusuDoldur(malzemeUyari, sonuc.malzemeDestekleniyor === false ? [t('ayar.malzeme.desteklenmiyor')] : []);
@@ -1300,6 +1562,7 @@
     varsayilanKisayolMetni = sonuc.varsayilanKisayol || 'Control+Alt+H';
     varsayilanPaletKisayolMetni = sonuc.varsayilanPaletKisayolu || 'Control+Alt+P';
     kisayolDurumlari = Array.isArray(sonuc.kisayolDurumlari) ? sonuc.kisayolDurumlari : [];
+    if (eylemBolumu) eylemBolumu.kisayolDurumlari(kisayolDurumlari); // 1.4.0 eylem grubu: geri alma kısayolunun sorunu
     const d = genelDegerleri(sonuc);
     const yaz = function (ad, girdi, deger) {
       if (korunan.has(ad)) return;
@@ -1331,6 +1594,11 @@
       kuralListesiniCiz();
     }
     surumDenetimi.checked = d.surumDenetimi;
+    uygulamaGuncelleme.checked = d.uygulamaGuncelleme;
+    onSurumler.checked = d.onSurumler;
+    mobilBildirimler.checked = d.mobilBildirimler;
+    yaz('mobilCihazAdi', mobilCihazAdi, d.mobilCihazAdi);
+    if (eylemBolumu) eylemBolumu.uygula(d); // 1.4.0 eylem grubu
     yeniPencereMalzemesi.value = d.yeniPencereMalzemesi;
     temaZorla.value = d.temaZorla;
     // Pencere grubu (1.4.0)
@@ -1347,6 +1615,14 @@
     masaustuKaroUstte.checked = d.masaustuKaroUstte;
     masaustuSecili = d.masaustuKarolari.slice();
     masaustuKaroListesiniCiz();
+    // Etkileşim grubu (1.4.0)
+    kisayolBasiliTut.checked = d.kisayolBasiliTut;
+    panelSabit.checked = d.panelSabit;
+    karoTekerlegi.checked = d.karoTekerlegi;
+    ortaTikAlanlari = Array.isArray(sonuc.ortaTikAlanlari) ? sonuc.ortaTikAlanlari.filter(function (a) { return typeof a === 'string'; }) : ORTA_TIK_YEDEK_ALANLAR;
+    ortaTikSecenekleriniKur(d.tepsiOrtaTik);
+    baglantiBildirimi.checked = d.baglantiBildirimi;
+    yaz('baglantiBildirimSn', baglantiBildirimSn, d.baglantiBildirimSn);
     metinOlcegi.value = String(d.metinOlcegi);
     yuksekKarsitlik.checked = d.yuksekKarsitlik;
     panelTemasi.value = d.panelTemasi;
@@ -1370,7 +1646,7 @@
       uyariKutusuDoldur(paletKisayolUyarilari, sunucuIletileri.palet);
       gecersizIsaretle(paletKisayol, false);
     }
-    ['yerelAdres', 'disAdres', 'anaPanoyaDonDk', 'bildirimPilEsigi', 'uyariKurallari'].forEach(function (ad) {
+    ['yerelAdres', 'disAdres', 'anaPanoyaDonDk', 'bildirimPilEsigi', 'baglantiBildirimSn', 'uyariKurallari'].forEach(function (ad) {
       if (!korunan.has(ad)) alanTemizle(ad);
     });
     vurguOnizlemeGuncelle(); // geçerli ya da boş renkte işareti kaldırır, korunan geçersiz değerde işaretli bırakır
@@ -1382,6 +1658,7 @@
     otomatikBaslatDurumunuGoster(sonuc.otomatikBaslatDurumu);
     bilgiUygula(d, korunan);
     if (duzen) duzen.sayfalariYukle(sonuc.sayfalar); // panel sayfaları (o-24): taslak sunucudaki değerlere döner
+    if (dis) dis.uygula(d); // Dış tetikler (1.4.0 dis grubu): alanlar sunucudaki değerlere döner, durum yeniden istenir
     bazGenel = JSON.stringify(d);
   }
 
@@ -1520,6 +1797,7 @@
     yetkiDurumUyari.style.display = yetkiDurum ? 'block' : 'none';
     btnYetkiYenidenDene.style.display = yetkiDurum ? 'inline-flex' : 'none';
     anahtarKarantinaUyari.style.display = !sonuc.anahtarVar && sonuc.anahtarKarantinada === true ? 'block' : 'none';
+    anahtarYoneticisiniGoster(sonuc.anahtarYonetici, sonuc.anahtarVar === true && !reddedildi && !yetkiDurum); // o-43
     const kayitSorunu = yetkiKaydiniBul(sonuc.yetkiKaydiSorunu);
     yetkiKaydiUyari.textContent = kayitSorunu ? t(kayitSorunu) : '';
     yetkiKaydiUyari.style.display = kayitSorunu ? 'block' : 'none';
@@ -1595,7 +1873,32 @@
     anahtarUygula(sonuc);
     yerelAdresUyarisiniGuncelle();
     kurulumGuncelle();
+    if (oturumBolumu) oturumBolumu.yukle(); // elle anahtar kaydedilince/silinince tarayıcı oturumu da kapanmış olabilir
     return sonuc;
+  }
+
+  /** Tarayıcıyla giriş tamamlandı ya da oturum sona erdi/kapatıldı (o-57): anahtar bölümü ve (sağlıklıysa) cihaz listesi tazelenir. */
+  async function oturumDegisti() {
+    const sonuc = await anahtariYenile();
+    if (sonuc && anahtarSaglikli(sonuc)) await cihazlariYukle(false);
+  }
+
+  /**
+   * Klasörden bölüm alındı (o-58): kaydedilmemiş değişiklik yoksa sayfa sunucudaki yeni değerlerle yenilenir; varsa kullanıcının
+   * düzenlemesi ezilmez, yalnız haber verilir.
+   */
+  async function esitlemeDegisti(tur) {
+    if (tur !== 'uygulandi') return;
+    if (kirliMi() || anahtarGirdisi.value !== '') {
+      bildirimGoster(t('ayar.esitleme.alindiKirli'), 'uyari', 8000);
+      return;
+    }
+    try {
+      await aktarimSonrasiYenile();
+      bildirimGoster(t('ayar.esitleme.alindi'), 'basarili');
+    } catch (err) {
+      bildirimGoster(t('ayar.esitleme.alindiKirli'), 'uyari', 8000);
+    }
   }
 
   async function anahtarKaydet() {
@@ -1859,7 +2162,14 @@
     const engelli = engelliKimlikleri();
     const gorunen = seciliSira.filter(function (kimlik) { return !engelli.has(kimlik); });
     favoriSirasi.style.display = gorunen.length > 0 ? 'block' : 'none';
-    let zararsiz = 0;
+    // Tepsi menüsü sırası (lib/tepsi-menu.js tepsiMenuPlani): "tepsiye sabitle" açık zararsız favoriler önce gelir, sonra kalanlar favori sırasıyla;
+    // ilk 8'i üst düzeydedir. Sayaç bu GERÇEK sıraya göre yazılır (tek tıklama eylemi olmayan ve onaylı karolar sayılmaz).
+    const tepsiAdaylari = gorunen.filter(function (k) {
+      const c = cihazHaritasi.get(k);
+      return !(c && c.tekTiklama === false) && !onayliMi(k);
+    });
+    const sabitli = tepsiAdaylari.filter(function (k) { return duzen !== null && duzen.tepsideMi(k); });
+    const tepsiSirasi = sabitli.concat(tepsiAdaylari.filter(function (k) { return sabitli.indexOf(k) < 0; }));
     gorunen.forEach(function (kimlik, sira) {
       const satir = el('div', 'sira-satir');
       satir.setAttribute('role', 'listitem');
@@ -1874,9 +2184,9 @@
       } else if (onayliMi(kimlik)) {
         konum = t('ayar.sira.onayli');
       } else {
-        zararsiz += 1;
-        tepside = zararsiz <= TEPSI_UST_SAYISI;
-        konum = tepside ? t('ayar.sira.tepside', { n: zararsiz, toplam: TEPSI_UST_SAYISI }) : t('ayar.sira.diger');
+        const tepsiNo = tepsiSirasi.indexOf(kimlik) + 1;
+        tepside = tepsiNo >= 1 && tepsiNo <= TEPSI_UST_SAYISI;
+        konum = tepside ? t('ayar.sira.tepside', { n: tepsiNo, toplam: TEPSI_UST_SAYISI }) : t('ayar.sira.diger');
       }
       satir.appendChild(el('span', 'sira-konum' + (tepside ? ' sira-konum-tepsi' : ''), konum));
       const yukari = el('button', 'buton buton-ikincil buton-kucuk', '↑');
@@ -1897,6 +2207,7 @@
     });
     if (duzen) duzen.sayfalariTazele(); // sayfa üyeleri seçili favorilere ve görünen adlara göre
     masaustuKaroListesiniCiz(); // masaüstü karosu adayları seçili favorilerden türer (1.4.0)
+    ortaTikSecenekleriniKur(tepsiOrtaTik.value); // tepsi orta tık adayları da seçili favorilerden türer (o-20)
   }
 
   /** Seçili (engelli olmayan) favorilerin görünen sırası. */
@@ -2415,7 +2726,7 @@
     if (s && s.tur === 'denetleniyor') metin = t('ayar.surum.denetleniyor');
     else if (s && s.tur === 'kapali') metin = t('ayar.surum.denetimKapali');
     else if (s && s.tur === 'guncel') metin = t('ayar.surum.guncel', { surum: s.surum });
-    else if (s && s.tur === 'yeni') metin = t('ayar.surum.yeni', { surum: s.surum });
+    else if (s && s.tur === 'yeni') metin = t(guncelleyiciEtkinMi() ? 'ayar.guncelleme.yeniAsagida' : 'ayar.surum.yeni', { surum: s.surum });
     else if (s && s.tur === 'cok-sik') metin = t('ayar.surum.cokSik');
     else if (s) metin = t('ayar.surum.hata');
     else if (surumKaydi && surumKaydi.yeniSurum) metin = t('ayar.surum.yeni', { surum: surumKaydi.yeniSurum });
@@ -2473,6 +2784,230 @@
     } catch {
       /* tarayıcı açılamadı: sessiz */
     }
+  }
+
+  // --- Uygulama içi güncelleme (o-51) ---------------------------------------------------------------------------------------
+  // Denetim, indirme ve kurulum ana süreçte yürür (sha512 doğrulaması dahil); sayfa yalnız durumu yazar ve iki düğmeyi gösterir. Kurulum için
+  // ana süreç ayrıca kendi onay penceresini açar. Metinler durumdan türetilir (dil değişince yeniden yazılır).
+  let guncellemeKaydi = null; // { acik, destek, durum, surum, onSurum, boyut, ilerleme, hata }
+  let guncellemeSonucu = null; // son düğme sonucu: { tur: 'indirme-hata' | 'kurulum-hata' | 'vazgecildi', neden }
+
+  function guncelleyiciEtkinMi() {
+    return !!guncellemeKaydi && guncellemeKaydi.acik === true && guncellemeKaydi.destek === 'tamam';
+  }
+
+  function boyutMetni(bayt) {
+    return typeof bayt === 'number' && bayt > 0 ? (bayt / 1048576).toFixed(bayt < 10485760 ? 1 : 0) + ' MB' : '';
+  }
+
+  // Sözlük anahtarları açık yazılır (dinamik birleştirme yok): kullanılmayan anahtar testle yakalanır.
+  const GUNCELLEME_HATA_ANAHTARLARI = {
+    ag: 'ayar.guncelleme.hata.ag',
+    zaman: 'ayar.guncelleme.hata.zaman',
+    'dosya-yok': 'ayar.guncelleme.hata.dosyaYok',
+    butunluk: 'ayar.guncelleme.hata.butunluk',
+    ozet: 'ayar.guncelleme.hata.ozet',
+    imza: 'ayar.guncelleme.hata.imza',
+    indirme: 'ayar.guncelleme.hata.indirme',
+    kurulum: 'ayar.guncelleme.hata.kurulum',
+    'etkin-degil': 'ayar.guncelleme.hata.etkinDegil',
+  };
+  const GUNCELLEME_DESTEK_ANAHTARLARI = {
+    tasinabilir: 'ayar.guncelleme.destek.tasinabilir',
+    paketsiz: 'ayar.guncelleme.destek.paketsiz',
+    platform: 'ayar.guncelleme.destek.platform',
+  };
+
+  function guncellemeHataMetni(neden) {
+    const anahtar = Object.prototype.hasOwnProperty.call(GUNCELLEME_HATA_ANAHTARLARI, neden) ? GUNCELLEME_HATA_ANAHTARLARI[neden] : 'ayar.guncelleme.hata.bilinmiyor';
+    return t(anahtar);
+  }
+
+  function guncellemeDurumunuYaz() {
+    const k = guncellemeKaydi;
+    const destekli = !k || k.destek === 'tamam';
+    uygulamaGuncelleme.disabled = !destekli;
+    onSurumler.disabled = false;
+    let metin = '';
+    let goster = { indir: false, kur: false, ilerleme: false };
+    if (k && !destekli) {
+      metin = t(Object.prototype.hasOwnProperty.call(GUNCELLEME_DESTEK_ANAHTARLARI, k.destek) ? GUNCELLEME_DESTEK_ANAHTARLARI[k.destek] : GUNCELLEME_DESTEK_ANAHTARLARI.paketsiz);
+    } else if (k && k.acik === true) {
+      const ek = k.onSurum ? ' ' + t('ayar.guncelleme.onSurumEki') : '';
+      if (k.durum === 'denetleniyor') metin = t('ayar.surum.denetleniyor');
+      else if (k.durum === 'yeni') {
+        metin = t('ayar.guncelleme.yeni', { surum: k.surum || '', boyut: boyutMetni(k.boyut) }) + ek;
+        goster.indir = true;
+      } else if (k.durum === 'indiriliyor') {
+        metin = t('ayar.guncelleme.indiriliyor', { surum: k.surum || '', yuzde: String(k.ilerleme || 0) }) + ek;
+        goster.ilerleme = true;
+      } else if (k.durum === 'indirildi') {
+        metin = t('ayar.guncelleme.indirildi', { surum: k.surum || '' }) + ek;
+        goster.kur = true;
+      } else if (k.durum === 'kuruluyor') metin = t('ayar.guncelleme.kuruluyor');
+      if (k.hata) metin = (metin ? metin + ' ' : '') + guncellemeHataMetni(k.hata);
+      else if (guncellemeSonucu && guncellemeSonucu.tur === 'vazgecildi') metin = (metin ? metin + ' ' : '') + t('ayar.guncelleme.vazgecildi');
+    } else if (k && uygulamaGuncelleme.checked) {
+      metin = t('ayar.guncelleme.kaydetGerek');
+    }
+    guncellemeDurum.textContent = metin;
+    btnGuncellemeIndir.style.display = goster.indir ? 'inline-flex' : 'none';
+    btnGuncellemeKur.style.display = goster.kur ? 'inline-flex' : 'none';
+    guncellemeIlerleme.style.display = goster.ilerleme ? 'block' : 'none';
+    guncellemeIlerleme.value = k && typeof k.ilerleme === 'number' ? k.ilerleme : 0;
+    const mesgul = !!k && (k.durum === 'indiriliyor' || k.durum === 'kuruluyor');
+    btnGuncellemeIndir.disabled = mesgul;
+    btnGuncellemeKur.disabled = mesgul;
+  }
+
+  async function guncellemeDurumunuYukle() {
+    if (typeof window.evPaneli.guncellemeDurumu !== 'function') return;
+    try {
+      const yanit = await window.evPaneli.guncellemeDurumu();
+      guncellemeKaydi = yanit && yanit.ok ? yanit : null;
+    } catch {
+      guncellemeKaydi = null;
+    }
+    guncellemeDurumunuYaz();
+  }
+
+  async function guncellemeyiIndir() {
+    if (typeof window.evPaneli.guncellemeyiIndir !== 'function') return;
+    btnGuncellemeIndir.disabled = true;
+    guncellemeSonucu = null;
+    try {
+      const yanit = await window.evPaneli.guncellemeyiIndir();
+      if (yanit && yanit.ok && yanit.sonuc === 'hata') guncellemeSonucu = { tur: 'indirme-hata', neden: yanit.neden };
+    } catch {
+      guncellemeSonucu = { tur: 'indirme-hata', neden: 'indirme' };
+    }
+    await guncellemeDurumunuYukle();
+  }
+
+  async function guncellemeyiKur() {
+    if (typeof window.evPaneli.guncellemeyiKur !== 'function') return;
+    btnGuncellemeKur.disabled = true;
+    guncellemeSonucu = null;
+    try {
+      const yanit = await window.evPaneli.guncellemeyiKur();
+      if (yanit && yanit.ok && yanit.sonuc === 'vazgecildi') guncellemeSonucu = { tur: 'vazgecildi' };
+      else if (yanit && yanit.ok && yanit.sonuc === 'hata') guncellemeSonucu = { tur: 'kurulum-hata', neden: yanit.neden };
+    } catch {
+      guncellemeSonucu = { tur: 'kurulum-hata', neden: 'kurulum' };
+    }
+    await guncellemeDurumunuYukle();
+  }
+
+  // --- Mobil bildirimler (o-61) ---------------------------------------------------------------------------------------------
+  // Kayıt, itme kanalı ve düğme eylemleri ana süreçte yürür (webhook kimliği, adres ve anahtar bu sayfaya hiç verilmez); sayfa yalnız durumu yazar
+  // ve iki düğmeyi yönetir. Kaydol / Kaydı sil için ana süreç kendi onay penceresini açar. Durum satırı durumdan türetilir (dil değişince yeniden yazılır).
+  let mobilKaydi = null; // { kayitli, etkin, kanal, kayitSuruyor, sonBildirim, dusenBildirim, canliAcik, sifrelemeVar }
+  let mobilSonucu = null; // son düğme sonucu: { metin }
+  let mobilMesgul = false;
+
+  // Sözlük anahtarları açık yazılır (dinamik birleştirme yok): kullanılmayan anahtar testle yakalanır.
+  const MOBIL_KANAL_ANAHTARLARI = {
+    kayitsiz: 'ayar.mobil.kanal.kayitsiz',
+    kapali: 'ayar.mobil.kanal.kapali',
+    bekliyor: 'ayar.mobil.kanal.bekliyor',
+    dinliyor: 'ayar.mobil.kanal.dinliyor',
+    'kayit-yok': 'ayar.mobil.kanal.kayitYok',
+    yetkisiz: 'ayar.mobil.kanal.yetkisiz',
+    'destek-yok': 'ayar.mobil.kanal.destekYok',
+  };
+
+  function mobilSaatMetni(ms) {
+    try {
+      return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function mobilDurumunuYaz() {
+    const k = mobilKaydi;
+    const kayitli = !!k && k.kayitli === true;
+    const sifrelemeYok = !!k && k.sifrelemeVar === false;
+    btnMobilKaydol.style.display = kayitli ? 'none' : 'inline-flex';
+    btnMobilKaydiSil.style.display = kayitli ? 'inline-flex' : 'none';
+    btnMobilKaydol.disabled = mobilMesgul || sifrelemeYok || (!!k && k.kayitSuruyor === true);
+    btnMobilKaydiSil.disabled = mobilMesgul;
+    mobilCihazAdi.disabled = kayitli; // cihaz adı yalnız kaydolurken kullanılır
+    let metin = '';
+    if (k) {
+      if (sifrelemeYok && !kayitli) {
+        metin = t('ayar.mobil.sifrelemeYok');
+      } else {
+        const anahtar = Object.prototype.hasOwnProperty.call(MOBIL_KANAL_ANAHTARLARI, k.kanal) ? MOBIL_KANAL_ANAHTARLARI[k.kanal] : MOBIL_KANAL_ANAHTARLARI.kayitsiz;
+        metin = t(anahtar);
+        if (kayitli && k.canliAcik === false) metin += ' ' + t('ayar.mobil.canliKapali');
+        if (k.sonBildirim) metin += ' ' + t('ayar.mobil.sonBildirim', { saat: mobilSaatMetni(k.sonBildirim) });
+        if (k.dusenBildirim > 0) metin += ' ' + t('ayar.mobil.dusen', { n: String(k.dusenBildirim) });
+        if (!kayitli && mobilBildirimler.checked) metin += ' ' + t('ayar.mobil.kayitGerek');
+      }
+    }
+    if (mobilSonucu) metin = (metin ? metin + ' ' : '') + mobilSonucu.metin;
+    mobilDurum.textContent = metin;
+  }
+
+  async function mobilDurumunuYukle() {
+    if (typeof window.evPaneli.mobilDurumu !== 'function') return;
+    try {
+      const yanit = await window.evPaneli.mobilDurumu();
+      mobilKaydi = yanit && yanit.ok ? yanit : null;
+    } catch (err) {
+      mobilKaydi = null;
+    }
+    mobilDurumunuYaz();
+  }
+
+  /** Ana süreç ayarı kendisi değiştirdi (kaydolunca açar, kayıt silinince kapatır): kutu ve karşılaştırma tabanı aynı değere gelir (kendi başına kaydedilmiş değişiklik). */
+  function mobilAyariniUygula(yanit) {
+    if (!yanit || typeof yanit.mobilBildirimler !== 'boolean') return;
+    mobilBildirimler.checked = yanit.mobilBildirimler;
+    if (typeof yanit.mobilCihazAdi === 'string') mobilCihazAdi.value = yanit.mobilCihazAdi;
+    if (bazGenel !== null) {
+      const temel = JSON.parse(bazGenel);
+      temel.mobilBildirimler = yanit.mobilBildirimler;
+      if (typeof yanit.mobilCihazAdi === 'string') temel.mobilCihazAdi = yanit.mobilCihazAdi;
+      bazGenel = JSON.stringify(temel);
+      kirliGuncelle();
+    }
+  }
+
+  async function mobilIslemiYap(cagri, basariMetni) {
+    if (mobilMesgul) return;
+    mobilMesgul = true;
+    mobilSonucu = null;
+    mobilDurumunuYaz();
+    try {
+      const yanit = await cagri();
+      if (yanit && typeof yanit === 'object') {
+        mobilKaydi = Object.assign({}, mobilKaydi, yanit);
+        mobilAyariniUygula(yanit);
+        if (yanit.ok === false) mobilSonucu = { metin: typeof yanit.hata === 'string' && yanit.hata ? yanit.hata : t('ayar.mobil.hata.bilinmiyor') };
+        else if (yanit.sonuc === 'vazgecildi') mobilSonucu = { metin: t('ayar.mobil.vazgecildi') };
+        else if (yanit.sonuc === 'kaydoldu' || yanit.sonuc === 'silindi') {
+          mobilSonucu = { metin: t(basariMetni) };
+          bildirimGoster(t(basariMetni));
+        }
+      }
+    } catch (err) {
+      mobilSonucu = { metin: t('ayar.mobil.hata.bilinmiyor') };
+    } finally {
+      mobilMesgul = false;
+      mobilDurumunuYaz();
+    }
+  }
+
+  function mobilKaydol() {
+    if (typeof window.evPaneli.mobilKaydol !== 'function') return;
+    mobilIslemiYap(function () { return window.evPaneli.mobilKaydol(mobilCihazAdi.value.trim()); }, 'ayar.mobil.kaydoldu');
+  }
+
+  function mobilKaydiSil() {
+    if (typeof window.evPaneli.mobilKaydiSil !== 'function') return;
+    mobilIslemiYap(function () { return window.evPaneli.mobilKaydiSil(); }, 'ayar.mobil.silindi');
   }
 
   // --- Odadan başla (o-44) ---------------------------------------------------------------------------------------------------
@@ -2665,7 +3200,7 @@
   }
 
   // Tepsiden "Yenilikler" ya da "Güncellemeleri denetle": ana süreç belirli bir bölümün açılmasını ister (yalnız bilinen kimlikler).
-  const ACILABILIR_BOLUMLER = ['bolumSurum', 'bolumAraclar'];
+  const ACILABILIR_BOLUMLER = ['bolumSurum', 'bolumAraclar', 'bolumMobil'];
   function bolumuAc(kimlik) {
     if (ACILABILIR_BOLUMLER.indexOf(kimlik) < 0) return;
     if (ayarAra.value !== '') ayarAramasiniTemizle();
@@ -2704,10 +3239,15 @@
       temaZorla: a.temaZorla,
       vurguRengi: vurguRengi.value.trim(),
       surumDenetimi: a.surumDenetimi,
+      uygulamaGuncelleme: a.uygulamaGuncelleme,
+      onSurumler: a.onSurumler,
+      mobilBildirimler: a.mobilBildirimler,
+      mobilCihazAdi: a.mobilCihazAdi,
       tepsiSolTik: a.tepsiSolTik,
       paletKisayol: a.paletKisayol,
       canliBaglanti: a.canliBaglanti,
       panolar: a.panolar,
+      ...(eylemBolumu ? eylemBolumu.anlik() : {}), // 1.4.0 eylem grubu: sunucu her alanı yeniden doğrular
       ...bilgiYuku(a),
       ...(duzen && duzen.sayfalarKirli() ? { sayfalar: a.sayfalar } : {}), // yalnız düzenlendiyse (o-24); ana süreç doğrular ve kapı kuralına takılan adı boşaltır
       // Pencere grubu (1.4.0): doğrulama ana süreçte (src/lib/ayar-alanlari.js); karolarda yalnız seçili, sabitlenebilir favoriler gider
@@ -2719,6 +3259,13 @@
       tepsiRozetSensoru: a.tepsiRozetSensoru,
       masaustuKarolari: masaustuKaroSecimi(),
       masaustuKaroUstte: a.masaustuKaroUstte,
+      // Etkileşim grubu (1.4.0): doğrulama ana süreçte (src/lib/ayar-alanlari.js)
+      kisayolBasiliTut: a.kisayolBasiliTut,
+      karoTekerlegi: a.karoTekerlegi,
+      tepsiOrtaTik: a.tepsiOrtaTik,
+      baglantiBildirimi: a.baglantiBildirimi,
+      baglantiBildirimSn: a.baglantiBildirimSn,
+      ...(panelSabitDegisti(a) ? { panelSabit: a.panelSabit } : {}),
       // Grup "tema" (ayar-alanlari.js tablosu): sunucu her alanı yeniden doğrular, geçersiz değer mevcut olanı korur
       metinOlcegi: a.metinOlcegi,
       yuksekKarsitlik: a.yuksekKarsitlik,
@@ -2730,10 +3277,12 @@
       havaEfekti: a.havaEfekti,
       mevsimEfekti: a.mevsimEfekti,
       hareketiAzalt: a.hareketiAzalt,
+      // 1.4.0 dis grubu: Dış tetikler. Ana süreç her alanı yeniden doğrular (src/lib/ayar-alanlari.js); hepsi aktarilir: false
+      ...(dis ? dis.yuk(a) : {}),
     };
   }
 
-  const KORUNACAK_ALANLAR = ['kisayol', 'paletKisayol', 'vurguRengi', 'anaPanoyaDonDk', 'pilEsigi', 'takvimGunSayisi', 'panelVurguRengi', 'panelArkaPlani', 'bildirimPilEsigi', 'uyariKurallari'];
+  const KORUNACAK_ALANLAR = ['kisayol', 'paletKisayol', 'vurguRengi', 'anaPanoyaDonDk', 'pilEsigi', 'takvimGunSayisi', 'panelVurguRengi', 'panelArkaPlani', 'bildirimPilEsigi', 'baglantiBildirimSn', 'uyariKurallari'];
 
   async function hepsiniKaydet() {
     if (kaydediliyor) return;
@@ -2745,8 +3294,14 @@
       // 0) Bildirim merkezi ayarları ve uyarı kuralları kayıttan önce denetlenir (sunucu geçersiz kuralı sessizce düşürür)
       const bildirimSorunlari = bildirimAyarlariniDenetle();
       if (bildirimSorunlari.length > 0) {
-        bildirimGoster(bildirimSorunlari.indexOf('bildirimPilEsigi') >= 0 ? t('ayar.bm.pilEsigiHata') : t('ayar.kural.hata.ozet'), 'hata');
+        bildirimGoster(
+          bildirimSorunlari.indexOf('bildirimPilEsigi') >= 0 ? t('ayar.bm.pilEsigiHata')
+            : bildirimSorunlari.indexOf('baglantiBildirimSn') >= 0 ? t('ayar.etk.baglantiSnHata')
+              : t('ayar.kural.hata.ozet'),
+          'hata',
+        );
         if (bildirimSorunlari.indexOf('bildirimPilEsigi') >= 0) ilkHataliyaOdaklan(['bildirimPilEsigi']);
+        else if (bildirimSorunlari.indexOf('baglantiBildirimSn') >= 0) ilkHataliyaOdaklan(['baglantiBildirimSn']);
         else ilkHataliKuralaOdaklan();
         return;
       }
@@ -3159,7 +3714,15 @@
     else if (listeIletisi) listeMesaji(listeIletisi.anahtar, listeIletisi.hata, listeIletisi.ham);
     if (sonYedekler !== null) yedekleriCiz(sonYedekler);
     if (duzen) duzen.metinleriYenile(); // sayfalar ve düzen geçmişi yeni dilde
+    if (dis) dis.metinleriYenile(); // Dış tetikler: seçiciler, PC kuralları ve durum satırları yeni dilde
+    if (eylemBolumu) eylemBolumu.metinleriYenile(); // etkinlik geçmişi yeni dilde
+    if (baglanti) baglanti.metinleriYenile(); // üstbilgi satırları, sertifika ve giriş durumları yeni dilde
+    if (sertifikaBolumu) sertifikaBolumu.metinleriYenile(); // sertifika güveni satırları yeni dilde
+    if (oturumBolumu) oturumBolumu.metinleriYenile(); // tarayıcıyla giriş durumu ve iletisi yeni dilde
+    if (esitlemeBolumu) esitlemeBolumu.metinleriYenile(); // klasörle eşitleme durumu ve iletisi yeni dilde
     surumDurumunuYaz();
+    guncellemeDurumunuYaz();
+    mobilDurumunuYaz();
     yenilikleriYaz();
     tanilamaDurumunuYaz();
     odaListesiniCiz();
@@ -3687,6 +4250,7 @@
       alanIsaretle('bildirimPilEsigi', t('ayar.bm.pilEsigiHata'));
       sorunlu.push('bildirimPilEsigi');
     }
+    if (!baglantiSnDenetle()) sorunlu.push('baglantiBildirimSn');
     if (!kurallariDenetle()) {
       kuralHatasiniYaz(t('ayar.kural.hata.ozet'));
       sorunlu.push('uyariKurallari');
@@ -3697,7 +4261,7 @@
   // --- Olaylar -------------------------------------------------------------------------------------------------------------
   const kirliAlanlari = [
     yerelAdres, disAdres, canliBaglanti, otomatikBaslat, pencereBoyutu, odakKaybindaGizle, anaPanoyaDonDk,
-    koseBildirimi, bipSesi, yeniPencereMalzemesi, temaZorla, tepsiSolTik, dilSecimi, surumDenetimi,
+    koseBildirimi, bipSesi, yeniPencereMalzemesi, temaZorla, tepsiSolTik, dilSecimi, surumDenetimi, uygulamaGuncelleme, onSurumler, mobilBildirimler, mobilCihazAdi,
     metinOlcegi, yuksekKarsitlik, panelTemasi, animasyonlar, animasyonGecisleri, havaEfekti, mevsimEfekti, hareketiAzalt,
     bildirimKalici, bildirimPil, bildirimPilEsigi, bildirimGuncelleme, bildirimMasaustu,
   ];
@@ -3713,6 +4277,12 @@
   });
   panelOpaklik.addEventListener('input', opaklikYazisiniGuncelle);
   tepsiRozeti.addEventListener('change', rozetSensorDurumunuGuncelle);
+  // Etkileşim grubu denetimleri (o-20, o-23, o-60, o-38)
+  [kisayolBasiliTut, panelSabit, karoTekerlegi, tepsiOrtaTik, baglantiBildirimi, baglantiBildirimSn].forEach(function (girdi) {
+    girdi.addEventListener('input', kirliGuncelle);
+    girdi.addEventListener('change', kirliGuncelle);
+  });
+  baglantiBildirimSn.addEventListener('input', function () { alanTemizle('baglantiBildirimSn'); });
   // Grup "tema": önizleme ve bu pencerenin kendi görünümü seçimle birlikte güncellenir (kirli gösterge yukarıda bağlıdır)
   [temaZorla, panelTemasi].forEach(function (girdi) {
     girdi.addEventListener('change', temaOnizlemeGuncelle);
@@ -3851,6 +4421,17 @@
     }
   });
 
+  // Anahtarın kullanıcı türü ölçüldü ya da unutuldu (o-43): uyarı güncellenir; son özet de eşitlenir ki eski bir özetle yeniden çizilince geri dönmesin.
+  if (typeof window.evPaneli.onAnahtarYonetici === 'function') {
+    window.evPaneli.onAnahtarYonetici(function (yuk) {
+      const yonetici = yuk && typeof yuk.anahtarYonetici === 'boolean' ? yuk.anahtarYonetici : null;
+      if (mevcutAyarlar) {
+        mevcutAyarlar.anahtarYonetici = yonetici;
+        anahtarYoneticisiniGoster(yonetici, anahtarSaglikli(mevcutAyarlar));
+      }
+    });
+  }
+
   if (typeof window.evPaneli.onFavorilerDegisti === 'function') {
     window.evPaneli.onFavorilerDegisti(function () {
       favorileriYenile()
@@ -3953,6 +4534,29 @@
 
   btnSurumDenetle.addEventListener('click', surumuDenetle);
   btnSurumSayfasi.addEventListener('click', surumSayfasiniAc);
+  btnGuncellemeIndir.addEventListener('click', guncellemeyiIndir);
+  btnGuncellemeKur.addEventListener('click', guncellemeyiKur);
+  uygulamaGuncelleme.addEventListener('change', guncellemeDurumunuYaz);
+  // Ana süreç durumu iter (denetim, indirme ilerlemesi, kurulum); pencere kapanınca dinleyici de kalkar.
+  if (typeof window.evPaneli.onGuncellemeDegisti === 'function') {
+    window.evPaneli.onGuncellemeDegisti(function (yuk) {
+      guncellemeKaydi = yuk && yuk.ok ? yuk : guncellemeKaydi;
+      guncellemeDurumunuYaz();
+    });
+  }
+  // Mobil bildirimler (o-61): kayıt/kanal durumu ana süreçten itilir. Ayar kutusu yalnız ana süreç ayarı KENDİSİ kapattığında (HA kaydı tanımadı) değişir;
+  // sıradan durum güncellemeleri (yeni bildirim vb.) kullanıcının kaydedilmemiş seçimine dokunmaz.
+  btnMobilKaydol.addEventListener('click', mobilKaydol);
+  btnMobilKaydiSil.addEventListener('click', mobilKaydiSil);
+  mobilBildirimler.addEventListener('change', mobilDurumunuYaz);
+  if (typeof window.evPaneli.onMobilDegisti === 'function') {
+    window.evPaneli.onMobilDegisti(function (yuk) {
+      if (!yuk || !yuk.ok) return;
+      mobilKaydi = Object.assign({}, mobilKaydi, yuk);
+      if (yuk.kanal === 'kayit-yok' && yuk.mobilBildirimler === false) mobilAyariniUygula(yuk);
+      mobilDurumunuYaz();
+    });
+  }
   odaListesiniCiz(); // başlangıç durumu: oda yok, seçim kutusu kapalı, önizleme gizli
   btnOdalariGetir.addEventListener('click', odalariGetir);
   odaSec.addEventListener('change', odaOnizlemeyiCiz);
@@ -4036,8 +4640,15 @@
       }
       yedekleriYukle();
       if (duzen) duzen.gecmisiYenile();
+      if (eylemBolumu) eylemBolumu.yenile(); // etkinlik geçmişi, bekleyen gecikmeli eylemler
       if (typeof sonuc.odakFavori === 'string' && sonuc.odakFavori !== '') favoriyeOdaklan(sonuc.odakFavori); // panel menüsü "Düzenle…" ile açıldıysa
       surumBolumunuYukle();
+      guncellemeDurumunuYukle();
+      mobilDurumunuYukle();
+      if (baglanti) baglanti.yukle(); // özel üstbilgi adları vb. (değerler sayfaya hiç gelmez)
+      if (sertifikaBolumu) sertifikaBolumu.yukle(); // sabit parmak izleri ve güvenilen kök sertifikalar (PEM sayfaya gelmez)
+      if (oturumBolumu) oturumBolumu.yukle(); // tarayıcı oturumu durumu (jeton sayfaya hiç gelmez)
+      if (esitlemeBolumu) esitlemeBolumu.yukle(); // klasörle eşitleme durumu (parola sayfaya hiç gelmez; yalnız "var mı")
     } catch (err) {
       bildirimGoster(t('ayar.yukleme.alinirkenHata'), 'hata');
     }

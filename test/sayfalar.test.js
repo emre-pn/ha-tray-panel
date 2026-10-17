@@ -39,7 +39,8 @@ test('sayfalariDuzelt: varlıklar — yinelenen, geçersiz biçim, karo olamayan
     'light.a', 'light.a', 'LIGHT.B', 'light', 5, null, 'lock.on_kapi', 'cover.perde', 'camera.salon', 'alarm_control_panel.ev', 'siren.korna',
     'light.garaj_isigi', 'switch.kapi_prizi', 'scene.film', 'sensor.sicaklik', 'binary_sensor.hareket', 'automation.x', 'sun.sun',
   ])];
-  assert.deepEqual(S.sayfalariDuzelt(ham)[0].varliklar, ['light.a', 'scene.film', 'sensor.sicaklik', 'binary_sensor.hareket']);
+  // 1.4.0 cihaz grubu: cover, valve ve automation karo alanıdır (sayfaya girebilir); kamera ve kilit/alarm/siren girmez.
+  assert.deepEqual(S.sayfalariDuzelt(ham)[0].varliklar, ['light.a', 'cover.perde', 'scene.film', 'sensor.sicaklik', 'binary_sensor.hareket', 'automation.x']);
   const yuzlerce = [sayfa('abc', 'A', Array.from({ length: 150 }, (_, i) => `light.l${i}`))];
   assert.equal(S.sayfalariDuzelt(yuzlerce)[0].varliklar.length, 100);
 });

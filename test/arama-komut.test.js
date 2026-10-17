@@ -175,7 +175,11 @@ test('alanKomutu: komut sözlüğü olmayan alan, boş kuyruk ve eksik özellik 
   assert.equal(komutluAlanMi('climate'), true);
   assert.equal(komutluAlanMi('scene'), false);
   assert.equal(komutluAlanMi('lock'), false);
-  assert.equal(komutluAlanMi('cover'), false);
+  assert.equal(komutluAlanMi('camera'), false, 'kamera komut sözlüğü yok');
+  assert.equal(komutluAlanMi('siren'), false);
+  assert.equal(komutluAlanMi('cover'), true, '1.4.0 cihaz grubu: perde komutları (aç, kapat, dur, yüzde)');
+  assert.equal(komutluAlanMi('valve'), true, '1.4.0 cihaz grubu: vana komutları (ana süreçte zorunlu onaylı)');
+  assert.equal(komutluAlanMi('automation'), true, '1.4.0 cihaz grubu: otomasyon komutları (ana süreçte zorunlu onaylı)');
   assert.equal(alanKomutu(SAHNE, 'ac'), null);
   assert.equal(alanKomutu(KLIMA, ''), null);
   assert.equal(alanKomutu(null, 'ac'), null);

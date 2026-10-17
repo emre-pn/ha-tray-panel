@@ -27,6 +27,14 @@
  * adları da (Türöffner, Haustür, Tor, Schloss, Klingel, porte, portail, serrure, sonnette, puerta, cerradura, cancela, timbre...) aynı
  * süzgeçten geçer; ayrıntı ve kısa sözcüklerin ("tor", "tur", "porte") neden yalnız tam belirteç / belirteç başı olarak arandığı
  * YASAK_EK_PARCALAR'ın üstündeki açıklamadadır. TR/EN kuralları değişmedi.
+ *
+ * 1.4.0 cihaz grubu (yalnız sıkılaştırma; Kapı Kuralı gevşemedi):
+ *  - cover (perde/jaluzi) alanı YALNIZ device_class curtain, blind, shade, awning ise geçer (PERDE_SINIFLARI). Sınıfı boş ya da bilinmeyen olan,
+ *    garage, gate, door, shutter, window, damper olan kapak varlığı hiçbir yüzeye giremez; ad ve kimlik ayrıca bu dosyanın sözcük
+ *    kuralından geçer (garaj, kapı, kepenk, shutter... adlı bir "perde" de elenir).
+ *  - camera alanı alan-kaydi.js tablosunda DEĞİLDİR (guvenliVarlikMi her zaman false); kamera yalnız kameraGuvenliMi ile, kullanıcının
+ *    Ayarlar'da tek tek onayladığı izin listesi için (src/lib/kamera.js) değerlendirilir. Kapı, zil, diafon ve GİRİŞ adlı kameralar
+ *    (KAMERA_YASAK_PARCALAR) listeye bile gelmez; marka ve model metinleri de denetlenir.
  */
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
@@ -50,6 +58,9 @@ const ALAN_SIRASI = Object.keys(FAVORI_ALANLARI);
 const YASAK_ALANLAR = new Set(['lock', 'alarm_control_panel', 'siren']);
 // 1.4.0: binary_sensor'ın kapı/pencere/açıklık/kilit/kurcalama/güvenlik sınıfları da (tüm alanlarda) yasaktır.
 const YASAK_CIHAZ_SINIFLARI = new Set(['door', 'garage_door', 'garage', 'gate', 'lock', 'opening', 'window', 'tamper', 'safety']);
+// 1.4.0 (o-50): cover alanında YALNIZ bu cihaz sınıfları geçer (tam, küçük harfli HA değeri). Sınıfı boş/bilinmeyen olan ve garage, gate, door,
+// shutter, window, damper olan kapak varlığı dışarıda kalır (yanlış sınıflanmış bir garaj kapısı perde gibi görünmesin).
+const PERDE_SINIFLARI = Object.freeze(['curtain', 'blind', 'shade', 'awning']);
 
 // Sözcükler sadeleştirilmiş (küçük harf, aksansız, NFKD, görünmez karakterler silinmiş) metinde ve belirteç (harf/rakam
 // öbeği) bazında aranır; alt çizgi, boşluk ve noktalama ayraçtır.
@@ -246,9 +257,53 @@ function guvenliVarlikMi(varlik) {
   // kuralından geçer ("Door", "DOOR", "door_lock" engellenir).
   const sinif = String(nitelikler.device_class ?? '');
   if (YASAK_CIHAZ_SINIFLARI.has(sadelestir(sinif).trim()) || !adGuvenliMi('', sinif)) return false;
+  if (alan === 'cover' && !(typeof nitelikler.device_class === 'string' && PERDE_SINIFLARI.includes(nitelikler.device_class))) return false; // 1.4.0 (o-50): yalnız curtain, blind, shade, awning (metin, tam eşleşme)
   if (!uyelerGuvenliMi(nitelikler.entity_id)) return false; // h-39: kapı/kilit içeren sahne/grup
   if (!seceneklerGuvenliMi(nitelikler.options)) return false; // 1.4.0: "Kapıyı aç" seçenekli seçici
   return adGuvenliMi(kimlik, nitelikler.friendly_name ?? '');
+}
+
+// --- 1.4.0 kamera (o-48): alan-kaydi.js tablosunda DEĞİL; yalnız kullanıcının Ayarlar'da tek tek onayladığı kameralar (src/lib/kamera.js) ---
+// Kamera adı/kimliği genel sözcük kuralına EK olarak şu giriş kapısı sözcüklerinden de geçmelidir. "Giriş" genel kuralda yoktur
+// (masum "Giriş lambası"yı engellerdi); kamerada ise "Giriş / Entrance / Ön kapı" kameraları kapı kamerasıdır. Belirteç BAŞINDA aranır
+// ("girisi", "entrance2", "zilli"); "ring", "bell" gibi kısa sözcükler yalnız TAM belirteç olarak engellenir (spring, string... geçsin).
+// Aşırı engelleme bilerek kabul edilir: bir kamera yanlışlıkla elenirse kullanıcı Home Assistant'ta adını değiştirir; bir kapı kamerası
+// sızarsa iş işten geçmiş olur.
+const KAMERA_YASAK_BELIRTEC_BASLARI = Object.freeze([
+  'giris', 'entrance', 'entry', 'entree', 'entrada', 'eingang', 'foyer', 'lobby', 'vestibul', 'zil', 'ziyaretci', 'visitor', 'peephole', 'spion', 'klingel', 'sonnette', 'timbre',
+]);
+const KAMERA_YASAK_TAM_BELIRTECLER = new Set(['ring', 'rings', 'bell', 'bells', 'chime', 'buzz', 'guest']);
+
+function kameraBelirteciYasakliMi(belirtec) {
+  return KAMERA_YASAK_TAM_BELIRTECLER.has(belirtec) || KAMERA_YASAK_BELIRTEC_BASLARI.some((bas) => belirtec.startsWith(bas));
+}
+
+/** Kamera adı/kimliği/marka/model metni: genel Kapı Kuralı + kamera giriş sözcükleri. */
+function kameraAdiGuvenliMi(kimlik, ad) {
+  if (!adGuvenliMi(kimlik, ad)) return false;
+  const sade = [sadelestir(kimlik), sadelestir(ad)];
+  return !sade.some((m) => belirteclereAyir(m).some(kameraBelirteciYasakliMi));
+}
+
+/** Kamera kimliği (yalnız kimlik; Ayarlar'daki izin listesi doğrulaması için): geçerli desen, alan camera, kimlik kamera kuralından geçer. */
+function kameraKimligiGuvenliMi(kimlik) {
+  return typeof kimlik === 'string' && kimlik.length <= 120 && VARLIK_KIMLIGI_DESENI.test(kimlik) && alanAl(kimlik) === 'camera' && kameraAdiGuvenliMi(kimlik, '');
+}
+
+/**
+ * Kamera varlığı kamera listesine/izin listesine girebilir mi? (HA'daki GÜNCEL durumla) alan camera olmalı; cihaz sınıfı/ad/marka/model Kapı Kuralı'ndan
+ * ve kamera giriş sözcüklerinden geçmeli. Görüntü çekmek için bu yeterli DEĞİLDİR: kamera ayrıca kullanıcının izin listesinde olmalıdır.
+ */
+function kameraGuvenliMi(varlik) {
+  if (!varlik || typeof varlik.entity_id !== 'string' || !kameraKimligiGuvenliMi(varlik.entity_id)) return false;
+  const nitelikler = varlik.attributes && typeof varlik.attributes === 'object' && !Array.isArray(varlik.attributes) ? varlik.attributes : {};
+  const sinif = String(nitelikler.device_class ?? '');
+  if (YASAK_CIHAZ_SINIFLARI.has(sadelestir(sinif).trim()) || !adGuvenliMi('', sinif)) return false;
+  for (const alan of ['brand', 'model_name']) {
+    const deger = nitelikler[alan];
+    if (deger !== undefined && deger !== null && (typeof deger !== 'string' || !kameraAdiGuvenliMi('', deger))) return false;
+  }
+  return kameraAdiGuvenliMi(varlik.entity_id, nitelikler.friendly_name ?? '');
 }
 
 /** 1.4.0: serbest metin (medya başlığı, takvim/yapılacaklar başlığı, bildirim metni, birim...) kapı kuralından geçer mi? */
@@ -303,6 +358,8 @@ module.exports = {
   EK_DIL_ORNEKLERI,
   DOOR_ISTISNA,
   YASAK_CIHAZ_SINIFLARI,
+  PERDE_SINIFLARI,
+  KAMERA_YASAK_BELIRTEC_BASLARI,
   UYE_YASAK_ALANLARI,
   sadelestir,
   alanAl,
@@ -310,6 +367,9 @@ module.exports = {
   uyelerGuvenliMi,
   seceneklerGuvenliMi,
   guvenliVarlikMi,
+  kameraAdiGuvenliMi,
+  kameraKimligiGuvenliMi,
+  kameraGuvenliMi,
   metinGuvenliMi,
   guvenliMetin,
   metinListesiSuz,

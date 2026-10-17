@@ -12,6 +12,8 @@
  *  - Yalnız bildirim: indirme ve kurulum YOKTUR. Sürüm sayfası, kullanıcı bildirime ya da düğmeye tıklayınca varsayılan tarayıcıda açılır
  *    (adres ya sabittir ya da yanıttaki github.com/emre-pn/ha-tray-panel/releases/ adresidir; başka bir adres kabul edilmez).
  *  - Yanıt bozuksa, çok büyükse ya da başka bir adrese yönlendirilmişse yok sayılır; hata iletisi/adresi günlüğe yazılmaz.
+ *  - "Ön sürümleri de göster" (o-51, `onSurumlerMi`): yalnız açıkken "en son sürüm" yerine sürüm LİSTESİ (aynı depo, aynı kısıtlar) okunur ve
+ *    ön sürümler de sayılır; kapalıyken davranış değişmez (ön sürüm hiçbir zaman önerilmez).
  */
 
 const nodeFs = require('node:fs');
@@ -20,6 +22,7 @@ const nodePath = require('node:path');
 const SURUM_API_ADRESI = 'https://api.github.com/repos/emre-pn/ha-tray-panel/releases/latest';
 const SURUM_SAYFASI = 'https://github.com/emre-pn/ha-tray-panel/releases/latest';
 const SAYFA_ONEKI = 'https://github.com/emre-pn/ha-tray-panel/releases/';
+const SURUM_LISTE_API_ADRESI = 'https://api.github.com/repos/emre-pn/ha-tray-panel/releases?per_page=15';
 const API_ONEKI = 'https://api.github.com/';
 const DENETIM_ARALIGI_MS = 24 * 60 * 60 * 1000;
 const ELLE_ARALIK_MS = 60 * 1000;
@@ -29,6 +32,7 @@ const DURUM_DOSYASI = 'surum-denetimi.json';
 const KULLANICI_AJANI = 'ev-paneli-surum-denetimi'; // GitHub API bir User-Agent ister; sürüm ya da makine bilgisi içermez
 
 const SURUM_DESENI = /^v?(\d{1,5})\.(\d{1,5})\.(\d{1,5})$/;
+const ON_SURUM_DESENI = /^v?(\d{1,5})\.(\d{1,5})\.(\d{1,5})(?:-([0-9A-Za-z-]{1,16}(?:\.[0-9A-Za-z-]{1,16}){0,3}))?$/;
 
 /** "1.4.0" / "v1.4.0" -> { ana, alt, yama }; ön sürüm ("1.4.0-beta"), eksik ya da bozuk metin -> null. */
 function surumCoz(metin) {
@@ -39,6 +43,44 @@ function surumCoz(metin) {
 
 function surumMetni(s) {
   return `${s.ana}.${s.alt}.${s.yama}`;
+}
+
+/** Ön sürümü de kabul eden çözümleme: "1.5.0-beta.1" -> { ana, alt, yama, on: 'beta.1' }; kararlı sürümde on: null. Bozuk -> null. */
+function surumAyristir(metin) {
+  if (typeof metin !== 'string' || metin.length > 48) return null;
+  const e = ON_SURUM_DESENI.exec(metin.trim());
+  return e ? { ana: Number(e[1]), alt: Number(e[2]), yama: Number(e[3]), on: e[4] ?? null } : null;
+}
+
+function surumMetniOn(s) {
+  return `${surumMetni(s)}${s.on ? `-${s.on}` : ''}`;
+}
+
+/** Semver önceliği: ön eki olmayan sürüm, aynı numaralı ön sürümden büyüktür; ön ek parçaları sayıysa sayısal, değilse metin sırasıyla. */
+function surumKarsilastirOn(a, b) {
+  const x = surumAyristir(a);
+  const y = surumAyristir(b);
+  if (!x || !y) return null;
+  for (const alan of ['ana', 'alt', 'yama']) {
+    if (x[alan] !== y[alan]) return x[alan] > y[alan] ? 1 : -1;
+  }
+  if (x.on === y.on) return 0;
+  if (x.on === null) return 1;
+  if (y.on === null) return -1;
+  const p = x.on.split('.');
+  const q = y.on.split('.');
+  for (let i = 0; i < Math.max(p.length, q.length); i += 1) {
+    if (p[i] === undefined) return -1;
+    if (q[i] === undefined) return 1;
+    if (p[i] === q[i]) continue;
+    const pSayi = /^\d+$/.test(p[i]);
+    const qSayi = /^\d+$/.test(q[i]);
+    if (pSayi && qSayi) return Number(p[i]) > Number(q[i]) ? 1 : -1;
+    if (pSayi) return -1; // sayısal parça metinsel parçadan küçüktür
+    if (qSayi) return 1;
+    return p[i] > q[i] ? 1 : -1;
+  }
+  return 0;
 }
 
 /** a ve b sürüm metni: a > b -> 1, a < b -> -1, eşit -> 0; çözülemeyen -> null. */
@@ -79,14 +121,39 @@ function yanitiCoz(govde) {
   return { surum: surumMetni(s), sayfa: surumSayfasiGecerliMi(veri.html_url) ? veri.html_url : SURUM_SAYFASI };
 }
 
+/**
+ * GitHub "releases" LİSTESİ yanıt gövdesi (ön sürümler dahil): taslaklar atlanır, çözülemeyen etiketler atlanır, en yüksek sürüm seçilir.
+ * @returns {{ surum: string, sayfa: string, onSurum: boolean } | null}
+ */
+function listeyiCoz(govde) {
+  let liste;
+  try {
+    liste = JSON.parse(String(govde));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(liste)) return null;
+  let en = null;
+  for (const kayit of liste.slice(0, 30)) {
+    if (!kayit || typeof kayit !== 'object' || Array.isArray(kayit) || kayit.draft === true) continue;
+    const s = surumAyristir(kayit.tag_name);
+    if (!s) continue;
+    const metin = surumMetniOn(s);
+    if (en === null || surumKarsilastirOn(metin, en.surum) === 1) {
+      en = { surum: metin, sayfa: surumSayfasiGecerliMi(kayit.html_url) ? kayit.html_url : SURUM_SAYFASI, onSurum: s.on !== null };
+    }
+  }
+  return en;
+}
+
 const zamanMi = (d) => typeof d === 'number' && Number.isFinite(d) && d > 0;
 
 /** Kayıtlı durumu bilinen alanlara indirger (bozuk/yabancı içerik atılır). */
 function durumuDuzelt(ham) {
   const kaynak = ham && typeof ham === 'object' && !Array.isArray(ham) ? ham : {};
   const surum = (d) => {
-    const s = surumCoz(d);
-    return s ? surumMetni(s) : null;
+    const s = surumAyristir(d);
+    return s ? surumMetniOn(s) : null;
   };
   return {
     sonDenetim: zamanMi(kaynak.sonDenetim) ? kaynak.sonDenetim : 0,
@@ -128,6 +195,7 @@ function dosyaDeposu({ yol, fs = nodeFs, path = nodePath } = {}) {
  * @param {(url: string, secenek: object) => Promise<object>} g.fetch ağ (main.js: net.fetch); testte sahte
  * @param {string} g.mevcutSurum çalışan sürüm ("1.3.0")
  * @param {() => boolean} g.acikMi ayar `surumDenetimi` (kapalıyken hiç istek gitmez)
+ * @param {() => boolean} [g.onSurumlerMi] ayar `onSurumler`: açıkken sürüm listesi okunur, ön sürümler de sayılır
  * @param {{oku: () => object|null, yaz: (d: object) => void}} g.depo
  * @param {() => number} [g.simdi]
  * @param {(m: string) => void} [g.gunluk]
@@ -137,6 +205,7 @@ function surumDenetleyicisiOlustur({
   fetch,
   mevcutSurum,
   acikMi,
+  onSurumlerMi = () => false,
   depo,
   simdi = Date.now,
   gunluk = () => {},
@@ -157,12 +226,13 @@ function surumDenetleyicisiOlustur({
       /* yazılamadı: bellekte kalır */
     }
   };
-  const yeniMi = (surum) => surumKarsilastir(surum, mevcutSurum) === 1;
+  const yeniMi = (surum) => surumKarsilastirOn(surum, mevcutSurum) === 1;
 
   async function istekYap() {
+    const onSurumler = onSurumlerMi() === true;
     let yanit;
     try {
-      yanit = await fetch(SURUM_API_ADRESI, {
+      yanit = await fetch(onSurumler ? SURUM_LISTE_API_ADRESI : SURUM_API_ADRESI, {
         method: 'GET',
         headers: { Accept: 'application/vnd.github+json', 'User-Agent': KULLANICI_AJANI },
         credentials: 'omit',
@@ -185,7 +255,7 @@ function surumDenetleyicisiOlustur({
       return { sonuc: 'hata', neden: 'ag' };
     }
     if (typeof govde !== 'string' || govde.length > EN_COK_GOVDE) return { sonuc: 'hata', neden: 'buyuk' };
-    const cozulen = yanitiCoz(govde);
+    const cozulen = onSurumler ? listeyiCoz(govde) : yanitiCoz(govde);
     if (!cozulen) return { sonuc: 'hata', neden: 'yanit' };
     return { sonuc: 'tamam', ...cozulen };
   }
@@ -251,6 +321,7 @@ function surumDenetleyicisiOlustur({
 
 module.exports = {
   SURUM_API_ADRESI,
+  SURUM_LISTE_API_ADRESI,
   SURUM_SAYFASI,
   DENETIM_ARALIGI_MS,
   ELLE_ARALIK_MS,
@@ -259,8 +330,12 @@ module.exports = {
   DURUM_DOSYASI,
   surumCoz,
   surumKarsilastir,
+  surumAyristir,
+  surumMetniOn,
+  surumKarsilastirOn,
   surumSayfasiGecerliMi,
   yanitiCoz,
+  listeyiCoz,
   durumuDuzelt,
   dosyaDeposu,
   surumDenetleyicisiOlustur,

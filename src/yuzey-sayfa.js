@@ -28,6 +28,8 @@
   const Grafik = window.EvGrafik;
   const KaroGorunum = window.EvKaroGorunum || null; // 1.4.0 düzen (o-31): simge / renk / boyut doğrulaması
   const DuzenModulu = window.EvYuzeyDuzen || null; // 1.4.0 düzen (o-16, o-24): sayfa sekmeleri, ayrıntı bölmesi, sağ tık; yoksa panel eskisi gibi çalışır
+  const KameraModulu = window.EvYuzeyKamera || null; // 1.4.0 cihaz (o-48): kamera anlık görüntüsü bölümü (src/yuzey-kamera.js); yoksa panel kamerasız çalışır
+  const EylemModulu = window.EvYuzeyEylem || null; // 1.4.0 eylem grubu (o-12 geri al düğmesi...): src/yuzey-eylem.js; yoksa panel eskisi gibi çalışır
 
   let t = Dil.cevirmen('tr', Sozluk); // HTML varsayılanı Türkçedir; dil durumAl yanıtıyla ya da onDilDegisti ile gelir
 
@@ -36,6 +38,7 @@
     baglanti: document.getElementById('baglanti'),
     medya: document.getElementById('medya'),
     eski: document.getElementById('eski'),
+    sabitle: document.getElementById('sabitle'),
     serit: document.getElementById('serit'),
     sekmeler: document.getElementById('sekmeler'),
     bildirim: document.getElementById('bildirim'),
@@ -49,9 +52,22 @@
     ipucu: document.getElementById('ipucu'),
     haAc: document.getElementById('haAc'),
     ayarlarAc: document.getElementById('ayarlarAc'),
+    geriAl: document.getElementById('geriAl'),
+    gecikmeli: document.getElementById('gecikmeliSerit'), // 1.4.0 (o-15): bekleyen zamanlı eylemler şeridi
   };
 
   const SEVIYELER = [10, 20, 50, 100]; // palet: Shift+Enter ışık seviyeleri
+  // palet "*" (o-46): favori olmayan güvenli cihazlar; alan adları ana süreçteki ALANLAR ile aynıdır (src/lib/diger-cihazlar.js)
+  const DIGER_ALAN_ANAHTARLARI = {
+    light: 'yuzey.diger.alan.light',
+    switch: 'yuzey.diger.alan.switch',
+    fan: 'yuzey.diger.alan.fan',
+    input_boolean: 'yuzey.diger.alan.input_boolean',
+    humidifier: 'yuzey.diger.alan.humidifier',
+    scene: 'yuzey.diger.alan.scene',
+  };
+  const DIGER_DURUMLARI = ['acik', 'kapali', 'notr'];
+  const DIGER_YENIDEN_DENEME_MS = 5000; // liste alınamadıysa sonraki yazışta en erken bu kadar sonra yeniden denenir
   const PANEL_HAZIR = [10, 20, 50, 100]; // panel: ışık karosundaki hazır seviyeler (hiz-09)
   const PANEL_HAZIR_SIK = 20; // en sık kullanılan seviye (~%18 ortanca parlaklık): yalnız silik işaret alır; vurgu ışığın GERÇEK seviyesinindir (g-02)
   const IZGARA_KOLON = 3; // yuzey.css .izgara sütun sayısı (ok tuşu gezintisi mantıksal satırları buna göre keser)
@@ -73,12 +89,18 @@
   const OK_TUSLARI = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
 
   let mod = 'panel';
-  let model = { gruplar: [], sonlar: [], bilgi: null, sayfalar: [], ust: { canli: false, baglanti: 'kapali', medyaCaliyor: null, aktifCikis: null, hata: null, uyari: null, anahtarYok: false }, bildirim: null };
+  let model = { gruplar: [], sonlar: [], bilgi: null, kamera: null, sayfalar: [], eylem: null, ust: { canli: false, baglanti: 'kapali', medyaCaliyor: null, aktifCikis: null, hata: null, uyari: null, anahtarYok: false }, bildirim: null };
   let sorgu = '';
   let secili = 0;
   let seviyeAcik = false;
-  let seviyeSecili = 0;
+  let seviyeSecili = 0; // palet: seviye seçicisinin ya da "*" cihaz menüsünün seçili öğesi
+  let digerListe = { durum: 'bos', liste: [], tur: null, zaman: 0 }; // palet "*": durum 'bos' | 'yukleniyor' | 'hazir' | 'hata'; her gösterimde sıfırlanır
+  let digerBekliyor = false; // "*" satırı eylemi yanıt beklerken ikinci istek gönderilmez
   let donuk = 0; // sürüklenen kaydırıcı, basılı tutulan karo ya da basılı fare: bu sürece yeniden çizim ertelenir
+  // 1.4.0 etkileşim (o-20, o-23): ana süreç ayarını gönderir (yuzey:goster / yuzey:durum-al `etkilesim`). tekerlek: fare tekerleği ışık/ses değiştirsin mi;
+  // sabit: panel sabitli mi (dışarı tıklayınca kapanmaz). Geçersiz/eksik yük varsayılana düşer.
+  let etkilesim = { tekerlek: true, sabit: false };
+  const tekerlek = Kaydirici.tekerlekKapisi(); // kaydırma ile karo tekerleği çakışmasın (lib/kaydirici.js)
   let bekleyenModel = null;
   let modelImzasi = ''; // çizilen modelin JSON'u: değişmeyen model DOM'u yeniden kurmaz (basış/odak kaybolmasın)
   let imlecBasili = false; // herhangi bir fare/dokunma basışı sürüyor (bırakılana kadar yeniden çizim ertelenir)
@@ -147,6 +169,8 @@
     };
   }
 
+  let karoDuzeltici = null; // son modelDuzelt'in karo doğrulayıcısı: medya üst kartı (bilgi modülü) tam karoyu bununla doğrular
+
   function modelDuzelt(ham) {
     if (!ham || typeof ham !== 'object' || !Array.isArray(ham.gruplar)) return null;
     const karoDuzelt = function (k) {
@@ -174,9 +198,12 @@
         boyut: KaroGorunum ? KaroGorunum.boyutDuzelt(k.boyut) || 'normal' : 'normal',
       };
     };
+    karoDuzeltici = karoDuzelt;
     const gruplar = ham.gruplar
       .map(function (g) {
-        return { kod: sinirliMetin(g && g.kod, 20), etiket: sinirliMetin(g && g.etiket, 30), karolar: Array.isArray(g && g.karolar) ? g.karolar.map(karoDuzelt).filter(Boolean) : [] };
+        const grup = { kod: sinirliMetin(g && g.kod, 20), etiket: sinirliMetin(g && g.etiket, 30), karolar: Array.isArray(g && g.karolar) ? g.karolar.map(karoDuzelt).filter(Boolean) : [] };
+        if (g && g.oda === true && /^oda-[0-9a-f]{8}$/.test(grup.kod)) grup.oda = true; // 1.4.0 (o-14): oda grubu; başlığında "Odayı kapat"
+        return grup;
       })
       .filter(function (g) {
         return g.karolar.length > 0;
@@ -186,8 +213,10 @@
     return {
       gruplar: gruplar,
       sonlar: sonlar,
-      bilgi: BilgiModulu ? BilgiModulu.modelDuzelt(ham.bilgi) : null,
+      bilgi: BilgiModulu ? BilgiModulu.modelDuzelt(ham.bilgi, karoDuzelt) : null, // medya üst kartı tam karo ister (cihaz kartı alanları)
+      kamera: KameraModulu ? KameraModulu.modelDuzelt(ham.kamera) : null,
       sayfalar: DuzenModulu ? DuzenModulu.sayfalariDuzelt(ham.sayfalar) : [],
+      eylem: EylemModulu ? EylemModulu.modelDuzelt(ham.eylem) : null,
       bildirim: bildirimDuzelt(ham.bildirim),
       ust: {
         canli: u.canli === true,
@@ -333,6 +362,90 @@
     }
   }
 
+  // ---------------------------------------------------------------- etkileşim: fare tekerleği (o-20) ve panel sabitleme (o-23)
+
+  function etkilesimAyarla(ham) {
+    if (!ham || typeof ham !== 'object') return;
+    etkilesim = { tekerlek: ham.tekerlek !== false, sabit: ham.sabit === true };
+    sabitGoster();
+  }
+
+  /** Başlıktaki iğne düğmesi: yalnız panelde görünür (palet başlıksızdır); basılıysa panel dışarı tıklayınca kapanmaz. */
+  function sabitGoster() {
+    if (!el.sabitle) return;
+    el.sabitle.setAttribute('aria-pressed', etkilesim.sabit ? 'true' : 'false');
+    if (etkilesim.sabit) el.sabitle.classList.add('basili');
+    else el.sabitle.classList.remove('basili');
+    const metin = t(etkilesim.sabit ? 'yuzey.sabit.kapat' : 'yuzey.sabit.ac');
+    el.sabitle.title = metin;
+    el.sabitle.setAttribute('aria-label', metin);
+  }
+
+  /** Panel içeriği kaydırılabiliyor mu (taşan içerik)? Kaydırılabiliyorsa tekerlek karolarda yalnız kaydırıcı üstünde çalışır. */
+  function kaydirilabilirMi() {
+    return !!el.icerik && el.icerik.scrollHeight > el.icerik.clientHeight + 1;
+  }
+
+  /**
+   * o-20: fare tekerleğiyle sayı değiştirme (ışık parlaklığı, medya sesi; her çentik ±5). Tekerlek olayları bir "dizi" olarak ele alınır:
+   * yeni dizi yalnız tekerlek 400 ms boştaysa başlar (sayfa kaydırılırken karo değer değiştirmez), başladığı karoda kalır; panel
+   * kaydırılabiliyorsa yalnız `dar` öğenin (kaydırıcı) üstünde başlar. Ara değerler 200 ms'de bire indirilir (kaydırıcıyla aynı kısıcı),
+   * tekerlek 250 ms durunca SON değer gönderilir; sürerken panel yeniden çizilmez.
+   * @param {HTMLElement} oge tekerleği dinleyen öğe (karonun tamamı)
+   * @param {{dar?: HTMLElement, oku: () => (number|null), enAz: number, enCok: number, goster: (deger:number) => void,
+   *   gonder: (deger:number, son:boolean) => void, kullanilabilir?: () => boolean}} secenek
+   */
+  function tekerlekBagla(oge, secenek) {
+    if (mod !== 'panel' || !oge || typeof oge.addEventListener !== 'function') return;
+    const sahip = {};
+    const kisici = Kaydirici.kisici(function (deger, son) {
+      secenek.gonder(deger, son === true);
+    });
+    let hedef = null;
+    let bitisZamanlayicisi = null;
+    let donukta = false;
+    function bitir() {
+      if (bitisZamanlayicisi !== null) clearTimeout(bitisZamanlayicisi);
+      bitisZamanlayicisi = null;
+      if (hedef !== null) {
+        const son = hedef;
+        hedef = null;
+        kisici.son(son);
+      }
+      if (donukta) {
+        donukta = false;
+        donukBitir();
+      }
+    }
+    oge.addEventListener(
+      'wheel',
+      function (olay) {
+        if (!etkilesim.tekerlek || olay.ctrlKey === true || olay.shiftKey === true) return;
+        if (typeof secenek.kullanilabilir === 'function' && !secenek.kullanilabilir()) return;
+        const dar = secenek.dar;
+        const izinli = !kaydirilabilirMi() || (!!dar && typeof dar.contains === 'function' && dar.contains(olay.target));
+        const sonuc = tekerlek.dene(sahip, olay.deltaY, olay.deltaMode, izinli);
+        if (!sonuc.ele) return;
+        olay.preventDefault();
+        if (sonuc.adim === 0) return;
+        const mevcut = hedef !== null ? hedef : secenek.oku();
+        const yeni = Kaydirici.tekerlekDegeri(mevcut, sonuc.adim, secenek.enAz, secenek.enCok);
+        if (yeni === null || (hedef === null && yeni === mevcut)) return; // değer bilinmiyor ya da zaten sınırda
+        hedef = yeni;
+        if (!donukta) {
+          donukta = true;
+          donukBaslat();
+        }
+        secenek.goster(yeni);
+        kisici.cagir(yeni);
+        if (bitisZamanlayicisi !== null) clearTimeout(bitisZamanlayicisi);
+        bitisZamanlayicisi = setTimeout(bitir, Kaydirici.TEKERLEK_BITIS_MS);
+      },
+      { passive: false },
+    );
+    tekrarlayicilar.push(bitir); // pencere odağını kaybedince / gösterilince yarım kalan dizi bitirilir (son değer gider)
+  }
+
   function tumTutmalariBirak() {
     Array.from(etkinTutmalar).forEach(function (t) {
       t.birak();
@@ -421,6 +534,39 @@
     ciz();
   }
 
+  /** Kamera bölümü yeniden çizim istedi (görüntü geldi): sürükleme / basılı tutma sürüyorsa bitince çizilir (bilgi bölümüyle aynı kural). */
+  const kamera =
+    KameraModulu && typeof kopru.kamera === 'function'
+      ? KameraModulu.olustur({
+          t: function (anahtar, degisken) {
+            return t(anahtar, degisken);
+          },
+          olustur: olustur,
+          odakKaydet: odakKaydet,
+          satirEkle: function (ogeler) {
+            if (mod === 'panel' && ogeler.length > 0) panelSatirlari.push(ogeler);
+          },
+          kamera: function (kimlik) {
+            return kopru.kamera(kimlik);
+          },
+          yenidenCiz: bilgiYenidenCiz,
+          simdi: function () {
+            return Date.now();
+          },
+          zamanlayici: {
+            setTimeout: function (islev, ms) {
+              return setTimeout(islev, ms);
+            },
+            clearTimeout: function (kimlik) {
+              clearTimeout(kimlik);
+            },
+          },
+          acikMi: function () {
+            return mod === 'panel' && document.hidden !== true; // gizli pencere kamera istemez (ana süreç zaten reddeder)
+          },
+        })
+      : null;
+
   const bilgi =
     BilgiModulu && BilgiBicim && Grafik
       ? BilgiModulu.olustur({
@@ -441,6 +587,13 @@
           },
           oku: function (istek) {
             return typeof kopru.oku === 'function' ? kopru.oku(istek) : Promise.reject(new Error('oku yok'));
+          },
+          // Medya üst kartı: oynatıcının cihaz kartı (yuzey-kartlar.js). `kartlar` aşağıda kurulur; çağrı çizim sırasında olduğundan hazırdır.
+          medyaKarti: function (karo) {
+            return kartlar && kartlar.kartMi(karo) ? kartlar.kartCiz(karo) : null;
+          },
+          medyaKaroDuzelt: function (karo) {
+            return karoDuzeltici ? karoDuzeltici(karo) : null;
           },
           calistir: calistir,
           basiliTutma: function (karo, gorsel, ekYuk, bitti) {
@@ -641,6 +794,34 @@
       })
     : null;
 
+  // 1.4.0 eylem grubu (o-12 geri al düğmesi...): src/yuzey-eylem.js. Yüklenmediyse null kalır ve alt şerit bugünkü gibidir.
+  const eylemBolumu = EylemModulu
+    ? EylemModulu.kur({
+        kopru: kopru,
+        el: { geriAl: el.geriAl, gecikmeli: el.gecikmeli },
+        saatMetni: function (ms) {
+          return bildirimZamani(ms);
+        },
+        cevir: function (anahtar, degiskenler) {
+          return t(anahtar, degiskenler);
+        },
+        simdi: function () {
+          return Date.now();
+        },
+        zaman: {
+          setTimeout: function (islev, ms) {
+            return setTimeout(islev, ms);
+          },
+          clearTimeout: function (id) {
+            clearTimeout(id);
+          },
+        },
+        ipucu: function (metin) {
+          ipucuGoster(metin);
+        },
+      })
+    : null;
+
   // ---------------------------------------------------------------- panel
 
   // 1.4.0 cihaz kartları (iklim, medya, süpürge, seçici, sayı, zamanlayıcı, vantilatör, nem alıcı, ışık rengi): yuzey-kartlar.js.
@@ -664,6 +845,19 @@
           tekrarlayicilar.push(islev);
         },
         karoDugmesi: karoDugmesi,
+        // Albüm kapağı: ana süreç HA'dan çeker, `data:` adresi (ya da null) döner; kapak yoksa/alınamazsa kart kapaksız çizilir.
+        kapakIste: function (kimlik) {
+          if (typeof kopru.oku !== 'function') return Promise.resolve(null);
+          return kopru.oku({ tur: 'kapak', kimlik: kimlik }).then(
+            function (yanit) {
+              return yanit && yanit.ok === true && typeof yanit.veri === 'string' ? yanit.veri : null;
+            },
+            function () {
+              return null;
+            },
+          );
+        },
+        tekerlekBagla: tekerlekBagla,
       })
     : null;
 
@@ -813,6 +1007,26 @@
       }
     });
     kutu.appendChild(aralik);
+    // o-20: fare tekerleği parlaklığı ±5 değiştirir (yalnız açık ve ulaşılabilir ışıkta; kapalı ışığı tekerlek açmaz)
+    tekerlekBagla(kutu, {
+      dar: aralik,
+      kullanilabilir: function () {
+        return karo.durum === 'acik' && karo.kullanilabilir === true;
+      },
+      oku: function () {
+        // Gösterilen kaydırıcı değeri esas alınır: model, son gönderimden sonra HA yanıtı gelene dek eski kalabilir (art arda diziler geri sıçramasın).
+        const gosterilen = Number(aralik.value);
+        return Number.isFinite(gosterilen) ? gosterilen : karo.yuzde;
+      },
+      enAz: 1,
+      enCok: 100,
+      goster: function (deger) {
+        aralik.value = String(deger);
+      },
+      gonder: function (deger, son) {
+        calistir({ kimlik: karo.id, parlaklik: deger, sonDeger: son === true }, karo, aralik);
+      },
+    });
     const renkler = kartlar ? kartlar.isikRengi(karo) : null; // 1.4.0 (o-02): beyaz tonu + renk paleti; cihaz renk desteklemiyorsa null
     if (renkler) kutu.appendChild(renkler);
     if (duzen && detaydaMi !== true) duzen.karoyuBagla(karo, ana, kutu); // 1.4.0 düzen (o-16): uzun basma, Shift+Enter, sağ tık, "⋯" (ayrıntı bölmesinde değil)
@@ -908,6 +1122,18 @@
    * 1 / 2 / 3 sütun kaplar (düzen modülü yoksa 1) ve sığmazsa sonraki görsel satıra geçer — ok gezintisi bu satırları izler.
    */
   function izgarayaKaroEkle(izgara, karo, durum) {
+    if (karo.alan === 'sensor' || karo.alan === 'binary_sensor') {
+      // Favori sensör (salt okunur): özel sayfada da "Tümü"deki sensör karosuyla görünür; eylem düğmesi değildir (src/yuzey-bilgi.js)
+      const sensor = bilgi ? bilgi.sayfaSensoru(karo) : null;
+      if (sensor) {
+        if (durum.doluluk + 1 > IZGARA_KOLON) durum.bosalt();
+        izgara.appendChild(sensor);
+        durum.bekleyen.push(sensor);
+        durum.doluluk += 1;
+        if (durum.doluluk >= IZGARA_KOLON) durum.bosalt();
+        return;
+      }
+    }
     if (karo.parlaklikKontrol) {
       durum.bosalt();
       izgara.appendChild(isikKarosu(karo));
@@ -981,7 +1207,9 @@
     }
     const parcalar = [];
     const ayrinti = duzen ? duzen.ayrintiKaro(tumKarolar()) : null;
-    const sayfa = duzen && !ayrinti ? duzen.seciliSayfa(model, tumKarolar()) : null;
+    // Sensör favorileri genel gruplardan çıkarılıp bilgi bölümüne taşınır (bilgi-modeli.js bilgiBolumunuEkle); özel sayfa üyeleri arasında
+    // yine bulunabilsin diye sayfa karoları sensör karolarıyla birlikte aranır.
+    const sayfa = duzen && !ayrinti ? duzen.seciliSayfa(model, tumKarolar().concat(bilgi ? bilgi.sensorKarolari() : [])) : null;
     if (ayrinti) {
       parcalar.push(ayrintiBolumu(ayrinti));
     } else if (sayfa) {
@@ -995,7 +1223,14 @@
       if (son) parcalar.push(son);
       model.gruplar.forEach(function (g) {
         const bolum = olustur('section', 'bolum grup-' + g.kod);
-        bolum.appendChild(olustur('h2', 'bolum-baslik', g.etiket));
+        const baslik = olustur('h2', 'bolum-baslik', g.etiket);
+        const odaUst = g.oda === true && eylemBolumu ? eylemBolumu.odaBasligi(g, baslik, odakKaydet) : null; // 1.4.0 (o-14): oda grubunda "Odayı kapat"
+        if (odaUst) {
+          bolum.appendChild(odaUst.kap);
+          panelSatirlari.push([odaUst.dugme]);
+        } else {
+          bolum.appendChild(baslik);
+        }
         grupSatirlari(g).forEach(function (satir) {
           const izgara = olustur('div', 'izgara' + (satir.ad ? ' alt-' + satir.ad : ''));
           const durum = izgaraDurumu(); // ızgarada aynı görsel satıra düşecek karolar (ışık karosu tam genişlik: satırı böler)
@@ -1008,6 +1243,7 @@
         parcalar.push(bolum);
       });
       if (bilgi) bilgi.altParcalar().forEach(function (p) { parcalar.push(p); });
+      if (kamera) kamera.parcalar().forEach(function (p) { parcalar.push(p); }); // 1.4.0 (o-48): en altta, yalnız Ayarlar'da onaylı kameralar varsa
     }
     if (parcalar.length === 0) parcalar.push(bosDurum());
     el.icerik.replaceChildren.apply(el.icerik, parcalar);
@@ -1024,8 +1260,21 @@
         return s.id === karo.id;
       });
       // alan + ozellik: servis komutları ("klima 24", "masa sicak", "tv ses 30") cihazın kendi listelerine / aralığına göre çözülür (lib/arama.js alanKomutu)
-      return { etiket: karo.etiket, grupEtiketi: karo.grupEtiketi, parlaklikKontrol: karo.parlaklikKontrol, sonSira: sonSira, alan: karo.alan, ozellik: karo.ozellik, karo: karo };
+      // yikici + kullanilabilir: gecikmeli eylem satırları ("fan 30dk") onay isteyen ya da kullanılamayan karoyu hiç önermez (lib/arama.js gecikmeCoz)
+      return { etiket: karo.etiket, grupEtiketi: karo.grupEtiketi, parlaklikKontrol: karo.parlaklikKontrol, sonSira: sonSira, alan: karo.alan, ozellik: karo.ozellik, yikici: karo.yikici, kullanilabilir: karo.kullanilabilir, karo: karo };
     });
+  }
+
+  /** Palet satırının gecikmeli eylemi: { yon: 'ac'|'kapat'|'sureli', dakika: tam sayı } ya da null. Asıl doğrulama ana süreçtedir. */
+  function gecikmeDuzelt(g) {
+    if (!g || typeof g !== 'object' || ['ac', 'kapat', 'sureli'].indexOf(g.yon) < 0 || !Number.isInteger(g.dakika)) return null;
+    return { yon: g.yon, dakika: g.dakika };
+  }
+
+  /** Gecikmeli satırın rozeti: "10 dk sonra kapat", "30 dk sonra aç", "Aç, 30 dk sonra kapat". */
+  function gecikmeRozeti(g) {
+    const sure = EylemModulu ? EylemModulu.sureMetni(g.dakika, t) : String(g.dakika);
+    return t(g.yon === 'ac' ? 'yuzey.rozet.gecikmeAc' : g.yon === 'sureli' ? 'yuzey.rozet.gecikmeSureli' : 'yuzey.rozet.gecikmeKapat', { sure: sure });
   }
 
   /** Palet satırının komutu cihazda geçerli değil mi? Komut tanındı ama aralık dışı ('sinir') ya da cihaz desteklemiyor ('desteklenmiyor'). */
@@ -1045,6 +1294,7 @@
   function satirOnayliMi(satir) {
     const karo = satir.karo;
     if (satirKomutHatasi(satir)) return false; // geçersiz komut hiçbir şey göndermez
+    if (satir.gecikme) return false; // gecikmeli eylem: planı kurmak zararsızdır; zamanı gelince hat yine kuralları uygular (onay isteyen karo zaten önerilmez)
     if (satir.eylem) return servisOnayliMi(karo, satir.eylem.servis);
     if (karo.varsayilanEylem === false) return false;
     return karo.yikici;
@@ -1058,8 +1308,232 @@
     return yuk;
   }
 
+  const DEGISIM_ANAHTARLARI = { acildi: 'yuzey.degisen.acildi', kapandi: 'yuzey.degisen.kapandi', calisti: 'yuzey.degisen.calisti', degisti: 'yuzey.degisen.degisti' };
+
+  /** Son değişen satırının rozeti: "Açıldı · 3 dk önce". */
+  function degisimMetni(d) {
+    const once = EylemModulu ? EylemModulu.oncekiMetni(Date.now() - d.zaman, t) : '';
+    return t(DEGISIM_ANAHTARLARI[d.tur]) + (once !== '' ? ' · ' + once : '');
+  }
+
+  /** Favori olmayan, ama ana süreçte izlenen varlığın salt bilgi karosu (palet "@"): eylemi yoktur, durum metni yazılmaz. */
+  function degisenBilgiKarosu(d) {
+    return {
+      id: d.kimlik,
+      etiket: d.ad,
+      grup: '',
+      grupEtiketi: '',
+      altGrup: null,
+      alan: d.alan,
+      durum: 'notr',
+      yuzde: null,
+      kullanilabilir: true,
+      ulasilamiyor: false,
+      yikici: false,
+      parlaklikKontrol: false,
+      tekrar: false,
+      ozellik: null,
+      varsayilanEylem: true, // örnek komut rozeti ve ozet çizilmesin; asıl engel satir.salt (paletCalistir)
+      onayliServisler: [],
+      simge: null,
+      renk: null,
+      boyut: 'normal',
+    };
+  }
+
+  /**
+   * Palet "@" (o-18): son değişenler, en yeni üstte; "@salon" adı süzer. Favori olan varlık gerçek karosuyla gelir (Enter normal eylem
+   * yolundan çalışır); favori olmayan satır yalnız bilgidir. Liste ana süreçten gelir ve kapı kuralından geçmiştir.
+   */
+  function degisenPaletSatirlari(metin) {
+    const bolum = model.eylem;
+    const karolar = new Map();
+    tumKarolar().forEach(function (k) {
+      karolar.set(k.id, k);
+    });
+    const satirlar = Arama.degisenSatirlari(metin, bolum.degisenler)
+      .slice(0, PALET_SATIR_SINIRI)
+      .map(function (r) {
+        const gercek = karolar.get(r.degisen.kimlik);
+        return {
+          karo: gercek || degisenBilgiKarosu(r.degisen),
+          etiket: r.degisen.ad,
+          konumlar: r.konumlar,
+          parlaklik: null,
+          kapat: false,
+          desteklenmiyor: false,
+          eylem: null,
+          komutHatasi: null,
+          gecikme: null,
+          degisim: { tur: r.degisen.tur, zaman: r.degisen.zaman },
+          salt: !gercek,
+        };
+      });
+    let bos = '';
+    if (satirlar.length === 0) bos = t(!bolum.degisenAcik ? 'yuzey.degisen.kapali' : bolum.degisenler.length > 0 ? 'yuzey.palet.eslesmeYok' : 'yuzey.degisen.bos');
+    return { baslik: t('yuzey.degisen.baslik'), etiket: t('yuzey.degisen.baslik'), bos: bos, satirlar: satirlar };
+  }
+
+  // ---- palet "*" (o-46): favori olmayan güvenli cihazlar. Liste, süzgeç ve eylem ana süreçtedir (kapı kuralı, eylem sınıfı, servis izin listesi);
+  // sayfa yalnız gösterir ve { kimlik, islem } ister. Ayar kapalıysa ana süreç 'kapali' döner ve yalnız bilgi satırı görünür.
+
+  /** Ana süreçten gelen satırı biçimce doğrular (asıl süzgeç ana süreçtedir); geçersizse null. */
+  function digerSatiriDuzelt(d) {
+    if (!d || typeof d.kimlik !== 'string' || typeof d.ad !== 'string' || d.ad === '' || !Object.prototype.hasOwnProperty.call(DIGER_ALAN_ANAHTARLARI, d.alan) || DIGER_DURUMLARI.indexOf(d.durum) < 0) return null;
+    return { kimlik: d.kimlik, ad: d.ad, alan: d.alan, durum: d.durum, oda: typeof d.oda === 'string' ? d.oda : '' };
+  }
+
+  function digerSorgusuVarMi() {
+    return !!Arama.digerSorgusu && !!Arama.digerSorgusu(sorgu);
+  }
+
+  /** "*" aranınca liste bir kez istenir (ana süreç 2 dk önbellekler); alınamazsa 5 sn sonraki yazışta yeniden denenir, 'kapali' yeniden denenmez. */
+  function digerListesiniIste() {
+    if (typeof kopru.digerCihazlar !== 'function') {
+      digerListe = { durum: 'hata', liste: [], tur: 'kapali', zaman: Date.now() }; // eski preload: köprü yok, özellik kapalı sayılır
+      return;
+    }
+    if (digerListe.durum === 'yukleniyor' || digerListe.durum === 'hazir') return;
+    if (digerListe.durum === 'hata' && (digerListe.tur === 'kapali' || Date.now() - digerListe.zaman < DIGER_YENIDEN_DENEME_MS)) return;
+    const no = gosterimNo;
+    digerListe = { durum: 'yukleniyor', liste: [], tur: null, zaman: Date.now() };
+    const bitti = function (yeni) {
+      if (no !== gosterimNo || mod !== 'palet') return; // palet kapanıp yeniden açıldı: eski yanıt yeni gösterime girmez
+      digerListe = yeni;
+      if (digerSorgusuVarMi()) paletCiz();
+    };
+    Promise.resolve(kopru.digerCihazlar()).then(
+      function (yanit) {
+        if (yanit && yanit.ok === true && Array.isArray(yanit.liste)) bitti({ durum: 'hazir', liste: yanit.liste.map(digerSatiriDuzelt).filter(Boolean), tur: null, zaman: Date.now() });
+        else bitti({ durum: 'hata', liste: [], tur: yanit && typeof yanit.tur === 'string' ? yanit.tur : 'hata', zaman: Date.now() });
+      },
+      function () {
+        bitti({ durum: 'hata', liste: [], tur: 'hata', zaman: Date.now() });
+      },
+    );
+  }
+
+  /** "*" satırının salt görünüm karosu: eylem yolu yoktur (yikici: false, parlaklik yok); işlem ana sürece { kimlik, islem } olarak gider. */
+  function digerKaro(d) {
+    const alanAdi = t(DIGER_ALAN_ANAHTARLARI[d.alan]);
+    return {
+      id: d.kimlik,
+      etiket: d.ad,
+      grup: '',
+      grupEtiketi: d.oda !== '' ? d.oda + ' · ' + alanAdi : alanAdi,
+      altGrup: null,
+      alan: d.alan,
+      durum: d.durum,
+      yuzde: null,
+      kullanilabilir: true,
+      ulasilamiyor: false,
+      yikici: false,
+      parlaklikKontrol: false,
+      tekrar: false,
+      ozellik: null,
+      varsayilanEylem: true,
+      onayliServisler: [],
+      simge: null,
+      renk: null,
+      boyut: 'normal',
+    };
+  }
+
+  function digerPaletSatirlari(cozum) {
+    digerListesiniIste();
+    const baslik = t('yuzey.diger.baslik');
+    const satirlar =
+      digerListe.durum === 'hazir'
+        ? Arama.digerSatirlari(cozum, digerListe.liste)
+            .slice(0, PALET_SATIR_SINIRI)
+            .map(function (r) {
+              return { karo: digerKaro(r.diger), etiket: r.diger.ad, konumlar: r.konumlar, parlaklik: null, kapat: false, desteklenmiyor: false, eylem: null, komutHatasi: null, gecikme: null, diger: r.diger };
+            })
+        : [];
+    let bos = '';
+    if (satirlar.length === 0) {
+      if (digerListe.durum === 'hata') bos = t(digerListe.tur === 'kapali' ? 'yuzey.diger.kapali' : 'yuzey.diger.hata');
+      else if (digerListe.durum === 'hazir') bos = t(digerListe.liste.length > 0 ? 'yuzey.diger.eslesmeYok' : 'yuzey.diger.bos');
+      else bos = t('yuzey.diger.yukleniyor');
+    }
+    return { baslik: baslik, etiket: baslik, bos: bos, satirlar: satirlar };
+  }
+
+  /** Shift+Enter menüsü: sahne "çalıştır" (kapatma yok); diğerleri "aç / kapat"; her satırda "favoriye ekle" ve "Home Assistant'ta aç". */
+  function digerMenuOgeleri(d) {
+    const ogeler = d.alan === 'scene' ? [{ ad: 'ac', anahtar: 'yuzey.diger.calistir' }] : [{ ad: 'ac', anahtar: 'yuzey.diger.ac' }, { ad: 'kapat', anahtar: 'yuzey.diger.kapat' }];
+    ogeler.push({ ad: 'favori', anahtar: 'yuzey.diger.favori' }, { ad: 'haAc', anahtar: 'yuzey.diger.haAc' });
+    return ogeler;
+  }
+
+  /** Seçili satırın açık menüsü ya da seviye seçicisindeki öğe sayısı (sol/sağ ok için). */
+  function menuUzunlugu(satir) {
+    return satir && satir.diger ? digerMenuOgeleri(satir.diger).length : SEVIYELER.length;
+  }
+
+  function digerUygunDegilMi(tur) {
+    return tur === 'bulunamadi' || tur === 'yasak' || tur === 'kaynak-izinsiz' || tur === 'gecersiz';
+  }
+
+  /** Enter / tıklama: sahne çalıştırılır, diğerleri aç-kapa yapılır (toggle). Menüden 'ac' | 'kapat' | 'favori' | 'haAc' gelir. */
+  function paletDigerIslem(satir, islem) {
+    const d = satir.diger;
+    if (islem === 'haAc') {
+      kopru.haAc();
+      return;
+    }
+    if (digerBekliyor) return;
+    const no = gosterimNo;
+    digerBekliyor = true;
+    const bitir = function () {
+      digerBekliyor = false;
+    };
+    seviyeAcik = false;
+    if (islem === 'favori') {
+      if (typeof kopru.digerFavoriEkle !== 'function') return bitir();
+      Promise.resolve(kopru.digerFavoriEkle(d.kimlik)).then(
+        function (sonuc) {
+          bitir();
+          if (no !== gosterimNo || mod !== 'palet') return;
+          const eklendi = !!sonuc && (sonuc.ok === true || sonuc.tur === 'zaten-var');
+          if (eklendi) digerListe = { durum: 'hazir', liste: digerListe.liste.filter(function (x) { return x.kimlik !== d.kimlik; }), tur: null, zaman: digerListe.zaman }; // artık favori: listeden çıkar
+          else if (sonuc && sonuc.tur === 'bulunamadi') digerListe = { durum: 'bos', liste: [], tur: null, zaman: 0 };
+          ipucuGoster(t(eklendi ? 'yuzey.ipucu.digerFavoriEklendi' : sonuc && sonuc.tur === 'dolu' ? 'yuzey.ipucu.digerFavoriDolu' : 'yuzey.ipucu.digerFavoriOlmadi', { etiket: d.ad }));
+          paletCiz();
+        },
+        function () {
+          bitir();
+          if (no === gosterimNo && mod === 'palet') ipucuGoster(t('yuzey.ipucu.digerFavoriOlmadi', { etiket: d.ad }));
+        },
+      );
+      return;
+    }
+    if (typeof kopru.digerCalistir !== 'function') return bitir();
+    Promise.resolve(kopru.digerCalistir({ kimlik: d.kimlik, islem: islem })).then(
+      function (sonuc) {
+        bitir();
+        if (no !== gosterimNo || mod !== 'palet') return;
+        if (sonuc && sonuc.ok === true) {
+          kopru.kapat(); // başarıda palet kapanır; sonucu ana süreç bildirir
+          return;
+        }
+        if (paletAcikKalmali(sonuc)) return; // hız sınırı / onay uyarısı zaten görünür
+        if (sonuc && sonuc.tur === 'bulunamadi') digerListe = { durum: 'bos', liste: [], tur: null, zaman: 0 }; // liste bayat: sonraki çizimde yeniden alınır
+        ipucuGoster(t(sonuc && digerUygunDegilMi(sonuc.tur) ? 'yuzey.ipucu.digerUygunDegil' : 'yuzey.ipucu.digerOlmadi', { etiket: d.ad }));
+      },
+      function () {
+        bitir();
+        if (no === gosterimNo && mod === 'palet') ipucuGoster(t('yuzey.ipucu.digerOlmadi', { etiket: d.ad }));
+      },
+    );
+  }
+
   /** Boş sorguda son kullanılanlar (en çok 5) ve altında kalan bütün favoriler; her bölümün ilk satırı başlık taşır. Aksi halde arama sonuçları. */
   function paletSatirlariniHesapla() {
+    const digerOnek = Arama.digerSorgusu ? Arama.digerSorgusu(sorgu) : null;
+    if (digerOnek) return digerPaletSatirlari(digerOnek);
+    const degisenOnek = model.eylem && Arama.degisenSorgusu ? Arama.degisenSorgusu(sorgu) : null;
+    if (degisenOnek) return degisenPaletSatirlari(degisenOnek.metin);
     if (sorgu.trim() === '') {
       const BOLUM_BASLIGI = { son: t('yuzey.bolum.son'), favori: t('yuzey.bolum.favoriler') };
       let oncekiBolum = null;
@@ -1086,6 +1560,8 @@
         // 1.4.0 servis komutu ("klima 24"): eylem {servis, veri, tur, deger}; tanınıp cihazda geçersizse komutHatasi ('sinir' | 'desteklenmiyor')
         eylem: r.eylem && typeof r.eylem === 'object' ? r.eylem : null,
         komutHatasi: r.komutHatasi === 'sinir' || r.komutHatasi === 'desteklenmiyor' ? r.komutHatasi : null,
+        // 1.4.0 (o-15) gecikmeli eylem ("salon 10 dk sonra kapat", "fan 30dk"): { yon: 'ac'|'kapat'|'sureli', dakika }
+        gecikme: gecikmeDuzelt(r.gecikme),
       };
     });
     // "liste süt" (o-07): ayarda hızlı liste seçiliyse ilk satır, metni o yapılacaklar listesine ekleyen satırdır. Metin YALNIZ
@@ -1166,9 +1642,37 @@
     paletYanitiniBekle(sozu); // başarıda palet kapanır; hata ipucu satırında kalır
   }
 
+  /** Gecikmeli eylem kur (o-15): başarıda palet kapanır (kuruldu bildirimini ana süreç verir); olmazsa nedeni ipucunda söylenir, palet açık kalır. */
+  function paletGeciktir(satir) {
+    const karo = satir.karo;
+    if (typeof kopru.geciktir !== 'function') return;
+    const no = gosterimNo;
+    Promise.resolve(kopru.geciktir({ kimlik: karo.id, yon: satir.gecikme.yon, dakika: satir.gecikme.dakika })).then(
+      function (sonuc) {
+        if (no !== gosterimNo || mod !== 'palet') return;
+        if (sonuc && sonuc.ok === true) {
+          kopru.kapat();
+          return;
+        }
+        const tur = sonuc && sonuc.tur;
+        const anahtar = tur === 'dolu' ? 'yuzey.ipucu.gecikmeDolu' : tur === 'kapali' ? 'yuzey.ipucu.gecikmeKapali' : tur === 'yasak' || tur === 'kaynak-izinsiz' || tur === 'gecersiz' ? 'yuzey.ipucu.gecikmeUygunDegil' : 'yuzey.ipucu.gecikmeOlmadi';
+        ipucuGoster(t(anahtar, { etiket: karo.etiket }));
+      },
+      function () {
+        if (no === gosterimNo && mod === 'palet') ipucuGoster(t('yuzey.ipucu.gecikmeOlmadi', { etiket: karo.etiket }));
+      },
+    );
+  }
+
   function paletCalistir(satir, seviye) {
     if (satir.hizli !== undefined) return paletHizliEkle(satir);
+    if (satir.diger) return paletDigerIslem(satir, satir.diger.alan === 'scene' ? 'ac' : 'degistir'); // "*" (o-46): Enter / tıklama = aç-kapa (sahne: çalıştır)
     const karo = satir.karo;
+    if (satir.salt === true) {
+      // "@" listesinde favori olmayan varlık: yalnız bilgi (eylem yolu yok)
+      ipucuGoster(t('yuzey.ipucu.degisenFavoriDegil', { etiket: karo.etiket }));
+      return;
+    }
     const yuk = { kimlik: karo.id };
     const hata = satirKomutHatasi(satir);
     if (hata && (seviye === undefined || seviye === null)) {
@@ -1176,6 +1680,7 @@
       ipucuGoster(t(hata === 'sinir' ? 'yuzey.ipucu.komutSinirDisi' : 'yuzey.ipucu.komutDesteklenmiyor', { etiket: karo.etiket }));
       return;
     }
+    if (satir.gecikme && (seviye === undefined || seviye === null)) return paletGeciktir(satir);
     if (seviye !== undefined && seviye !== null) {
       yuk.parlaklik = seviye;
       yuk.sonDeger = true;
@@ -1211,7 +1716,7 @@
       baslik.setAttribute('aria-hidden', 'true'); // liste adı aria-label'dadır
       parcalar.push(baslik);
     }
-    if (paletSatirlari.length === 0) parcalar.push(sorgu.trim() === '' ? bosDurum() : olustur('p', 'bos', t('yuzey.palet.eslesmeYok')));
+    if (paletSatirlari.length === 0) parcalar.push(h.bos ? olustur('p', 'bos', h.bos) : sorgu.trim() === '' ? bosDurum() : olustur('p', 'bos', t('yuzey.palet.eslesmeYok')));
     paletSatirlari.forEach(function (satir, i) {
       const karo = satir.karo;
       if (satir.bolumBasligi) {
@@ -1230,11 +1735,13 @@
         seciliKimligi = kutu.id;
       }
       kutu.appendChild(vurguluEtiket(satir.etiket !== undefined ? satir.etiket : karo.etiket, satir.konumlar));
+      if (satir.degisim) kutu.appendChild(olustur('span', 'rozet sessiz', degisimMetni(satir.degisim))); // "@" (o-18): "Açıldı · 3 dk önce"
       if (satir.parlaklik !== null && karo.parlaklikKontrol) kutu.appendChild(olustur('span', 'rozet', t('yuzey.yuzde', { n: satir.parlaklik })));
       if (satir.kapat && karo.parlaklikKontrol) kutu.appendChild(olustur('span', 'rozet', t('yuzey.rozet.kapat')));
       // 1.4.0 servis komutu: rozet ne yapılacağını söyler ("24°", "Sıcak beyaz · 2700 K", "Ses %30"); geçersizse nedenini
       const komutRozeti = satir.eylem && kartlar ? kartlar.rozetMetni(satir.eylem) : '';
       if (komutRozeti !== '') kutu.appendChild(olustur('span', 'rozet', komutRozeti));
+      if (satir.gecikme && !komutHatasi) kutu.appendChild(olustur('span', 'rozet', gecikmeRozeti(satir.gecikme)));
       if (komutHatasi) kutu.appendChild(olustur('span', 'rozet sessiz', t(komutHatasi === 'sinir' ? 'yuzey.rozet.sinirDisi' : 'yuzey.rozet.desteklenmiyor')));
       else if (satir.desteklenmiyor) kutu.appendChild(olustur('span', 'rozet sessiz', t('yuzey.rozet.desteklenmiyor')));
       if (!satir.eylem && !komutHatasi && karo.varsayilanEylem === false && kartlar && kartlar.komutluMu(karo) && satir.parlaklik === null && !satir.kapat) {
@@ -1284,6 +1791,26 @@
         });
         parcalar.push(seviye);
       }
+      if (i === secili && seviyeAcik && satir.diger) {
+        // "*" (o-46) Shift+Enter menüsü: Aç / Kapat (sahnede Çalıştır) / Favoriye ekle / Home Assistant'ta aç; seviye seçicisiyle aynı klavye gezintisi
+        const menu = olustur('div', 'seviye diger-menu');
+        menu.setAttribute('role', 'group');
+        menu.setAttribute('aria-label', t('yuzey.diger.menu'));
+        digerMenuOgeleri(satir.diger).forEach(function (oge, j) {
+          const d = olustur('button', 'seviye-oge' + (j === seviyeSecili ? ' secili' : ''), t(oge.anahtar));
+          d.type = 'button';
+          d.id = 'palet-seviye-' + j;
+          d.setAttribute('role', 'option');
+          d.setAttribute('aria-selected', j === seviyeSecili ? 'true' : 'false');
+          d.tabIndex = -1; // klavye gezintisi arama kutusundan sürer
+          if (j === seviyeSecili) seciliKimligi = d.id;
+          d.addEventListener('click', function () {
+            paletDigerIslem(satir, oge.ad);
+          });
+          menu.appendChild(d);
+        });
+        parcalar.push(menu);
+      }
     });
     seciliSatirKutusu = seciliKutu;
     if (seciliKimligi !== null) el.arama.setAttribute('aria-activedescendant', seciliKimligi);
@@ -1332,7 +1859,10 @@
       case 'ArrowRight':
         if (!seviyeAcik) return;
         olay.preventDefault();
-        seviyeSecili = (seviyeSecili + (olay.key === 'ArrowRight' ? 1 : -1) + SEVIYELER.length) % SEVIYELER.length;
+        {
+          const uzunluk = menuUzunlugu(satir);
+          seviyeSecili = (seviyeSecili + (olay.key === 'ArrowRight' ? 1 : -1) + uzunluk) % uzunluk;
+        }
         paletCiz();
         return;
       case 'Enter': {
@@ -1344,12 +1874,17 @@
           return;
         }
         if (olay.shiftKey) {
-          if (satir.karo.parlaklikKontrol) {
+          if (satir.karo.parlaklikKontrol || satir.diger) {
             seviyeAcik = !seviyeAcik;
             seviyeSecili = 0;
             paletCiz();
           }
           return;
+        }
+        if (satir.diger) {
+          // "*" (o-46): menü açıksa seçili öğe, değilse aç-kapa (sahne: çalıştır); basılı tutma yoktur (liste yalnız zararsız cihazlar içerir)
+          if (seviyeAcik) return paletDigerIslem(satir, digerMenuOgeleri(satir.diger)[seviyeSecili].ad);
+          return paletCalistir(satir);
         }
         // Yazılan sayı bu öğede anlamsız ("ampul 40"): sessizce aç/kapat yapılmasın; sayı silinene kadar Enter bu satırda
         // eylem çalıştırmaz (yıkıcı satır dahil). Satıra fareyle tıklamak bilinçli bir seçimdir ve değişmez (h-13).
@@ -1550,8 +2085,10 @@
   function ciz() {
     if (kartlar) kartlar.sifirla(); // önceki çizimin saniyelik sayaçları (zamanlayıcı, medya ilerlemesi) bırakılır
     if (bilgi) bilgi.ayarla(model.bilgi); // bilgi modeli saklanır, gereken okumalar (geçmiş, takvim, yapılacaklar) istenir
+    if (kamera) kamera.ayarla(mod === 'panel' ? model.kamera : null); // palette kamera bölümü yoktur
     ustuCiz();
     if (duzen) duzen.sekmeleriCiz(model); // palet kipinde ya da sayfa yokken gizlenir
+    if (eylemBolumu) eylemBolumu.ciz(model.eylem); // alt şerit: "Geri al" düğmesi (o-12)
     if (mod === 'palet') paletCiz();
     else panelCiz();
     setTimeout(boyutBildir, 0);
@@ -1640,15 +2177,20 @@
     if (duzen) duzen.sifirla(); // ayrıntı bölmesi kapanır; seçili sayfa korunur
     malzemeAyarla(yuk && yuk.malzeme);
     kipAyarla(yuk && yuk.mod);
+    etkilesimAyarla(yuk && yuk.etkilesim);
+    tekerlek.sifirla();
     bilgiCizimiBekliyor = false;
     odakIstegi = null;
     sorgu = '';
     el.arama.value = '';
     secili = 0;
     seviyeAcik = false;
+    digerListe = { durum: 'bos', liste: [], tur: null, zaman: 0 }; // "*" listesi her gösterimde yeniden istenir (ana süreç 2 dk önbellekler)
+    digerBekliyor = false;
     el.ipucu.textContent = '';
     if (bilgi) bilgi.gosterildi(); // geçmiş görünümü kapanır, başarısız okumalar yeniden denenir
     ciz();
+    if (kamera) kamera.gosterildi(); // eski kareler silinir, görüntüler yeniden bulanık başlar; görünürse ilk kare istenir (yalnız panel kipinde)
     if (mod === 'palet') el.arama.focus();
     else el.icerik.focus();
   }
@@ -1723,9 +2265,14 @@
   });
   window.addEventListener('focus', function () {
     if (bilgi) bilgi.odakKazandi(); // pencere yeniden odaklandı: bayat okumalar tazelenir
+    if (kamera) kamera.gorunurOldu(); // gösterimde pencere henüz görünür değilse ilk kare burada istenir
   });
   document.addEventListener('visibilitychange', function () {
     if (bilgi && document.hidden !== true) bilgi.odakKazandi(); // pencere görünür oldu (gösterim olayı görünürlükten önce gelmiş olabilir)
+    if (kamera) {
+      if (document.hidden === true) kamera.gizlendi(); // pencere gizlendi: bellekteki kamera kareleri ve DOM'daki görüntüler silinir
+      else kamera.gorunurOldu();
+    }
   });
 
   // Yakınlaştırma (Ctrl + / Ctrl − / Ctrl 0, ana süreçte) pencere genişliğini sınırlayabilir: yükseklik yeniden ölçülür (g-13).
@@ -1739,6 +2286,28 @@
     setTimeout(boyutBildir, 0);
   });
 
+  // o-23: iğne düğmesi paneli sabitler / çözer. Ana süreç ayarı (panelSabit) yazar ve yanıtta son durumu döner; başarısızsa düğme eski hâlinde kalır.
+  if (el.sabitle) {
+    el.sabitle.addEventListener('click', function () {
+      if (typeof kopru.sabitle !== 'function') return;
+      const istenen = !etkilesim.sabit;
+      Promise.resolve(kopru.sabitle(istenen)).then(
+        function (yanit) {
+          if (yanit && yanit.ok === true && typeof yanit.sabit === 'boolean') {
+            etkilesim = { tekerlek: etkilesim.tekerlek, sabit: yanit.sabit };
+            sabitGoster();
+          } else {
+            ipucuGoster(t('yuzey.sabit.hata'));
+          }
+        },
+        function () {
+          ipucuGoster(t('yuzey.sabit.hata'));
+        },
+      );
+    });
+    sabitGoster();
+  }
+
   el.haAc.addEventListener('click', function () {
     kopru.haAc();
   });
@@ -1748,6 +2317,7 @@
 
   kopru.onDurum(modelUygula);
   kopru.onGoster(gosterildi);
+  if (typeof kopru.onEtkilesim === 'function') kopru.onEtkilesim(etkilesimAyarla); // Ayarlar'dan tekerlek / sabitleme değişti
   if (typeof kopru.onDilDegisti === 'function') {
     kopru.onDilDegisti(function (yuk) {
       if (yuk && typeof yuk === 'object') dilDegisti(yuk.dil);
@@ -1759,6 +2329,7 @@
     dilKur(yanit.dil); // yanıtta dil yoksa ya da geçersizse Türkçe (HTML varsayılanı) kalır
     malzemeAyarla(yanit.malzeme);
     kipAyarla(yanit.mod);
+    etkilesimAyarla(yanit.etkilesim);
     const m = modelDuzelt(yanit.model);
     if (m) {
       model = m;

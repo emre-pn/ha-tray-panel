@@ -24,11 +24,15 @@
  *       REST /api/calendars/<kimlik>?start&end; en uzun 31 gün, en çok 50 etkinlik; başlığı süzgeçten geçmeyen etkinlik düşer.
  *   havaTahmini(kimlik, tur = 'daily') -> Promise<{zaman, durum, sicaklik, enDusuk, yagis, yagisOlasiligi, nem, ruzgar}[]>
  *       WS weather/subscribe_forecast (ilk olay alınır, abonelik bırakılır); en çok 48 öğe. Canlı bağlantı yoksa boş.
+ *   medyaKapagi(kimlik) -> Promise<string|null>
+ *       Medya oynatıcının albüm kapağı: HA'nın kendi vekil yolu (/api/media_player_proxy/<aynı oynatıcı>) haIstek'in ikili kipiyle çekilir
+ *       (anahtar yalnız ana süreçte; mutlak/dış adres ASLA çekilmez), tür + sihirli sayı + boyut doğrulanır ve `data:` adresi döner
+ *       (src/lib/medya-kapagi.js). En çok 6 kapak önbellekte (30 dk; hata 30 sn). Alan media_player olmalı, Kapı Kuralı uygulanır.
  *   alanlar() -> Promise<{ alanlar: {id, ad}[], varlikAlanlari: { [kimlik]: alanId } }>
  *       WS config/area_registry/list + config/entity_registry/list_for_display (+ isteğe bağlı config/device_registry/list:
  *       kendi alanı olmayan varlık cihazının alanını alır). Adı süzgeçten geçmeyen alan listede yoktur.
  *   yapilacaklar(kimlik) -> Promise<{uid, baslik, tamamlandi}[]>  WS todo/item/list; en çok 100 öğe.
- *   yoneticiMi() -> Promise<boolean|null>  WS auth/current_user is_admin (o-43); bilinmiyorsa null.
+ *   yoneticiMi({taze?}) -> Promise<boolean|null>  WS auth/current_user is_admin (o-43); bilinmiyorsa null.
  *   bildirimAboneOl(dinleyici) -> () => void  WS persistent_notification/subscribe; dinleyici süzülmüş liste alır:
  *       dinleyici({id, baslik, metin, zaman}[] (en yeni önce, en çok 20), { gizlenen: number }). Başlığı ya da metni süzgeçten
  *       geçmeyen bildirim HİÇ gösterilmez; yalnız sayısı `gizlenen` olarak verilir ("N gizlendi").
@@ -42,6 +46,7 @@ const { alanAl, guvenliVarlikMi, guvenliMetin } = require('./suzgec');
 const { kayitliAlanMi } = require('./alan-kaydi');
 const { durumuDuzelt } = require('./ha-ws-protokol');
 const { HAVA_DURUMLARI, sayiAl, isoAl } = require('./varlik-ozellik');
+const { kapakYolu, kapakVeriAdresi, KAPAK_EN_COK_BAYT } = require('./medya-kapagi');
 
 const SAAT_MS = 60 * 60 * 1000;
 const GUN_MS = 24 * SAAT_MS;
@@ -56,6 +61,9 @@ const EN_COK_BILDIRIM = 20;
 const DAKIKA_SINIRI = 30; // tüm uçlar için dakikada en çok bu kadar ağ okuması (önbellekten dönenler sayılmaz)
 const TTL = Object.freeze({ gecmis: 60_000, takvim: 120_000, hava: 600_000, alanlar: 300_000, yapilacak: 10_000, yonetici: 600_000, durum: 30_000 });
 const TAHMIN_TURLERI = Object.freeze(['daily', 'hourly', 'twice_daily']);
+const KAPAK_TTL_MS = 30 * 60_000; // yol (jeton + önbellek parametresi) parça değişince değiştiği için uzun tutulabilir
+const KAPAK_HATA_TTL_MS = 30_000; // başarısız çekim kısa süre tekrarlanmaz
+const EN_COK_KAPAK = 6; // bellekte tutulan en çok kapak (her biri en çok ~800 KB `data:` metni)
 const KAPATAN_KODLAR = new Set(['unauthorized', 'unknown_command']);
 const ALAN_KIMLIGI_DESENI = /^[A-Za-z0-9_-]{1,64}$/;
 const BILDIRIM_KIMLIGI_DESENI = /^[A-Za-z0-9_.:-]{1,100}$/;
@@ -75,6 +83,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
   const onbellek = new Map(); // anahtar -> { t, deger }
   const surenler = new Map(); // anahtar -> Promise
   const kapali = new Set();
+  const kapaklar = new Map(); // kapak yolu -> { t, ttl, deger: data adresi | null }  (en çok EN_COK_KAPAK, en eski çıkar)
   let agOkumalari = []; // son 60 sn'deki ağ okumalarının zamanları
 
   function agHakkiVarMi() {
@@ -290,6 +299,34 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
         }), bos.dizi);
     },
 
+    async medyaKapagi(kimlik) {
+      if (!(await izinliMi(kimlik, ['media_player']))) return null;
+      const yol = kapakYolu(await guncelVarlik(kimlik), kimlik);
+      if (!yol) return null;
+      const kayit = kapaklar.get(yol);
+      if (kayit && simdi() - kayit.t < kayit.ttl) return kayit.deger;
+      const anahtar = `kapak|${yol}`;
+      if (surenler.has(anahtar)) return surenler.get(anahtar);
+      if (!agHakkiVarMi()) return kayit ? kayit.deger : null;
+      const soz = (async () => {
+        let deger = null;
+        try {
+          const yanit = await haIstek(yol, { ikili: true, enCokBayt: KAPAK_EN_COK_BAYT });
+          deger = kapakVeriAdresi(yanit?.icerikTuru, yanit?.bayt);
+        } catch {
+          gunluk('HA okuma ucu yanıt vermedi (kapak); boş gösteriliyor.');
+        } finally {
+          surenler.delete(anahtar);
+        }
+        if (kapaklar.size >= EN_COK_KAPAK && !kapaklar.has(yol)) kapaklar.delete(kapaklar.keys().next().value);
+        kapaklar.delete(yol);
+        kapaklar.set(yol, { t: simdi(), ttl: deger ? KAPAK_TTL_MS : KAPAK_HATA_TTL_MS, deger });
+        return deger;
+      })();
+      surenler.set(anahtar, soz);
+      return soz;
+    },
+
     async alanlar() {
       const bosAlan = () => ({ alanlar: [], varlikAlanlari: {} });
       return oku('alanlar', '', async () => {
@@ -340,11 +377,12 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
       }, bos.dizi, { taze: taze === true });
     },
 
-    async yoneticiMi() {
+    /** taze: true ise önbellek atlanır (anahtar değişti; o-43). Hız sınırı yine geçerlidir. Bilinmiyorsa null. */
+    async yoneticiMi({ taze = false } = {}) {
       return oku('yonetici', '', async () => {
         const sonuc = await wsKomut('yonetici', { type: 'auth/current_user' });
         return typeof sonuc?.is_admin === 'boolean' ? sonuc.is_admin : undefined;
-      }, () => null);
+      }, () => null, { taze: taze === true });
     },
 
     bildirimAboneOl(dinleyici) {
@@ -400,7 +438,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
   };
 }
 
-const YUZEY_OKUMA_TURLERI = Object.freeze(['gecmis', 'takvim', 'hava', 'yapilacak']);
+const YUZEY_OKUMA_TURLERI = Object.freeze(['gecmis', 'takvim', 'hava', 'yapilacak', 'kapak']);
 
 /**
  * Panel/palet'ten gelen okuma isteği (yuzey:oku IPC; yük renderer'dan gelir, güvenilmez). Her kimlik KAYITLI olmalıdır
@@ -410,6 +448,7 @@ const YUZEY_OKUMA_TURLERI = Object.freeze(['gecmis', 'takvim', 'hava', 'yapilaca
  *   { tur: 'takvim', kimlik, gun?: 1..31 }
  *   { tur: 'hava', kimlik, tahmin?: 'daily'|'hourly'|'twice_daily' }
  *   { tur: 'yapilacak', kimlik, taze?: true }   taze: önbellek atlanır (kullanıcı kendi eklediği/tamamladığı öğeyi hemen görsün)
+ *   { tur: 'kapak', kimlik }                    medya oynatıcının albüm kapağı: veri `data:image/...` metni ya da null (kapak yok / alınamadı)
  * @param {ReturnType<typeof haOkumaOlustur>} okuma
  * @param {unknown} yuk
  * @param {(kimlik: string) => boolean} kayitliMi
@@ -435,6 +474,7 @@ async function yuzeyOkumasi(okuma, yuk, kayitliMi) {
     const tur = TAHMIN_TURLERI.includes(yuk.tahmin) ? yuk.tahmin : 'daily';
     return { ok: true, veri: await okuma.havaTahmini(yuk.kimlik, tur) };
   }
+  if (yuk.tur === 'kapak') return { ok: true, veri: await okuma.medyaKapagi(yuk.kimlik) };
   return { ok: true, veri: await okuma.yapilacaklar(yuk.kimlik, { taze: yuk.taze === true }) };
 }
 

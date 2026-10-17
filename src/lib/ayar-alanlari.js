@@ -42,6 +42,13 @@ const { KONUM_MODLARI, VARSAYILAN_KONUM_MODU, OPAKLIK_SINIRI, konumlariDuzelt, t
 const { EN_COK_KARO, SABITLENEBILIR_ALANLAR, karoKonumlariniDuzelt } = require('./masaustu-karo');
 const { METIN_OLCEKLERI, VARSAYILAN_METIN_OLCEGI, HAZIR_TEMA_ADLARI, HAVA_EFEKTI_DEGERLERI, MEVSIM_EFEKTI_DEGERLERI, vurguRengiDuzelt } = require('./gorunum');
 const { kurallariDuzelt } = require('./uyari-kurallari');
+const { kameraIzinleriniDuzelt, YENILEME_SECENEKLERI: KAMERA_YENILEME_SECENEKLERI } = require('./kamera');
+const { ORTA_TIK_ALANLARI } = require('./orta-tik');
+const { GECIKME_SINIRI: BAGLANTI_GECIKME } = require('./baglanti-bildirimi');
+const { pcKurallariDuzelt } = require('./pc-olaylari');
+const { KAYNAK_SECENEKLERI: TOPLANTI_KAYNAKLARI } = require('./toplanti-isigi');
+const { kisayolNormallestir, kisayolDogrula } = require('./kisayol');
+const { BOLUM_ADLARI, klasorYoluDuzelt, bolumListesiDuzelt, durumDuzelt } = require('./esitleme-bolumleri');
 
 const GUNCEL_EK_SURUM = 6;
 const KART_VARLIK_ALANLARI = Object.freeze(['sensor', 'binary_sensor']); // üst kartta gösterilebilen (salt okunur) varlık alanları
@@ -164,10 +171,24 @@ const TEMA_ALANLARI = [
 ];
 
 /**
- * Panelin üst kart yuvası (o-08): 'yok' | 'saat' (saat ve tarih) | 'hava' (havaVarligi) | bir sensor / binary_sensor kimliği
- * (yalnız durumu gösterilir; karttan eylem çalıştırılmaz). Kimlik Kapı Kuralı'ndan geçmelidir. Işık, anahtar, script gibi eylem
- * alanları kabul edilmez: kart onları göstermez ve salt okunur kart eylem hattına kayıtlı varlık olarak girmemelidir
- * (src/lib/bilgi-modeli.js bilgiKimlikleri).
+ * Geri al kısayolu (o-12): '' = kısayol yok; yoksa geçerli bir genel kısayol (src/lib/kisayol.js kuralları: Windows'a ayrılmış birleşimler
+ * reddedilir) normalleştirilmiş biçimde saklanır. Geçersiz değer mevcut olanı korur. Çakışma ve kayıt sonucu main.js kısayol planındadır.
+ */
+const VARSAYILAN_GERI_AL_KISAYOLU = 'Control+Alt+Z';
+function geriAlKisayoluDuzelt(ham) {
+  if (typeof ham !== 'string') return undefined;
+  const m = ham.trim();
+  if (m === '') return '';
+  const normal = kisayolNormallestir(m);
+  return normal !== null && kisayolDogrula(m).gecerli ? normal : undefined;
+}
+
+/**
+ * Panelin üst kart yuvası (o-08): 'yok' | 'saat' (saat ve tarih) | 'hava' (havaVarligi) | 'medya' (birincilMedya: şimdi çalan kartı,
+ * oynatıcının kendi kontrolleriyle) | bir sensor / binary_sensor kimliği (yalnız durumu gösterilir; karttan eylem çalıştırılmaz).
+ * Kimlik Kapı Kuralı'ndan geçmelidir. Işık, anahtar, script gibi eylem alanları kabul edilmez: sensör/hava kartı salt okunurdur ve
+ * eylem hattına kayıtlı varlık olarak girmemelidir (src/lib/bilgi-modeli.js bilgiKimlikleri). Yalnız 'medya' kartı oynatıcıyı
+ * (media_player, kendi servis izin listesiyle) kontrol eder; oynatıcı birincilMedya ayarındaki tek kimliktir.
  */
 function kartYuvasiAlan(ad) {
   return nesneAlan(ad, {
@@ -176,7 +197,7 @@ function kartYuvasiAlan(ad) {
     duzelt: (ham) => {
       if (typeof ham !== 'string') return undefined;
       const m = ham.trim();
-      if (m === 'yok' || m === 'saat' || m === 'hava') return m;
+      if (m === 'yok' || m === 'saat' || m === 'hava' || m === 'medya') return m;
       if (!VARLIK_KIMLIGI_DESENI.test(m) || !KART_VARLIK_ALANLARI.includes(alanAl(m))) return undefined;
       return adGuvenliMi(m, '') ? m : undefined;
     },
@@ -198,6 +219,9 @@ const AYAR_ALANLARI = Object.freeze([
   kartYuvasiAlan('ustKart1'),
   kartYuvasiAlan('ustKart2'),
   kimlikAlan('havaVarligi', { alanlar: ['weather'] }), // 'hava' yuvasının kaynağı
+  secenekAlan('havaTahmini', ['kapali', 'gunluk', 'saatlik'], 'gunluk'), // hava kartının altındaki tahmin şeridi (panel açıkken HA'dan okunur); 'kapali': şerit yok
+  kimlikAlan('birincilMedya', { alanlar: ['media_player'] }), // 'medya' üst kartının oynatıcısı ('' : seçilmedi); yalnız media_player, Kapı Kuralı'ndan geçer
+  mantiksalAlan('medyaKapagi', true), // medya kartlarında albüm kapağı: HA'nın kendi vekil adresinden ana süreç çeker, dış adres ASLA çekilmez
   secenekAlan('saatBicimi', ['sistem', '24', '12'], 'sistem'), // sistem: Windows bölge ayarı
   secenekAlan('tarihBicimi', ['orta', 'kisa', 'uzun', 'yok'], 'orta'),
   kimlikListesiAlan('takvimler', { enCok: 4, alanlar: ['calendar'] }), // yaklaşan etkinlikler (salt okunur)
@@ -208,6 +232,16 @@ const AYAR_ALANLARI = Object.freeze([
   // --- düzen: panel sayfaları (sekmeler; o-24). Doğrulama src/lib/sayfalar.js'dedir. ---
   nesneAlan('sayfalar', { varsayilan: [], duzelt: (ham) => sayfalariDuzelt(ham) }),
 
+  // --- eylem grubu (1.4.0): o-17 etkinlik geçmişi, o-12 geri al, o-15 gecikmeli eylem, o-14 oda, o-46 palette diğer cihazlar ---
+  // Hepsi yerel ve ağa çıkmaz; eylemler yine tek güvenli hattan geçer (src/lib/eylem-ekleri.js).
+  mantiksalAlan('etkinlikGecmisi', true), // o-17: yapılan/yapılamayan eylemlerin yerel kaydı (son 200; kimlik, ad, kaynak, sonuç; sır yok)
+  mantiksalAlan('geriAl', true), // o-12: son eylemleri (en çok 5) geri al; yalnız zararsız eylemler, süre sınırlı
+  tamsayiAlan('geriAlSureDk', 1, 60, 10), // o-12: geri alma penceresi (dakika)
+  nesneAlan('geriAlKisayolu', { varsayilan: VARSAYILAN_GERI_AL_KISAYOLU, tip: 'metin', duzelt: geriAlKisayoluDuzelt }), // o-12: genel kısayol ('' = yok)
+  mantiksalAlan('gecikmeliEylem', true), // o-15: "10 dk sonra kapat" gibi zamanlı eylemler (yalnız bellekte; uygulama kapanınca iptal; ışık/priz/vantilatör/nem alıcı/yardımcı anahtar)
+  mantiksalAlan('sonDegisenler', true), // o-18: palette "@" ile son değişenler (izlenen ışık/priz/sahne/klima/medya; yalnız bellekte)
+  secenekAlan('panelGruplama', ['tur', 'oda'], 'tur'), // o-14: panel karoları türe ('tur') ya da HA odasına ('oda') göre gruplanır; 'oda' için HA alan kaydı okunabilmelidir
+  mantiksalAlan('paletDigerCihazlar', false), // o-46: palette "*" ile favori OLMAYAN güvenli ışık/priz/vantilatör/sahne aranır (varsayılan KAPALI: KILAVUZ'daki "yalnız favoriler" kararını gevşetir; açıkken HA'dan durum listesi okunur)
   // --- pencere grubu: o-22 üstte tutma, o-32 konum/ekran/opaklık, o-27 tepsi rozeti, o-33 masaüstü karoları ---
   // o-22: açıkken panel/palet görünürken 'screen-saver' seviyesinde (tam ekran uygulamaların üstünde) durur. Varsayılan KAPALI (1.3.0 davranışı).
   mantiksalAlan('panelHerZamanUstte', false),
@@ -228,6 +262,20 @@ const AYAR_ALANLARI = Object.freeze([
   // Karolar diğer pencerelerin üstünde mi kalsın (varsayılan KAPALI: masaüstünde, pencerelerin altında durur).
   mantiksalAlan('masaustuKaroUstte', false),
 
+  // --- etkilesim grubu (o-20, o-23, o-60, o-38) ---
+  // o-20: fare tekerleği ışık parlaklığını / medya sesini ±5 değiştirir (varsayılan AÇIK; kaydırılabilir panelde yalnız kaydırıcı üstünde ve
+  // kaydırma sürerken devreye girmez). tepsiOrtaTik: tepsi simgesine orta tıkta çalışacak zararsız favori ('' = kapalı); kimlik Kapı Kuralı'ndan
+  // ve orta-tik.js alan listesinden geçer, çalışma anında ayrıca favori/zararsız sınıf denetlenir.
+  mantiksalAlan('karoTekerlegi', true),
+  kimlikAlan('tepsiOrtaTik', { alanlar: ORTA_TIK_ALANLARI }),
+  // o-23: paneli sabitle (dışarı tıklayınca kapanmaz; Esc kapatır). Varsayılan KAPALI.
+  mantiksalAlan('panelSabit', false),
+  // o-60: ana kısayolu basılı tutunca göster, bırakınca gizle (tuş dinleyicisi yok; kısayolun kendi tekrarlarından anlaşılır). Varsayılan KAPALI.
+  mantiksalAlan('kisayolBasiliTut', false),
+  // o-38: Home Assistant bağlantısı en az baglantiBildirimSn saniye kopuk kalırsa "koptu", dönünce "geri geldi" bildirimi (yerel Windows bildirimi; ağa bir şey gitmez).
+  mantiksalAlan('baglantiBildirimi', true),
+  tamsayiAlan('baglantiBildirimSn', BAGLANTI_GECIKME.en_az, BAGLANTI_GECIKME.en_cok, BAGLANTI_GECIKME.varsayilan),
+
   // --- tema grubu: görünüm (o-25 metin boyutu ve yüksek karşıtlık, o-29 tema ve renkler, o-34 animasyonlar) ---
   ...TEMA_ALANLARI,
   // --- Bildirim grubu (o-36, o-37, o-39): bildirim merkezi ve varlık uyarı kuralları (src/lib/bildirim-akisi.js) ---
@@ -237,10 +285,56 @@ const AYAR_ALANLARI = Object.freeze([
   tamsayiAlan('bildirimPilEsigi', 5, 50, 20), // bu yüzdenin altı/eşiti "düşük pil" sayılır
   mantiksalAlan('bildirimMasaustu', true), // yeni merkez bildirimlerini köşe bildirimi olarak da göster
   nesneAlan('uyariKurallari', { varsayilan: [], duzelt: (ham) => kurallariDuzelt(ham) }), // varlık uyarı kuralları (uyari-kurallari.js)
+  // --- cihaz grubu (o-48): kamera anlık görüntüsü. Kamera YALNIZ burada tek tek onaylanırsa panelde görünür (varsayılan: hiçbiri).
+  // kameraIzinleri dışa/içe aktarmaya GİRMEZ (aktarilir:false): başkasından alınan bir dosya kameranızı kendiliğinden açamaz.
+  nesneAlan('kameraIzinleri', { varsayilan: [], duzelt: kameraIzinleriniDuzelt }, { aktarilir: false }),
+  mantiksalAlan('kameraBulanik', true), // görüntü bulanık başlar, tıklayınca açılır (varsayılan AÇIK)
+  secenekAlan('kameraYenilemeSn', KAMERA_YENILEME_SECENEKLERI, 0), // 0: yalnız elle "Yenile"; aksi hâlde panel açıkken her N saniyede bir
   // --- arac grubu ---
   // o-40 Yeni sürüm denetimi: günde en çok bir kez GitHub sürüm adresine anahtarsız GET (IP'n GitHub'a görünür). VARSAYILAN KAPALI, açık rıza ile.
   // aktarilir:false -> dışa/içe aktarmaya girmez: başkasından alınan bir dosya bu dış ağ seçeneğini kendiliğinden açamaz.
   mantiksalAlan('surumDenetimi', false, { aktarilir: false }),
+  // --- dis grubu: dış tetikler (o-21 Jump List ve masaüstü kısayolu, o-47 PC olayları, o-52 yerel API, o-53 toplantı ışığı, o-54 evpaneli://) ---
+  // HEPSİ varsayılan KAPALI ve aktarilir:false: dışa aktarılan, klasörden eşitlenen ya da başkasından alınan bir dosya bir dış tetiği açamaz,
+  // izin ya da kural ekleyemez. Yerel API jetonu burada DEĞİL, safeStorage ile ayrı dosyadadır (yerel-api-jetonu.dat). Ayrıntı: src/dis-tetikler.js.
+  mantiksalAlan('tetikJumpList', false, { aktarilir: false }), // görev çubuğu atlama listesinde zararsız favoriler
+  mantiksalAlan('tetikMasaustu', false, { aktarilir: false }), // Ayarlar'dan favori için masaüstü kısayolu (.lnk) oluşturma ve çalıştırma
+  mantiksalAlan('tetikProtokol', false, { aktarilir: false }), // evpaneli:// bağlantısı (açılınca HKCU kaydı, kapanınca kaldırılır)
+  // Bağlantıdan "Her zaman" izni verilen favoriler: yalnız ana süreç (izin sorusu) ekler, Ayarlar'dan kaldırılır; sayfaya özetle gitmez.
+  kimlikListesiAlan('tetikProtokolIzinleri', { enCok: 50 }, { aktarilir: false, ozette: false }),
+  mantiksalAlan('tetikYerelApi', false, { aktarilir: false }), // 127.0.0.1 üzerinde jetonlu yerel API
+  tamsayiAlan('tetikApiPortu', 1024, 65535, 48123, { aktarilir: false }),
+  mantiksalAlan('tetikApiBildirim', false, { aktarilir: false }), // yerel API eylemlerinde başarı/hata bildirimi
+  mantiksalAlan('tetikPcOlaylari', false, { aktarilir: false }), // PC kilitlenince / kilit açılınca / uykuda / uyanınca kurallar
+  mantiksalAlan('tetikPcAcma', false, { aktarilir: false }), // PC olayında kapatma dışındaki işlemler (aç, çalıştır, geri yükle)
+  nesneAlan('tetikPcKurallari', { varsayilan: [], duzelt: pcKurallariDuzelt }, { aktarilir: false }), // src/lib/pc-olaylari.js
+  mantiksalAlan('tetikPcUyarisi', false, { aktarilir: false, ozette: false }), // ilk kullanım uyarısı gösterildi mi (ana süreç yazar)
+  mantiksalAlan('tetikToplanti', false, { aktarilir: false }), // mikrofon/kamera kullanımda iken toplantı ışığı
+  secenekAlan('tetikToplantiKaynak', TOPLANTI_KAYNAKLARI, 'ikisi', { aktarilir: false }),
+  kimlikAlan('tetikToplantiFavori', {}, { aktarilir: false }), // toplantı başlayınca açılan / başlatılan favori
+  secenekAlan('tetikToplantiBitis', ['geriYukle', 'kapat', 'favori', 'yok'], 'geriYukle', { aktarilir: false }),
+  kimlikAlan('tetikToplantiBitisFavori', {}, { aktarilir: false }), // bitiş 'favori' ise başlatılan favori
+  tamsayiAlan('tetikToplantiAralik', 5, 60, 10, { aktarilir: false }), // yoklama aralığı (sn)
+  // o-51 Uygulama içi güncelleme (electron-updater, GitHub Sürümleri): VARSAYILAN KAPALI, açık rıza ile. Açıkken denetim güncelleyiciden yapılır;
+  // kurucu YALNIZ "İndir" düğmesiyle inip ayrı onayla kurulur (otomatik indirme ve çıkışta kurma yok). aktarilir:false: içe aktarılan dosya
+  // dış ağ ve kurucu indirme seçeneğini kendiliğinden açamaz. Taşınabilir sürümde etkisizdir (src/lib/guncelleme.js destekDurumu).
+  mantiksalAlan('uygulamaGuncelleme', false, { aktarilir: false }),
+  // o-51 "Ön sürümleri de göster" (beta kanalı): hem sürüm denetimi (o-40) hem uygulama içi güncelleme için; varsayılan KAPALI.
+  mantiksalAlan('onSurumler', false, { aktarilir: false }),
+  // o-61 mobile_app bildirimleri (src/lib/mobil-kayit.js): bu bilgisayarı Home Assistant'a bildirim alan bir cihaz olarak kaydetmek KULLANICININ
+  // açık eylemidir (Ayarlar > Mobil bildirimler > Kaydol, onay penceresiyle). `mobilBildirimler` itme kanalının açık olup olmadığıdır (varsayılan
+  // KAPALI; kayıt başarılı olunca ana süreç açar, "Kaydı sil" kapatır). Webhook kimliği ayara GİRMEZ (safeStorage dosyası). Hiçbiri dışa/içe
+  // aktarılmaz: içe aktarılan dosya bildirim kanalını ya da cihaz adını kendiliğinden belirleyemez.
+  mantiksalAlan('mobilBildirimler', false, { aktarilir: false }),
+  metinAlan('mobilCihazAdi', { enUzun: 40, desen: /^[\p{L}\p{N} ._()-]+$/u, varsayilan: '' }, { aktarilir: false }),
+
+  // --- baglanti grubu (o-58): klasör tabanlı ayar eşitleme (src/lib/ayar-esitleme.js, src/esitleme-yoneticisi.js) ---
+  // Hepsi makineye özgüdür ve dışa/içe aktarmaya GİRMEZ: başkasından alınan bir dosya eşitlemeyi kendiliğinden açamaz ya da klasörü değiştiremez.
+  // Eşitleme VARSAYILAN KAPALI; yalnız kullanıcının seçtiği yerel klasöre yazar (ağa çıkmaz). Parola ve hiçbir sır bu alanlarda tutulmaz.
+  mantiksalAlan('klasorEsitleme', false, { aktarilir: false, ozette: false }),
+  nesneAlan('esitlemeKlasoru', { varsayilan: '', tip: 'metin', duzelt: klasorYoluDuzelt }, { aktarilir: false, ozette: false }),
+  nesneAlan('esitlemeBolumleri', { varsayilan: BOLUM_ADLARI, tip: 'dizi', duzelt: bolumListesiDuzelt }, { aktarilir: false, ozette: false }),
+  nesneAlan('esitlemeDurumu', { varsayilan: {}, tip: 'nesne', duzelt: durumDuzelt }, { aktarilir: false, ozette: false }),
 ]);
 
 /**
@@ -341,6 +435,8 @@ function ekAyarOzeti(ayarlar, liste = AYAR_ALANLARI) {
 }
 
 module.exports = {
+  VARSAYILAN_GERI_AL_KISAYOLU,
+  geriAlKisayoluDuzelt,
   GUNCEL_EK_SURUM,
   AYAR_ALANLARI,
   GOCLER,

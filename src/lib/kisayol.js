@@ -231,12 +231,13 @@
    * satır satır raporlanır (hata-12). Çakışmada ÖNCE gelen kazanır (sıra: ana, palet, favoriler, panolar); sonrakine
    * `cakisma` yazılır ve o kısayol kaydedilmez. Eylem kısayolu yalnız ZARARSIZ sınıfa atanabilir (yıkıcı/yasak atanamaz).
    * @param {{ana?:string, palet?:string, favoriler?:{entity_id:string, kisayol?:string}[], panolar?:{kisayol?:string}[],
-   *          siniflandir?:(kimlik:string, favori:object)=>string, t?:Function}} girdi t: çevirmen (isteğe bağlı; yoksa Türkçe iletiler)
-   * @returns {{ id:string, tur:'ana'|'palet'|'favori'|'pano', kisayol:string, kimlik?:string, sira?:number,
+   *          siniflandir?:(kimlik:string, favori:object)=>string, t?:Function, geriAl?:string}} girdi t: çevirmen (isteğe bağlı; yoksa Türkçe iletiler)
+   *   geriAl (1.4.0, o-12): "son eylemi geri al" genel kısayolu; çakışmada EN SONA kalır (mevcut kısayollar kazanır)
+   * @returns {{ id:string, tur:'ana'|'palet'|'geri-al'|'favori'|'pano', kisayol:string, kimlik?:string, sira?:number,
    *             gecerli:boolean, neden:null|'gecersiz'|'cakisma'|'sinif'|'sinir', mesaj:string }[]}
    *   Yalnız kısayolu OLAN öğeler döner. Kayıt edilecekler: gecerli === true.
    */
-  function kisayolPlani({ ana, palet, favoriler = [], panolar = [], siniflandir = () => 'zararsiz', t }) {
+  function kisayolPlani({ ana, palet, favoriler = [], panolar = [], siniflandir = () => 'zararsiz', t, geriAl }) {
     const ogeler = [];
     const gorulen = new Set();
     let favoriSayisi = 0;
@@ -274,6 +275,7 @@
       panoSayisi += 1;
       ekle(`pano:${sira}`, 'pano', p.kisayol, { sira }, panoSayisi > EN_COK_PANO ? ileti(t, 'kisayol.panoSiniri', 'En çok {n} HA panosu tanımlanabilir.', { n: EN_COK_PANO }) : null);
     });
+    ekle('geri-al', 'geri-al', geriAl, {}); // 1.4.0 (o-12): en sonda; varsayılan kısayol, kullanıcının önceden atadığı bir kısayolu ASLA ezmez
     return ogeler;
   }
 

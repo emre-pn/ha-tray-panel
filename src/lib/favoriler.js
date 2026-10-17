@@ -42,6 +42,7 @@ const ETIKET_SINIRI = 40;
 const GRUPLAR = Object.freeze([
   { kod: 'isik', etiket: 'Işık' },
   { kod: 'iklim', etiket: 'İklim' }, // 1.4.0: klima, nem alıcı, vantilatör
+  { kod: 'perde', etiket: 'Perde' }, // 1.4.0 cihaz grubu: perde ve jaluzi (cover; yalnız izinli cihaz sınıfları)
   { kod: 'sahne', etiket: 'Sahne' },
   { kod: 'pc', etiket: 'PC' },
   { kod: 'medya', etiket: 'Medya' },
@@ -87,6 +88,7 @@ const ALAN_GRUPLARI = Object.freeze({
   climate: 'iklim',
   humidifier: 'iklim',
   fan: 'iklim',
+  cover: 'perde',
   media_player: 'medya',
   input_select: 'yardimci',
   select: 'yardimci',

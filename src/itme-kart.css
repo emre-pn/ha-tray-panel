@@ -1,0 +1,216 @@
+/* Düğmeli itme bildirimi kartı (o-61). Koyu tema varsayılan; Windows açık temadayken açık tema. Renkler yalnız değişkenlerdendir. */
+:root {
+  color-scheme: dark;
+  --bg: #1b1f27;
+  --metin: #f1f5f9;
+  --soluk: #b6c0cf;
+  --bilgi: #60a5fa;
+  --dugme-bg: #2a3140;
+  --dugme-sinir: #46506a;
+  --dugme-vurgu: #3b82f6;
+  --dugme-vurgu-metin: #08111f;
+}
+
+:root[data-malzeme] {
+  --bg: rgba(27, 31, 39, 0.62);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f3f5f9;
+    --metin: #0f172a;
+    --soluk: #475569;
+    --bilgi: #1d4ed8;
+    --dugme-bg: #e2e8f0;
+    --dugme-sinir: #94a3b8;
+    --dugme-vurgu: #1d4ed8;
+    --dugme-vurgu-metin: #ffffff;
+  }
+
+  :root[data-malzeme] {
+    --bg: rgba(243, 245, 249, 0.7);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--metin);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+:root[data-malzeme],
+:root[data-malzeme] body {
+  background: transparent;
+}
+
+.kart {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 10px 12px 12px 14px;
+  border-left: 4px solid var(--bilgi);
+  background: var(--bg);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.kart.gorunur {
+  opacity: 1;
+}
+
+.ust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.baslik {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--soluk);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kapat {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--soluk);
+  font-size: 18px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.kapat:hover,
+.kapat:focus-visible {
+  background: var(--dugme-bg);
+  color: var(--metin);
+}
+
+.mesaj {
+  flex: 1;
+  min-height: 0;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.dugmeler {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dugme {
+  min-height: 30px;
+  max-width: 100%;
+  padding: 4px 12px;
+  border: 1px solid var(--dugme-sinir);
+  border-radius: 6px;
+  background: var(--dugme-bg);
+  color: var(--metin);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dugme:first-child {
+  border-color: var(--dugme-vurgu);
+  background: var(--dugme-vurgu);
+  color: var(--dugme-vurgu-metin);
+}
+
+.dugme:hover {
+  filter: brightness(1.12);
+}
+
+.dugme:focus-visible,
+.kapat:focus-visible {
+  outline: 2px solid var(--bilgi);
+  outline-offset: 2px;
+}
+
+.dugme:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kart {
+    transition: none;
+  }
+}
+
+/* Görünüm ayarları (1.4.0 grup "tema"): src/lib/tema-renk.js gorunumUygula, ana sürecin görünüm modelini <html> öğesine yazar. */
+:root[data-sema="koyu"] {
+  color-scheme: dark;
+}
+
+:root[data-sema="acik"] {
+  color-scheme: light;
+}
+
+/* Yüksek karşıtlık (o-25): opak zemin, belirgin kenarlık, metin >= 7:1 */
+:root[data-karsitlik] {
+  color-scheme: dark;
+  --bg: #000000;
+  --metin: #ffffff;
+  --soluk: #ffffff;
+  --bilgi: #7cc0ff;
+  --dugme-bg: #000000;
+  --dugme-sinir: #ffffff;
+  --dugme-vurgu: #ffffff;
+  --dugme-vurgu-metin: #000000;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-karsitlik] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --metin: #000000;
+    --soluk: #000000;
+    --bilgi: #003d99;
+    --dugme-bg: #ffffff;
+    --dugme-sinir: #000000;
+    --dugme-vurgu: #000000;
+    --dugme-vurgu-metin: #ffffff;
+  }
+}
+
+:root[data-karsitlik] .kart {
+  border: 2px solid var(--metin);
+  border-left-width: 8px;
+}
+
+:root[data-hareket="azalt"] .kart {
+  transition: none;
+}

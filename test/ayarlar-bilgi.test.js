@@ -184,7 +184,7 @@ test('açılış: kayıtlı bilgi ayarları alanlara yazılır; varlıklar yükl
   assert.equal(sayfa.oge('sensorTepsiIpucu').checked, true);
   assert.equal(sayfa.oge('ustKart1').value, 'saat');
   assert.equal(sayfa.oge('ustKart2').value, 'sensor.salon_sicaklik');
-  assert.deepEqual(degerler('ustKart2', sayfa), ['yok', 'saat', 'hava', 'sensor.salon_sicaklik'], 'kayıtlı kimlik seçenek olarak eklenir');
+  assert.deepEqual(degerler('ustKart2', sayfa), ['yok', 'saat', 'hava', 'medya', 'sensor.salon_sicaklik'], 'kayıtlı kimlik seçenek olarak eklenir');
   assert.equal(sayfa.oge('havaVarligi').value, 'weather.ev');
   assert.equal(sayfa.oge('saatBicimi').value, '12');
   assert.equal(sayfa.oge('tarihBicimi').value, 'uzun');
@@ -214,7 +214,7 @@ test('açılış: kayıtlı bilgi ayarları alanlara yazılır; varlıklar yükl
 test('seçenekler: yalnız sensör/ikili sensör, hava, takvim ve yapılacaklar alanlarından; gizli aday, kilit, kapak ve alarm sunulmaz', async () => {
   const sayfa = await acilmisSayfa({ ayar: AYAR, cihazlar: BILGI_CIHAZLAR });
   assert.deepEqual(degerler('sensorSeridiEkle', sayfa), ['', 'sensor.salon_sicaklik', 'binary_sensor.hareket']);
-  assert.deepEqual(degerler('ustKart1', sayfa), ['yok', 'saat', 'hava', 'sensor.salon_sicaklik', 'binary_sensor.hareket']);
+  assert.deepEqual(degerler('ustKart1', sayfa), ['yok', 'saat', 'hava', 'medya', 'sensor.salon_sicaklik', 'binary_sensor.hareket']);
   assert.deepEqual(degerler('havaVarligi', sayfa), ['', 'weather.ev']);
   assert.deepEqual(degerler('takvimlerEkle', sayfa), ['', 'calendar.aile', 'calendar.is']);
   assert.deepEqual(degerler('yapilacakListeleriEkle', sayfa), ['', 'todo.alisveris', 'todo.is_listesi']);

@@ -513,8 +513,8 @@ test('g-10: tek Kaydet çubuğu; anahtar kaydı ayrı; bölüm bağlantıları �
   for (const hedef of baglar) assert.match(HTML, new RegExp(`id="${hedef}"`));
 
   const katlananlar = [...HTML.matchAll(/<details class="bolum" id="(\w+)"/g)].map((m) => m[1]);
-  // 1.4.0: nadir kullanılan bölümler katlanır: tepsi rozeti ve masaüstü karoları (o-27, o-33), "Bilgi kartları ve sensörler" (bolumBilgi), bildirim merkezi ve uyarı kuralları (bolumBildirimler), sürüm ve araçlar (bolumSurum, bolumAraclar; sayfanın sonunda).
-  assert.deepEqual(katlananlar, ['bolumPencere', 'bolumTepsiRozeti', 'bolumMasaustu', 'bolumGeriBildirim', 'bolumBilgi', 'bolumBildirimler', 'bolumBaslangic', 'bolumYedek', 'bolumSurum', 'bolumAraclar']);
+  // 1.4.0: nadir kullanılan bölümler katlanır: tepsi rozeti ve masaüstü karoları (o-27, o-33), etkinlik geçmişi (bolumEtkinlik, o-17), "Bilgi kartları ve sensörler" (bolumBilgi), kamera görüntüsü (bolumKamera), bildirim merkezi ve uyarı kuralları (bolumBildirimler), dış tetikler (bolumDisTetikler), mobil bildirimler (bolumMobil, o-61), klasörle eşitleme (bolumEsitleme, o-58), sürüm ve araçlar (bolumSurum, bolumAraclar; sayfanın sonunda).
+  assert.deepEqual(katlananlar, ['bolumPencere', 'bolumTepsiRozeti', 'bolumMasaustu', 'bolumGeriBildirim', 'bolumEtkinlik', 'bolumBilgi', 'bolumKamera', 'bolumBildirimler', 'bolumMobil', 'bolumBaslangic', 'bolumDisTetikler', 'bolumYedek', 'bolumEsitleme', 'bolumSurum', 'bolumAraclar']);
 
   const liste = /\.cihaz-listesi\s*\{([^}]*)\}/.exec(HTML)[1];
   assert.doesNotMatch(liste, /overflow|max-height/, 'cihaz listesi kendi içinde kaydırılmaz');

@@ -355,6 +355,8 @@ module.exports = {
   AKTARIM_SURUMU,
   AKTARIM_BAYT_SINIRI,
   AKTARILAN_ALANLAR,
+  GIZLI_DEGER_DESENI,
+  aktarilacakAyarlar,
   EN_COK_ZAMANLI_YEDEK,
   yedekDosyaAdi,
   zamanliYedekZamani,

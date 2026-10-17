@@ -178,3 +178,97 @@ test("kaydirici modülü require kullanmaz (renderer'da <script> ile de yükleni
   const kaynak = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'lib', 'kaydirici.js'), 'utf8');
   assert.ok(!/require\s*\(/.test(kaynak));
 });
+
+// --- Fare tekerleği (1.4.0, o-20) -----------------------------------------------------------------------------------------
+
+const { tekerlekCentigi, tekerlekKapisi, tekerlekDegeri, TEKERLEK_ADIMI, TEKERLEK_BOS_MS, TEKERLEK_BITIS_MS } = require('../src/lib/kaydirici');
+
+test('tekerlek çentiği: piksel 100, satır 3, sayfa 1; geçersiz değer 0', () => {
+  assert.equal(TEKERLEK_ADIMI, 5);
+  assert.equal(tekerlekCentigi(100, 0), 1);
+  assert.equal(tekerlekCentigi(-100, 0), -1);
+  assert.equal(tekerlekCentigi(3, 1), 1);
+  assert.equal(tekerlekCentigi(1, 2), 1);
+  assert.equal(tekerlekCentigi(25, 0), 0.25);
+  for (const gecersiz of ['x', NaN, Infinity, null, undefined, {}]) assert.equal(tekerlekCentigi(gecersiz, 0), 0, String(gecersiz));
+});
+
+test('tekerlek değeri: ±5, [en az, en çok] içinde; bilinmeyen değer ya da kesirli adım null', () => {
+  assert.equal(tekerlekDegeri(50, 1, 1, 100), 55);
+  assert.equal(tekerlekDegeri(50, -2, 1, 100), 40);
+  assert.equal(tekerlekDegeri(98, 1, 1, 100), 100, 'üst sınırda kırpılır');
+  assert.equal(tekerlekDegeri(3, -1, 1, 100), 1, 'alt sınırda kırpılır (ışık 0 olmaz: kapatmak tekerleğin işi değil)');
+  for (const mevcut of [null, undefined, 'x', NaN, Infinity]) assert.equal(tekerlekDegeri(mevcut, 1, 0, 100), null, String(mevcut));
+  assert.equal(tekerlekDegeri(50, 0.5, 0, 100), null);
+  assert.equal(tekerlekDegeri(50, NaN, 0, 100), null);
+});
+
+test('tekerlek kapısı: boşta ve izinliyse dizi başlar; yukarı (deltaY < 0) artırır, aşağı azaltır', () => {
+  const zaman = sahteZaman();
+  const kapi = tekerlekKapisi({ zaman });
+  const sahip = {};
+  assert.deepEqual(kapi.dene(sahip, -100, 0, true), { ele: true, adim: 1 });
+  zaman.ilerle(50);
+  assert.deepEqual(kapi.dene(sahip, -100, 0, true), { ele: true, adim: 1 });
+  zaman.ilerle(50);
+  assert.deepEqual(kapi.dene(sahip, 100, 0, true), { ele: true, adim: -1 });
+});
+
+test('tekerlek kapısı: izin yoksa (kaydırılabilir panelde kaydırıcı dışı) olay ele alınmaz ve sayfa kayar', () => {
+  const zaman = sahteZaman();
+  const kapi = tekerlekKapisi({ zaman });
+  assert.deepEqual(kapi.dene({}, -100, 0, false), { ele: false, adim: 0 });
+  assert.deepEqual(kapi.dene({}, -100, 0, undefined), { ele: false, adim: 0 }, 'izinli yalnız true olabilir');
+});
+
+test('tekerlek kapısı: kaydırma sürerken (400 ms dolmadan) bir karo dizi BAŞLATAMAZ; sayfa kaydırmaya devam eder', () => {
+  const zaman = sahteZaman();
+  const kapi = tekerlekKapisi({ zaman });
+  const karo = {};
+  for (let i = 0; i < 6; i += 1) {
+    assert.deepEqual(kapi.dene(null, 100, 0, false), { ele: false, adim: 0 }, 'sayfa kaydırılıyor');
+    zaman.ilerle(100);
+  }
+  assert.deepEqual(kapi.dene(karo, 100, 0, true), { ele: false, adim: 0 }, 'fare karonun üstünden geçti ama kaydırma henüz durmadı');
+  zaman.ilerle(TEKERLEK_BOS_MS - 1);
+  assert.deepEqual(kapi.dene(karo, 100, 0, true), { ele: false, adim: 0 }, 'önceki olaydan beri 400 ms dolmadı');
+  zaman.ilerle(TEKERLEK_BOS_MS);
+  assert.deepEqual(kapi.dene(karo, 100, 0, true), { ele: true, adim: -1 }, 'boşta: dizi başlar');
+});
+
+test('tekerlek kapısı: dizi başladığı karoda kalır; başka karo devralamaz, boşta kalınca yeni dizi başlatabilir', () => {
+  const zaman = sahteZaman();
+  const kapi = tekerlekKapisi({ zaman });
+  const a = {};
+  const b = {};
+  assert.equal(kapi.dene(a, -100, 0, true).ele, true);
+  zaman.ilerle(100);
+  assert.equal(kapi.dene(b, -100, 0, true).ele, false, 'dizi a karosundayken b karosu işlemez');
+  zaman.ilerle(100);
+  assert.equal(kapi.dene(a, -100, 0, true).ele, false, 'b olayı diziyi bozdu: sayfa kaydırması varsayılır');
+  zaman.ilerle(TEKERLEK_BOS_MS + 1);
+  assert.equal(kapi.dene(b, -100, 0, true).ele, true, 'boşta sonra b karosu yeni dizi başlatır');
+});
+
+test('tekerlek kapısı: küçük (dokunmatik yüzey) olaylar birikir, tam çentikte adım üretir; büyük olay çok adım üretir', () => {
+  const zaman = sahteZaman();
+  const kapi = tekerlekKapisi({ zaman });
+  const s = {};
+  const adimlar = [];
+  for (let i = 0; i < 10; i += 1) {
+    adimlar.push(kapi.dene(s, -25, 0, true).adim);
+    zaman.ilerle(16);
+  }
+  assert.deepEqual(adimlar, [0, 0, 0, 1, 0, 0, 0, 1, 0, 0], '10 x 0,25 çentik: her dördüncüde bir adım, 0,5 çentik birikmiş kalır');
+  assert.deepEqual(kapi.dene(s, -300, 0, true), { ele: true, adim: 3 }, 'kalan 0,5 + 3 çentik = 3 tam adım');
+});
+
+test('tekerlek kapısı: sifirla sahibi ve birikimi unutur; son değer bekleme süresi yeni dizi bekleme süresinden kısadır', () => {
+  const zaman = sahteZaman();
+  const kapi = tekerlekKapisi({ zaman });
+  const a = {};
+  assert.deepEqual(kapi.dene(a, -50, 0, true), { ele: true, adim: 0 });
+  kapi.sifirla();
+  assert.deepEqual(kapi.dene(a, -50, 0, true), { ele: true, adim: 0 }, 'birikim sıfırlandı: yarım çentik yarım kaldı, yeni dizi başladı');
+  assert.ok(TEKERLEK_BITIS_MS < TEKERLEK_BOS_MS, 'son değer gönderimi yeni dizi başlamadan önce olur');
+});

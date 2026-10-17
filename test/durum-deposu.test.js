@@ -150,6 +150,20 @@ test('karoDurumu: ışık açık/kapalı/yüzde (açıkken en az %1), ulaşılam
   assert.deepEqual(karoDurumu(undefined), { durum: 'yok', yuzde: null });
 });
 
+test('karoDurumu (1.4.0 cihaz grubu): perde ve vana open/opening açık, closed kapalı, closing geçiş (nötr); otomasyon on/off; unavailable yok', () => {
+  for (const alan of ['cover', 'valve']) {
+    assert.deepEqual(karoDurumu(varlik(`${alan}.a`, 'open')), { durum: 'acik', yuzde: null }, alan);
+    assert.deepEqual(karoDurumu(varlik(`${alan}.a`, 'opening')), { durum: 'acik', yuzde: null }, alan);
+    assert.deepEqual(karoDurumu(varlik(`${alan}.a`, 'closed')), { durum: 'kapali', yuzde: null }, alan);
+    assert.deepEqual(karoDurumu(varlik(`${alan}.a`, 'closing')), { durum: 'notr', yuzde: null }, alan);
+    assert.deepEqual(karoDurumu(varlik(`${alan}.a`, 'unavailable')), { durum: 'yok', yuzde: null }, alan);
+    assert.deepEqual(karoDurumu(varlik(`${alan}.a`, 'unknown')), { durum: 'notr', yuzde: null }, alan);
+  }
+  assert.deepEqual(karoDurumu(varlik('automation.a', 'on')), { durum: 'acik', yuzde: null });
+  assert.deepEqual(karoDurumu(varlik('automation.a', 'off')), { durum: 'kapali', yuzde: null });
+  assert.deepEqual(karoDurumu(varlik('automation.a', 'unavailable')), { durum: 'yok', yuzde: null });
+});
+
 test('aktifCikis: Türkçe/İngilizce çıkış adlarından hoparlör ya da kulaklık', () => {
   assert.equal(aktifCikis('Hoparlör (Realtek Audio)'), 'hoparlor');
   assert.equal(aktifCikis('Kulaklık (USB)'), 'kulaklik');

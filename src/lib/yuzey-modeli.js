@@ -21,7 +21,7 @@
  * Renderer'a giden alanların tam listesi RENDERER_KARO_ALANLARI'dır; yeni alan ekleyen ajan oraya ve test/yuzey-modeli.test.js'e ekler.
  */
 
-const { alanAl, adGuvenliMi, guvenliVarlikMi, guvenliMetin } = require('./suzgec');
+const { alanAl, adGuvenliMi, guvenliVarlikMi, guvenliMetin, kameraKimligiGuvenliMi, kameraAdiGuvenliMi } = require('./suzgec');
 const { karoAlaniMi, varsayilanServis } = require('./alan-kaydi');
 const { izinliServisler } = require('./servis-izinleri');
 const { guvenliOzellikler } = require('./varlik-ozellik');
@@ -32,8 +32,12 @@ const { GRUPLAR, grupBul, altGrupBul, tekrarliMi } = require('./favoriler');
 const { karoDurumu, aktifCikis } = require('./durum-deposu');
 const { kisalt } = require('./metin');
 const { TR } = require('./ceviri-varsayilan');
+const { YENILEME_SECENEKLERI, EN_COK_KAMERA } = require('./kamera');
+const { rendererEylem } = require('./eylem-modeli');
 
 const ETIKET_SINIRI = 40;
+/** 1.4.0 (o-50): bu alanlarda cihaz sınıfı yalnız HA'daki GÜNCEL öznitelikten bilinir; durum gelmeden karo hiç görünmez (perde sınıfı doğrulanamaz). */
+const CANLI_GEREKLI_ALANLAR = new Set(['cover']);
 /** Salt-okunur yardımcı varlıklar: canlı bağlantıda izlenir, eylem hattı bunlara eylem YAPMAZ. */
 const MEDYA_CALIYOR_KIMLIGI = 'binary_sensor.pc_medya_caliyor';
 const SES_CIKISI_KIMLIGI = 'sensor.pc_ses_default_device';
@@ -60,6 +64,7 @@ function karoOlustur(favori, varlik, t = TR) {
   if (favori.etiket !== undefined && !adGuvenliMi(kimlik, favori.etiket)) return null;
   const canli = varlik && typeof varlik === 'object' ? varlik : null;
   if (canli && !guvenliVarlikMi(canli)) return null; // HA'daki GÜNCEL ad/sınıf kapı oldu: karo hiç görünmez
+  if (!canli && CANLI_GEREKLI_ALANLAR.has(alan)) return null;
   const siniflamaVarligi = canli ?? { entity_id: kimlik, attributes: { friendly_name: kayitliAd } };
   const siniflama = eylemSinifi(siniflamaVarligi, favori);
   if (siniflama.sinif === SINIF.YASAK) return null;
@@ -145,9 +150,11 @@ function karolariOlustur(favoriler, durumAl, t = TR) {
  * @param {object[]} [girdi.sayfalar] ayardaki sayfalar (src/lib/sayfalar.js); modele yalnız karo olan varlıklarla girer
  * @param {{ogeler?: object[], sayi?: number, gizlenen?: number}|null} [girdi.bildirim] 1.4.0 bildirim merkezi modeli (src/lib/bildirim-akisi.js
  *   model()): panelin bildirim şeridi. Renderer'a rendererBildirim ile süzülmüş (alan beyaz listesi + metin süzgeci) hâliyle gider.
+ * @param {{liste?: {id:string, etiket:string, kullanilabilir:boolean}[], bulanik?: boolean, yenilemeSn?: number}|null} [girdi.kamera] 1.4.0 kamera
+ *   bölümü (o-48; src/lib/kamera.js kameraModeli + ayarlar): yalnız Ayarlar'da onaylı kameralar. Görüntü modelde YOKTUR (yuzey:kamera ile ayrıca çekilir).
  * @returns {{ gruplar: object[], sonlar: object[], sayfalar: {id:string, ad:string, kimlikler:string[]}[], ust: {canli:boolean, baglanti:string, medyaCaliyor:boolean|null, aktifCikis:string|null, hata:string|null, uyari:string|null, anahtarYok:boolean}, bildirim: object|null }}
  */
-function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = {}, t = TR, sayfalar = [], bildirim = null }) {
+function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = {}, t = TR, sayfalar = [], bildirim = null, kamera = null }) {
   const karolar = karolariOlustur(favoriler, durumAl, t);
   const gruplar = karolariGrupla(karolar, t);
   const harita = new Map(karolar.map((k) => [k.id, k]));
@@ -172,6 +179,7 @@ function yuzeyModeliOlustur({ favoriler, durumAl, sonKimlikler = [], baglanti = 
       anahtarYok: baglanti.anahtarYok === true,
     },
     bildirim,
+    kamera,
   };
 }
 
@@ -198,6 +206,29 @@ const RENDERER_KARO_ALANLARI = Object.freeze([
   'boyut', // 1.4.0 düzen: 'kucuk' | 'normal' | 'genis' | 'buyuk'
   'tepsi', // 1.4.0 düzen: tepsiye sabitli mi (bağlam menüsü "Tepsiden kaldır" metni için)
 ]);
+
+/**
+ * Kamera bölümünü IPC yüküne çevirir: yalnız { liste: [{id, etiket, kullanilabilir}], bulanik, yenilemeSn }. Kimlik ve ad kamera süzgecinden
+ * (kapı/zil/giriş adı elenir) bir kez daha geçer; bulanık varsayılan açıktır (yalnız açıkça false ise kapalı). Liste boşsa null (bölüm hiç görünmez).
+ * @returns {{liste: {id:string, etiket:string, kullanilabilir:boolean}[], bulanik: boolean, yenilemeSn: number}|null}
+ */
+function rendererKamera(kamera) {
+  if (!kamera || typeof kamera !== 'object' || !Array.isArray(kamera.liste)) return null;
+  const liste = [];
+  for (const k of kamera.liste) {
+    if (liste.length >= EN_COK_KAMERA) break;
+    if (!k || typeof k !== 'object' || !kameraKimligiGuvenliMi(k.id)) continue;
+    const etiket = kisalt(typeof k.etiket === 'string' && k.etiket.trim() ? k.etiket.trim() : k.id, ETIKET_SINIRI);
+    if (!kameraAdiGuvenliMi(k.id, etiket) || liste.some((o) => o.id === k.id)) continue;
+    liste.push({ id: k.id, etiket, kullanilabilir: k.kullanilabilir === true });
+  }
+  if (liste.length === 0) return null;
+  return {
+    liste,
+    bulanik: kamera.bulanik !== false,
+    yenilemeSn: YENILEME_SECENEKLERI.includes(kamera.yenilemeSn) ? kamera.yenilemeSn : 0,
+  };
+}
 
 /** Renderer'a giden bildirim öğesinde bulunabilecek alanların TAM listesi (HA bildirim kimliği ve varlık kimliği YOK; anahtar opaktır). */
 const RENDERER_BILDIRIM_ALANLARI = Object.freeze(['anahtar', 'kaynak', 'baslik', 'metin', 'zaman', 'simge']);
@@ -251,6 +282,8 @@ function rendererKaro(karo) {
   return sonuc;
 }
 
+const ODA_GRUBU_KODU = /^oda-[0-9a-f]{8}$/;
+
 /**
  * Ana süreçteki modeli IPC yüküne çevirir (h-15): her karoda yalnız RENDERER_KARO_ALANLARI kalır. HA'daki ad (`ad`) ve ileride
  * karoya eklenecek ana-süreç alanları panele gitmez. Girdi değiştirilmez.
@@ -259,7 +292,8 @@ function rendererKaro(karo) {
 function rendererModeli(model) {
   const dizi = (d) => (Array.isArray(d) ? d : []);
   return {
-    gruplar: dizi(model?.gruplar).map((g) => ({ kod: g.kod, etiket: g.etiket, karolar: dizi(g.karolar).map(rendererKaro) })),
+    // 1.4.0 eylem grubu (o-14): oda grubu (`oda: true`, kod `oda-<8 onaltılık>`) başlığında "Odayı kapat" düğmesi çıkar; başka grup bu işareti taşımaz
+    gruplar: dizi(model?.gruplar).map((g) => ({ kod: g.kod, etiket: g.etiket, karolar: dizi(g.karolar).map(rendererKaro), ...(g.oda === true && ODA_GRUBU_KODU.test(g.kod) ? { oda: true } : {}) })),
     sonlar: dizi(model?.sonlar).map(rendererKaro),
     sayfalar: dizi(model?.sayfalar).map((s) => ({ id: s.id, ad: s.ad, kimlikler: dizi(s.kimlikler).filter((k) => typeof k === 'string') })),
     ust: model?.ust ?? {},
@@ -267,6 +301,9 @@ function rendererModeli(model) {
     // yüklenir: bilgi-modeli.js bu dosyadan karoOlustur/rendererKaro alır (döngüsel yükleme olmasın).
     bilgi: model?.bilgi ? require('./bilgi-modeli').rendererBilgi(model.bilgi) : null,
     bildirim: rendererBildirim(model?.bildirim),
+    kamera: rendererKamera(model?.kamera),
+    // 1.4.0 eylem grubu (o-12 geri al...): eylem-modeli.js beyaz listesinden geçer
+    eylem: rendererEylem(model?.eylem),
   };
 }
 
@@ -282,5 +319,6 @@ module.exports = {
   rendererKaro,
   RENDERER_BILDIRIM_ALANLARI,
   rendererBildirim,
+  rendererKamera,
   rendererModeli,
 };

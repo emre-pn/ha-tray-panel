@@ -7,8 +7,14 @@
  * Uygulamanın tanıdığı TÜM alanlar tek tabloda: hangisi panelde karo/favori olabilir, hangisi yalnız okunur gösterilir,
  * tek tıklamada (tepsi menüsü, kısayol, komut satırı) hangi servis çağrılır, karo modelinde hangi öznitelik alt kümesini taşır.
  * Bu tabloda OLMAYAN alan hiçbir yüzeye giremez (süzgeç `kayitliAlanMi` ile reddeder). Kapı Kuralı alanları (lock,
- * alarm_control_panel, siren) ve bu sürümde bilerek dışarıda bırakılanlar (cover — perde dahil —, camera, valve, automation,
- * lawn_mower...) tabloya EKLENMEZ: test/alan-kaydi.test.js bunu sınar.
+ * alarm_control_panel, siren), kamera (camera: ayrı, kullanıcı onaylı izin listesi; src/lib/kamera.js) ve bilerek dışarıda
+ * bırakılanlar (lawn_mower...) tabloya EKLENMEZ: test/alan-kaydi.test.js bunu sınar.
+ *
+ * 1.4.0 cihaz grubu (sınırda alanlar, kullanıcı kararıyla; hepsi süzgeçte EK koşullarla):
+ *   cover       YALNIZ device_class curtain, blind, shade, awning (süzgeç suzgec.js PERDE_SINIFLARI; sınıfı boş/bilinmeyen, garage, gate, door,
+ *               shutter, window, damper dışarıda) ve ad süzgeci. Servisler zararsızdır; kart panelde kendi denetimini çizer.
+ *   valve       açma ve kapama servisleri "yıkıcı" (basılı tut onayı kapatılamaz); dış tetikleyicilerden ASLA çalışmaz.
+ *   automation  tetikle / aç / kapat servisleri "yıkıcı"; dış tetikleyicilerden ASLA çalışmaz.
  *
  * Alan kaydı (her satır):
  *   tur               'eylem'  : servis çağrılabilir (izinli servisler src/lib/servis-izinleri.js'te)
@@ -48,6 +54,12 @@ const ALAN_KAYDI = Object.freeze({
   number: Object.freeze({ tur: 'eylem', karo: true, varsayilanServis: null, model: 'sayi', onayVarsayilan: true }),
   timer: Object.freeze({ tur: 'eylem', karo: true, varsayilanServis: null, model: 'zamanlayici', onayVarsayilan: true }),
   todo: Object.freeze({ tur: 'eylem', karo: false, varsayilanServis: null, model: 'yapilacak', onayVarsayilan: false }),
+  // 1.4.0 cihaz grubu: perde/jaluzi (cover; yalnız izinli cihaz sınıfları, süzgeçte), vana (valve) ve otomasyon (automation).
+  // Perdenin tek tıklama eylemi YOKTUR (aç/kapat/dur/konum kartta ayrı düğmelerdir); otomasyonun tek tıklama eylemi "tetikle"dir ve
+  // yıkıcıdır (basılı tut); vananın yoktur (aç ve kapat ayrı ayrı basılı tutulur).
+  cover: Object.freeze({ tur: 'eylem', karo: true, varsayilanServis: null, model: 'perde', onayVarsayilan: false }),
+  valve: Object.freeze({ tur: 'eylem', karo: true, varsayilanServis: null, model: 'vana', onayVarsayilan: true }),
+  automation: Object.freeze({ tur: 'eylem', karo: true, varsayilanServis: 'trigger', model: 'otomasyon', onayVarsayilan: true }),
   // 1.4.0 yalnız okunur alanlar: hiçbir servis çağrılmaz
   sensor: Object.freeze({ tur: 'okunur', karo: true, varsayilanServis: null, model: 'sensor', onayVarsayilan: false }),
   binary_sensor: Object.freeze({ tur: 'okunur', karo: true, varsayilanServis: null, model: 'ikiliSensor', onayVarsayilan: false }),
@@ -80,6 +92,14 @@ const varsayilanServis = (alan) => alanBilgisi(alan)?.varsayilanServis ?? null;
 const alanModeli = (alan) => alanBilgisi(alan)?.model ?? null;
 /** Yeni favoride eylemler varsayılan olarak onay ister mi? */
 const onayVarsayilanMi = (alan) => alanBilgisi(alan)?.onayVarsayilan === true;
+/**
+ * Dış tetikleyiciler (Jump List, masaüstü kısayolu, yerel API, evpaneli:// bağlantısı, PC olayları, toplantı ışığı) için KESİN YASAK
+ * alanlar: bunların hiçbir servisi dışarıdan tetiklenemez (vana ve otomasyon "yıkıcı"dır; kamera zaten eylem alanı değildir).
+ * Dış tetik kapısı bunu eylem sınıfından BAĞIMSIZ olarak da uygular (servis-izinleri.js disTetigeUygunServisMi).
+ */
+const DIS_TETIK_YASAK_ALANLAR = Object.freeze(['valve', 'automation', 'camera']);
+const disTetikYasakAlanMi = (alan) => typeof alan === 'string' && DIS_TETIK_YASAK_ALANLAR.includes(alan);
+
 /** Aday listesinde sıralama için: tablodaki yer (bilinmeyen alan en sona). */
 function alanSirasi(alan) {
   const i = KAYITLI_ALANLAR.indexOf(alan);
@@ -100,4 +120,6 @@ module.exports = {
   alanModeli,
   onayVarsayilanMi,
   alanSirasi,
+  DIS_TETIK_YASAK_ALANLAR,
+  disTetikYasakAlanMi,
 };

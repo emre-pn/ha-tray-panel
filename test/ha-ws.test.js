@@ -687,3 +687,27 @@ test('abone: dinleyici fırlatırsa bağlantı etkilenmez', async () => {
   assert.equal(o.ws.canliMi(), true);
 });
 
+
+test('o-61: mobile_app bildirim kanalı aboneliği kurulur, olay dinleyiciye gider, not_found hatası dinleyiciye bildirilir', async () => {
+  const o = sahteOrtam();
+  const { s } = await canliYap(o);
+  const gelen = [];
+  const birak = o.ws.abone({ type: 'mobile_app/push_notification_channel', webhook_id: 'ab12cd34ef56ab12cd34ef56ab12cd34', support_confirm: false }, (y) => gelen.push(y));
+  const abone = s.gonderilen.at(-1);
+  assert.deepEqual({ ...abone, id: 0 }, { id: 0, type: 'mobile_app/push_notification_channel', webhook_id: 'ab12cd34ef56ab12cd34ef56ab12cd34', support_confirm: false });
+  s.yayinla({ id: abone.id, type: 'result', success: true, result: null });
+  s.yayinla({ id: abone.id, type: 'event', event: { message: 'Merhaba', title: 'Başlık' } });
+  assert.deepEqual(gelen, [{ olay: { message: 'Merhaba', title: 'Başlık' } }]);
+  s.yayinla({ id: abone.id, type: 'event', event: [1, 2] });
+  assert.equal(gelen.length, 1, 'nesne olmayan olay dinleyiciye gitmez');
+  birak();
+  s.yayinla({ id: abone.id, type: 'event', event: { message: 'bırakıldıktan sonra' } });
+  assert.equal(gelen.length, 1);
+
+  const hatalar = [];
+  const birak2 = o.ws.abone({ type: 'mobile_app/push_notification_channel', webhook_id: 'ab12cd34ef56ab12cd34ef56ab12cd34', support_confirm: false }, (y) => hatalar.push(y));
+  const abone2 = s.gonderilen.at(-1);
+  s.yayinla({ id: abone2.id, type: 'result', success: false, error: { code: 'not_found', message: 'gizli ayrıntı webhook' } });
+  assert.deepEqual(hatalar, [{ hata: 'not_found' }], 'hata iletisi (message) alınmaz');
+  birak2();
+});

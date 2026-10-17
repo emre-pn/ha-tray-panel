@@ -50,6 +50,16 @@ portable:
   requestExecutionLevel: user
   unpackDirName: false
 
+# Uygulama içi güncelleme (o-51): kurucunun yanına latest.yml (sürüm, dosya adı, sha512) üretilir ve uygulamaya app-update.yml olarak
+# gömülür; electron-updater yalnız bu depodaki yayınlanmış sürümlere (GitHub Releases) bakar. `npm run dist` hâlâ --publish never ile
+# çalışır: derleme HİÇBİR yere yüklemez, sürümü elle yayınlayan kişi Ev-Paneli-Kurulum-<sürüm>.exe ile latest.yml dosyasını birlikte ekler.
+# Uygulamada özellik varsayılan KAPALIDIR ve taşınabilir sürümde etkisizdir (src/lib/guncelleme.js).
+publish:
+  - provider: github
+    owner: emre-pn
+    repo: ha-tray-panel
+    releaseType: release
+
 nsis:
   # Tek tıkla, kullanıcı başına kurulum: %LOCALAPPDATA%\Programs\ altına kurar, yönetici izni istemez.
   oneClick: true

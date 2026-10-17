@@ -6,7 +6,9 @@
  * Renderer'a HA'daki ham `attributes` nesnesi ASLA gitmez: her model yalnız aşağıdaki beyaz listedeki alanları, tür ve aralık
  * doğrulamasından geçmiş hâliyle üretir. Metin öznitelikleri (medya başlığı/sanatçı, kaynak, ön ayar, seçenek, birim, sensör
  * değeri) Kapı Kuralı süzgecinden geçer (suzgec.js guvenliMetin / metinListesiSuz): geçmeyen metin null olur, listeden düşer.
- * entity_picture, media_image_url, access_token, kamera ve konum bilgisi (latitude/longitude) HİÇBİR modelde yoktur.
+ * entity_picture, media_image_url, access_token, kamera ve konum bilgisi (latitude/longitude) HİÇBİR modelde yoktur. Medya modelinde yalnız
+ * `kapak` (HA'nın kendi vekil adresinden çekilebilir bir albüm kapağı var mı) ve `kapakAnahtari` (yol değişince değişen kısa özet) bulunur;
+ * adresin kendisi ve jetonu renderer'a gitmez, resmi ana süreç çeker (src/lib/medya-kapagi.js, ha-okuma.js medyaKapagi).
  * Canlı HA adı (friendly_name) bu modele girmez (renderer'a giden ad favorideki etikettir; yuzey-modeli.js).
  *
  * Model anahtarları alan-kaydi.js'teki `model` sütunudur:
@@ -15,7 +17,7 @@
  *   tetik        null (sahne, script, düğme)
  *   fan          { yuzde, adimYuzde, salinim, onAyar, onAyarlar }
  *   iklim        { mevcutSicaklik, hedefSicaklik, hedefAlt, hedefUst, enAz, enCok, adim, mod, modlar, hvacEylemi, mevcutNem }
- *   medya        { durum, baslik, sanatci, album, ses, sessiz, kaynak, kaynaklar, sure, konum, konumZamani }
+ *   medya        { durum, baslik, sanatci, album, ses, sessiz, kaynak, kaynaklar, sure, konum, konumZamani, kapak, kapakAnahtari }
  *   nem          { hedefNem, mevcutNem, enAz, enCok, mod }
  *   supurge      { durum, pil }
  *   secim        { secenek, secenekler }
@@ -26,20 +28,26 @@
  *   ikiliSensor  { acik, sinif }
  *   hava         { durum, sicaklik, birim, nem, ruzgar, ruzgarBirim, basinc }
  *   takvim       { mesgul }
+ *   perde        { durum, konum, sinif, destek }  (1.4.0 cihaz grubu: cover; durum open|closed|opening|closing, konum current_position 0-100, sinif curtain|blind|shade|awning,
+ *                destek supported_features bit alanı: 1 aç, 2 kapat, 4 konum, 8 dur; bilinmiyorsa null)
+ *   vana         { durum, konum, destek }  (valve; durum open|closed|opening|closing, konum current_position 0-100, destek aynı bit alanı)
+ *   otomasyon    { acik, sonTetik }        (automation; acik state on/off, sonTetik last_triggered ISO zamanı)
  *
  * Yeni model alanı eklemek (ajanlar için kalıp): ilgili model işlevine doğrulamalı satır ekle (sayı: sayiAl, metin: metinAl,
  * liste: listeAl, sabit küme: secenekAl), test/varlik-ozellik.test.js'e örnek ekle. Ham öznitelik nesnesi asla kopyalanmaz.
  */
 
-const { alanAl, guvenliMetin, metinListesiSuz } = require('./suzgec');
+const { alanAl, guvenliMetin, metinListesiSuz, PERDE_SINIFLARI } = require('./suzgec');
 const { alanModeli } = require('./alan-kaydi');
 const { HVAC_MODLARI, RENK_MODLARI } = require('./servis-izinleri');
+const { kapakYolu, kapakAnahtari } = require('./medya-kapagi');
 
 const HVAC_EYLEMLERI = Object.freeze(['off', 'heating', 'cooling', 'drying', 'idle', 'fan', 'preheating', 'defrosting']);
 const MEDYA_DURUMLARI = Object.freeze(['off', 'on', 'idle', 'playing', 'paused', 'standby', 'buffering']);
 const SUPURGE_DURUMLARI = Object.freeze(['cleaning', 'docked', 'returning', 'paused', 'idle', 'error']);
 const ZAMANLAYICI_DURUMLARI = Object.freeze(['idle', 'active', 'paused']);
 const DURUM_SINIFLARI = Object.freeze(['measurement', 'total', 'total_increasing']);
+const KAPAK_DURUMLARI = Object.freeze(['open', 'closed', 'opening', 'closing']); // cover ve valve state değerleri
 // weather varlığının state değeri (HA koşul listesi).
 const HAVA_DURUMLARI = Object.freeze([
   'clear-night',
@@ -69,6 +77,11 @@ function sayiAl(deger, { min = -SAYI_SINIRI, max = SAYI_SINIRI } = {}) {
   return n;
 }
 const mantiksalAl = (deger) => (typeof deger === 'boolean' ? deger : null);
+/** supported_features bit alanı (0-65535 tamsayı); değilse null (bilinmiyor: kart tüm düğmeleri gösterir). */
+const destekAl = (deger) => {
+  const n = sayiAl(deger, { min: 0, max: 65535 });
+  return n !== null && Number.isInteger(n) ? n : null;
+};
 /** Süzgeçten geçmiş, kısaltılmış metin; değilse null. */
 const metinAl = (deger, enFazla = 100) => guvenliMetin(deger, enFazla);
 /** Sabit kümeden değer; değilse null. */
@@ -130,6 +143,8 @@ const MODELLER = Object.freeze({
       sure: sayiAl(n.media_duration, { min: 0, max: 1e7 }),
       konum: sayiAl(n.media_position, { min: 0, max: 1e7 }),
       konumZamani: isoAl(n.media_position_updated_at),
+      kapak: kapakYolu(v) !== null,
+      kapakAnahtari: kapakAnahtari(kapakYolu(v)),
     };
   },
   nem(v, n) {
@@ -195,6 +210,20 @@ const MODELLER = Object.freeze({
   takvim(v) {
     return { mesgul: v.state === 'on' ? true : v.state === 'off' ? false : null };
   },
+  perde(v, n) {
+    return {
+      durum: secenekAl(v.state, KAPAK_DURUMLARI),
+      konum: sayiAl(n.current_position, { min: 0, max: 100 }),
+      sinif: secenekAl(n.device_class, PERDE_SINIFLARI),
+      destek: destekAl(n.supported_features),
+    };
+  },
+  vana(v, n) {
+    return { durum: secenekAl(v.state, KAPAK_DURUMLARI), konum: sayiAl(n.current_position, { min: 0, max: 100 }), destek: destekAl(n.supported_features) };
+  },
+  otomasyon(v, n) {
+    return { acik: v.state === 'on' ? true : v.state === 'off' ? false : null, sonTetik: isoAl(n.last_triggered) };
+  },
 });
 
 /**
@@ -217,6 +246,7 @@ module.exports = {
   SUPURGE_DURUMLARI,
   ZAMANLAYICI_DURUMLARI,
   HAVA_DURUMLARI,
+  KAPAK_DURUMLARI,
   sayiAl,
   isoAl,
   guvenliOzellikler,

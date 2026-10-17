@@ -138,7 +138,7 @@ test('yukle: dosyadaki noktalar şemadan yeniden geçer — kapı/kilit favorisi
   const icerik = JSON.stringify({
     surum: 1,
     noktalar: [
-      { id: 3, zaman: 30, neden: 'kaydet', favoriler: [f('light.a'), f('lock.on_kapi'), f('light.kapi_isigi'), f('cover.perde')], sayfalar: [{ id: 'abc', ad: 'Alarm', varliklar: ['lock.on_kapi', 'light.a'] }] },
+      { id: 3, zaman: 30, neden: 'kaydet', favoriler: [f('light.a'), f('lock.on_kapi'), f('light.kapi_isigi'), f('lawn_mower.bahce')], sayfalar: [{ id: 'abc', ad: 'Alarm', varliklar: ['lock.on_kapi', 'light.a'] }] },
       { id: 3, zaman: 31, neden: 'kaydet', favoriler: [f('light.b')], sayfalar: [] },
       { id: 0, zaman: 1, favoriler: [], sayfalar: [] },
       { id: 'x', zaman: 1, favoriler: [], sayfalar: [] },

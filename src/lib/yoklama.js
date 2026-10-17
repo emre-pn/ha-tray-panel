@@ -68,6 +68,48 @@ async function sinirliOku(yanit, enCokBayt = YOKLAMA_GOVDE_SINIRI_BAYT) {
 }
 
 /**
+ * Yanıt gövdesini en çok `enCokBayt` bayta kadar okur (ikili içerik: albüm kapağı gibi). Sınır aşılırsa ya da gövde yoksa null döner;
+ * akış her durumda kapatılır. Metin değil ham baytlar döner (Buffer).
+ * @returns {Promise<Buffer|null>}
+ */
+async function sinirliBaytOku(yanit, enCokBayt) {
+  const govde = yanit?.body;
+  if (!govde || typeof govde.getReader !== 'function' || !Number.isInteger(enCokBayt) || enCokBayt <= 0) return null;
+  const bildirilen = Number(yanit.headers?.get?.('content-length'));
+  if (Number.isFinite(bildirilen) && bildirilen > enCokBayt) {
+    try {
+      await govde.cancel();
+    } catch {
+      /* akış zaten kapalı */
+    }
+    return null;
+  }
+  const okuyucu = govde.getReader();
+  const parcalar = [];
+  let toplam = 0;
+  let asildi = false;
+  try {
+    for (;;) {
+      const { done, value } = await okuyucu.read();
+      if (done) break;
+      toplam += value.byteLength;
+      if (toplam > enCokBayt) {
+        asildi = true;
+        break;
+      }
+      parcalar.push(value);
+    }
+  } finally {
+    try {
+      await okuyucu.cancel();
+    } catch {
+      /* akış zaten kapalı */
+    }
+  }
+  return asildi ? null : Buffer.concat(parcalar);
+}
+
+/**
  * @param {{ durum: number, metin?: string|null, icerikDogrula?: boolean }} girdi
  * @returns {{ ulasilabilir: boolean, neden: string }}
  *   neden: 'tamam' | 'beklenmeyen-durum' | 'sunucu-hatasi' | 'erisim-engelli' | 'ha-degil' | 'yonlendirme'
@@ -93,4 +135,4 @@ function sayfaYanitiBozukMu(durum) {
   return Number.isInteger(durum) && (durum >= 500 || durum === 403);
 }
 
-module.exports = { YOKLAMA_GOVDE_SINIRI_BAYT, manifestHaMi, sinirliOku, yoklamaDegerlendir, sayfaYanitiBozukMu };
+module.exports = { YOKLAMA_GOVDE_SINIRI_BAYT, manifestHaMi, sinirliOku, sinirliBaytOku, yoklamaDegerlendir, sayfaYanitiBozukMu };

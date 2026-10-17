@@ -28,10 +28,12 @@ const SAYFALAR = [
   ['src/kose-bildirim.html', 'src/kose-sayfa.js'],
   ['src/offline.html', 'src/offline.js'],
   ['src/masaustu-karo.html', 'src/masaustu-karo-sayfa.js'], // 1.4.0 (o-33): masaüstü karosu
+  ['src/itme-kart.html', 'src/itme-kart-sayfa.js'], // o-61: düğmeli itme bildirimi kartı
 ];
 // Sayfa betiğinin yanında sözlük kullanan yardımcı renderer betikleri (1.4.0 cihaz kartları; yuzey.html bunları yükler).
 // yuzey-bilgi.js: hızlı panelin bilgi bölümleri (sensörler, yapılacaklar, takvim, grafik).
-const EK_BETIKLER = ['src/yuzey-kartlar.js', 'src/yuzey-bilgi.js'];
+// yuzey-dis-onay.js: 1.4.0 dis grubu (o-54) evpaneli:// bağlantı izni. yuzey-eylem.js: eylem grubu (geri al düğmesi...).
+const EK_BETIKLER = ['src/yuzey-kartlar.js', 'src/yuzey-bilgi.js', 'src/yuzey-kamera.js', 'src/yuzey-dis-onay.js', 'src/yuzey-eylem.js'];
 
 // --- sözlük ve sayfa yapısı -------------------------------------------------------------------------------
 
@@ -49,7 +51,7 @@ test('yüzey sözlüğü: sayfa betiklerinde ve HTML işaretlerinde kullanılan 
     }
   }
   for (const [html, betik] of SAYFALAR) {
-    for (const m of oku(betik).matchAll(/'((?:yuzey|offline|kose|masaustu)\.[A-Za-z0-9_.]+)'/g)) kullanilan.add(m[1]);
+    for (const m of oku(betik).matchAll(/'((?:yuzey|offline|kose|masaustu|itme)\.[A-Za-z0-9_.]+)'/g)) kullanilan.add(m[1]);
     for (const m of oku(html).matchAll(/\bdata-i18n="([^"]+)"/g)) kullanilan.add(m[1]);
     for (const m of oku(html).matchAll(/\bdata-i18n-attr="([^"]+)"/g)) {
       for (const parca of m[1].split(';')) kullanilan.add(parca.slice(parca.indexOf(':') + 1).trim());

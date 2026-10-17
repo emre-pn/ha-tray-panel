@@ -144,6 +144,10 @@ const DURUM_TABLOSU = Object.freeze({
   media_player: { acik: ['playing', 'paused', 'on', 'idle', 'buffering'], kapali: ['off', 'standby'] },
   vacuum: { acik: ['cleaning', 'returning'], kapali: ['docked', 'idle', 'paused'] },
   timer: { acik: ['active'], kapali: ['idle'] },
+  // 1.4.0 cihaz grubu: perde/jaluzi ve vana "açık" (açık ya da açılıyor), "kapalı" (kapalı); kapanıyor geçiştir (nötr). Otomasyon etkin/devre dışı.
+  cover: { acik: ['open', 'opening'], kapali: ['closed'] },
+  valve: { acik: ['open', 'opening'], kapali: ['closed'] },
+  automation: { acik: ['on'], kapali: ['off'] },
 });
 
 /**

@@ -8,24 +8,49 @@
  *  ZARARSIZ onaysız çalışır.
  *
  * Onay biçimi yüzeye göre değişir (soru-3): panel/palet ~0,8 sn BASILI TUT; tepsi menüsü onay penceresi;
- * kısayol, komut satırı ve masaüstü karosuna yıkıcı eylem atanamaz.
+ * kısayol, komut satırı, masaüstü karosu ve dış tetikler (1.4.0: Jump List, .lnk, yerel API, evpaneli://, PC olayı, toplantı ışığı)
+ * yıkıcı eylem çalıştıramaz.
  *
  * 1.4.0: eylemSinifi(varlik, favori, servis) — servis verilirse src/lib/servis-izinleri.js'teki servis sınıfı da uygulanır:
  * 'yikici' servis (ör. todo.remove_item) her zaman onay ister (kapatılamaz); 'onayli' servis (ör. climate.set_hvac_mode)
  * favoride onay:false yoksa onay ister. Alan varsayılanı (onay isteyen alanlar) src/lib/alan-kaydi.js onayVarsayilan
  * sütunundan gelir: düğme, sanal düğme, script ve 1.4.0'da input_select, select, input_number, number, timer.
  * Servis sınıfı alan/varlık sınıfını yalnız SIKILAŞTIRIR (zararsızı onaylıya çevirir), hiçbir zaman gevşetmez.
+ *
+ * 1.4.0 cihaz grubu: servis VERİLMEZSE alanın tek tıklama servisi (alan-kaydi.js varsayilanServis) sınıflanır. Otomasyonun tek tıklama
+ * eylemi "trigger" ve vananın aç/kapat servisleri "yikici"dir: favoride onay:false yazılsa bile (elle düzenlenmiş ayar dosyası dahil)
+ * zorunlu onay kalır; panel/palet basılı tutma ister, kısayol, komut satırı ve masaüstü karosu reddeder.
  */
 
 const { alanAl, guvenliVarlikMi } = require('./suzgec');
-const { onayVarsayilanMi } = require('./alan-kaydi');
+const { onayVarsayilanMi, varsayilanServis } = require('./alan-kaydi');
 const { servisSinifi } = require('./servis-izinleri');
 const { sadelestir } = require('./metin');
 const { TR } = require('./ceviri-varsayilan');
 
 const SINIF = Object.freeze({ ZARARSIZ: 'zararsiz', YIKICI: 'yikici', YASAK: 'yasak' });
 // 'masaustu' (1.4.0, o-33): masaüstüne sabitlenen karo penceresi. Basılı tutma/onay penceresi sunmaz: YALNIZ zararsız eylem çalışır, yıkıcı olan reddedilir (kaynakIzni).
-const KAYNAKLAR = Object.freeze(['tepsi-menu', 'panel', 'palet', 'kisayol', 'komut-satiri', 'masaustu']);
+// 1.4.0 dış tetikler (dis grubu: o-21, o-47, o-52, o-53, o-54): uygulamanın penceresi DIŞINDAN gelen eylem kaynakları. Hepsi varsayılan kapalıdır ve
+// src/lib/dis-tetik.js kapısından geçer; burada da YALNIZ zararsız eylem çalışır (kaynakIzni yıkıcıyı reddeder) ve disKaynakIzni ile valf, otomasyon,
+// kamera, perde/kepenk ve klima modu değişimi hiçbir dış kaynaktan çalışmaz.
+//   jumplist         görev çubuğu atlama listesi görevi (--eylem=<ad> --kaynak=jumplist)
+//   kisayol-dosyasi  Ayarlar'da oluşturulan masaüstü kısayolu .lnk (--eylem=<ad> --kaynak=kisayol)
+//   yerel-api        127.0.0.1 üzerindeki jetonlu yerel API (POST /eylem)
+//   protokol         evpaneli://eylem?ad=<favori adı> bağlantısı
+//   pc-olayi         PC kilitlendi / kilit açıldı / uyku / uyanış
+//   toplanti         mikrofon ya da kamera kullanımı (toplantı ışığı)
+const DIS_KAYNAKLAR = Object.freeze(['jumplist', 'kisayol-dosyasi', 'yerel-api', 'protokol', 'pc-olayi', 'toplanti']);
+// 'gecikmeli' (1.4.0, o-15): "10 dk sonra kapat" gibi ertelenen eylem. Onay sunamaz: YALNIZ zararsız eylem çalışır; zamanı gelince hat kuralları yeniden uygulanır.
+const KAYNAKLAR = Object.freeze(['tepsi-menu', 'panel', 'palet', 'kisayol', 'komut-satiri', 'masaustu', 'gecikmeli', ...DIS_KAYNAKLAR]);
+// Dış kaynaklardan hiç çalışmayan alanlar (sınıfları zararsız sayılsa da): valf ve otomasyon (ne yaptıkları bilinmez / su ve gaz), kamera, perde ve
+// kepenk (cover; dışarıdan görünürlük), Kapı Kuralı alanları ve yapılacaklar listesi. Alan kaydında olmayan alan zaten hiçbir yüzeye giremez.
+const DIS_YASAK_ALANLAR = Object.freeze(['valve', 'automation', 'camera', 'cover', 'lock', 'alarm_control_panel', 'siren', 'todo']);
+// Dış kaynaklardan çalışmayan servisler: klima modu değişimi (ısıt / soğut / kapalı; turn_on ve turn_off da modu değiştirir).
+const DIS_YASAK_SERVISLER = Object.freeze({ climate: Object.freeze(['set_hvac_mode', 'turn_on', 'turn_off', 'toggle']) });
+
+// 1.4.0 cihaz grubu: bu alanların HİÇBİR eylemi onaysız çalışmaz ve favoride onay kapatılamaz (vana: gaz/su ana vanası olabilir;
+// otomasyon: ne yaptığı uygulamaca bilinemez). Dış tetikleyiciler ayrıca bu alanları kesin reddeder (alan-kaydi.js DIS_TETIK_YASAK_ALANLAR).
+const ZORUNLU_ONAYLI_ALANLAR = new Set(['valve', 'automation']);
 
 // Açık liste: her zaman YIKICI ve onay KAPATILAMAZ (zorunlu).
 const YIKICI_KIMLIKLER = new Set([
@@ -101,8 +126,11 @@ function ipucuVarMi(kimlik, ad) {
  */
 function eylemSinifi(varlik, favori, servis) {
   const temel = varlikSinifi(varlik, favori);
-  if (temel.sinif === SINIF.YASAK || servis === undefined) return temel;
-  const s = servisSinifi(alanAl(varlik.entity_id), servis);
+  if (temel.sinif === SINIF.YASAK) return temel;
+  const alan = alanAl(varlik.entity_id);
+  const hedef = servis === undefined ? varsayilanServis(alan) : servis; // servis verilmezse tek tıklama servisi
+  if (hedef === undefined || hedef === null) return temel;
+  const s = servisSinifi(alan, hedef);
   if (s === 'yikici') return { sinif: SINIF.YIKICI, zorunlu: true, neden: 'servis' };
   const onay = favori && typeof favori === 'object' ? favori.onay : undefined;
   if (s === 'onayli' && temel.sinif === SINIF.ZARARSIZ && onay !== false) return { sinif: SINIF.YIKICI, zorunlu: false, neden: 'servis-varsayilani' };
@@ -115,6 +143,7 @@ function varlikSinifi(varlik, favori) {
   const alan = alanAl(kimlik);
   const ad = varlik.attributes && typeof varlik.attributes === 'object' ? varlik.attributes.friendly_name ?? '' : '';
   const onay = favori && typeof favori === 'object' ? favori.onay : undefined;
+  if (ZORUNLU_ONAYLI_ALANLAR.has(alan)) return { sinif: SINIF.YIKICI, zorunlu: true, neden: 'alan-zorunlu' };
   if (YIKICI_KIMLIKLER.has(kimlik)) return { sinif: SINIF.YIKICI, zorunlu: true, neden: 'acik-liste' };
   if (ZARARSIZ_KIMLIKLER.has(kimlik)) {
     // Kullanıcı "Onay iste"yi açıkça işaretlediyse zararsız listedeki eylem de onay ister (ekstra güvenlik).
@@ -143,9 +172,21 @@ function kaynakIzni(sinif, kaynak) {
   if (sinif === SINIF.YIKICI) {
     if (kaynak === 'tepsi-menu') return { izin: true, onayTuru: 'diyalog' };
     if (kaynak === 'panel' || kaynak === 'palet') return { izin: true, onayTuru: 'basili' };
-    return { izin: false, onayTuru: null }; // kısayol, komut satırı
+    return { izin: false, onayTuru: null }; // kısayol, komut satırı, masaüstü karosu, dış tetikler
   }
   return { izin: false, onayTuru: null }; // YASAK ve bilinmeyen sınıf
+}
+
+/**
+ * 1.4.0 dış tetikler: alan ve servis bir dış kaynaktan (DIS_KAYNAKLAR) çalıştırılabilir mi? Yalnız SIKILAŞTIRIR: sınıf denetimi (kaynakIzni)
+ * ayrıca uygulanır. servis verilmezse alanın tek tıklama eylemi kastedilir.
+ * @param {string} alan
+ * @param {string} [servis]
+ */
+function disKaynakIzni(alan, servis) {
+  if (typeof alan !== 'string' || alan === '' || DIS_YASAK_ALANLAR.includes(alan)) return false;
+  const yasak = Object.hasOwn(DIS_YASAK_SERVISLER, alan) ? DIS_YASAK_SERVISLER[alan] : null;
+  return !(yasak && typeof servis === 'string' && yasak.includes(servis));
 }
 
 // Panele ve favorilere alınmayacak öneriler (detay-20): HA'yı yeniden başlat/yeniden yükle, "Onarımlar"ı yoksay, Google
@@ -187,7 +228,12 @@ function onayAciklamasi(kimlik, t = TR) {
 module.exports = {
   SINIF,
   KAYNAKLAR,
+  DIS_KAYNAKLAR,
+  DIS_YASAK_ALANLAR,
+  DIS_YASAK_SERVISLER,
+  disKaynakIzni,
   YIKICI_KIMLIKLER,
+  ZORUNLU_ONAYLI_ALANLAR,
   ZARARSIZ_KIMLIKLER,
   IPUCU_BELIRTECLERI,
   GIZLI_KIMLIKLER,

@@ -228,7 +228,7 @@ test('süzgeçten geçmeyen favoriler SESSİZ silinmez: atilanlar ve engellenenF
     { entity_id: 'light.salon', ad: 'Salon' },
     { entity_id: 'light.salon', ad: 'Salon' }, // tekrar
     { entity_id: 'Bozuk Kimlik', ad: 'x' },
-    { entity_id: 'cover.perde', ad: 'Perde' },
+    { entity_id: 'lawn_mower.bahce', ad: 'Bahçe' }, // kayıtsız alan
   );
   const { ayarlar, atilanlar } = ayarlariDuzelt(ham, { varsayilan: VARSAYILAN });
   assert.deepEqual(
@@ -243,7 +243,7 @@ test('süzgeçten geçmeyen favoriler SESSİZ silinmez: atilanlar ve engellenenF
   assert.deepEqual(ayarlar.engellenenFavoriler, [
     { entity_id: 'light.kapi_lambasi', neden: 'guvenlik' },
     { entity_id: 'lock.on_kapi', neden: 'alan' },
-    { entity_id: 'cover.perde', neden: 'alan' },
+    { entity_id: 'lawn_mower.bahce', neden: 'alan' },
   ]);
 });
 

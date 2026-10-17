@@ -14,11 +14,17 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 - Ev içi ve dış adres: uygulama önce ev adresini dener, ulaşamazsa dış adrese geçer.
 - Stream Deck, Görev Zamanlayıcı ve betikler için komut satırı: `"Ev Paneli.exe" --eylem="masa 40"`.
 - İklimlendirme, medya oynatıcı, süpürge, vantilatör, nem alma, seçim, sayı ve zamanlayıcı kartları; ışıklar için renk ve beyaz ton ayarı.
-- İstersen açılan bilgi kartları: grafikli sensör şeridi, saat ve hava durumu, salt okunur takvim ve yapılacaklar listeleri.
-- Sağ tık menüsü, sayfalar (sekmeler), karo simgesi, rengi ve boyutu, geri alınabilir sıralama ve masaüstüne sabitlenen karolar.
+- Perde ve jaluzi kartları (aç, durdur, kapat, konum), vana ve otomasyon kartları. Vana ve otomasyon için her zaman basılı tutmak gerekir; kısayoldan ve komut satırından hiç çalışmazlar.
+- İstersen açılan kamera anlık görüntüsü (durağan bir kare, canlı yayın yok): varsayılan olarak kapalıdır, kameraları Ayarlar'da tek tek onaylarsın, görüntü bulanık başlar, yalnız bellekte durur ve bir kameraya izin verilmişken panel ekran görüntüsünden gizlenir.
+- İstersen açılan bilgi kartları: grafikli sensör şeridi, saat, hava durumu ve tahmin, salt okunur takvim ve yapılacaklar listeleri. Medya kartlarında albüm kapağı görünür.
+- Sağ tık menüsü, sayfalar (sekmeler), odaya göre gruplama, karo simgesi, rengi ve boyutu, geri alınabilir sıralama ve masaüstüne sabitlenen karolar.
+- Geri al (`Ctrl+Alt+Z`), gecikmeli eylemler (`masa 10 dk sonra kapat`) ve hangi eylemin nereden çalıştığını gösteren yerel etkinlik geçmişi.
 - Home Assistant iletileri, düşük pil ve güncellemeler için panelde bildirimler; uyarı kuralları ve sessiz saatler. Masaüstü bildirimi isteğe bağlıdır.
+- İstersen açılan dış tetikler (hepsi varsayılan olarak kapalı): Jump List görevleri, masaüstü kısayolları, `evpaneli://` bağlantıları, 127.0.0.1 üzerinde yerel API, bilgisayar olayları (kilit, uyku) ve toplantı ışığı. Yalnız adıyla seçtiğin zararsız favorileri çalıştırırlar.
+- İstersen Home Assistant mobil uygulaması olarak kayıt: `notify.mobile_app_*` bildirimleri düğmeleriyle bilgisayarına gelir.
+- Zor kurulumlar için bağlantı seçenekleri: özel HTTP üstbilgileri (örneğin Cloudflare Access), özel kök sertifika ya da sabitlenmiş sertifika, tarayıcıyla giriş ve seçtiğin bir klasör üzerinden ayar eşitleme.
 - Açık, koyu ve yüksek karşıtlıklı tema; hazır ya da özel renkler, metin boyutu, Windows 11 mika/akrilik görünüm; Türkçe, İngilizce, Almanca, Fransızca ve İspanyolca arayüz.
-- Ayar araması, ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu ve varsayılan olarak kapalı, isteğe bağlı sürüm denetimi.
+- Ayar araması, ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu; sürüm denetimi ve uygulama içi güncelleme varsayılan olarak kapalıdır.
 - Kurulum gerektirmeyen taşınabilir sürüm.
 
 ## Güvenlik
@@ -26,10 +32,13 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 Uygulama gerçek cihazları yönettiği için bazı kurallar yerleşik ve değiştirilemez:
 
 - Kilitler, alarm panelleri, sirenler, kapılar, garaj kapıları, bariyerler, diafonlar, kepenkler ve benzerleri hiçbir zaman listelenmez, favoriye eklenmez, kısayola bağlanmaz ve çalıştırılmaz. Bunları içeren sahneler de engellenir.
-- Bilgisayarı kapatmak gibi eylemler için yaklaşık bir saniye basılı tutmak gerekir.
+- Kapı zili, kapı, giriş ve diafon kameraları hiçbir zaman listelenmez ya da gösterilmez. Yalnız perde, jaluzi, gölgelik ve tente kapak sayılır; garaj kapısı, bariyer ve kepenk engelli kalır.
+- Bilgisayarı kapatmak, vanayı kapatmak ya da bir otomasyonu çalıştırmak gibi eylemler için yaklaşık bir saniye basılı tutmak gerekir.
 - Erişim anahtarı Electron `safeStorage` (Windows DPAPI) ile şifrelenir. Günlüğe ya da dışa aktarılan dosyaya girmez; bir adrese gönderilmeden önce o adres anahtarsız doğrulanır.
+- Vana, otomasyon ve kamera ile onay isteyen hiçbir eylem uygulamanın dışından (dış tetik, yerel API, bağlantı, bilgisayar olayı) başlatılamaz.
 - Home Assistant anahtarı reddederse uygulama tekrar denemek yerine o anahtarı her yerde kullanmayı bırakır; böylece HA'nın IP yasağına takılmazsın.
 - Düz `http://` yalnız yerel ağ adreslerinde kabul edilir.
+- Sen açmadıkça Home Assistant dışında kimseye bir şey gönderilmez (yalnız sürüm denetimi ve uygulama içi güncelleme isteğe bağlıdır). Telemetri yoktur; adresin ve anahtarın üçüncü bir tarafa gitmez.
 
 ## Gereksinimler
 

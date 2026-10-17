@@ -112,3 +112,18 @@ test('websocketAdresi: http -> ws, https -> wss, yol /api/websocket; yol/sorgu a
   assert.equal(p.websocketAdresi('düz metin'), null);
   assert.equal(p.websocketAdresi(undefined), null);
 });
+
+test('o-61: mobile_app bildirim kanalı abonelik listesinde; yalnız düz alanlar (webhook_id, support_confirm), yazan komutlar yine yok', () => {
+  assert.ok(p.ABONELIK_KOMUTLARI.includes('mobile_app/push_notification_channel'));
+  assert.deepEqual(p.komutMesaji(7, { type: 'mobile_app/push_notification_channel', webhook_id: 'ab12cd34ef56ab12cd34ef56ab12cd34', support_confirm: false }), {
+    id: 7,
+    type: 'mobile_app/push_notification_channel',
+    webhook_id: 'ab12cd34ef56ab12cd34ef56ab12cd34',
+    support_confirm: false,
+  });
+  assert.equal(p.komutMesaji(7, { type: 'mobile_app/push_notification_channel', webhook_id: { ic: 1 } }), null, 'nesne değer reddedilir');
+  assert.equal(p.komutMesaji(7, { type: 'mobile_app/push_notification_channel', 'webhook-id': 'x' }), null, 'alan adı deseni');
+  assert.equal(p.komutMesaji(7, { type: 'mobile_app/webhook/fire' }), null);
+  assert.equal(p.komutMesaji(7, { type: 'call_service', domain: 'light' }), null);
+  assert.ok(!p.OKUMA_KOMUTLARI.includes('mobile_app/push_notification_channel'), 'okuma (istek/yanıt) listesine girmez: bir abonelik');
+});

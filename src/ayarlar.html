@@ -1148,6 +1148,43 @@
       flex: 1;
     }
 
+    /* Bağlantı katmanı (1.4.0, o-55..o-58): üstbilgi satırları, sertifika ve giriş durumları (ayarlar-baglanti.js). */
+    .baglanti-satir {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    .baglanti-satir input[type="text"],
+    .baglanti-satir input[type="password"] {
+      flex: 1 1 160px;
+      width: auto;
+      min-width: 0;
+    }
+
+    .baglanti-satir .baglanti-satir-hata {
+      flex-basis: 100%;
+      margin-top: 0;
+    }
+
+    .baglanti-kutu {
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    .baglanti-kutu code,
+    .baglanti-parmak {
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--kod-text);
+      word-break: break-all;
+    }
+
     /* Vurgu rengi: renk seçici ve önizleme (g-12). */
     .renk-satiri {
       display: flex;
@@ -1389,6 +1426,29 @@
       color: var(--text-dim);
     }
 
+    /* Dış tetikler (1.4.0 dis grubu): yerel API örnek isteği ve izin satırları. */
+    .dis-ornek {
+      margin: 4px 0 0;
+      padding: 8px 10px;
+      overflow-x: auto;
+      font-size: 12px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--text-main);
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      user-select: text;
+    }
+
+    .dis-izin {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+    }
+
     @media (max-width: 640px) {
       body {
         padding: 0 12px;
@@ -1476,6 +1536,51 @@
       </label>
       <div class="ipucu" data-i18n="ayar.baglanti.canliIpucu">Açıkken panel ve menü durumları Home Assistant’tan anında gelir; kapalıyken ya da bağlantı kurulamazsa durumlar 60 saniyede bir yenilenir. Erişim anahtarı yalnız bu bağlantının kimlik doğrulama iletisinde gönderilir.</div>
       <div class="ipucu" id="canliDurumMetni"></div>
+    </div>
+
+    <!-- 1.4.0 (o-55): özel HTTP üstbilgileri (Cloudflare Access vb.). Satırlar ayarlar-baglanti.js ile çizilir; değerler yalnız ana sürece gider. -->
+    <h3 class="alt-baslik" id="ustbilgiBaslik" data-i18n="ayar.baglanti.ust.baslik">Özel üstbilgiler (Cloudflare Access vb.)</h3>
+    <div class="form-grubu">
+      <div class="ipucu" style="margin-top: 0;" data-i18n="ayar.baglanti.ust.aciklama">Home Assistant’ı Cloudflare Access gibi bir kimlik katmanının arkasında yayınlıyorsan, servis jetonu üstbilgilerini (örneğin CF-Access-Client-Id ve CF-Access-Client-Secret) burada tanımla. Üstbilgiler yalnız yukarıda kayıtlı ev içi ve dış adrese eklenir (istekler, canlı bağlantı ve Home Assistant penceresi); başka hiçbir siteye gitmez. Değerler Windows şifrelemesiyle (DPAPI) saklanır; dışa aktarmaya, günlüğe ve tanılama raporuna girmez.</div>
+      <div id="ustbilgiListesi" role="list" aria-labelledby="ustbilgiBaslik"></div>
+      <div class="buton-satiri">
+        <button class="buton buton-ikincil" id="btnUstbilgiEkle" type="button" data-i18n="ayar.baglanti.ust.ekle">Üstbilgi ekle</button>
+        <button class="buton buton-birincil" id="btnUstbilgiKaydet" type="button" data-i18n="ayar.baglanti.ust.kaydet">Üstbilgileri kaydet</button>
+        <button class="buton buton-ikincil" id="btnUstbilgiDene" type="button" data-i18n="ayar.baglanti.ust.dene">Üstbilgileri dene</button>
+        <button class="buton buton-tehlike" id="btnUstbilgiSil" type="button" style="display: none;" data-i18n="ayar.baglanti.ust.sil">Tüm üstbilgileri sil</button>
+      </div>
+      <div class="ipucu" id="ustbilgiDurum" role="status" aria-live="polite"></div>
+      <div id="ustbilgiDeneSonuc" role="status" aria-live="polite"></div>
+      <div class="ipucu" data-i18n="ayar.baglanti.ust.ipucu403">Üstbilgi eksik ya da yanlışsa katman 403 verebilir; bu durumda uygulama, Home Assistant’ı korumak için o adrese 15 dakika boyunca anahtarlı istek göndermez.</div>
+    </div>
+
+    <!-- 1.4.0 (o-56): sertifika güveni (yalnız HA adresleri için özel kök CA / parmak izi sabitleme). Satırlar ayarlar-sertifika.js ile çizilir. -->
+    <h3 class="alt-baslik" id="sertifikaBaslik" data-i18n="ayar.baglanti.sert.baslik">Sertifika güveni (özel sertifikalı adres)</h3>
+    <div class="form-grubu">
+      <div class="ipucu" style="margin-top: 0;" data-i18n="ayar.baglanti.sert.aciklama">Home Assistant adresin kendi (özel) bir sertifika kullanıyorsa, güvenilecek kök sertifikayı ekleyebilir ya da sunucu sertifikasının SHA-256 parmak izini sabitleyebilirsin. İkisi de yalnız yukarıda kayıtlı https Home Assistant adresleri için geçerlidir; başka hiçbir sitenin sertifika denetimine dokunulmaz. Sertifika hatalarını yok sayma seçeneği yoktur.</div>
+      <div id="sertifikaAdresListesi" role="list" aria-labelledby="sertifikaBaslik"></div>
+      <div id="sertifikaOkunan" class="baglanti-kutu" role="group" style="display: none;"></div>
+      <div class="ipucu" data-i18n="ayar.baglanti.sert.sabitUyari">Sabitleme, sunucu sertifikası yenilendiğinde (örneğin Let’s Encrypt ile her birkaç ayda bir) bağlantıyı keser; yeni parmak izini yeniden sabitlemen gerekir. Uzun ömürlü ya da kendi ürettiğin sertifikalar için uygundur.</div>
+      <div class="bilgi-alt-baslik" id="sertifikaCaBaslik" data-i18n="ayar.baglanti.sert.caBaslik">Güvenilen kök sertifikalar</div>
+      <div class="ipucu" style="margin-top: 0;" data-i18n="ayar.baglanti.sert.caAciklama">Kendi sertifika otoritenin (CA) kök sertifikasını (.pem, .crt, .cer) ekle. Yalnız Home Assistant adreslerinde geçerlidir. Özel anahtar içeren dosyalar kabul edilmez.</div>
+      <div id="sertifikaCaListesi" role="list" aria-labelledby="sertifikaCaBaslik"></div>
+      <div class="buton-satiri">
+        <button class="buton buton-ikincil" id="btnSertifikaCaEkle" type="button" data-i18n="ayar.baglanti.sert.caEkle">Kök sertifika ekle…</button>
+      </div>
+      <div class="ipucu" id="sertifikaDurum" role="status" aria-live="polite"></div>
+    </div>
+
+    <!-- 1.4.0 (o-57): tarayıcıyla giriş (OAuth). Durum ve düğmeler ayarlar-oturum.js ile yönetilir; kod/jeton bu sayfaya hiç gelmez. -->
+    <h3 class="alt-baslik" id="oturumBaslik" data-i18n="ayar.baglanti.oturum.baslik">Tarayıcıyla giriş (anahtar yapıştırmadan)</h3>
+    <div class="form-grubu">
+      <div class="ipucu" style="margin-top: 0;" data-i18n="ayar.baglanti.oturum.aciklama">Uzun ömürlü erişim anahtarını yapıştırmak yerine Home Assistant’a varsayılan tarayıcında giriş yapabilirsin. Giriş sırasında uygulama yalnız bu bilgisayarda geçici bir yerel adres (127.0.0.1) dinler ve iş bitince kapatır; parolan Ev Paneli’ne hiç gelmez. Oturum anahtarı Windows şifrelemesiyle (DPAPI) saklanır, kısa ömürlü erişim anahtarı süresi dolmadan kendiliğinden yenilenir. Elle yapıştırılan anahtar ve tarayıcı oturumu aynı anda tutulmaz: biri kaydedilince diğeri silinir.</div>
+      <div id="oturumDurum" class="baglanti-kutu" role="status" aria-live="polite"></div>
+      <div class="buton-satiri">
+        <button class="buton buton-birincil" id="btnOturumGiris" type="button" data-i18n="ayar.baglanti.oturum.giris">Tarayıcıyla giriş yap</button>
+        <button class="buton buton-ikincil" id="btnOturumIptal" type="button" style="display: none;" data-i18n="ayar.baglanti.oturum.iptal">Vazgeç</button>
+        <button class="buton buton-tehlike" id="btnOturumCikis" type="button" style="display: none;" data-i18n="ayar.baglanti.oturum.cikis">Oturumu kapat</button>
+      </div>
+      <div class="ipucu" id="oturumSonuc" role="status" aria-live="polite"></div>
     </div>
   </section>
 
@@ -1585,6 +1690,14 @@
       </div>
       <div class="ipucu" id="paletKisayolIpucu" data-i18n="ayar.kisayol.paletIpucu">Boş bırakırsan palet kısayolu kapanır (panel yine tepsiden açılır). Palette yazarak ara; “ışık 40” gibi bir komutla parlaklık seviyesi de verebilirsin.</div>
       <div class="ipucu-uyari" id="paletKisayolUyarilari" style="display: none;"></div>
+    </div>
+
+    <div class="form-grubu">
+      <label class="checkbox-etiket">
+        <input type="checkbox" id="kisayolBasiliTut">
+        <span data-i18n="ayar.etk.basiliEtiket">Kısayolu basılı tuttuğum sürece pencere görünsün</span>
+      </label>
+      <div class="ipucu" data-i18n="ayar.etk.basiliIpucu">Açıkken pencere, “Pencereyi Göster / Gizle” kısayoluna basılı tuttuğun sürece görünür, bıraktığında gizlenir. Uygulama tuşları dinlemez; tuşun basılı olduğu yalnız kısayolun kendi tekrarlarından anlaşılır. Tekrar algılanmazsa (kısa basış ya da Windows tekrar üretmiyorsa) pencere açık kalır ve eskisi gibi ikinci basış onu kapatır. Gerçek Windows’ta henüz denenmedi. Varsayılan olarak kapalıdır.</div>
     </div>
 
     <div class="form-grubu" role="group" aria-labelledby="panolarEtiketi">
@@ -1797,6 +1910,10 @@
 
     <div id="yetkiDurumUyari" class="bolum-aciklama" style="display: none; color: var(--warn-text);" role="alert"></div>
 
+    <!-- o-43: kayıtlı anahtar yönetici kullanıcıya aitse (auth/current_user is_admin) uyarı; değilse olumlu not. Bilinmiyorsa ikisi de gizli. -->
+    <div id="anahtarYoneticiUyari" class="bolum-aciklama" style="display: none; color: var(--warn-text);" role="status" data-i18n="ayar.etk.yoneticiUyari">Bu erişim anahtarı bir YÖNETİCİ kullanıcıya ait. Uygulama yalnız cihazları yönetir; yönetici anahtarı sızarsa Home Assistant’ın tamamına erişilebilir. Home Assistant’ta (Ayarlar &gt; Kişiler &gt; Kullanıcılar) yönetici olmayan bir kullanıcı oluşturup o kullanıcının profilinden yeni bir uzun ömürlü anahtar üretmeni öneririz. Not: oda önerisi ve kalıcı bildirimleri okuma gibi birkaç özellik yönetici yetkisi ister ve yönetici olmayan anahtarla kapalı kalır.</div>
+    <div id="anahtarYoneticiDegil" class="ipucu" style="display: none;" role="status" data-i18n="ayar.etk.yoneticiDegil">Bu anahtarın sahibi yönetici olmayan bir kullanıcı: önerilen, daha güvenli kurulum.</div>
+
     <!-- Açık ikinci onay (tur 3): hata bütçesi dolu (>= 2 hatalı deneme) ya da güvenlik kaydı güvenilmez; onaysız Home Assistant'a hiç istek gitmez. -->
     <div id="ikinciOnayKutusu" class="bolum-aciklama" style="display: none; color: var(--warn-text);" role="alert">
       <div id="ikinciOnayMetni"></div>
@@ -1885,6 +2002,28 @@
         </div>
         <div class="ipucu" id="panelOpaklikIpucu" data-i18n="ayar.pencere.opaklikIpucu">Home Assistant penceresi ile hızlı panelin ve paletin opaklığı (yüzde 50-100). Hızlı panel ve palet Windows 11 malzemesi (akrilik, mica) kullanırken tam opak kalır; opaklık yalnız “Düz (opak koyu)” malzemede uygulanır.</div>
       </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="panelSabit">
+          <span data-i18n="ayar.etk.sabitEtiket">Hızlı paneli sabitle (dışarı tıklayınca kapanmasın)</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.etk.sabitIpucu">Açıkken hızlı panel başka bir yere tıkladığında kapanmaz; Esc, tepsi simgesine tıklamak ya da kısayol onu kapatır. Panelin başlığındaki iğne düğmesiyle de değiştirebilirsin. Komut paleti sabitlenmez.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="karoTekerlegi">
+          <span data-i18n="ayar.etk.tekerlekEtiket">Fare tekerleği ışık parlaklığını ve medya sesini değiştirsin (her çentik ±5)</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.etk.tekerlekIpucu">Panelde bir ışık karosunun ya da medya kartının üstünde tekerleği yukarı çevirmek değeri artırır, aşağı çevirmek azaltır. Tekerlek kapalı bir ışığı açmaz. Panel kaydırılabiliyorsa tekerlek yalnız kaydırıcının üstünde çalışır ve sayfa kaydırılırken karolar değer değiştirmez.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="tepsiOrtaTik" data-i18n="ayar.etk.ortaTikEtiket">Tepsi simgesine orta tık</label>
+        <select id="tepsiOrtaTik" aria-describedby="tepsiOrtaTikIpucu"></select>
+        <div class="ipucu" id="tepsiOrtaTikIpucu" data-i18n="ayar.etk.ortaTikIpucu">Orta tıkta seçtiğin zararsız favori çalışır (örn. bir ışığı aç-kapa). Yalnız onay istemeyen ışık, priz, vantilatör, sahne gibi favoriler listelenir; onay isteyen eylemler ile kapı, kilit ve alarm türü cihazlar orta tıkla asla çalışmaz. Liste, Favoriler bölümünde cihazlar listelendikten sonra dolar. Yalnız Windows’ta çalışır; gerçek tepsi simgesinde henüz denenmedi.</div>
+      </div>
     </div>
   </details>
 
@@ -1955,6 +2094,97 @@
     </div>
   </details>
 
+  <!-- 1.4.0 eylem grubu (src/ayarlar-eylem.js): etkinlik geçmişi (o-17), geri al (o-12), gecikmeli eylem (o-15), oda grubu (o-14), palette diğer cihazlar (o-46) -->
+  <details class="bolum" id="bolumEtkinlik">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.eylem.baslik">Eylemler, geri al ve geçmiş</h3></summary>
+    <div class="bolum-icerik">
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.eylem.geriAl.baslik">Geri al</h4>
+      <p class="bolum-aciklama" data-i18n="ayar.eylem.geriAl.aciklama">Son eylemlerini (en çok 5) kısa süre içinde geri alabilirsin: yanlışlıkla kapattığın bir ışığı ya da prizi, değiştirdiğin parlaklığı, rengi ya da vantilatör hızını ve çalıştırdığın bir sahneyi önceki duruma döndürür. Yalnızca zararsız eylemler geri alınır; kilit, alarm, kapı, garaj kapısı ve kepenk gibi cihazlar hiçbir yoldan çalıştırılmaz. Geri alma da aynı güvenli yoldan geçer. Işık “aç” ile geri yüklenirken önceki parlaklık ve renk, ışığın kendi hafızasına bağlıdır. Liste yalnızca bellekte tutulur; uygulama kapanınca silinir.</p>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="geriAl">
+          <span data-i18n="ayar.eylem.geriAl.tut">Son eylemleri geri almaya izin ver</span>
+        </label>
+      </div>
+
+      <div class="form-grubu">
+        <label for="geriAlSureDk" data-i18n="ayar.eylem.geriAl.sure">Geri alma süresi (dakika)</label>
+        <input type="number" id="geriAlSureDk" min="1" max="60" step="1" inputmode="numeric" aria-describedby="geriAlSureIpucu">
+        <div class="ipucu" id="geriAlSureIpucu" data-i18n="ayar.eylem.geriAl.sureIpucu">1 ile 60 dakika arası. Süresi dolan eylem artık geri alınamaz.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="geriAlKisayolu" data-i18n="ayar.eylem.geriAl.kisayol">Geri alma kısayolu</label>
+        <input type="text" id="geriAlKisayolu" class="kisayol-girdisi" placeholder="Ctrl+Alt+Z" spellcheck="false" autocomplete="off" aria-describedby="geriAlKisayolIpucu geriAlKisayolUyarilari">
+        <div class="ipucu" id="geriAlKisayolIpucu" data-i18n="ayar.eylem.geriAl.kisayolIpucu">Varsayılan Ctrl+Alt+Z. Boş bırakırsan genel kısayol kapanır; panelin “Geri al” düğmesi ve tepsi menüsündeki öğe her zaman çalışır. Başka bir kısayolla çakışırsa o kısayol önceliklidir.</div>
+        <div class="ipucu-uyari" id="geriAlKisayolUyarilari" style="display: none;"></div>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" style="margin-top: 24px;" data-i18n="ayar.eylem.gecikmeli.baslik">Zamanlı eylemler</h4>
+      <p class="bolum-aciklama" data-i18n="ayar.eylem.gecikmeli.aciklama">Paletten “salon 10 dk sonra kapat” ya da “fan 30dk” (şimdi aç, 30 dk sonra kapat) yazarak ışık, priz, vantilatör, nem alıcı ve yardımcı anahtarlar için zamanlı eylem kurabilirsin. Süre 1 dakika ile 24 saat arasındadır; en çok 10 bekleyen eylem olabilir. Bekleyenler yalnızca bu uygulamanın belleğindedir: uygulama kapanınca hepsi iptal olur, bilgisayar uykudayken çalışmaz (süre geçmişse eylem çalıştırılmaz ve sana söylenir). Bekleyenleri panelden ya da tepsi menüsünden iptal edebilirsin. Zamanı gelince eylem yine aynı güvenli yoldan geçer; kapı, kilit, alarm, garaj kapısı ve kepenk gibi cihazlar ve onay isteyen eylemler ertelenemez.</p>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="gecikmeliEylem">
+          <span data-i18n="ayar.eylem.gecikmeli.tut">Zamanlı eylemlere izin ver</span>
+        </label>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" style="margin-top: 24px;" data-i18n="ayar.eylem.oda.baslik">Odalar</h4>
+      <p class="bolum-aciklama" data-i18n="ayar.eylem.oda.aciklama">Hızlı paneldeki karolar türe göre (Işık, Sahne, PC...) ya da Home Assistant’ta tanımlı odalara (alanlara) göre gruplanabilir. Odası olmayan karolar kendi türünde kalır. Oda kaydını okumak için Home Assistant’ta yönetici yetkisi gerekir; okunamazsa panel tür gruplu kalır. Odaya göre gruplamada her odanın başlığında “Odayı kapat” düğmesi çıkar: yalnızca o odadaki açık ışık, priz, vantilatör, sanal anahtar ve nem alıcıları, iki adımlı onayla kapatır. Kilit, alarm, kapı, garaj kapısı, kepenk, perde, klima ve onay isteyen cihazlara dokunmaz. Kapatma tek adım olarak geri alınabilir.</p>
+
+      <div class="form-grubu">
+        <label for="panelGruplama" data-i18n="ayar.eylem.oda.gruplama">Panel gruplaması</label>
+        <select id="panelGruplama">
+          <option value="tur" data-i18n="ayar.eylem.oda.tur">Türe göre (Işık, Sahne, PC...)</option>
+          <option value="oda" data-i18n="ayar.eylem.oda.oda">Odaya göre (Home Assistant alanları)</option>
+        </select>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" style="margin-top: 24px;" data-i18n="ayar.eylem.degisen.baslik">Son değişenler</h4>
+      <p class="bolum-aciklama" data-i18n="ayar.eylem.degisen.aciklama">Paletin arama kutusuna “@” yazınca (ör. “@salon”) panelin izlediği ışık, priz, sahne, klima ve medya oynatıcıların son değişimleri listelenir: en çok 20 satır, her cihaz için en son değişim. Sensörler listeye girmez. Liste yalnızca bellekte tutulur, uygulama kapanınca silinir ve hiçbir yere gönderilmez. Yalnızca uygulamanın zaten izlediği cihazlar (favoriler gibi) görünür; kapı, kilit, alarm, garaj kapısı ve kepenk gibi cihazlar hiçbir listede yer almaz. Favori olan bir cihaz satırında Enter normal tıklama gibi çalışır.</p>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="sonDegisenler">
+          <span data-i18n="ayar.eylem.degisen.tut">Palette “@” ile son değişenleri göster</span>
+        </label>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" style="margin-top: 24px;" data-i18n="ayar.eylem.diger.baslik">Favori olmayan cihazlar</h4>
+      <p class="bolum-aciklama" data-i18n="ayar.eylem.diger.aciklama">Açıkken paletin arama kutusuna “*” yazınca (ör. “*salon”, “*ışık”, “*sahne”) favori olmayan ışık, priz, vantilatör, sanal anahtar, nem alıcı ve sahneler aranır. Enter cihazı değiştirir (sahneyi çalıştırır); Shift+Enter “Aç / Kapat / Favoriye ekle / Home Assistant’ta aç” menüsünü gösterir. Liste, palet ilk kez “*” ile arandığında Home Assistant’tan tek bir okuma isteğiyle alınır, 2 dakika bellekte tutulur ve hiçbir yere kaydedilmez ya da gönderilmez. Kapı, kilit, alarm, garaj kapısı, kepenk, perde, script, düğme ve onay isteyen cihazlar bu listede hiç yer almaz; her işlem diğer eylemlerle aynı güvenli yoldan geçer ve geri alınabilir. Varsayılan olarak kapalıdır: “palet yalnızca favorileri arar” kuralını gevşetir.</p>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="paletDigerCihazlar">
+          <span data-i18n="ayar.eylem.diger.tut">Palette “*” ile favori olmayan güvenli cihazları ara</span>
+        </label>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" style="margin-top: 24px;" data-i18n="ayar.etkinlik.baslik">Etkinlik geçmişi</h4>
+      <p class="bolum-aciklama" data-i18n="ayar.etkinlik.aciklama">Uygulamanın yaptığı ya da yapamadığı eylemlerin yerel kaydı: ne zaman, hangi yüzeyden (panel, palet, tepsi, kısayol...), hangi cihaz ve sonuç. Son 200 kayıt tutulur; yalnızca bu bilgisayarda durur ve hiçbir yere gönderilmez. Erişim anahtarı, adres ya da parametre değeri kaydedilmez.</p>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="etkinlikGecmisi">
+          <span data-i18n="ayar.etkinlik.tut">Etkinlik geçmişini tut</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.etkinlik.tutIpucu">Kapatırsan yeni kayıt yazılmaz; var olan kayıtlar “Geçmişi temizle” ile silinir.</div>
+      </div>
+
+      <div class="form-grubu" style="margin-top: 16px;">
+        <label id="etkinlikListeEtiketi" data-i18n="ayar.etkinlik.liste">Son etkinlikler</label>
+        <div id="etkinlikListesi" role="list" aria-labelledby="etkinlikListeEtiketi"></div>
+        <div class="ipucu" id="etkinlikDurum" role="status" aria-live="polite"></div>
+        <div class="buton-satiri" style="margin-top: 8px;">
+          <button class="buton buton-ikincil" id="btnEtkinlikYenile" type="button" data-i18n="ayar.etkinlik.yenile">Yenile</button>
+          <button class="buton buton-ikincil" id="btnEtkinlikTemizle" type="button" data-i18n="ayar.etkinlik.temizle">Geçmişi temizle</button>
+        </div>
+      </div>
+    </div>
+  </details>
+
   <details class="bolum" id="bolumBilgi">
     <summary><h3 class="bolum-baslik" data-i18n="ayar.bilgi.baslik">Bilgi kartları ve sensörler</h3></summary>
     <div class="bolum-icerik">
@@ -2013,12 +2243,33 @@
       <div class="form-grubu">
         <label for="ustKart2" data-i18n="ayar.bilgi.kart2.etiket">İkinci kart</label>
         <select id="ustKart2"></select>
-        <div class="ipucu" data-i18n="ayar.bilgi.kart.ipucu">Panelin en üstünde yan yana iki kart gösterilebilir: saat ve tarih, hava durumu ya da seçtiğin herhangi bir sensör. Kartlar yalnızca bilgi gösterir; üzerine tıklayınca hiçbir şey çalışmaz.</div>
+        <div class="ipucu" data-i18n="ayar.bilgi.kart.ipucu">Panelin en üstünde iki kart gösterilebilir: saat ve tarih, hava durumu, bir medya oynatıcı ya da seçtiğin herhangi bir sensör. Saat, hava ve sensör kartları yalnızca bilgi gösterir; üzerine tıklayınca hiçbir şey çalışmaz. Medya kartı oynatıcının kendi düğmelerini taşır.</div>
       </div>
       <div class="form-grubu">
         <label for="havaVarligi" data-i18n="ayar.bilgi.hava.etiket">Hava durumu varlığı</label>
         <select id="havaVarligi"></select>
-        <div class="ipucu" data-i18n="ayar.bilgi.hava.ipucu">Hava durumu kartı bu varlığın şu anki durumunu gösterir; tahmin gösterilmez.</div>
+        <div class="ipucu" data-i18n="ayar.bilgi.hava.ipucu">Hava durumu kartı bu varlığın şu anki durumunu gösterir; altında günlük ya da saatlik tahmin de çıkabilir (aşağıdaki seçenek).</div>
+      </div>
+      <div class="form-grubu">
+        <label for="havaTahmini" data-i18n="ayar.bilgi.tahmin.etiket">Hava tahmini</label>
+        <select id="havaTahmini" aria-describedby="havaTahminiIpucu">
+          <option value="gunluk" data-i18n="ayar.bilgi.tahmin.gunluk">Günlük (5 gün)</option>
+          <option value="saatlik" data-i18n="ayar.bilgi.tahmin.saatlik">Saatlik (8 saat)</option>
+          <option value="kapali" data-i18n="ayar.bilgi.tahmin.kapali">Gösterme</option>
+        </select>
+        <div class="ipucu" id="havaTahminiIpucu" data-i18n="ayar.bilgi.tahmin.ipucu">Hava durumu kartı seçiliyken panelde kartın altında tahmin şeridi görünür; panelde Günlük ve Saatlik arasında geçebilirsin. Tahmin yalnızca panel açıkken Home Assistant’tan okunur (10 dakikada bir en fazla) ve varlığın tahmin desteklemesi gerekir.</div>
+      </div>
+      <div class="form-grubu">
+        <label for="birincilMedya" data-i18n="ayar.bilgi.medya.etiket">Medya oynatıcı varlığı</label>
+        <select id="birincilMedya" aria-describedby="birincilMedyaIpucu"></select>
+        <div class="ipucu" id="birincilMedyaIpucu" data-i18n="ayar.bilgi.medya.ipucu">Üst karta “Medya oynatıcı” seçersen panelin en üstünde bu oynatıcının şimdi çalan kartı görünür: albüm kapağı, oynat / duraklat, ses ve kaynak. Yalnızca medya oynatıcılar listelenir.</div>
+      </div>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="medyaKapagi" aria-describedby="medyaKapagiIpucu">
+          <span data-i18n="ayar.bilgi.kapak.etiket">Medya kartlarında albüm kapağını göster</span>
+        </label>
+        <div class="ipucu" id="medyaKapagiIpucu" data-i18n="ayar.bilgi.kapak.ipucu">Kapak resmi yalnızca Home Assistant’tan, kendi bağlantın üzerinden alınır; başka hiçbir siteye bağlanılmaz. Resim en çok 600 KB olabilir ve panel açıkken yalnızca çalan parça için istenir. Kapatırsan kartlarda kapak görünmez ve hiç istenmez.</div>
       </div>
       <div class="form-grubu">
         <label for="saatBicimi" data-i18n="ayar.bilgi.saat.etiket">Saat biçimi</label>
@@ -2073,6 +2324,44 @@
     </div>
   </details>
 
+  <details class="bolum" id="bolumKamera">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.kamera.baslik">Kamera anlık görüntüsü</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.kamera.aciklama">Hızlı panelin en altında, tek tek onayladığın kameraların son anlık görüntüsünü gösterebilirsin. Canlı yayın, kayıt ve ses yoktur. Varsayılan olarak hiçbir kamera açık değildir.</p>
+      <div class="ipucu" data-i18n="ayar.kamera.gizlilik">Gizlilik: görüntü yalnızca bellekte tutulur, diske yazılmaz ve panel kapanınca silinir. Bir kameraya izin verdiğinde hızlı panel, ekran görüntüsü ve ekran kaydı programlarından gizlenir. Kapı, zil, diafon ve giriş kameraları listelenmez ve gösterilemez. Bu seçim dışa aktardığın ayar dosyasına yazılmaz.</div>
+
+      <div class="form-grubu">
+        <label for="kameraIzinleriEkle" id="kameraIzinleriEtiket" data-i18n="ayar.kamera.etiket">Panelde gösterilecek kameralar</label>
+        <div class="bilgi-satirlar" id="kameraIzinleriListesi" role="group" aria-labelledby="kameraIzinleriEtiket"></div>
+        <div class="bilgi-ekle-satiri">
+          <select id="kameraIzinleriEkle"></select>
+          <button class="buton buton-ikincil" id="btnKameraIzinleriEkle" type="button" aria-labelledby="btnKameraIzinleriEkle kameraIzinleriEtiket" data-i18n="ayar.bilgi.ekle">Ekle</button>
+        </div>
+        <div class="ipucu" data-i18n="ayar.kamera.ipucu">En çok 8 kamera seçebilirsin. Liste Home Assistant’tan yüklenince dolar; yalnızca bu listedeki kameralar panelde görünür.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="kameraBulanik">
+          <span data-i18n="ayar.kamera.bulanik.etiket">Görüntüler bulanık başlasın (tıklayınca açılır)</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.kamera.bulanik.ipucu">Önerilir. Panel her açıldığında görüntü yeniden bulanık başlar.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="kameraYenilemeSn" data-i18n="ayar.kamera.yenileme.etiket">Otomatik yenileme</label>
+        <select id="kameraYenilemeSn" aria-describedby="kameraYenilemeIpucu">
+          <option value="0" data-i18n="ayar.kamera.yenileme.kapali">Yalnızca elle (Yenile düğmesi)</option>
+          <option value="5" data-i18n="ayar.kamera.yenileme.s5">Her 5 saniyede</option>
+          <option value="10" data-i18n="ayar.kamera.yenileme.s10">Her 10 saniyede</option>
+          <option value="30" data-i18n="ayar.kamera.yenileme.s30">Her 30 saniyede</option>
+          <option value="60" data-i18n="ayar.kamera.yenileme.s60">Her 60 saniyede</option>
+        </select>
+        <div class="ipucu" id="kameraYenilemeIpucu" data-i18n="ayar.kamera.yenileme.ipucu">Panel açıkken görüntüyü kendiliğinden tazeler. Kamera başına en sık 5 saniyede bir, toplamda dakikada en çok 20 çekim yapılır.</div>
+      </div>
+    </div>
+  </details>
+
   <details class="bolum" id="bolumBildirimler">
     <summary><h3 class="bolum-baslik" data-i18n="ayar.bm.baslik">Bildirim merkezi ve uyarı kuralları</h3></summary>
     <div class="bolum-icerik">
@@ -2117,6 +2406,21 @@
         <div class="ipucu" data-i18n="ayar.bm.masaustuIpucu">Açıkken yeni bildirimler ekranın sağ altında kısa süre görünür; ilk yükleme sessizdir ve dakikada en çok 3 bildirim gösterilir. Köşe bildirimi (Geri bildirim bölümü) kapalıysa bildirimler yalnız panelde birikir.</div>
       </div>
 
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="baglantiBildirimi">
+          <span data-i18n="ayar.etk.baglantiEtiket">Home Assistant bağlantısı koptuğunda ve geri geldiğinde Windows bildirimi göster</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.etk.baglantiIpucu">Bağlantı aşağıdaki süreden uzun kopuk kalırsa “koptu”, dönünce “geri geldi” bildirimi gelir; kısa kesintiler sessiz geçer ve “geri geldi” yalnız “koptu” gösterildiyse gelir. Uyku ve erişim anahtarı sorunları kesinti sayılmaz. Canlı durum bağlantısı (Bağlantı bölümü) kapalıysa çalışmaz. Bildirim yalnız bu bilgisayarda gösterilir; ağa bir şey gönderilmez.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="baglantiBildirimSn" data-i18n="ayar.etk.baglantiSnEtiket">Kesinti bildirimi için bekleme süresi (saniye)</label>
+        <input type="number" id="baglantiBildirimSn" min="15" max="600" step="1" inputmode="numeric" aria-describedby="baglantiBildirimSnIpucu baglantiBildirimSnHata">
+        <div class="ipucu" id="baglantiBildirimSnIpucu" data-i18n="ayar.etk.baglantiSnIpucu">Bağlantı bu kadar saniye kesintisiz kopuk kalırsa bildirilir (15-600; varsayılan 60). Home Assistant’ın yeniden başlaması genellikle bundan kısa sürer.</div>
+        <div class="alan-hata" id="baglantiBildirimSnHata" style="display: none;"></div>
+      </div>
+
       <div class="form-grubu kural-bolumu">
         <label id="kuralListesiEtiketi" data-i18n="ayar.kural.etiket">Uyarı kuralları (en çok 20)</label>
         <div class="ipucu" data-i18n="ayar.kural.ipucu">Seçtiğin cihaz için bir kural kur: duruma geçiş, tam durum ya da sayısal eşik. Bildirimde kendi cümlen ve cihaz simgesi çıkar. Kapı, kilit ve alarm gibi cihazlar seçilemez. Kurallar “Kaydet” ile uygulanır.</div>
@@ -2130,6 +2434,32 @@
         <div class="alan-hata" id="kuralHata" role="alert" style="display: none;"></div>
         <datalist id="kuralVarliklari"></datalist>
       </div>
+    </div>
+  </details>
+
+  <!-- Mobil bildirimler (o-61): bu bilgisayarı HA'ya mobile_app cihazı olarak kaydetmek kullanıcının açık eylemidir; sensör/konum gönderilmez -->
+  <details class="bolum" id="bolumMobil">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.mobil.baslik">Mobil bildirimler (Home Assistant)</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.mobil.aciklama">Bu bilgisayarı Home Assistant’a “Mobile App” cihazı olarak kaydedersen, HA’nın bu cihaza gönderdiği bildirimler (notify.mobile_app_…) Windows’ta görünür. Bildirimde eylem düğmesi varsa küçük bir kartta çıkar; bastığın düğme HA’ya “mobile_app_notification_action” olayı olarak gider. Hiçbir sensör, konum ya da cihaz bilgisi HA’ya gönderilmez. Kapı, kilit, alarm, garaj, bariyer, siren ve kepenk içeren bildirimler ve düğmeler hiçbir yerde gösterilmez.</p>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="mobilBildirimler">
+          <span data-i18n="ayar.mobil.kutu">Home Assistant bildirimlerini bu bilgisayarda göster</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.mobil.kutuIpucu">Varsayılan olarak kapalıdır. Kaydolunca kendiliğinden açılır; kapatırsan bildirim gelmez, kayıt ise olduğu gibi kalır. Canlı bağlantı da açık olmalıdır. Kaydet’e bastıktan sonra etkinleşir.</div>
+      </div>
+      <div class="form-grubu" style="margin-top: 12px;">
+        <label for="mobilCihazAdi" data-i18n="ayar.mobil.cihazAdi">Cihaz adı</label>
+        <input type="text" id="mobilCihazAdi" maxlength="40" spellcheck="false" autocomplete="off" aria-describedby="mobilCihazAdiIpucu" placeholder="Ev Paneli" data-i18n-attr="placeholder:ayar.mobil.cihazAdiYerTutucu">
+        <div class="ipucu" id="mobilCihazAdiIpucu" data-i18n="ayar.mobil.cihazAdiIpucu">HA’da cihaz bu adla görünür (en çok 40 karakter; harf, rakam, boşluk ve . _ - ( ) kullanılabilir). Yalnızca kaydolurken kullanılır; boşsa “Ev Paneli”.</div>
+      </div>
+      <div class="buton-satiri" style="margin-top: 8px;">
+        <button class="buton buton-birincil" id="btnMobilKaydol" type="button" data-i18n="ayar.mobil.kaydol">Home Assistant’a kaydol</button>
+        <button class="buton buton-ikincil" id="btnMobilKaydiSil" type="button" data-i18n="ayar.mobil.kaydiSil">Kaydı sil</button>
+      </div>
+      <div class="ipucu" id="mobilDurum" role="status" aria-live="polite"></div>
+      <div class="ipucu" data-i18n="ayar.mobil.silmeIpucu">“Kaydı sil” bu bilgisayardaki kaydı siler ve bildirimleri durdurur. Home Assistant’taki cihaz girdisi kalır: HA’da Ayarlar &gt; Cihazlar ve hizmetler &gt; Mobile App bölümünden kaldır.</div>
     </div>
   </details>
 
@@ -2150,6 +2480,145 @@
     </div>
   </details>
 
+  <details class="bolum" id="bolumDisTetikler">
+    <summary><h3 class="bolum-baslik" data-i18n="ayar.dis.baslik">Dış tetikler</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.dis.aciklama">Favorileri uygulamanın dışından çalıştırma yolları: görev çubuğu menüsü, masaüstü kısayolu, evpaneli:// bağlantısı, yerel API, bilgisayar olayları ve toplantı ışığı. Hepsi varsayılan olarak kapalıdır ve yalnız onay gerektirmeyen, zararsız favorileri çalıştırır. Kapı, kilit, alarm, perde ve panjur, vana, otomasyon ve kamera hiçbir dış tetikten çalışmaz. Bu seçenekler dışa aktarılmaz ve içe aktarmayla açılmaz.</p>
+      <div class="ipucu" id="disUygunlarIpucu" role="status"></div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.dis.windowsBaslik">Görev çubuğu ve masaüstü</h4>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="disJumpList">
+          <span data-i18n="ayar.dis.jumpList">Görev çubuğu menüsünde favoriler (Jump List)</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.dis.jumpListIpucu">Görev çubuğundaki simgeye sağ tıklayınca uygun favoriler (en çok 10) listelenir. Kapatınca menü Windows’un varsayılanına döner.</div>
+      </div>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="disMasaustu">
+          <span data-i18n="ayar.dis.masaustu">Masaüstü kısayolları</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.dis.masaustuIpucu">Seçtiğin favori için masaüstüne bir kısayol (.lnk) koyar. Kısayol favorinin adını taşır; var olan dosyanın üzerine yazılmaz. Seçenek kapalıyken kısayollar hiçbir şey çalıştırmaz.</div>
+        <label for="disKisayolFavori" data-i18n="ayar.dis.kisayolFavori">Kısayol için favori</label>
+        <div class="kural-ikili">
+          <select id="disKisayolFavori"></select>
+          <button class="buton buton-ikincil" id="btnDisKisayolOlustur" type="button" data-i18n="ayar.dis.kisayolOlustur">Masaüstüne kısayol koy</button>
+        </div>
+        <div class="ipucu" id="disKisayolDurum" role="status"></div>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.dis.protokolBaslik">evpaneli:// bağlantıları</h4>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="disProtokol">
+          <span data-i18n="ayar.dis.protokol">evpaneli:// bağlantılarını aç</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.dis.protokolIpucu">Açınca bağlantı türü Windows’a yalnız bu kullanıcı için kaydedilir; kapatınca kayıt silinir. Bağlantı favorinin adını taşır. Bir bağlantı bir favoriyi ilk kez çalıştırmak isteyince panelde “İzin ver / Her zaman / Reddet” sorulur.</div>
+        <label for="disBaglantiFavori" data-i18n="ayar.dis.baglantiFavori">Bağlantısı kopyalanacak favori</label>
+        <div class="kural-ikili">
+          <select id="disBaglantiFavori"></select>
+          <button class="buton buton-ikincil" id="btnDisBaglantiKopyala" type="button" data-i18n="ayar.dis.baglantiKopyala">Bağlantıyı kopyala</button>
+        </div>
+        <div class="ipucu" id="disProtokolDurum" role="status"></div>
+        <label id="disIzinEtiketi" data-i18n="ayar.dis.izinler">“Her zaman” izni verilen favoriler</label>
+        <div id="disIzinListesi" role="list" aria-labelledby="disIzinEtiketi"></div>
+        <div class="kural-bos" id="disIzinBos"></div>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.dis.apiBaslik">Yerel API</h4>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="disYerelApi">
+          <span data-i18n="ayar.dis.api">Yerel API’yi aç (yalnız bu bilgisayar)</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.dis.apiIpucu">Yalnız 127.0.0.1 adresinden dinler; ağdaki başka cihazlar ulaşamaz. İstek JSON gövdeli bir POST olmalı ve jetonu Authorization başlığında taşımalı; tarayıcı sayfalarından gelen istekler reddedilir. Jeton yalnız panoya kopyalanır, hiçbir yerde gösterilmez.</div>
+      </div>
+      <div class="form-grubu">
+        <label for="disApiPortu" data-i18n="ayar.dis.port">Port numarası</label>
+        <input type="number" id="disApiPortu" min="1024" max="65535" step="1" inputmode="numeric">
+      </div>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="disApiBildirim">
+          <span data-i18n="ayar.dis.apiBildirim">API ile çalışan eylemlerde de bildirim göster</span>
+        </label>
+        <div class="buton-satiri" style="margin-top: 8px;">
+          <button class="buton buton-ikincil" id="btnDisJetonKopyala" type="button" data-i18n="ayar.dis.jetonKopyala">Jetonu kopyala</button>
+          <button class="buton buton-ikincil" id="btnDisJetonYenile" type="button" data-i18n="ayar.dis.jetonYenile">Yeni jeton üret</button>
+        </div>
+        <div class="ipucu" id="disApiDurum" role="status"></div>
+        <div class="ipucu" data-i18n="ayar.dis.apiOrnek">Örnek istek</div>
+        <pre class="dis-ornek" id="disApiOrnek"><span id="disApiOrnekAdres">POST http://127.0.0.1:48123/eylem</span>
+Authorization: Bearer …
+Content-Type: application/json
+
+<span id="disApiOrnekGovde">{"ad":"…"}</span></pre>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.dis.pcBaslik">Bilgisayar olayları</h4>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="disPcOlaylari">
+          <span data-i18n="ayar.dis.pc">Bilgisayar kilitlenince, kilidi açılınca, uykuya geçince ve uyanınca favori çalıştır</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.dis.pcIpucu">Varsayılan işlem kapatmaktır: örneğin bilgisayar kilitlenince masa lambası kapanır. Uykuya geçerken istek hemen gönderilir; ağ o an kapanırsa yeniden denenmez.</div>
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="disPcAcma">
+          <span data-i18n="ayar.dis.pcAcma">Açma, çalıştırma ve geri yüklemeye de izin ver</span>
+        </label>
+        <div class="ipucu-uyari" data-i18n="ayar.dis.pcAcmaUyari">Bilgisayar kendiliğinden uyandığında da (güncelleme, zamanlanmış görev) ışıklar açılabilir.</div>
+      </div>
+      <div class="form-grubu kural-bolumu">
+        <label id="disPcKuralEtiketi" data-i18n="ayar.dis.pcKurallar">Kurallar (en çok 8)</label>
+        <div id="disPcKuralListesi" role="list" aria-labelledby="disPcKuralEtiketi"></div>
+        <div class="kural-bos" id="disPcKuralBos"></div>
+        <div class="buton-satiri" style="margin-top: 8px;">
+          <button class="buton buton-ikincil" id="btnDisPcKuralEkle" type="button" data-i18n="ayar.dis.pcKuralEkle">PC kuralı ekle</button>
+        </div>
+      </div>
+
+      <h4 class="bilgi-alt-baslik" data-i18n="ayar.dis.toplantiBaslik">Toplantı ışığı</h4>
+      <div class="form-grubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="disToplanti">
+          <span data-i18n="ayar.dis.toplanti">Mikrofon ya da kamera kullanılınca favori çalıştır</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.dis.toplantiIpucu">Windows’un gizlilik kayıtları birkaç saniyede bir yalnız okunur; hiçbir şey değiştirilmez. Mikrofonu ya da kamerayı hangi uygulamanın kullandığı hiçbir yere yazılmaz.</div>
+      </div>
+      <div class="form-grubu">
+        <label for="disToplantiKaynak" data-i18n="ayar.dis.toplantiKaynak">İzlenecek aygıt</label>
+        <select id="disToplantiKaynak">
+          <option value="ikisi" data-i18n="ayar.dis.kaynakIkisi">Mikrofon ya da kamera</option>
+          <option value="mikrofon" data-i18n="ayar.dis.kaynakMikrofon">Yalnız mikrofon</option>
+          <option value="kamera" data-i18n="ayar.dis.kaynakKamera">Yalnız kamera</option>
+        </select>
+      </div>
+      <div class="form-grubu">
+        <label for="disToplantiFavori" data-i18n="ayar.dis.toplantiFavori">Toplantı başlayınca çalışacak favori</label>
+        <select id="disToplantiFavori"></select>
+      </div>
+      <div class="form-grubu">
+        <label for="disToplantiBitis" data-i18n="ayar.dis.toplantiBitis">Toplantı bitince</label>
+        <select id="disToplantiBitis">
+          <option value="geriYukle" data-i18n="ayar.dis.bitisGeriYukle">Favoriyi önceki durumuna döndür</option>
+          <option value="kapat" data-i18n="ayar.dis.bitisKapat">Favoriyi kapat</option>
+          <option value="favori" data-i18n="ayar.dis.bitisFavori">Başka bir favori çalıştır</option>
+          <option value="yok" data-i18n="ayar.dis.bitisYok">Hiçbir şey yapma</option>
+        </select>
+      </div>
+      <div class="form-grubu" id="disToplantiBitisFavoriGrubu" style="display: none;">
+        <label for="disToplantiBitisFavori" data-i18n="ayar.dis.toplantiBitisFavori">Bitişte çalışacak favori</label>
+        <select id="disToplantiBitisFavori"></select>
+      </div>
+      <div class="form-grubu">
+        <label for="disToplantiAralik" data-i18n="ayar.dis.toplantiAralik">Denetim aralığı (saniye, 5-60)</label>
+        <input type="number" id="disToplantiAralik" min="5" max="60" step="1" inputmode="numeric">
+        <div class="ipucu" id="disToplantiDurum" role="status"></div>
+      </div>
+    </div>
+  </details>
+
   <details class="bolum" id="bolumYedek">
     <summary><h3 class="bolum-baslik" data-i18n="ayar.yedek.baslik">Yedekleme ve geri dönme</h3></summary>
     <div class="bolum-icerik">
@@ -2162,6 +2631,66 @@
         <label id="yedeklerEtiketi" data-i18n="ayar.yedek.mevcut">Mevcut yedekler</label>
         <div id="yedekListesi" role="list" aria-labelledby="yedeklerEtiketi"></div>
         <div class="ipucu" id="yedekDurum"></div>
+      </div>
+    </div>
+  </details>
+
+  <!-- 1.4.0 (o-58): klasörle eşitleme. Durum ve düğmeler ayarlar-esitleme.js ile yönetilir; klasörü yalnız ana süreç diyaloğu seçer, parola sayfaya hiç dönmez. -->
+  <details class="bolum" id="bolumEsitleme">
+    <summary><h3 class="bolum-baslik" id="esitlemeBaslik" data-i18n="ayar.esitleme.baslik">Klasörle eşitleme</h3></summary>
+    <div class="bolum-icerik">
+      <p class="bolum-aciklama" data-i18n="ayar.esitleme.aciklama">Ayarlarını Dropbox, OneDrive ya da Syncthing gibi bir eşitleme aracının izlediği bir klasör aracılığıyla birkaç bilgisayarda aynı tutabilirsin. Klasöre yalnız seçtiğin bölümler yazılır; ev içi ve dış adres, erişim anahtarı, oturum anahtarı, üstbilgi değerleri, sertifika güveni ve pencere konumları hiçbir zaman yazılmaz. Uygulama kendisi internete bağlanmaz; dosyayı yalnız senin eşitleme aracın taşır. Klasörden gelen ayarlar içe aktarmayla aynı kurallardan ve güvenlik kuralından geçirilir; kapı, kilit, alarm gibi cihazlar hiçbir zaman eklenmez. Bir bölüm iki bilgisayarda da değiştiyse sonra yapılan değişiklik geçerli olur.</p>
+      <div class="form-grubu" id="esitlemeBolumu" style="margin-top: 8px;">
+        <label id="esitlemeKlasorEtiketi" data-i18n="ayar.esitleme.klasorEtiket">Eşitleme klasörü</label>
+        <div id="esitlemeKlasor" class="baglanti-kutu" role="status" aria-labelledby="esitlemeKlasorEtiketi"></div>
+        <div class="buton-satiri">
+          <button class="buton buton-ikincil" id="btnEsitlemeKlasor" type="button" data-i18n="ayar.esitleme.klasorSec">Klasör seç…</button>
+        </div>
+        <label class="checkbox-etiket" style="margin-top: 12px;">
+          <input type="checkbox" id="esitlemeAcik">
+          <span data-i18n="ayar.esitleme.ac">Ayarlarımı bu klasörle eşitle</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.esitleme.acIpucu">Açıkken ayarlar değiştiğinde ve klasörde değişiklik olduğunda kendiliğinden eşitlenir. İlk eşitlemede klasörde zaten bir dosya varsa seçili bölümler klasördekiyle değişir (önce ayar yedeği alınır).</div>
+
+        <div class="bilgi-alt-baslik" id="esitlemeBolumEtiketi" style="margin-top: 14px;" data-i18n="ayar.esitleme.bolumler">Eşitlenecek bölümler</div>
+        <div role="group" aria-labelledby="esitlemeBolumEtiketi">
+          <label class="checkbox-etiket">
+            <input type="checkbox" id="esitlemeBolumFavoriler">
+            <span data-i18n="ayar.esitleme.bolum.favoriler">Favoriler, panolar ve sayfalar</span>
+          </label>
+          <label class="checkbox-etiket">
+            <input type="checkbox" id="esitlemeBolumKisayollar">
+            <span data-i18n="ayar.esitleme.bolum.kisayollar">Kısayollar ve tepsi tıklaması</span>
+          </label>
+          <label class="checkbox-etiket">
+            <input type="checkbox" id="esitlemeBolumGorunum">
+            <span data-i18n="ayar.esitleme.bolum.gorunum">Görünüm (tema, renkler, metin boyutu, animasyonlar)</span>
+          </label>
+          <label class="checkbox-etiket">
+            <input type="checkbox" id="esitlemeBolumBilgi">
+            <span data-i18n="ayar.esitleme.bolum.bilgi">Bilgi kartları ve sensörler, takvim, yapılacaklar, tepsi rozeti</span>
+          </label>
+          <label class="checkbox-etiket">
+            <input type="checkbox" id="esitlemeBolumBildirim">
+            <span data-i18n="ayar.esitleme.bolum.bildirim">Bildirimler ve uyarı kuralları</span>
+          </label>
+        </div>
+        <div class="ipucu" data-i18n="ayar.esitleme.bolumIpucu">Adresler, erişim anahtarı, otomatik başlatma, pencere konumları ve ekran seçimi bu bilgisayara özgüdür ve hiçbir zaman eşitlenmez.</div>
+
+        <div class="bilgi-alt-baslik" id="esitlemeParolaEtiketi" style="margin-top: 14px;" data-i18n="ayar.esitleme.parolaBaslik">Parola (isteğe bağlı)</div>
+        <div class="ipucu" style="margin-top: 0;" data-i18n="ayar.esitleme.parolaAciklama">Parola koyarsan klasördeki dosya şifrelenir; eşitleme aracın ya da bulut hesabın dosyayı okuyamaz. Aynı parolayı diğer bilgisayarlarda da kaydetmelisin. Parola Windows şifrelemesiyle (DPAPI) saklanır; unutursan klasördeki dosya açılamaz (yerel ayarların etkilenmez). 8 ile 128 karakter olmalı.</div>
+        <div class="girdi-yani">
+          <input type="password" id="esitlemeParola" maxlength="128" spellcheck="false" autocomplete="new-password" aria-label="Eşitleme parolası" data-i18n-attr="aria-label:ayar.esitleme.parolaEtiket">
+          <button class="buton buton-ikincil" id="btnEsitlemeParolaKaydet" type="button" data-i18n="ayar.esitleme.parolaKaydet">Parolayı kaydet</button>
+          <button class="buton buton-tehlike" id="btnEsitlemeParolaSil" type="button" style="display: none;" data-i18n="ayar.esitleme.parolaSil">Parolayı kaldır</button>
+        </div>
+        <div class="ipucu" id="esitlemeParolaDurum" role="status" aria-live="polite"></div>
+
+        <div class="buton-satiri" style="margin-top: 14px;">
+          <button class="buton buton-birincil" id="btnEsitlemeSimdi" type="button" data-i18n="ayar.esitleme.simdi">Şimdi eşitle</button>
+        </div>
+        <div class="ipucu" id="esitlemeDurum" role="status" aria-live="polite"></div>
+        <div class="ipucu" id="esitlemeSonuc" role="status" aria-live="polite"></div>
       </div>
     </div>
   </details>
@@ -2183,6 +2712,26 @@
           <button class="buton buton-ikincil" id="btnSurumSayfasi" type="button" data-i18n="ayar.surum.sayfayiAc">Sürüm sayfasını aç</button>
         </div>
         <div class="ipucu" id="surumDurum" role="status" aria-live="polite"></div>
+      </div>
+
+      <!-- Uygulama içi güncelleme (o-51): varsayılan kapalı; indirme "İndir" ile, kurulum ayrı onayla -->
+      <div class="form-grubu" style="margin-top: 16px;" id="guncellemeGrubu">
+        <label class="checkbox-etiket">
+          <input type="checkbox" id="uygulamaGuncelleme">
+          <span data-i18n="ayar.guncelleme.kutu">Güncellemeyi uygulama içinden indir ve kur</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.guncelleme.kutuIpucu">Varsayılan olarak kapalıdır. Açıkken uygulama günde en çok bir kez GitHub Sürümleri’ne bakar (IP adresin GitHub tarafından görülür; erişim anahtarın ve Home Assistant adreslerin gönderilmez). Yeni sürüm bulunursa kurucu yalnızca “İndir”e bastığında iner, sha512 özeti doğrulanır ve kurulum ayrıca senin onayınla başlar. Taşınabilir sürümde kullanılamaz. Kaydet’e bastıktan sonra etkinleşir.</div>
+        <label class="checkbox-etiket" style="margin-top: 8px;">
+          <input type="checkbox" id="onSurumler">
+          <span data-i18n="ayar.guncelleme.onSurumler">Ön sürümleri de göster (beta)</span>
+        </label>
+        <div class="ipucu" data-i18n="ayar.guncelleme.onSurumlerIpucu">Sınanmamış ön sürümler de önerilir. Hem “Yeni sürüm çıkınca bildirim göster” hem de uygulama içi güncelleme için geçerlidir; varsayılan olarak kapalıdır.</div>
+        <div class="buton-satiri" style="margin-top: 8px;">
+          <button class="buton buton-ikincil" id="btnGuncellemeIndir" type="button" style="display: none;" data-i18n="ayar.guncelleme.indir">İndir</button>
+          <button class="buton buton-birincil" id="btnGuncellemeKur" type="button" style="display: none;" data-i18n="ayar.guncelleme.kur">Kur ve yeniden başlat</button>
+        </div>
+        <progress id="guncellemeIlerleme" max="100" value="0" style="display: none; width: 100%; margin-top: 8px;"></progress>
+        <div class="ipucu" id="guncellemeDurum" role="status" aria-live="polite"></div>
       </div>
 
       <div class="form-grubu" style="margin-top: 16px;">
@@ -2235,7 +2784,13 @@
   <script src="lib/karo-gorunum.js"></script>
   <script src="lib/duzen-islemleri.js"></script>
   <script src="ayarlar-duzen.js"></script>
+  <script src="ayarlar-eylem.js"></script>
+  <script src="ayarlar-baglanti.js"></script>
+  <script src="ayarlar-sertifika.js"></script>
+  <script src="ayarlar-oturum.js"></script>
+  <script src="ayarlar-esitleme.js"></script>
   <script src="lib/ayar-arama.js"></script>
+  <script src="ayarlar-dis.js"></script>
   <script src="ayarlar.js"></script>
 </body>
 </html>

@@ -15,12 +15,19 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const { ANAHTAR_SILINDI_METNI } = require('../src/lib/bildirim-metni');
+const { baglantiKopruSahtesi } = require('./baglanti-sahte');
 const SOZLUK_ANA = require('../src/lib/ceviri/ana');
 
 const KOK = path.join(__dirname, '..');
 const HTML = fs.readFileSync(path.join(KOK, 'src', 'ayarlar.html'), 'utf8');
 const BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar.js'), 'utf8');
 const DUZEN_BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar-duzen.js'), 'utf8'); // 1.4.0 düzen: karo görünümü, sayfalar, geçmiş, onarım
+const DIS_BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar-dis.js'), 'utf8'); // 1.4.0 dis grubu: Dış tetikler bölümü
+const EYLEM_BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar-eylem.js'), 'utf8'); // 1.4.0 eylem grubu: etkinlik geçmişi, geri al, gecikmeli eylem...
+const BAGLANTI_BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar-baglanti.js'), 'utf8'); // 1.4.0 bağlantı katmanı: özel üstbilgiler, sertifika, giriş, eşitleme
+const SERTIFIKA_BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar-sertifika.js'), 'utf8'); // 1.4.0 sertifika güveni (o-56)
+const OTURUM_BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar-oturum.js'), 'utf8'); // 1.4.0 tarayıcıyla giriş (o-57)
+const ESITLEME_BETIK = fs.readFileSync(path.join(KOK, 'src', 'ayarlar-esitleme.js'), 'utf8'); // 1.4.0 klasörle eşitleme (o-58)
 const KARO_GORUNUM_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'karo-gorunum.js'), 'utf8');
 const DUZEN_ISLEMLERI_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'duzen-islemleri.js'), 'utf8');
 const KISAYOL_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'kisayol.js'), 'utf8');
@@ -190,12 +197,28 @@ const ALAN_ADLARI = [
   // 1.4.0 bilgi grubu (src/lib/ayar-alanlari.js): sahte ana süreç yükteki değeri olduğu gibi saklar (doğrulama ana süreçte ve kendi testinde)
   'sensorSeridi', 'sensorGrafik', 'sensorGrafikSaat', 'pilEsigi', 'sensorTepsiIpucu', 'ustKart1', 'ustKart2', 'havaVarligi',
   'saatBicimi', 'tarihBicimi', 'takvimler', 'takvimGunSayisi', 'yapilacakListeleri', 'hizliListe',
+  // 1.4.0 cihaz grubu (o-48): kamera izin listesi ve görüntü tercihleri
+  'kameraIzinleri', 'kameraBulanik', 'kameraYenilemeSn',
+  // eksik grubu: hava tahmini şeridi, birincil medya oynatıcı (üst kart), albüm kapağı
+  'havaTahmini', 'birincilMedya', 'medyaKapagi',
   // 1.4.0 düzen grubu: panel sayfaları
   'sayfalar',
   // grup "tema" (ayar-alanlari.js tablosu)
   'metinOlcegi', 'yuksekKarsitlik', 'panelTemasi', 'panelVurguRengi', 'panelArkaPlani', 'animasyonlar', 'animasyonGecisleri', 'havaEfekti',
   'mevsimEfekti', 'hareketiAzalt',
   'surumDenetimi',
+  // 1.4.0 etkileşim grubu (o-20, o-23, o-60, o-38)
+  'kisayolBasiliTut', 'panelSabit', 'karoTekerlegi', 'tepsiOrtaTik', 'baglantiBildirimi', 'baglantiBildirimSn',
+  // 1.4.0 dis grubu: Dış tetikler (ana süreçte aktarilir: false; doğrulama src/lib/ayar-alanlari.js)
+  'tetikJumpList', 'tetikMasaustu', 'tetikProtokol', 'tetikYerelApi', 'tetikApiPortu', 'tetikApiBildirim', 'tetikPcOlaylari', 'tetikPcAcma',
+  'tetikPcKurallari', 'tetikToplanti', 'tetikToplantiKaynak', 'tetikToplantiFavori', 'tetikToplantiBitis', 'tetikToplantiBitisFavori',
+  'tetikToplantiAralik',
+  // guncelleme grubu (o-51)
+  'uygulamaGuncelleme', 'onSurumler',
+  // guncel grubu (o-61): mobil bildirimler
+  'mobilBildirimler', 'mobilCihazAdi',
+  // 1.4.0 eylem grubu (ayar-alanlari.js): etkinlik geçmişi, geri al, gecikmeli eylem, oda, diğer cihazlar
+  'etkinlikGecmisi', 'geriAl', 'geriAlSureDk', 'geriAlKisayolu', 'gecikmeliEylem', 'sonDegisenler', 'panelGruplama', 'paletDigerCihazlar',
 ];
 
 /** HTML'deki data-i18n / data-i18n-attr işaretli öğeler (kimliği olmayanlar dahil); sayfayiCevir bunları querySelectorAll ile bulur. */
@@ -238,6 +261,9 @@ function sayfayiKur({
   donYaniti = null,
   onarYaniti = null,
   gecmisYaniti = null,
+  disYaniti = null, // 1.4.0 dis grubu köprü yanıtları: { disTetikDurumu, disKisayolOlustur, disBaglantiKopyala, disJetonKopyala, disJetonYenile, disIzinKaldir } (işlev ya da nesne)
+  eylemYaniti = null, // eylem grubu köprü yanıtları: { etkinlikListesi, etkinlikTemizle, ... } (işlev ya da nesne)
+  baglantiYaniti = null, // bağlantı katmanı (o-55..o-58) köprü yanıtları (test/baglanti-sahte.js)
 }) {
   const sunucu = duzles(ayar);
   const durum = { yedekler, sonOdak: null, gecmis };
@@ -258,7 +284,11 @@ function sayfayiKur({
   const pencereDinleyicileri = {};
   let favoriDegistiGeriCagrisi = null;
   let favoriyeGitGeriCagrisi = null;
+  let anahtarYoneticiGeriCagrisi = null;
+  let disDurumGeriCagrisi = null;
   let bolumAcGeriCagrisi = null;
+  let guncellemeGeriCagrisi = null; // o-51: ana süreç 'guncelleme:degisti' itti
+  let mobilGeriCagrisi = null; // o-61: ana süreç 'mobil:degisti' itti
   let kapatmaSayisi = 0;
   let getirSayisi = 0;
   const yerelDepo = new Map(Object.entries(depo ?? {}));
@@ -276,6 +306,7 @@ function sayfayiKur({
       if (sunucu.dil !== eski && dilOlayi && dilGeriCagrisi) dilGeriCagrisi({ dil: sunucu.dil });
     }
     if ('anaPanoyaDonDk' in yuk) sunucu.anaPanoyaDonDk = Number(yuk.anaPanoyaDonDk);
+    if ('baglantiBildirimSn' in yuk) sunucu.baglantiBildirimSn = Number(yuk.baglantiBildirimSn); // ana süreç sayıya çevirir
     if ('panolar' in yuk) {
       sunucu.panolar = yuk.panolar
         .filter((p) => p.ad && String(p.yol).startsWith('/'))
@@ -316,6 +347,7 @@ function sayfayiKur({
       });
   }
 
+  const baglantiSahtesi = baglantiKopruSahtesi({ cagrilar, secenek: baglantiYaniti ?? {} });
   const evPaneli = {
     ayarlariGetir: async () => {
       getirSayisi += 1;
@@ -414,6 +446,44 @@ function sayfayiKur({
       cagrilar.push(['surumSayfasiniAc']);
       return { ok: true };
     },
+    // guncelleme grubu (o-51): durum okuması `cagrilar`a yazılmaz; kullanıcı eylemleri (indir, kur) yazılır.
+    guncellemeDurumu: async () => {
+      const y = aracYaniti?.guncellemeDurumu;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, acik: sunucu.uygulamaGuncelleme === true, destek: 'tamam', durum: 'bosta', surum: null, onSurum: false, boyut: null, ilerleme: 0, hata: null, sonDenetim: null };
+    },
+    guncellemeyiIndir: async () => {
+      cagrilar.push(['guncellemeyiIndir']);
+      const y = aracYaniti?.guncellemeyiIndir;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, sonuc: 'indirildi', surum: '1.4.0' };
+    },
+    guncellemeyiKur: async () => {
+      cagrilar.push(['guncellemeyiKur']);
+      const y = aracYaniti?.guncellemeyiKur;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, sonuc: 'kuruluyor', surum: '1.4.0' };
+    },
+    onGuncellemeDegisti: (geriCagri) => {
+      guncellemeGeriCagrisi = geriCagri;
+      return () => {};
+    },
+    // guncel grubu (o-61): mobil bildirimler; durum okuması `cagrilar`a yazılmaz, kullanıcı eylemleri (kaydol, kaydı sil) yazılır.
+    mobilDurumu: async () => {
+      const y = aracYaniti?.mobilDurumu;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, kayitli: false, etkin: sunucu.mobilBildirimler === true, kanal: 'kayitsiz', kayitSuruyor: false, sonBildirim: null, dusenBildirim: 0, canliAcik: true, sifrelemeVar: true, cihazAdi: '' };
+    },
+    mobilKaydol: async (cihazAdi) => {
+      cagrilar.push(['mobilKaydol', cihazAdi]);
+      const y = aracYaniti?.mobilKaydol;
+      return typeof y === 'function' ? y(sunucu, cihazAdi) : y ?? { ok: true, sonuc: 'kaydoldu', kayitli: true, etkin: true, kanal: 'dinliyor', kayitSuruyor: false, sonBildirim: null, dusenBildirim: 0, canliAcik: true, mobilBildirimler: true, mobilCihazAdi: cihazAdi };
+    },
+    mobilKaydiSil: async () => {
+      cagrilar.push(['mobilKaydiSil']);
+      const y = aracYaniti?.mobilKaydiSil;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, sonuc: 'silindi', kayitli: false, etkin: false, kanal: 'kayitsiz', kayitSuruyor: false, sonBildirim: null, dusenBildirim: 0, canliAcik: true, mobilBildirimler: false };
+    },
+    onMobilDegisti: (geriCagri) => {
+      mobilGeriCagrisi = geriCagri;
+      return () => {};
+    },
     // arac grubu (o-41): tanılama raporu ve günlük klasörü; kullanıcı eylemleri `cagrilar`a yazılır
     tanilamaGetir: async () => {
       cagrilar.push(['tanilamaGetir']);
@@ -480,6 +550,57 @@ function sayfayiKur({
       favoriyeGitGeriCagrisi = geriCagri;
       return () => {};
     },
+    // 1.4.0 etkileşim (o-43): anahtarın kullanıcı türü ölçüldü ya da unutuldu ('ayarlar:anahtar-yonetici')
+    onAnahtarYonetici: (geriCagri) => {
+      anahtarYoneticiGeriCagrisi = geriCagri;
+    },
+    // 1.4.0 dis grubu: durum okuması açılışta çağrılır ve `cagrilar`a yazılmaz; kullanıcı eylemleri yazılır. Varsayılan durum boş (uygun favori yok).
+    disTetikDurumu: async () => {
+      const y = disYaniti?.disTetikDurumu;
+      if (typeof y === 'function') return y(sunucu);
+      return y ?? { ok: true, uygunlar: [], kuralUygunlari: [], izinler: [], api: { calisiyor: false, port: null, hata: null, jetonVar: false }, protokol: { kayitli: false }, toplanti: { calisiyor: false, toplantida: false, okunabilir: true } };
+    },
+    disKisayolOlustur: async (kimlik) => {
+      cagrilar.push(['disKisayolOlustur', kimlik]);
+      const y = disYaniti?.disKisayolOlustur;
+      return typeof y === 'function' ? y(kimlik, sunucu) : y ?? { ok: true, dosya: 'Salon.lnk' };
+    },
+    disBaglantiKopyala: async (kimlik) => {
+      cagrilar.push(['disBaglantiKopyala', kimlik]);
+      const y = disYaniti?.disBaglantiKopyala;
+      return typeof y === 'function' ? y(kimlik, sunucu) : y ?? { ok: true };
+    },
+    disJetonKopyala: async () => {
+      cagrilar.push(['disJetonKopyala']);
+      const y = disYaniti?.disJetonKopyala;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true };
+    },
+    disJetonYenile: async () => {
+      cagrilar.push(['disJetonYenile']);
+      const y = disYaniti?.disJetonYenile;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true };
+    },
+    disIzinKaldir: async (kimlik) => {
+      cagrilar.push(['disIzinKaldir', kimlik]);
+      const y = disYaniti?.disIzinKaldir;
+      return typeof y === 'function' ? y(kimlik, sunucu) : y ?? { ok: true };
+    },
+    onDisDurumDegisti: (geriCagri) => {
+      disDurumGeriCagrisi = geriCagri;
+      return () => {};
+    },
+    // 1.4.0 eylem grubu: okumalar `cagrilar`a yazılmaz (mevcut testlerin tam çağrı listeleri bozulmasın); kullanıcı eylemleri yazılır.
+    etkinlikListesi: async () => {
+      const y = eylemYaniti?.etkinlikListesi;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true, acik: sunucu.etkinlikGecmisi !== false, kayitlar: [] };
+    },
+    etkinlikTemizle: async () => {
+      cagrilar.push(['etkinlikTemizle']);
+      const y = eylemYaniti?.etkinlikTemizle;
+      return typeof y === 'function' ? y(sunucu) : y ?? { ok: true };
+    },
+    // 1.4.0 bağlantı katmanı (o-55..o-58)
+    ...baglantiSahtesi.kopru,
   };
 
   const belge = {
@@ -548,9 +669,16 @@ function sayfayiKur({
   vm.runInContext(KARO_GORUNUM_BETIGI, sandbox, { filename: 'karo-gorunum.js' });
   vm.runInContext(DUZEN_ISLEMLERI_BETIGI, sandbox, { filename: 'duzen-islemleri.js' });
   vm.runInContext(DUZEN_BETIK, sandbox, { filename: 'ayarlar-duzen.js' });
+  vm.runInContext(DIS_BETIK, sandbox, { filename: 'ayarlar-dis.js' });
+  vm.runInContext(EYLEM_BETIK, sandbox, { filename: 'ayarlar-eylem.js' });
+  vm.runInContext(BAGLANTI_BETIK, sandbox, { filename: 'ayarlar-baglanti.js' });
+  vm.runInContext(SERTIFIKA_BETIK, sandbox, { filename: 'ayarlar-sertifika.js' });
+  vm.runInContext(OTURUM_BETIK, sandbox, { filename: 'ayarlar-oturum.js' });
+  vm.runInContext(ESITLEME_BETIK, sandbox, { filename: 'ayarlar-esitleme.js' });
   vm.runInContext(BETIK, sandbox, { filename: 'ayarlar.js' });
   return {
     oge: (kimlik) => ogeler.get(kimlik),
+    baglantiDeposu: baglantiSahtesi.baglantiDeposu,
     cagrilar,
     sorular,
     secenekler,
@@ -593,10 +721,28 @@ function sayfayiKur({
       for (const isleyici of pencereDinleyicileri[tip] ?? []) isleyici(olay);
       return olay;
     },
+    /** Ana süreç 'dis:durum-degisti' gönderdi (1.4.0 dis grubu). */
+    disDurumDegisti: async () => {
+      assert.ok(disDurumGeriCagrisi, 'onDisDurumDegisti kaydedilmemiş');
+      disDurumGeriCagrisi();
+      await akit();
+    },
     /** Ana süreç 'ayarlar:bolum-ac' gönderdi (tepsi "Yenilikler" gibi). */
     bolumIste: async (bolum) => {
       assert.ok(bolumAcGeriCagrisi, 'onBolumAc kaydedilmemiş');
       bolumAcGeriCagrisi({ bolum });
+      await akit();
+    },
+    /** Ana süreç 'guncelleme:degisti' gönderdi (denetim, indirme ilerlemesi, kurulum). */
+    guncellemeDegisti: async (yuk) => {
+      assert.ok(guncellemeGeriCagrisi, 'onGuncellemeDegisti kaydedilmemiş');
+      guncellemeGeriCagrisi(yuk);
+      await akit();
+    },
+    /** Ana süreç 'mobil:degisti' gönderdi (yeni bildirim, kanal kapandı, kayıt düştü). */
+    mobilDegisti: async (yuk) => {
+      assert.ok(mobilGeriCagrisi, 'onMobilDegisti kaydedilmemiş');
+      mobilGeriCagrisi(yuk);
       await akit();
     },
     favoriDegisti: async () => {
@@ -612,6 +758,12 @@ function sayfayiKur({
     },
     gecmisiDegistir: (liste) => {
       durum.gecmis = liste;
+    },
+    /** Ana süreç 'ayarlar:anahtar-yonetici' gönderdi (yük olduğu gibi iletilir). */
+    anahtarYoneticiOlayi: async (yuk) => {
+      assert.ok(anahtarYoneticiGeriCagrisi, 'onAnahtarYonetici kaydedilmemiş');
+      anahtarYoneticiGeriCagrisi(yuk);
+      await akit();
     },
   };
 }
@@ -717,6 +869,12 @@ module.exports = {
   HTML,
   BETIK,
   DUZEN_BETIK,
+  DIS_BETIK,
+  EYLEM_BETIK,
+  BAGLANTI_BETIK,
+  SERTIFIKA_BETIK,
+  OTURUM_BETIK,
+  ESITLEME_BETIK,
   gorunurMetinler,
   AYAR,
   CIHAZLAR,

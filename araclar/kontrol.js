@@ -21,7 +21,9 @@ const METIN_UZANTILARI = new Set(['.js', '.html', '.css', '.json', '.md', '.yml'
 const METIN_ADLARI = new Set(['.gitignore', '.gitattributes', '.npmrc']);
 
 const YASAKLI_KALIPLAR = [
-  { ad: 'sertifika hatası bastırma', desen: /certificate-error|setCertificateVerifyProc|ignore-certificate-errors/ },
+  { ad: 'sertifika hatası bastırma', desen: /certificate-error|ignore-certificate-errors/ },
+  // Oturum doğrulama kancası YALNIZ HA ana bilgisayarı için özel CA / parmak izi sabitleme yapan yöneticide (o-56) ve onu sınayan testlerde.
+  { ad: 'sertifika doğrulama kancası', desen: /setCertificateVerifyProc/, izinliDosyalar: ['src/sertifika-yoneticisi.js', 'test/sertifika-yoneticisi.test.js', 'test/ana-surec.test.js', 'test/baglanti-yapi.test.js', 'test/baglanti-sertifika.test.js'] },
   { ad: 'JWT benzeri sabit', desen: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/ },
 ];
 
@@ -81,9 +83,10 @@ for (const dosya of metinDosyalari) {
 }
 for (const dosya of kalipTaramasinaGirenler) {
   const icerik = fs.readFileSync(dosya, 'utf8');
-  for (const { ad, desen } of YASAKLI_KALIPLAR) {
+  for (const { ad, desen, izinliDosyalar } of YASAKLI_KALIPLAR) {
     // Bu dosyalar kalıpların kendisini tanımlar.
     if (KALIP_TANIMLAYANLAR.has(goreli(dosya))) continue;
+    if (izinliDosyalar && izinliDosyalar.includes(goreli(dosya))) continue;
     if (desen.test(icerik)) sorunlar.push(`Yasaklı kalıp (${ad}): ${goreli(dosya)}`);
   }
 }

@@ -110,20 +110,26 @@ test('favori kaydı: kapı varlıkları güvenli listede olmasa da, mevcut favor
   assert.deepEqual(yok.eksik, []);
 });
 
-test('favori alanları kapalı bir küme: kilit, alarm, siren, kepenk/kapı (cover), kamera, vana hiçbir zaman favori olamaz', () => {
+test('favori alanları kapalı bir küme: kilit, alarm, siren, kamera hiçbir zaman favori olamaz; cover yalnız perde sınıfıyla, vana ve otomasyon zorunlu onayla', () => {
   assert.deepEqual(
     Object.keys(FAVORI_ALANLARI).sort(),
     ['button', 'fan', 'input_boolean', 'input_button', 'light', 'scene', 'script', 'switch'],
   );
   for (const alan of YASAK_ALANLAR) assert.ok(!Object.hasOwn(FAVORI_ALANLARI, alan));
-  for (const alan of ['lock', 'alarm_control_panel', 'cover', 'valve', 'siren', 'camera', 'automation', 'lawn_mower', 'update']) {
+  for (const alan of ['lock', 'alarm_control_panel', 'siren', 'camera', 'lawn_mower', 'update']) {
     assert.equal(guvenliVarlikMi({ entity_id: `${alan}.deneme`, attributes: { friendly_name: 'Deneme' } }), false, alan);
   }
+  // 1.4.0 cihaz grubu: cover sınıfı bilinmeden (ya da garaj/kepenk/kapı sınıfıyla) güvenli sayılmaz; perde sınıfıyla sayılır.
+  assert.equal(guvenliVarlikMi({ entity_id: 'cover.deneme', attributes: { friendly_name: 'Deneme' } }), false, 'sınıfsız cover');
+  assert.equal(guvenliVarlikMi({ entity_id: 'cover.deneme', attributes: { friendly_name: 'Deneme', device_class: 'garage' } }), false, 'garaj sınıfı');
+  assert.equal(guvenliVarlikMi({ entity_id: 'cover.deneme', attributes: { friendly_name: 'Deneme', device_class: 'curtain' } }), true, 'perde sınıfı');
+  assert.equal(guvenliVarlikMi({ entity_id: 'valve.deneme', attributes: { friendly_name: 'Deneme' } }), true, 'vana (zorunlu onaylı)');
+  assert.equal(guvenliVarlikMi({ entity_id: 'automation.deneme', attributes: { friendly_name: 'Deneme' } }), true, 'otomasyon (zorunlu onaylı)');
   // 1.4.0: karo/favori alanları alan-kaydi.js tablosunda kapalı bir kümedir (iklim, medya... eklendi; kapı alanları yok).
   const { KARO_ALAN_SIRASI } = require('../src/lib/alan-kaydi');
   assert.deepEqual([...KARO_ALAN_SIRASI].sort(), [
-    'binary_sensor', 'button', 'climate', 'fan', 'humidifier', 'input_boolean', 'input_button', 'input_number', 'input_select',
-    'light', 'media_player', 'number', 'scene', 'script', 'select', 'sensor', 'switch', 'timer', 'vacuum', 'weather',
+    'automation', 'binary_sensor', 'button', 'climate', 'cover', 'fan', 'humidifier', 'input_boolean', 'input_button', 'input_number', 'input_select',
+    'light', 'media_player', 'number', 'scene', 'script', 'select', 'sensor', 'switch', 'timer', 'vacuum', 'valve', 'weather',
   ]);
   assert.equal(guvenliVarlikMi({ entity_id: 'climate.salon', attributes: { friendly_name: 'Salon kliması' } }), true);
   // Servisler: yalnız zararsız üç servis.
@@ -196,9 +202,10 @@ test('servis çağrısı TEK yerde (src/lib/eylem-hatti.js) yapılır; oradan ö
   }
   assert.ok(govde.indexOf('guvenliVarlikMi(varlik)') < govde.indexOf('eylemSinifi(varlik, favori, istenenServis(eylem))'), 'önce süzgeç, sonra sınıf');
   assert.ok(govde.includes("'onay-gerekli'"));
-  // Kapı/kilit servisleri koda hiç yazılmamış.
+  // Kapı/kilit servisleri koda hiç yazılmamış. (1.4.0 cihaz grubu: cover servisleri perde/jaluzi içindir; kapı ve garajı süzgeç (suzgec.js PERDE_SINIFLARI)
+  // dışarıda tutar. Kilit ve alarm servisleri hâlâ hiçbir yerde yoktur.)
   for (const [ad, icerik] of kaynaklar) {
-    assert.ok(!/open_cover|unlock_door|lock\/unlock|\/api\/services\/(lock|cover|alarm_control_panel)/.test(icerik), `${ad}: kapı/kilit servisi yok`);
+    assert.ok(!/unlock_door|lock\/unlock|\/api\/services\/(lock|alarm_control_panel)/.test(icerik), `${ad}: kapı/kilit servisi yok`);
   }
 });
 
@@ -206,13 +213,15 @@ test('eylem yalnız kullanıcı hareketinden başlar: tepsi tıklaması, panel/p
   const main = oku('src/main.js');
   // kayitKaynagiEkle bir eylem DEĞİL, kayıt kaynağı tanımıdır (1.4.0: ayardaki bilgi varlıkları); eylemi yine hat/izin listeleri denetler.
   const cagrilar = [...main.matchAll(/\beylem\.(\w+)\(/g)].map((m) => m[1]).filter((ad) => ad !== 'kayitKaynagiEkle').sort();
-  assert.deepEqual(cagrilar, ['komutSatirindan', 'kisayolla', 'tepsiTikla'].sort(), 'main.js yalnız bu üç giriş noktasını çağırır');
+  assert.deepEqual(cagrilar, ['komutSatirindan', 'kisayolla', 'tepsiOrtaTikla', 'tepsiTikla'].sort(), 'main.js yalnız bu dört giriş noktasını çağırır');
   assert.deepEqual([...main.matchAll(/\beylem\.kayitKaynagiEkle\((.*)\);/g)].map((m) => m[1]), ['bilgiKaydi(() => ayarlar)'], 'kayıt kaynağı yalnız ayardaki bilgi varlıklarını kaydeder');
   // Üç giriş noktası da kullanıcı olayına bağlı bir kapanışın içinde: menü tıklaması, global kısayol, ikinci kopya/komut satırı.
   assert.match(main, /const tikla = \(\) => eylem\.tepsiTikla\(oge\.kimlik\);/);
   assert.match(main, /else if \(oge\.tur === 'favori'\) is = \(\) => eylem\.kisayolla\(oge\.kimlik\);/);
   assert.match(main, /if \(kisayolTekrarEngeli\.gec\(oge\.kisayol\)\) is\(\);/, 'kısayol işi yinelenen tetikleme engelinden geçer');
   assert.match(main, /return eylem\.komutSatirindan\(ad\);/);
+  // Tepsi orta tık (1.4.0, o-20): yalnız tepsinin 'middle-click' olayında, ayardaki tek kimlik için ve yinelenen tetikleme engelinden sonra.
+  assert.match(main, /tepsi\.on\('middle-click', \(\) => \{[\s\S]*?ortaTikEngeli\.gec\('orta-tik'\)[\s\S]*?eylem\.tepsiOrtaTikla\(kimlik\)/);
   // Panel/palet eylemi yalnız yüzey IPC'sinden (gönderen denetimli) gelir.
   const yuzey = oku('src/yuzey-yoneticisi.js');
   assert.equal(yuzey.match(/eylem\.yuzeydenCalistir\(/g)?.length, 1);
@@ -272,7 +281,9 @@ test('hızlı panel/palet/tepsi/kısayol/komut satırı/Son/hazır liste: kapı-
 test('yüzey IPC kanallarının hepsi gönderen denetimli; panel/palet penceresi sandbox + contextIsolation, yalnız yerel dosya', () => {
   const yuzey = oku('src/yuzey-yoneticisi.js');
   const kanallar = [...yuzey.matchAll(/ipcMain\.(?:handle|on)\('(yuzey:[\w-]+)'/g)].map((m) => m[1]);
-  assert.deepEqual(kanallar.sort(), ['yuzey:ayarlar-ac', 'yuzey:basili-basla', 'yuzey:basili-birak', 'yuzey:bildirim-kapat', 'yuzey:boyut', 'yuzey:calistir', 'yuzey:durum-al', 'yuzey:ha-ac', 'yuzey:kapat', 'yuzey:oku', 'yuzey:sag-tik']);
+  // 1.4.0 dis grubu (o-54): yuzey:dis-onay-al / yuzey:dis-onay-yanit (evpaneli:// bağlantı izni) bilinçli eklendi
+  // eylem grubu (o-12, o-14, o-15, o-46): yuzey:geri-al, yuzey:geciktir, yuzey:gecikmeli-iptal, yuzey:oda-kapat, yuzey:diger-* bilinçli eklendi
+  assert.deepEqual(kanallar.sort(), ['yuzey:ayarlar-ac', 'yuzey:basili-basla', 'yuzey:basili-birak', 'yuzey:bildirim-kapat', 'yuzey:boyut', 'yuzey:calistir', 'yuzey:diger-calistir', 'yuzey:diger-cihazlar', 'yuzey:diger-favori-ekle', 'yuzey:dis-onay-al', 'yuzey:dis-onay-yanit', 'yuzey:durum-al', 'yuzey:gecikmeli-iptal', 'yuzey:geciktir', 'yuzey:geri-al', 'yuzey:ha-ac', 'yuzey:kamera', 'yuzey:kapat', 'yuzey:oda-kapat', 'yuzey:oku', 'yuzey:sabitle', 'yuzey:sag-tik']);
   for (const kanal of kanallar) {
     const yer = yuzey.indexOf(`'${kanal}'`);
     const sonraki = yuzey.indexOf('ipcMain.', yer + 10);
@@ -390,7 +401,7 @@ test('masaüstü karosu eylemi tek yoldan geçer: karo sayfası kimlik/servis g�
   // Ana süreç eylemi karodan başlatmaz (üç kullanıcı giriş noktası değişmedi). kayitKaynagiEkle eylem DEĞİL: yalnız kayıtlı varlık
   // kaynağı bildirir (bilgi kartlarının seçili varlıkları; bilgi-modeli.js bilgiKaydi).
   const mainEylemleri = [...oku('src/main.js').matchAll(/\beylem\.(\w+)\(/g)].map((m) => m[1]).filter((ad) => ad !== 'kayitKaynagiEkle');
-  assert.deepEqual(mainEylemleri.sort(), ['komutSatirindan', 'kisayolla', 'tepsiTikla'].sort());
+  assert.deepEqual(mainEylemleri.sort(), ['komutSatirindan', 'kisayolla', 'tepsiOrtaTikla', 'tepsiTikla'].sort());
 });
 
 test('masaüstü karosu penceresi: yalnız yerel dosya, sandbox + contextIsolation, CSP satır içi betik yok, innerHTML yok', () => {
@@ -406,4 +417,32 @@ test('masaüstü karosu penceresi: yalnız yerel dosya, sandbox + contextIsolati
   assert.match(yerel, /contextIsolation:\s*true/);
   assert.match(yerel, /nodeIntegration:\s*false/);
   assert.match(oku('src/masaustu-karolari.js'), /yerelPencereOlustur\(/, 'pencere ortak yerel-pencere kurucusundan çıkar (uzak adres gezinmesi engelli)');
+});
+
+test('dış tetikler (1.4.0 dis grubu) tek kapıdan geçer: distenCalistir yalnız kapıda; yerel API yalnız 127.0.0.1; kayıt defteri yalnız "reg query" ile okunur', () => {
+  const kaynaklar = kaynaklariTara();
+  // Eylem katmanının dış girişi YALNIZ kapı (src/lib/dis-tetik.js) ve düzenleyicinin erişim anahtarı sarmalayıcısıdır; main.js eylem başlatmaz.
+  assert.deepEqual(
+    kaynaklar.filter(([, icerik]) => /\.distenCalistir\(/.test(icerik)).map(([ad]) => ad).sort(),
+    ['src/dis-tetikler.js', 'src/lib/dis-tetik.js'],
+  );
+  const duzenleyici = oku('src/dis-tetikler.js');
+  assert.equal(duzenleyici.match(/\beylem\.distenCalistir\(/g)?.length, 1);
+  assert.ok(duzenleyici.indexOf('anahtarVarMi()') < duzenleyici.indexOf('eylem.distenCalistir('), 'erişim anahtarı denetimi eylemden ÖNCE');
+  assert.match(duzenleyici, /disTetikKapisiOlustur\(\{[\s\S]*?eylem: anahtarliEylem,/, 'kapıya yalnız sarmalayıcı verilir');
+  assert.equal(oku('src/lib/dis-tetik.js').match(/\beylem\.distenCalistir\(/g)?.length, 1, 'kapı eylemi tek yerden, tüm denetimlerden sonra çağırır');
+  // main.js dış istekleri yalnız düzenleyiciye iletir (bağlantı, Jump List / kısayol, PC olayı)
+  const main = oku('src/main.js');
+  assert.match(main, /disTetikler\.protokoldan\(istek\.metin\)/);
+  assert.match(main, /disTetikler\.komutSatirindan\(\{ ad: eylemIstegi\.ad, kaynak: istek\.kaynak \}\)/);
+  assert.match(main, /powerMonitor\.on\(olayAdi, \(\) => disTetikler\.guc\(pcOlayi\)\)/);
+  // Yerel API yalnız geri döngü adresini dinler; CORS başlığı yazılmaz
+  const api = oku('src/lib/yerel-api.js');
+  assert.deepEqual([...api.matchAll(/\.listen\(\{[^}]*host: '([^']+)'/g)].map((m) => m[1]), ['127.0.0.1']);
+  assert.doesNotMatch(api, /Access-Control-Allow/i);
+  // Alt süreç yalnız toplantı ışığının salt okunur sorgusu: başka dosya child_process/execFile kullanmaz, komut "query" dışında bir şey değil
+  assert.deepEqual(kaynaklar.filter(([, icerik]) => /child_process/.test(icerik)).map(([ad]) => ad), ['src/main.js']);
+  assert.deepEqual(kaynaklar.filter(([, icerik]) => /\bexecFile\(/.test(icerik)).map(([ad]) => ad), ['src/dis-tetikler.js']);
+  assert.match(duzenleyici, /execFile\(program, \['query', anahtar, '\/s'\]/);
+  assert.doesNotMatch(duzenleyici, /\breg(\.exe)?\s+(add|delete|import|copy|restore|load)\b|'(add|delete|import)'/i, 'kayıt defterine yazma komutu yok');
 });

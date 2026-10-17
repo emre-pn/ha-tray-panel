@@ -472,6 +472,13 @@ function haWsOlustur({
     let bekletilmis = false;
     try {
       anahtar = await anahtarAl();
+    } catch {
+      // 1.4.0 (o-57): tarayıcı oturumunun erişim anahtarı şimdi yenilenemedi (ağ ya da HA geçici sorunu): bu "anahtar yok" DEĞİLDİR;
+      // artan beklemeyle yeniden denenir (REST yedeği bu arada çalışır). Anahtar gerçekten yoksa anahtarAl null döner, fırlatmaz.
+      if (bu === surum && !kapatildi && !askida) koptu('anahtar-yenilenemedi');
+      return;
+    }
+    try {
       // Yetki kesici: reddedilmiş anahtarla adres yoklaması bile yapılmaz (hiçbir şey ağa çıkmaz). Zaman aşımı sonrası
       // soğuma sürerken de (adrese bakılmaksızın) yoklama dahil hiçbir şey ağa çıkmaz.
       const parmakIziOn = anahtar && yetki ? yetki.parmakIzi(anahtar) : null;

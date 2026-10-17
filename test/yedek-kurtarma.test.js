@@ -167,7 +167,7 @@ test('Kapı Kuralı geri almada da geçerli: yedekteki kapı/kilit/garaj/Almanca
       { entity_id: 'sensor.puerta_entrada', ad: 'Puerta entrada' },
       { entity_id: 'media_player.portail', ad: 'Portail' },
       { entity_id: 'lock.on_kapi', ad: 'Ön kapı' },
-      { entity_id: 'cover.perde', ad: 'Perde' },
+      { entity_id: 'lawn_mower.bahce', ad: 'Bahçe' },
       { entity_id: 'sensor.mutfak_sicaklik', ad: 'Mutfak sıcaklığı' },
     ],
   };

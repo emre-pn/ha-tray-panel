@@ -222,6 +222,7 @@ test('raporOlustur: tüm alanlar yazılır; adres yalnız sınıf olarak, anahta
       'Failed sign-in attempts counted: 0',
       'Breaker record: ok',
       'Last successful contact: 2026-10-16T09:55:00.000Z (5 min ago)',
+      'Key user: not checked',
       '',
       'Recent log lines (2; secrets, addresses and device names masked):',
       '2026-10-16T09:00:01.000Z Sayfa yüklenemedi: ERR_CONNECTION_REFUSED',
@@ -250,6 +251,17 @@ test('raporOlustur: yetki kesici durumları, hatalı deneme sayısı, kayıt sor
   assert.match(rapor({ sonBasari: null }), /Last successful contact: never in this session/);
   assert.match(rapor({ sonBasari: Date.parse('2026-10-16T10:05:00Z') }), /\(0 min ago\)/, 'gelecek zaman negatif yazılmaz');
   assert.match(rapor({ yerelAdres: '', disAdres: null }), /Home address: not set\nExternal address: not set/);
+});
+
+test('raporOlustur: anahtarın kullanıcı türü (o-43) yalnız yönetici / yönetici değil / denetlenmedi olarak yazılır; kullanıcı bilgisi rapora girmez', () => {
+  const rapor = (ek) => raporOlustur({ ...TEMEL, ...ek }).metin;
+  assert.match(rapor({ anahtarYonetici: true }), /\nKey user: administrator \(a non-administrator user is recommended\)\n/);
+  assert.match(rapor({ anahtarYonetici: false }), /\nKey user: non-administrator \(recommended\)\n/);
+  assert.match(rapor({ anahtarYonetici: null }), /\nKey user: not checked\n/);
+  assert.match(rapor({}), /\nKey user: not checked\n/, 'alan verilmezse denetlenmedi');
+  assert.match(rapor({ anahtarYonetici: 'evet' }), /\nKey user: not checked\n/, 'boolean olmayan değer yönetici sayılmaz');
+  assert.match(rapor({ anahtarVar: false, anahtarYonetici: true }), /\nKey user: not applicable \(no key added\)\n/, 'anahtar yoksa kullanıcı türü anlamsızdır');
+  assert.match(rapor({ anahtarYonetici: true }), /Last successful contact:[^\n]*\nKey user:/, 'satır sabit yerde: son başarılı temasın hemen altı');
 });
 
 test('raporOlustur: bozuk girdiler (sürüm, platform, sayaç, günlük) güvenli yedeklerle yazılır; rapor yine üretilir', () => {
@@ -318,4 +330,33 @@ test('raporOlustur: erişim anahtarı değeri hiçbir girdiden rapora geçmez; m
 test('rapor metni sabit İngilizcedir: ayarlar dili değişse de değişmez (sorun kaydı dili)', () => {
   const { metin } = raporOlustur(TEMEL);
   assert.doesNotMatch(metin, /[ğüşıöçĞÜŞİÖÇ]/, 'başlık ve alan adlarında Türkçe karakter yok');
+});
+
+test('raporOlustur (1.4.0 dis grubu): dış tetikler satırı yalnız açık/kapalı ve sayı yazar; özetteki başka alan (jeton, ad, port) rapora geçmez', () => {
+  assert.doesNotMatch(raporOlustur(TEMEL).metin, /External triggers/, 'özet verilmezse satır yok (eski çağrılar)');
+  const { metin } = raporOlustur({
+    ...TEMEL,
+    disTetikler: {
+      jumpList: true,
+      masaustu: false,
+      protokol: true,
+      protokolIzinSayisi: 2,
+      yerelApi: true,
+      apiCalisiyor: true,
+      pcOlaylari: true,
+      pcKuralSayisi: 'çok',
+      toplanti: 'evet',
+      jeton: UZUN_ANAHTAR,
+      port: 48123,
+      ad: 'Salon Lambası',
+      kimlik: 'light.salon',
+    },
+  });
+  const satir = metin.split('\n').find((s) => s.startsWith('External triggers:'));
+  assert.equal(
+    satir,
+    'External triggers: Jump List on, desktop shortcut off, evpaneli:// link on (2 allowed), local API on (running), PC events on (0 rules), meeting light off',
+  );
+  assert.doesNotMatch(metin, new RegExp(`${UZUN_ANAHTAR}|48123|Salon|light\\.salon`));
+  assert.match(raporOlustur({ ...TEMEL, disTetikler: { yerelApi: true } }).metin, /local API on \(not running\)/);
 });

@@ -13,15 +13,21 @@
  *  - Panel/palet: yuzey:calistir yükü { kimlik, servis, veri, sonDeger?, basili? } — servis/veri yalnız biçimce süzülür, asıl
  *    doğrulama hattadır (servis-izinleri.js izin listesi + parametre sınırları). Örnek: { kimlik: 'climate.salon',
  *    servis: 'set_temperature', veri: { temperature: 22 } }.
+ *  - Tepsi orta tık (1.4.0, o-20): eylem.tepsiOrtaTikla(kimlik) — ayardaki tek zararsız favori, 'kisayol' kaynağıyla (yıkıcı eylem çalışmaz).
  *  - Ana süreç (palet metni, kısayol, zamanlayıcı yerine kullanıcı hareketi olan yollar): eylem.servisCalistir({ kimlik, kaynak,
  *    servis, veri, onay?, sonDeger? }); kaynak KAYNAKLAR'dan biri olmalı, onay yalnız ana sürecin kendi onayıdır.
  *  - Favori olmayan ama kullanıcının Ayarlar'da seçtiği varlıklar (ör. yapılacaklar listesi): eylem.kayitKaynagiEkle((kimlik) =>
  *    kayit|null) ile kayıt kaynağı eklenir; hattın "kimlik kayıtlı olmalı" adımı favorilere ek olarak bu kaynaklara bakar.
  *    Kaynak yalnız ayardaki kayıtlı kimlikleri döndürmelidir (serbest metin eylem YOK).
+ *
+ * 1.4.0 dış tetikler (o-21, o-47, o-52, o-53, o-54): Jump List, masaüstü kısayolu, yerel API, evpaneli:// bağlantısı, PC olayları ve
+ * toplantı ışığı YALNIZ src/lib/dis-tetik.js kapısından geçip eylem.distenCalistir ile buraya gelir (kaynak DIS_KAYNAKLAR'dan biri;
+ * hat 4b adımı valf/otomasyon/kamera/perde ve klima modunu ayrıca reddeder). `bildirim`: 'hepsi' (başarı ve hata), 'hata' (yalnız
+ * hata; PC olayı ve toplantı ışığı) ya da 'yok' (yerel API'de bildirim kapalıysa).
  */
 
 const { eylemHattiOlustur, bildirimKapatHattiOlustur, basiliTutmaDeposu } = require('./lib/eylem-hatti');
-const { SINIF, eylemSinifi } = require('./lib/eylem-sinifi');
+const { SINIF, DIS_KAYNAKLAR, eylemSinifi } = require('./lib/eylem-sinifi');
 const { eylemAdiniCoz } = require('./lib/komut-satiri');
 const { goreliParlaklik, goreliHiz, kisayolEylemiYonu, kisayolEylemiGecerliMi } = require('./lib/yonlu-eylem');
 const { alanAl, guvenliVarlikMi } = require('./lib/suzgec');
@@ -31,9 +37,12 @@ const { TR } = require('./lib/ceviri-varsayilan');
 const { tekrarliMi } = require('./lib/favoriler');
 const { kisalt } = require('./lib/metin');
 const { hataMetni } = require('./ha-istemcisi');
+const { ortaTikUygunMu } = require('./lib/orta-tik');
 
+const HAZIRLIK_BUTCESI_MS = 1500; // eylemden önce çalışan hazırlık işlevlerinin (geri al için sahne üyeleri okuması) toplam bekleme sınırı
 const REST_SONRASI_YENILEME_MS = 1000; // canlı bağlantı yokken cihazın durumunu bildirmesi için kısa bekleme
 const YUZEYLER = ['panel', 'palet'];
+const BILDIRIM_KIPLERI = ['hepsi', 'hata', 'yok']; // 1.4.0 dış tetikler: başarı/hata bildirimi kipi
 
 const SERVIS_ADI_DESENI = /^[a-z_]{1,40}$/;
 const VERI_BAYT_SINIRI = 2048;
@@ -139,6 +148,72 @@ function eylemKatmaniOlustur({
   };
   const basili = basiliTutmaDeposu({ simdi });
 
+  // --- Eylem grubu (1.4.0: o-12 geri al, o-15 gecikmeli eylem, o-17 etkinlik geçmişi, o-18 son değişenler) ---------------------------
+  /** Hazırlık işlevleri (ad -> işlev): eylemden ÖNCE çalışır, sonucu izleyicilere `hazirlik[ad]` olarak gider (ör. sahne üyelerinin önceki durumu). */
+  const hazirlayicilar = new Map();
+
+  /** Hazırlıkları çalıştırır; her biri en çok HAZIRLIK_BUTCESI_MS bekletir, hata/zaman aşımı eylemi engellemez (o ad için undefined). */
+  async function hazirliklariYap(istek, ic) {
+    if (hazirlayicilar.size === 0) return undefined;
+    const sonuc = {};
+    for (const [ad, islev] of [...hazirlayicilar]) {
+      try {
+        let veri = islev(istek, ic);
+        if (veri && typeof veri.then === 'function') {
+          veri = await Promise.race([veri, new Promise((coz) => zaman.setTimeout(() => coz(undefined), HAZIRLIK_BUTCESI_MS))]);
+        }
+        if (veri !== undefined) sonuc[ad] = veri;
+      } catch {
+        gunluk('Eylem hazırlığı tamamlanamadı.');
+      }
+    }
+    return Object.keys(sonuc).length > 0 ? sonuc : undefined;
+  }
+
+  /** Sonuç izleyicileri: her hat çağrısından SONRA (başarı da, hata da) çağrılır; yalnız gözlemler, eylemi değiştiremez ve hatası yutulur. */
+  const sonucIzleyicileri = [];
+
+  /** Parti (toplu iş: oda kapatma, geri alma): aynı kullanıcı hareketinin adımlarını bağlar. { id, ad } — kısa, düz metin. */
+  function partiOzeti(ic) {
+    const p = ic?.parti;
+    if (!p || typeof p !== 'object' || typeof p.id !== 'string' || p.id === '' || p.id.length > 60) return undefined;
+    return Object.freeze({ id: p.id, ad: typeof p.ad === 'string' ? kisalt(p.ad, AD_SINIRI) : '' });
+  }
+
+  /**
+   * İzleyicilere giden bilgi: renderer'dan gelen hiçbir ham nesne değil, burada kurulan küçük, dondurulmuş özet.
+   * @param {object} istek hat isteği
+   * @param {object} sonuc hat sonucu
+   * @param {{islem?: string, parti?: {id: string, ad: string}}} ic ana süreç içi etiket ('geri-al' | 'gecikmeli' | 'oda-kapat' | 'cihaz') ve parti
+   */
+  function izleyicilereBildir(istek, sonuc, ic, hazirlik) {
+    if (sonucIzleyicileri.length === 0) return;
+    const eylem = istek?.eylem && typeof istek.eylem === 'object' ? istek.eylem : {};
+    const bilgi = Object.freeze({
+      istek: Object.freeze({
+        kimlik: istek.kimlik,
+        kaynak: istek.kaynak,
+        servis: typeof eylem.servis === 'string' ? eylem.servis : undefined,
+        veri: eylem.veri && typeof eylem.veri === 'object' ? Object.freeze(structuredClone(eylem.veri)) : undefined,
+        parlaklik: Number.isInteger(eylem.parlaklik) ? eylem.parlaklik : undefined,
+        sonDeger: istek.sonDeger === true,
+        araDeger: istek.araDeger === true,
+        islem: typeof ic?.islem === 'string' ? ic.islem : undefined,
+        parti: partiOzeti(ic),
+      }),
+      sonuc: Object.freeze({ ...sonuc }),
+      sessiz: araDegerMi(istek),
+      hazirlik,
+    });
+    for (const izleyici of [...sonucIzleyicileri]) {
+      try {
+        izleyici(bilgi);
+      } catch {
+        gunluk('Eylem izleyicisi hata verdi.');
+      }
+    }
+  }
+
   /** HA'daki GÜNCEL durum: canlı bağlantıda depodan, değilse REST'ten (404 = HA'da yok). Güvenlik süzgeci hatta yeniden uygulanır. */
   async function guncelDurum(kimlik) {
     const onbellek = depo.al(kimlik);
@@ -165,11 +240,20 @@ function eylemKatmaniOlustur({
   });
   const bildirimHatti = bildirimKapatHattiOlustur({ bildirimKayitliMi, haIstek });
 
-  function sessizMi(istek) {
+  /**
+   * Ara değer / tekrar mı (kaydırıcı sürüklemesi, ses -/+ basılı tutma)? Sonuç izleyicilerine (etkinlik geçmişi, geri al, son değişenler)
+   * giden `sessiz` yalnız budur: dış tetiğin `bildirim` kipi (başarı bildirimi istenmedi) eylemin geçmişe yazılmasını engellemez.
+   */
+  function araDegerMi(istek) {
     if (!YUZEYLER.includes(istek.kaynak)) return false;
     if (tekrarliMi(istek.kimlik)) return true; // ses -/+ basılı tutma: her basışta bildirim çıkmasın
     if (istek.araDeger === true) return true; // 1.4.0: kaydırıcı ara değeri (ses, sıcaklık, sayı...): bildirim yalnız bırakınca
     return istek.eylem?.parlaklik !== undefined && istek.sonDeger !== true; // kaydırıcı ara değerleri
+  }
+
+  function sessizMi(istek) {
+    if (istek.bildirim === 'hata' || istek.bildirim === 'yok') return true; // 1.4.0 dış tetik: başarı bildirimi istenmedi
+    return araDegerMi(istek);
   }
 
   function basariBildir(sonuc, istek) {
@@ -185,33 +269,43 @@ function eylemKatmaniOlustur({
    * Hattı çalıştırır; geri bildirim, "Son" ve durum tazelemeyi yapar.
    * @returns {Promise<{ok: boolean, tur?: string, ad?: string}>} hata ayrıntısı (ağ, adres) dışarı verilmez
    */
-  async function calistir(istek) {
-    const sonuc = await hat(istek);
+  async function calistir(istek, ic) {
+    const hazirlik = await hazirliklariYap(istek, ic);
+    const sonuc = await hat(istek, ic);
+    izleyicilereBildir(istek, sonuc, ic, hazirlik);
+    // ic.sessiz: toplu işin (geri alma, oda kapatma) adımları tek tek bildirim çıkarmaz; özeti çağıran modül verir.
+    const toplu = ic?.sessiz === true;
     if (sonuc.ok) {
-      basariBildir(sonuc, istek);
+      if (!toplu) basariBildir(sonuc, istek);
       // "Son kullanılanlar" tek tıklamayla yinelenebilen eylemleri tutar; servis eylemi (klima 24, ışık rengi, ses 30) yinelenemez.
-      if (YUZEYLER.includes(istek.kaynak) && sonuc.sinif === 'zararsiz' && sonuc.servisEylemi !== true) son.ekle(istek.kimlik);
+      // Ana süreç içi işler (ic.islem: geri alma, gecikmeli eylem, oda kapatma, diğer cihazlar) kullanıcının tıkladığı karo değildir: "Son"a girmez.
+      if (!ic?.islem && YUZEYLER.includes(istek.kaynak) && sonuc.sinif === 'zararsiz' && sonuc.servisEylemi !== true) son.ekle(istek.kimlik);
       if (!canliMi()) zaman.setTimeout(() => Promise.resolve(durumlariYenile()).catch(() => {}), REST_SONRASI_YENILEME_MS);
       return { ok: true, ad: sonuc.ad };
     }
     if (sonuc.tur === 'onay-gerekli' || sonuc.tur === 'cok-sik') return { ok: false, tur: sonuc.tur, ad: sonuc.ad }; // sessiz: yüzey kendi ipucunu gösterir
+    if (toplu) {
+      gunluk(`Eylem başarısız: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
+      if (!canliMi()) Promise.resolve(durumlariYenile()).catch(() => {});
+      return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
+    }
     if (sonuc.tur === 'ha-hatasi' && sonuc.neden === 'gecikti') {
       // h-09 (1.2.0): komut HA'ya gitti ama yanıt gecikti (uzun sahne): "Yapılamadı" denmez; sonuç bilinmiyor.
       gunluk('Eylem yanıtı gecikti: ha-hatasi/gecikti');
-      geriBildirim({ tur: 'ok', metin: `${kisalt(sonuc.ad || istek?.kimlik || '', AD_SINIRI)}: ${hataMetni({ tur: 'gecikti' }, t)}` });
+      if (!sessizMi(istek)) geriBildirim({ tur: 'ok', metin: `${kisalt(sonuc.ad || istek?.kimlik || '', AD_SINIRI)}: ${hataMetni({ tur: 'gecikti' }, t)}` });
       if (!canliMi()) Promise.resolve(durumlariYenile()).catch(() => {});
       return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
     }
     gunluk(`Eylem başarısız: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
-    geriBildirim({ tur: 'hata', metin: hataBildirimiMetni(eylemHataMetni(sonuc, t), t), baslik: `${adAl()} — ${kisalt(sonuc.ad || istek?.kimlik || '', AD_SINIRI)}` });
+    if (istek?.bildirim !== 'yok') geriBildirim({ tur: 'hata', metin: hataBildirimiMetni(eylemHataMetni(sonuc, t), t), baslik: `${adAl()} — ${kisalt(sonuc.ad || istek?.kimlik || '', AD_SINIRI)}` });
     if (!canliMi()) Promise.resolve(durumlariYenile()).catch(() => {});
     return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
   }
 
   /** Hat dışında kalan hatalar (durum okunamadı, yön hesaplanamadı) da aynı biçimde bildirilir; ayrıntı (ağ, adres) yazılmaz. */
-  function yonluHata(sonuc, kimlik) {
+  function yonluHata(sonuc, kimlik, bildirim = 'hepsi') {
     gunluk(`Yönlü eylem başarısız: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
-    geriBildirim({ tur: 'hata', metin: hataBildirimiMetni(eylemHataMetni(sonuc, t), t), baslik: `${adAl()} — ${kisalt(favoriAl(kimlik)?.ad || kimlik, AD_SINIRI)}` });
+    if (bildirim !== 'yok') geriBildirim({ tur: 'hata', metin: hataBildirimiMetni(eylemHataMetni(sonuc, t), t), baslik: `${adAl()} — ${kisalt(favoriAl(kimlik)?.ad || kimlik, AD_SINIRI)}` });
     return { ok: false, tur: sonuc.tur };
   }
 
@@ -220,35 +314,37 @@ function eylemKatmaniOlustur({
    * vantilatör hızı ±N) önce HA'daki GÜNCEL durumu okur, yeni değeri hesaplar ve AYNI hattan (kapı kuralı, sınıf, servis izin listesi,
    * hız sınırı) tek POST ile gönderir. Hesap yalnız 1..100 / 0..100 aralığında kalır; kapalı ışığa artı adım ışığı o yüzdeyle açar.
    * @param {string} kimlik
-   * @param {'kisayol'|'komut-satiri'} kaynak
+   * @param {'kisayol'|'komut-satiri'|string} kaynak (1.4.0: dış tetik kaynakları da, distenCalistir üzerinden)
    * @param {{tur: 'ac'|'kapat'|'degistir'} | {tur: 'goreli', delta: number, hedef?: 'parlaklik'|'hiz'}} yon
+   * @param {'hepsi'|'hata'|'yok'} [bildirim] 1.4.0 dış tetik bildirim kipi
    */
-  async function yonluCalistir(kimlik, kaynak, yon) {
-    if (yon?.tur === 'ac') return calistir({ kimlik, kaynak, eylem: { servis: 'turn_on' } });
-    if (yon?.tur === 'kapat') return calistir({ kimlik, kaynak, eylem: { servis: 'turn_off' } });
-    if (yon?.tur === 'degistir') return calistir({ kimlik, kaynak });
-    if (yon?.tur !== 'goreli' || !Number.isInteger(yon.delta)) return yonluHata({ tur: 'gecersiz' }, kimlik);
+  async function yonluCalistir(kimlik, kaynak, yon, bildirim = 'hepsi') {
+    const ek = bildirim === 'hepsi' ? {} : { bildirim };
+    if (yon?.tur === 'ac') return calistir({ kimlik, kaynak, eylem: { servis: 'turn_on' }, ...ek });
+    if (yon?.tur === 'kapat') return calistir({ kimlik, kaynak, eylem: { servis: 'turn_off' }, ...ek });
+    if (yon?.tur === 'degistir') return calistir({ kimlik, kaynak, ...ek });
+    if (yon?.tur !== 'goreli' || !Number.isInteger(yon.delta)) return yonluHata({ tur: 'gecersiz' }, kimlik, bildirim);
     const alan = alanAl(kimlik);
-    if (alan !== 'light' && alan !== 'fan') return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik);
-    if (yon.hedef !== undefined && yon.hedef !== (alan === 'light' ? 'parlaklik' : 'hiz')) return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik);
+    if (alan !== 'light' && alan !== 'fan') return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik, bildirim);
+    if (yon.hedef !== undefined && yon.hedef !== (alan === 'light' ? 'parlaklik' : 'hiz')) return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik, bildirim);
     let varlik;
     try {
       varlik = await guncelDurum(kimlik);
     } catch {
-      return yonluHata({ tur: 'ulasilamiyor' }, kimlik);
+      return yonluHata({ tur: 'ulasilamiyor' }, kimlik, bildirim);
     }
-    if (varlik === null || varlik === undefined) return yonluHata({ tur: 'bulunamadi' }, kimlik);
-    if (typeof varlik !== 'object' || varlik.entity_id !== kimlik || !guvenliVarlikMi(varlik)) return yonluHata({ tur: 'yasak' }, kimlik);
+    if (varlik === null || varlik === undefined) return yonluHata({ tur: 'bulunamadi' }, kimlik, bildirim);
+    if (typeof varlik !== 'object' || varlik.entity_id !== kimlik || !guvenliVarlikMi(varlik)) return yonluHata({ tur: 'yasak' }, kimlik, bildirim);
     const hesap = alan === 'light' ? goreliParlaklik(varlik, yon.delta) : goreliHiz(varlik, yon.delta);
-    if (hesap.tur === 'ulasilamiyor') return yonluHata({ tur: 'ulasilamiyor' }, kimlik);
-    if (hesap.tur === 'desteklenmiyor') return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik);
+    if (hesap.tur === 'ulasilamiyor') return yonluHata({ tur: 'ulasilamiyor' }, kimlik, bildirim);
+    if (hesap.tur === 'desteklenmiyor') return yonluHata({ tur: 'gecersiz', neden: 'desteklenmiyor' }, kimlik, bildirim);
     if (hesap.tur === 'degisim-yok') {
       const ad = (typeof varlik.attributes?.friendly_name === 'string' && varlik.attributes.friendly_name.trim()) || favoriAl(kimlik)?.ad || kimlik;
-      geriBildirim({ tur: 'ok', metin: t('sonuc.degisimYok', { ad: kisalt(ad, AD_SINIRI) }) });
+      if (bildirim === 'hepsi') geriBildirim({ tur: 'ok', metin: t('sonuc.degisimYok', { ad: kisalt(ad, AD_SINIRI) }) });
       return { ok: true, degismedi: true };
     }
     const eylem = alan === 'light' ? { parlaklik: hesap.yuzde } : { servis: 'set_percentage', veri: { percentage: hesap.yuzde } };
-    return calistir({ kimlik, kaynak, eylem });
+    return calistir({ kimlik, kaynak, eylem, ...ek });
   }
 
   return {
@@ -277,6 +373,26 @@ function eylemKatmaniOlustur({
         await calistir({ kimlik, kaynak: 'tepsi-menu', onay: 'diyalog' });
       }
       return undefined;
+    },
+
+    /**
+     * Tepsi simgesine orta tık (o-20): ayarda (`tepsiOrtaTik`) seçilen TEK zararsız favori çalışır. Yeni bir yetki yoktur: eylem, eylem
+     * kısayoluyla AYNI yoldan ('kisayol' kaynağı) tek güvenli hattan geçer (Kapı Kuralı, sınıf, servis izin listesi, hız sınırı, tek POST);
+     * orta tıkla onay istenmez ve yıkıcı sınıf zaten reddedilir. Hattan önce src/lib/orta-tik.js ön denetimi, ayarda kalmış eski bir seçimin
+     * (sonradan onay istenen, favoriden çıkarılan, yıkıcı sayılan favori) sessizce değil NEDENİYLE reddedilmesini sağlar.
+     * @param {unknown} kimlik ayardaki tepsiOrtaTik
+     * @returns {Promise<{ok: boolean, tur?: string, ad?: string}>}
+     */
+    async tepsiOrtaTikla(kimlik) {
+      const favori = typeof kimlik === 'string' ? favoriAl(kimlik) : undefined;
+      const uygun = ortaTikUygunMu({ kimlik, favori, durum: typeof kimlik === 'string' ? depo.al(kimlik) : undefined });
+      if (!uygun.uygun) {
+        if (uygun.neden === 'secilmedi') return { ok: false, tur: 'gecersiz' };
+        gunluk(`Tepsi orta tık eylemi reddedildi: ${uygun.neden}`);
+        geriBildirim({ tur: 'hata', metin: t('sonuc.ortaTikUygunDegil'), baslik: adAl() });
+        return { ok: false, tur: uygun.neden === 'favori-degil' ? 'bilinmeyen-favori' : uygun.neden === 'gecersiz' ? 'gecersiz' : 'kaynak-izinsiz' };
+      }
+      return calistir({ kimlik, kaynak: 'kisayol' });
     },
 
     /**
@@ -360,6 +476,77 @@ function eylemKatmaniOlustur({
       return calistir(istek);
     },
 
+    /**
+     * 1.4.0 dış tetikler: YALNIZ src/lib/dis-tetik.js kapısı çağırır (kaynak açık mı, ad çözümü, zararsızlık, hız sınırı orada).
+     * Burada kaynak ve yük biçimi yeniden denetlenir; istek yine aynı hattan geçer (hat 4b: dış kaynak izni). Tek biçim seçilir:
+     * yon (aç/kapat/değiştir/±adım), parlaklik (1-100, 0 = kapat), servis + veri (palet sözlüğünün komutları) ya da hiçbiri (tek tıklama).
+     * @param {{kimlik: string, kaynak: string, yon?: object, parlaklik?: number, servis?: string, veri?: object, bildirim?: 'hepsi'|'hata'|'yok'}} istek
+     */
+    distenCalistir({ kimlik, kaynak, yon, parlaklik, servis, veri, bildirim = 'hepsi' } = {}) {
+      if (!DIS_KAYNAKLAR.includes(kaynak) || typeof kimlik !== 'string' || kimlik.length > 120 || !BILDIRIM_KIPLERI.includes(bildirim)) {
+        return Promise.resolve({ ok: false, tur: 'gecersiz' });
+      }
+      const ek = bildirim === 'hepsi' ? {} : { bildirim };
+      const bicimSayisi = [yon, parlaklik, servis].filter((d) => d !== undefined).length;
+      if (bicimSayisi > 1) return Promise.resolve({ ok: false, tur: 'gecersiz' });
+      if (yon !== undefined) return yonluCalistir(kimlik, kaynak, yon, bildirim);
+      if (parlaklik !== undefined) {
+        if (!Number.isInteger(parlaklik) || parlaklik < 0 || parlaklik > 100) return Promise.resolve({ ok: false, tur: 'gecersiz' });
+        const eylem = parlaklik === 0 ? { servis: 'turn_off' } : { parlaklik };
+        return calistir({ kimlik, kaynak, eylem, sonDeger: true, ...ek });
+      }
+      if (servis !== undefined) {
+        if (!servisYukuGecerliMi(servis, veri)) return Promise.resolve({ ok: false, tur: 'gecersiz' });
+        return calistir({ kimlik, kaynak, eylem: veri === undefined ? { servis } : { servis, veri }, ...ek });
+      }
+      return calistir({ kimlik, kaynak, ...ek });
+    },
+
+    /**
+     * Eylem grubu: her eylem sonucunu (başarı/hata) gözlemleyen izleyici ekler (etkinlik geçmişi, geri al, son değişenler). İzleyici
+     * { istek: {kimlik, kaynak, servis?, veri?, parlaklik?, sonDeger, araDeger, islem?}, sonuc, sessiz } alır; eylemi değiştiremez, hatası yutulur.
+     * Dönen işlev izleyiciyi kaldırır.
+     */
+    sonucDinle(izleyici) {
+      if (typeof izleyici !== 'function') return () => {};
+      sonucIzleyicileri.push(izleyici);
+      return () => {
+        const i = sonucIzleyicileri.indexOf(izleyici);
+        if (i >= 0) sonucIzleyicileri.splice(i, 1);
+      };
+    },
+
+    /**
+     * Eylem grubu: eylemden ÖNCE çalışan hazırlık işlevi ekler (geri al: sahnenin üyelerinin önceki durumu). İşlev (istek, ic) alır, değer ya da
+     * söz döner; sonuç izleyicilere `hazirlik[ad]` olarak gider. Eylemi bekletme sınırı toplam 1,5 sn'dir; hata/zaman aşımı eylemi engellemez.
+     * Dönen işlev hazırlığı kaldırır.
+     */
+    hazirlikEkle(ad, islev) {
+      if (typeof ad !== 'string' || typeof islev !== 'function') return () => {};
+      hazirlayicilar.set(ad, islev);
+      return () => {
+        if (hazirlayicilar.get(ad) === islev) hazirlayicilar.delete(ad);
+      };
+    },
+
+    /**
+     * Eylem grubu (YALNIZ ana süreç modülleri): tek seferlik kayıtla çalıştırır. Kayıt, "kimlik ayardaki favorilerde olmalı" adımının
+     * yerine geçer ({ entity_id, ad, parlaklik? }); kapı kuralı, eylem sınıfı + yüzey izni, servis izin listesi, hız sınırı ve tek POST
+     * AYNEN uygulanır. Kullanım: geri al (sahne üyeleri), gecikmeli eylem, oda kapatma, palette "diğer cihazlar". Renderer bu yola
+     * erişemez: yuzey:* kanalları ancak aşağıdaki yüzeye açık sarmalayıcılardan geçer.
+     * @param {{kimlik: string, kaynak: string, kayit: object, eylem?: object, onay?: 'diyalog'|'basili', sonDeger?: boolean,
+     *   parti?: {id: string, ad: string}, sessiz?: boolean}} istek parti: toplu işin kimliği (izleyicilere gider); sessiz: bu adım bildirim çıkarmaz
+     * @param {'geri-al'|'gecikmeli'|'oda-kapat'|'cihaz'} islem izleyicilere giden etiket
+     */
+    kayitliCalistir({ kimlik, kaynak, kayit, eylem, onay, sonDeger, parti, sessiz } = {}, islem) {
+      if (!kayit || typeof kayit !== 'object' || kayit.entity_id !== kimlik) return Promise.resolve({ ok: false, tur: 'bilinmeyen-favori' });
+      const istek = { kimlik, kaynak };
+      if (eylem !== undefined) istek.eylem = eylem;
+      if (onay !== undefined) istek.onay = onay;
+      if (sonDeger === true) istek.sonDeger = true;
+      return calistir(istek, { kayit, islem, parti, sessiz: sessiz === true });
+    },
+
     /** 1.4.0: favori dışı kayıt kaynağı ekler (ör. Ayarlar'da seçilen yapılacaklar listesi). Dönen işlev kaynağı kaldırır. */
     kayitKaynagiEkle(kaynak) {
       if (typeof kaynak !== 'function') return () => {};
@@ -413,4 +600,4 @@ function eylemKatmaniOlustur({
   };
 }
 
-module.exports = { REST_SONRASI_YENILEME_MS, eylemHataMetni, eylemKatmaniOlustur };
+module.exports = { HAZIRLIK_BUTCESI_MS, REST_SONRASI_YENILEME_MS, eylemHataMetni, eylemKatmaniOlustur };

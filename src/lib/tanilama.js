@@ -38,6 +38,17 @@ const YETKI_DURUMLARI = Object.freeze({
 });
 const KAYIT_SORUNLARI = Object.freeze({ yazilamadi: 'record not writable', okunamadi: 'record not readable' });
 
+/**
+ * Erişim anahtarının kullanıcısı (Home Assistant auth/current_user is_admin; o-43). Yalnız true/false/bilinmiyor yazılır; kullanıcı adı,
+ * kimliği ya da başka bir ayrıntı rapora girmez.
+ */
+function anahtarKullanicisiMetni(anahtarVar, yonetici) {
+  if (anahtarVar !== true) return 'not applicable (no key added)';
+  if (yonetici === true) return 'administrator (a non-administrator user is recommended)';
+  if (yonetici === false) return 'non-administrator (recommended)';
+  return 'not checked';
+}
+
 /** Etiketsiz ve kontrol karaktersiz, kısaltılmış metin; geçersizse yedek. */
 function sinirliMetin(deger, n, yedek = 'unknown') {
   if (typeof deger !== 'string') return yedek;
@@ -202,6 +213,23 @@ function sonBasariMetni(sonBasari, simdi) {
 }
 
 /**
+ * Dış tetikler satırı (1.4.0 dis grubu). Yalnız açık/kapalı ve sayılar yazılır: favori adı, kimlik, port, bağlantı ya da yerel API jetonu
+ * girmez (özetteki başka alanlar okunmaz). Özet yoksa satır da yok (eski çağrılar bozulmaz).
+ * @param {object|null} d
+ * @returns {string[]}
+ */
+function disTetikSatiri(d) {
+  if (!d || typeof d !== 'object') return [];
+  const ac = (v) => (v === true ? 'on' : 'off');
+  const sayi = (v) => (Number.isInteger(v) && v >= 0 ? Math.min(v, 1000) : 0);
+  const api = d.yerelApi === true ? ` (${d.apiCalisiyor === true ? 'running' : 'not running'})` : '';
+  return [
+    `External triggers: Jump List ${ac(d.jumpList)}, desktop shortcut ${ac(d.masaustu)}, evpaneli:// link ${ac(d.protokol)} (${sayi(d.protokolIzinSayisi)} allowed),` +
+      ` local API ${ac(d.yerelApi)}${api}, PC events ${ac(d.pcOlaylari)} (${sayi(d.pcKuralSayisi)} rules), meeting light ${ac(d.toplanti)}`,
+  ];
+}
+
+/**
  * Raporu kurar.
  * @param {object} g
  * @param {Date} g.simdi
@@ -215,12 +243,14 @@ function sonBasariMetni(sonBasari, simdi) {
  * @param {boolean} g.canli WebSocket canlı mı
  * @param {boolean} g.anahtarVar erişim anahtarı eklenmiş mi (değeri değil)
  * @param {string|null} g.yetkiDurumu yetki kesici durumu
+ * @param {boolean|null} [g.anahtarYonetici] anahtarın kullanıcısı yönetici mi (auth/current_user is_admin); bilinmiyorsa null (o-43)
  * @param {number} g.hataliDeneme hata bütçesi sayacı
  * @param {string|null} g.yetkiKaydiSorunu 'yazilamadi' | 'okunamadi' | null
  * @param {number|null} g.sonBasari son başarılı HA yanıtının zamanı (ms)
  * @param {string[]} g.gunlukSatirlari ham günlük satırları
  * @param {string[]} [g.kullaniciAdlari] bu bilgisayardaki Windows kullanıcı adı (os.userInfo().username) ve kullanıcı klasörü adı; günlükte
  *   (boşluklu adlar dahil) görünürse [user] olur. yerelAdres/disAdres'in ana bilgisayar adları da günlükte [host] olur.
+ * @param {object|null} [g.disTetikler] 1.4.0 dis grubu: src/dis-tetikler.js tanilamaOzeti() (yalnız açık/kapalı ve sayılar okunur)
  * @returns {{ metin: string, gunlukSatiri: number }}
  */
 function raporOlustur({
@@ -235,11 +265,13 @@ function raporOlustur({
   canli = false,
   anahtarVar = false,
   yetkiDurumu = null,
+  anahtarYonetici = null,
   hataliDeneme = 0,
   yetkiKaydiSorunu = null,
   sonBasari = null,
   gunlukSatirlari = [],
   kullaniciAdlari = [],
+  disTetikler = null,
 }) {
   const an = simdi instanceof Date ? simdi : new Date();
   const maske = maskeKur({ kullaniciAdlari, adresler: [yerelAdres, disAdres] });
@@ -267,6 +299,8 @@ function raporOlustur({
     `Failed sign-in attempts counted: ${sayac}`,
     `Breaker record: ${yetkiKaydiSorunu ? KAYIT_SORUNLARI[yetkiKaydiSorunu] ?? 'unknown' : 'ok'}`,
     `Last successful contact: ${sonBasariMetni(sonBasari, an)}`,
+    `Key user: ${anahtarKullanicisiMetni(anahtarVar, anahtarYonetici)}`,
+    ...disTetikSatiri(disTetikler),
     '',
     `Recent log lines (${satirlar.length}; secrets, addresses and device names masked):`,
     ...(satirlar.length > 0 ? satirlar : ['(log is empty or unreadable)']),

@@ -14,8 +14,21 @@
       <span id="baslik" class="baslik" data-i18n="yuzey.uygulamaAdi">Ev Paneli</span>
       <span id="medya" class="medya" hidden></span>
       <span id="baglanti" class="baglanti" role="status"></span>
+      <button id="sabitle" class="sabitle" type="button" aria-pressed="false" data-i18n-attr="title:yuzey.sabit.ac;aria-label:yuzey.sabit.ac" title="Paneli sabitle" aria-label="Paneli sabitle"><svg class="sabitle-simge" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M9.8 1.5 14.5 6.2l-1.2.4-2.1 2.1.3 3.3-1 1-2.6-2.6-3.7 3.7-.7-.7 3.7-3.7L2.9 7.1l1-1 3.3.3L9.3 4.3z" fill="currentColor"/></svg></button>
       <span id="eski" class="eski" data-i18n="yuzey.eskiRozeti" hidden>Durumlar eski olabilir</span>
     </header>
+
+    <section id="disOnay" class="dis-onay" role="alertdialog" aria-labelledby="disOnayBaslik" aria-describedby="disOnaySoru disOnayIslem" hidden>
+      <h2 id="disOnayBaslik" class="dis-onay-baslik" data-i18n="yuzey.disOnay.baslik">Bağlantı izni</h2>
+      <p id="disOnaySoru" class="dis-onay-soru"></p>
+      <p id="disOnayIslem" class="dis-onay-islem"></p>
+      <p class="dis-onay-ayrinti" data-i18n="yuzey.disOnay.ayrinti">İzin yalnız bu favori için geçerlidir. “Her zaman” izni Ayarlar’daki Dış tetikler bölümünden kaldırılabilir.</p>
+      <div class="dis-onay-dugmeler">
+        <button id="disOnayIzin" class="dis-onay-dugme" type="button" data-i18n="yuzey.disOnay.izin" disabled>İzin ver</button>
+        <button id="disOnayHerZaman" class="dis-onay-dugme" type="button" data-i18n="yuzey.disOnay.herZaman" disabled>Her zaman</button>
+        <button id="disOnayReddet" class="dis-onay-dugme" type="button" data-i18n="yuzey.disOnay.reddet">Reddet</button>
+      </div>
+    </section>
 
     <div id="serit" class="serit" role="status" aria-live="polite" hidden></div>
 
@@ -42,7 +55,10 @@
 
     <div id="paletSerit" class="palet-serit" data-i18n="yuzey.paletSerit">Enter çalıştır · Shift+Enter seviye · Enter’ı basılı tut onay</div>
 
+    <div id="gecikmeliSerit" class="gecikmeli-serit" role="group" data-i18n-attr="aria-label:yuzey.gecikmeli.baslik" aria-label="Zamanlı" hidden></div>
+
     <footer id="alt" class="alt">
+      <button id="geriAl" class="alt-dugme alt-geri-al" type="button" data-i18n="yuzey.alt.geriAl" hidden>Geri al</button>
       <button id="haAc" class="alt-dugme" type="button" data-i18n="yuzey.alt.haAc">HA’yı aç</button>
       <button id="ayarlarAc" class="alt-dugme" type="button" data-i18n="yuzey.alt.ayarlar">Ayarlar</button>
     </footer>
@@ -58,7 +74,10 @@
   <script src="yuzey-bilgi.js"></script>
   <script src="lib/karo-gorunum.js"></script>
   <script src="yuzey-duzen.js"></script>
+  <script src="yuzey-kamera.js"></script>
+  <script src="yuzey-eylem.js"></script>
   <script src="yuzey-sayfa.js"></script>
+  <script src="yuzey-dis-onay.js"></script>
   <script src="lib/tema-renk.js"></script>
   <script src="lib/efekt.js"></script>
   <script src="yuzey-gorunum.js"></script>

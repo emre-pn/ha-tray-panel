@@ -29,6 +29,9 @@
     ['eksi', '-'],
     ['plus', '+'],
     ['minus', '-'],
+    ['moins', '-'], // Fransızca (plus ortak)
+    ['mas', '+'], // İspanyolca
+    ['menos', '-'],
   ]);
   const ALAKA_ORANI = 0.25; // en iyi puanın bu oranının altındaki sonuçlar alakasızdır (k-07)
   const PARLAKLIK_YAKINLIGI = 0.8; // parlaklıklı aday en az en iyi puanın bu oranı kadar iyi olmalı (h-02)
@@ -216,15 +219,38 @@
   // sözlüğünde aranır; kalan baş kısım öğenin adıyla eşleşmelidir. Sözlük alana göre değişir (klimada sayı sıcaklıktır, medyada
   // "ses 30" sestir, seçicide son sözcük seçenektir). Çıkan komut yalnız bir SERVİS ÖNERİSİDİR ({servis, veri}); çalıştırmadan önce
   // ana süreçteki eylem hattı (src/lib/servis-izinleri.js) izin listesi, sınır ve adım denetimini yeniden yapar. Burada sınır
-  // dışı değerler yalnız arayüzün satırı "aralık dışı" göstermesi içindir. Hiçbir sözlükte kilit/kapı/kepenk/alarm yoktur.
+  // dışı değerler yalnız arayüzün satırı "aralık dışı" göstermesi içindir. Hiçbir sözlükte kilit/kapı/kepenk/garaj/alarm yoktur
+  // (1.4.0 cihaz grubu: perde, vana ve otomasyon sözlükleri aşağıdadır; yalnız perde/jaluzi/gölgelik sınıfı perde olabilir, vana ve otomasyon
+  // komutları ana süreçte ZORUNLU onaylıdır: palette Enter basılı tutulur).
 
   const KOMUT_KUYRUK_SINIRI = 4;
   const KOMUTLU_ALANLAR = new Set(['climate', 'light', 'media_player', 'fan', 'humidifier', 'vacuum', 'input_select', 'select', 'input_number', 'number', 'timer']);
-  const KAPAT_SOZLERI = new Set(['kapat', 'kapali', 'off']);
-  const AC_SOZLERI = new Set(['ac', 'acik', 'on']);
+  // Dil sözcükleri (DE/FR/ES): katlanmış (ASCII, küçük harf; ü->u, é->e, ñ->n, ß->s) ve yalnız "aç/kapat/mod/medya" düzeyinde.
+  // Kapı Kuralı: "aç/kapat" ZATEN kilit/kapı/kepenk/alarm öğelerine uygulanamaz (palette öğe olarak yoktur); yine de buraya
+  // "öffnen/schließen/ouvrir/fermer/abrir/cerrar/verrouiller/bloquear" gibi KAPI fiilleri hiçbir sözlüğe EKLENMEZ (test/arama-dil.test.js).
+  const KAPAT_SOZLERI = new Set(['kapat', 'kapali', 'off', 'aus', 'ausschalten', 'abschalten', 'eteins', 'eteindre', 'eteint', 'apaga', 'apagar', 'apagado']);
+  const AC_SOZLERI = new Set(['ac', 'acik', 'on', 'an', 'ein', 'einschalten', 'anschalten', 'allume', 'allumer', 'allumee', 'enciende', 'encender', 'prende', 'prender', 'encendido']);
+  // 1.4.0 cihaz grubu (o-49, o-50, o-59): perde (cover), vana (valve), otomasyon (automation).
+  ['cover', 'valve', 'automation'].forEach((alan) => KOMUTLU_ALANLAR.add(alan));
+  const PERDE_AC_SOZLERI = new Set([...AC_SOZLERI, 'open', 'yukari', 'up', 'kaldir']);
+  const PERDE_KAPAT_SOZLERI = new Set([...KAPAT_SOZLERI, 'close', 'asagi', 'down', 'indir']);
+  const PERDE_DUR_SOZLERI = new Set(['dur', 'durdur', 'stop']);
+  const VANA_AC_SOZLERI = new Set([...AC_SOZLERI, 'open']);
+  const VANA_KAPAT_SOZLERI = new Set([...KAPAT_SOZLERI, 'close']);
+  const OTOMASYON_CALISTIR_SOZLERI = new Set(['calistir', 'tetikle', 'run', 'trigger']);
+  // supported_features bitleri (cover ve valve aynı): 1 aç, 2 kapat, 4 konum, 8 dur.
+  const DESTEK_AC = 1;
+  const DESTEK_KAPAT = 2;
+  const DESTEK_KONUM = 4;
+  const DESTEK_DUR = 8;
   // Beyaz tonları (kelvin) ve küçük renk paleti; panelin düğmeleri de bunlardan çizilir (yuzey-kartlar.js).
   const BEYAZ_TONLAR = Object.freeze({ sicak: 2700, dogal: 4000, soguk: 6500 });
-  const BEYAZ_SOZLERI = new Map([['sicak', 'sicak'], ['warm', 'sicak'], ['dogal', 'dogal'], ['natural', 'dogal'], ['neutral', 'dogal'], ['soguk', 'soguk'], ['cool', 'soguk'], ['cold', 'soguk']]);
+  const BEYAZ_SOZLERI = new Map([
+    ['sicak', 'sicak'], ['warm', 'sicak'], ['dogal', 'dogal'], ['natural', 'dogal'], ['neutral', 'dogal'], ['soguk', 'soguk'], ['cool', 'soguk'], ['cold', 'soguk'],
+    ['warmweis', 'sicak'], ['warmweiss', 'sicak'], ['neutralweis', 'dogal'], ['neutralweiss', 'dogal'], ['kalt', 'soguk'], ['kaltweis', 'soguk'], ['kaltweiss', 'soguk'], // Almanca (ß->s, ss yazımı da)
+    ['chaud', 'sicak'], ['chaude', 'sicak'], ['blanc chaud', 'sicak'], ['naturel', 'dogal'], ['blanc naturel', 'dogal'], ['froid', 'soguk'], ['froide', 'soguk'], ['blanc froid', 'soguk'], // Fransızca
+    ['calido', 'sicak'], ['calida', 'sicak'], ['neutro', 'dogal'], ['frio', 'soguk'], ['fria', 'soguk'], // İspanyolca (natural ortak)
+  ]);
   const RENK_PALETI = Object.freeze({
     kirmizi: Object.freeze([255, 0, 0]),
     turuncu: Object.freeze([255, 140, 0]),
@@ -239,6 +265,12 @@
     ['kirmizi', 'kirmizi'], ['red', 'kirmizi'], ['turuncu', 'turuncu'], ['orange', 'turuncu'], ['sari', 'sari'], ['yellow', 'sari'],
     ['yesil', 'yesil'], ['green', 'yesil'], ['turkuaz', 'turkuaz'], ['cyan', 'turkuaz'], ['mavi', 'mavi'], ['blue', 'mavi'],
     ['mor', 'mor'], ['purple', 'mor'], ['violet', 'mor'], ['pembe', 'pembe'], ['pink', 'pembe'],
+    // Almanca: ü->u, ä->a (ae/ue yazımları da kabul)
+    ['rot', 'kirmizi'], ['gelb', 'sari'], ['grun', 'yesil'], ['gruen', 'yesil'], ['turkis', 'turkuaz'], ['tuerkis', 'turkuaz'], ['blau', 'mavi'], ['lila', 'mor'], ['violett', 'mor'], ['rosa', 'pembe'],
+    // Fransızca
+    ['rouge', 'kirmizi'], ['jaune', 'sari'], ['vert', 'yesil'], ['turquoise', 'turkuaz'], ['bleu', 'mavi'], ['mauve', 'mor'], ['violette', 'mor'], ['rose', 'pembe'],
+    // İspanyolca (rosa ortak)
+    ['rojo', 'kirmizi'], ['naranja', 'turuncu'], ['amarillo', 'sari'], ['verde', 'yesil'], ['turquesa', 'turkuaz'], ['azul', 'mavi'], ['morado', 'mor'], ['violeta', 'mor'], ['rosado', 'pembe'],
   ]);
   const ISIK_RENK_MODLARI = ['hs', 'rgb', 'rgbw', 'rgbww', 'xy'];
   // Klima modu sözcükleri -> HA hvac_mode adayları (cihazın listesindeki ilk aday seçilir).
@@ -248,6 +280,15 @@
     ['oto', ['auto', 'heat_cool']], ['otomatik', ['auto', 'heat_cool']], ['auto', ['auto', 'heat_cool']],
     ['fan', ['fan_only']], ['vantilator', ['fan_only']],
     ['kuru', ['dry']], ['kurutma', ['dry']], ['dry', ['dry']],
+    // Almanca
+    ['heizen', ['heat']], ['heizung', ['heat']], ['kuhlen', ['cool']], ['kuehlen', ['cool']], ['kuhlung', ['cool']], ['automatik', ['auto', 'heat_cool']], ['automatisch', ['auto', 'heat_cool']],
+    ['luefter', ['fan_only']], ['lufter', ['fan_only']], ['trocknen', ['dry']], ['entfeuchten', ['dry']], ['trocken', ['dry']],
+    // Fransızca
+    ['chauffage', ['heat']], ['chauffer', ['heat']], ['refroidir', ['cool']], ['refroidissement', ['cool']], ['froid', ['cool']], ['automatique', ['auto', 'heat_cool']],
+    ['ventilateur', ['fan_only']], ['ventilation', ['fan_only']], ['sec', ['dry']], ['deshumidifier', ['dry']],
+    // İspanyolca
+    ['calefaccion', ['heat']], ['calentar', ['heat']], ['calor', ['heat']], ['frio', ['cool']], ['enfriar', ['cool']], ['refrigerar', ['cool']], ['refrigeracion', ['cool']],
+    ['automatico', ['auto', 'heat_cool']], ['ventilador', ['fan_only']], ['ventilacion', ['fan_only']], ['seco', ['dry']], ['deshumidificar', ['dry']],
   ]);
   const MEDYA_SOZLERI = new Map([
     ['sessiz', ['volume_mute', { is_volume_muted: true }, 'sessiz']], ['mute', ['volume_mute', { is_volume_muted: true }, 'sessiz']], ['sustur', ['volume_mute', { is_volume_muted: true }, 'sessiz']],
@@ -255,16 +296,50 @@
     ['oynat', ['media_play_pause', undefined, 'oynat']], ['duraklat', ['media_play_pause', undefined, 'oynat']], ['play', ['media_play_pause', undefined, 'oynat']], ['pause', ['media_play_pause', undefined, 'oynat']],
     ['sonraki', ['media_next_track', undefined, 'sonraki']], ['ileri', ['media_next_track', undefined, 'sonraki']], ['next', ['media_next_track', undefined, 'sonraki']],
     ['onceki', ['media_previous_track', undefined, 'onceki']], ['geri', ['media_previous_track', undefined, 'onceki']], ['prev', ['media_previous_track', undefined, 'onceki']], ['previous', ['media_previous_track', undefined, 'onceki']],
+    // Almanca
+    ['stumm', ['volume_mute', { is_volume_muted: true }, 'sessiz']], ['stummschalten', ['volume_mute', { is_volume_muted: true }, 'sessiz']],
+    ['ton an', ['volume_mute', { is_volume_muted: false }, 'sesli']], ['stumm aus', ['volume_mute', { is_volume_muted: false }, 'sesli']],
+    ['abspielen', ['media_play_pause', undefined, 'oynat']], ['wiedergabe', ['media_play_pause', undefined, 'oynat']], ['pausieren', ['media_play_pause', undefined, 'oynat']], ['fortsetzen', ['media_play_pause', undefined, 'oynat']],
+    ['weiter', ['media_next_track', undefined, 'sonraki']], ['nachster', ['media_next_track', undefined, 'sonraki']], ['naechster', ['media_next_track', undefined, 'sonraki']],
+    ['zuruck', ['media_previous_track', undefined, 'onceki']], ['zurueck', ['media_previous_track', undefined, 'onceki']], ['vorheriger', ['media_previous_track', undefined, 'onceki']],
+    // Fransızca
+    ['muet', ['volume_mute', { is_volume_muted: true }, 'sessiz']], ['silence', ['volume_mute', { is_volume_muted: true }, 'sessiz']], ['sourdine', ['volume_mute', { is_volume_muted: true }, 'sessiz']],
+    ['activer le son', ['volume_mute', { is_volume_muted: false }, 'sesli']], ['reactiver le son', ['volume_mute', { is_volume_muted: false }, 'sesli']],
+    ['lecture', ['media_play_pause', undefined, 'oynat']], ['jouer', ['media_play_pause', undefined, 'oynat']], ['mettre en pause', ['media_play_pause', undefined, 'oynat']],
+    ['suivant', ['media_next_track', undefined, 'sonraki']], ['suivante', ['media_next_track', undefined, 'sonraki']], ['prochain', ['media_next_track', undefined, 'sonraki']],
+    ['precedent', ['media_previous_track', undefined, 'onceki']], ['precedente', ['media_previous_track', undefined, 'onceki']],
+    // İspanyolca
+    ['silenciar', ['volume_mute', { is_volume_muted: true }, 'sessiz']], ['mudo', ['volume_mute', { is_volume_muted: true }, 'sessiz']],
+    ['activar sonido', ['volume_mute', { is_volume_muted: false }, 'sesli']], ['quitar silencio', ['volume_mute', { is_volume_muted: false }, 'sesli']], ['desilenciar', ['volume_mute', { is_volume_muted: false }, 'sesli']],
+    ['reproducir', ['media_play_pause', undefined, 'oynat']], ['pausa', ['media_play_pause', undefined, 'oynat']], ['pausar', ['media_play_pause', undefined, 'oynat']], ['reanudar', ['media_play_pause', undefined, 'oynat']],
+    ['siguiente', ['media_next_track', undefined, 'sonraki']], ['proximo', ['media_next_track', undefined, 'sonraki']], ['proxima', ['media_next_track', undefined, 'sonraki']],
+    ['anterior', ['media_previous_track', undefined, 'onceki']], ['atras', ['media_previous_track', undefined, 'onceki']],
   ]);
   const SUPURGE_SOZLERI = new Map([
     ['basla', ['start', 'basla']], ['baslat', ['start', 'basla']], ['start', ['start', 'basla']], ['temizle', ['start', 'basla']], ['clean', ['start', 'basla']],
     ['duraklat', ['pause', 'duraklat']], ['pause', ['pause', 'duraklat']],
     ['don', ['return_to_base', 'sarj']], ['sarj', ['return_to_base', 'sarj']], ['sarja don', ['return_to_base', 'sarj']], ['dock', ['return_to_base', 'sarj']], ['home', ['return_to_base', 'sarj']], ['return', ['return_to_base', 'sarj']],
+    // Almanca
+    ['starten', ['start', 'basla']], ['reinigen', ['start', 'basla']], ['saugen', ['start', 'basla']], ['pausieren', ['pause', 'duraklat']],
+    ['zuruck', ['return_to_base', 'sarj']], ['zurueck', ['return_to_base', 'sarj']], ['laden', ['return_to_base', 'sarj']], ['ladestation', ['return_to_base', 'sarj']],
+    // Fransızca
+    ['demarrer', ['start', 'basla']], ['lancer', ['start', 'basla']], ['nettoyer', ['start', 'basla']], ['pauser', ['pause', 'duraklat']], ['mettre en pause', ['pause', 'duraklat']],
+    ['retour', ['return_to_base', 'sarj']], ['recharge', ['return_to_base', 'sarj']], ['recharger', ['return_to_base', 'sarj']],
+    // İspanyolca
+    ['iniciar', ['start', 'basla']], ['empezar', ['start', 'basla']], ['comenzar', ['start', 'basla']], ['limpiar', ['start', 'basla']], ['pausar', ['pause', 'duraklat']], ['pausa', ['pause', 'duraklat']],
+    ['volver', ['return_to_base', 'sarj']], ['regresar', ['return_to_base', 'sarj']], ['recargar', ['return_to_base', 'sarj']], ['cargar', ['return_to_base', 'sarj']], ['base', ['return_to_base', 'sarj']],
   ]);
   const ZAMANLAYICI_SOZLERI = new Map([
     ['basla', ['start', 'basla']], ['baslat', ['start', 'basla']], ['start', ['start', 'basla']], ['devam', ['start', 'basla']],
     ['duraklat', ['pause', 'duraklat']], ['pause', ['pause', 'duraklat']],
     ['iptal', ['cancel', 'iptal']], ['cancel', ['cancel', 'iptal']], ['durdur', ['cancel', 'iptal']], ['stop', ['cancel', 'iptal']],
+    // Almanca
+    ['starten', ['start', 'basla']], ['fortsetzen', ['start', 'basla']], ['pausieren', ['pause', 'duraklat']], ['abbrechen', ['cancel', 'iptal']], ['stoppen', ['cancel', 'iptal']], ['beenden', ['cancel', 'iptal']],
+    // Fransızca
+    ['demarrer', ['start', 'basla']], ['lancer', ['start', 'basla']], ['reprendre', ['start', 'basla']], ['pauser', ['pause', 'duraklat']], ['mettre en pause', ['pause', 'duraklat']], ['annuler', ['cancel', 'iptal']], ['arreter', ['cancel', 'iptal']],
+    // İspanyolca
+    ['iniciar', ['start', 'basla']], ['empezar', ['start', 'basla']], ['continuar', ['start', 'basla']], ['reanudar', ['start', 'basla']], ['pausar', ['pause', 'duraklat']], ['pausa', ['pause', 'duraklat']],
+    ['cancelar', ['cancel', 'iptal']], ['detener', ['cancel', 'iptal']], ['parar', ['cancel', 'iptal']],
   ]);
 
   const katla = (metin) => katlaDizi(metin).join('');
@@ -345,7 +420,7 @@
   }
 
   function medyaKomutu(oz, k) {
-    const ses = /^(?:ses|sesi|volume|vol)\s+(?:%\s*)?(\d{1,3})\s*%?$/.exec(k);
+    const ses = /^(?:ses|sesi|volume|vol|lautstarke|lautstaerke|volumen|sonido)\s+(?:%\s*)?(\d{1,3})\s*%?$/.exec(k);
     if (ses) {
       const n = Number(ses[1]);
       return n > 100 ? { hata: 'sinir', alt: 0, ust: 100 } : komut('volume_set', { volume_level: Number((n / 100).toFixed(2)) }, 'ses', n);
@@ -354,7 +429,7 @@
     if (sabit) return komut(sabit[0], sabit[1], sabit[2]);
     const ack = acKapatKomutu(k);
     if (ack) return ack;
-    const kaynakSozu = /^(?:kaynak|source|giris|input)\s+(.+)$/.exec(k);
+    const kaynakSozu = /^(?:kaynak|source|giris|input|quelle|eingang|entree|fuente|entrada)\s+(.+)$/.exec(k);
     const kaynak = listedenBul(oz.kaynaklar, kaynakSozu ? kaynakSozu[1] : k);
     if (kaynakSozu) return kaynak ? komut('select_source', { source: kaynak }, 'kaynak', kaynak) : { hata: 'desteklenmiyor' };
     // Çıplak kaynak adı yalnız TAM eşleşmede komuttur ("tv hdmi 2"); ön ek/içerme eşleşmesi adın parçası olabilir.
@@ -404,6 +479,36 @@
     return s.n < alt || s.n > ust ? { hata: 'sinir', alt, ust } : komut('set_value', { value: s.n }, 'sayi', s.n);
   }
 
+  /** `destek` bilinmiyorsa (null) komut denenir (HA reddederse hata görünür); biliniyorsa bit yoksa "desteklenmiyor". */
+  const destekVarMi = (oz, bit) => !Number.isInteger(oz.destek) || (oz.destek & bit) !== 0;
+
+  function perdeKomutu(oz, k) {
+    const s = sayiOku(k);
+    if (s) {
+      if (!s.tam) return null;
+      if (s.n < 0 || s.n > 100) return { hata: 'sinir', alt: 0, ust: 100 };
+      const konumVar = Number.isInteger(oz.destek) ? (oz.destek & DESTEK_KONUM) !== 0 : sonluSayi(oz.konum) !== null;
+      return konumVar ? komut('set_cover_position', { position: s.n }, 'konum', s.n) : { hata: 'desteklenmiyor' };
+    }
+    if (PERDE_DUR_SOZLERI.has(k)) return destekVarMi(oz, DESTEK_DUR) ? komut('stop_cover', undefined, 'dur') : { hata: 'desteklenmiyor' };
+    if (PERDE_KAPAT_SOZLERI.has(k)) return destekVarMi(oz, DESTEK_KAPAT) ? komut('close_cover', undefined, 'kapak-kapat') : { hata: 'desteklenmiyor' };
+    if (PERDE_AC_SOZLERI.has(k)) return destekVarMi(oz, DESTEK_AC) ? komut('open_cover', undefined, 'kapak-ac') : { hata: 'desteklenmiyor' };
+    return null;
+  }
+
+  function vanaKomutu(oz, k) {
+    if (VANA_KAPAT_SOZLERI.has(k)) return destekVarMi(oz, DESTEK_KAPAT) ? komut('close_valve', undefined, 'kapak-kapat') : { hata: 'desteklenmiyor' };
+    if (VANA_AC_SOZLERI.has(k)) return destekVarMi(oz, DESTEK_AC) ? komut('open_valve', undefined, 'kapak-ac') : { hata: 'desteklenmiyor' };
+    return null;
+  }
+
+  function otomasyonKomutu(_oz, k) {
+    if (OTOMASYON_CALISTIR_SOZLERI.has(k)) return komut('trigger', undefined, 'calistir');
+    if (AC_SOZLERI.has(k)) return komut('turn_on', undefined, 'ac');
+    if (KAPAT_SOZLERI.has(k)) return komut('turn_off', undefined, 'kapat');
+    return null;
+  }
+
   /**
    * Öğenin alanına göre komut sözlüğünden TEK komut çözer. `kuyruk` katlanmış (katla) komut metnidir ("24", "ses 30", "sicak").
    * @param {{alan?: string, ozellik?: object|null}} oge palet öğesi ya da yüzey karosu (alan + varlik-ozellik alt kümesi)
@@ -427,6 +532,12 @@
         return sozlukKomutu(SUPURGE_SOZLERI, kuyruk);
       case 'timer':
         return sozlukKomutu(ZAMANLAYICI_SOZLERI, kuyruk);
+      case 'cover':
+        return perdeKomutu(oz, kuyruk);
+      case 'valve':
+        return vanaKomutu(oz, kuyruk);
+      case 'automation':
+        return otomasyonKomutu(oz, kuyruk);
       case 'input_select':
       case 'select':
         return secimKomutu(oz, kuyruk);
@@ -504,6 +615,8 @@
     if (duz === '') return parlaklikSorgusu(duz, ogeler);
     const hedef = adOzeti(duz);
     const tamAd = (Array.isArray(ogeler) ? ogeler : []).some((oge) => adOzeti(oge?.etiket) === hedef);
+    const gecikmeli = tamAd ? null : gecikmeSatirlari(duz, ogeler); // 1.4.0 (o-15): "salon 10 dk sonra kapat", "fan 30dk"
+    if (gecikmeli) return gecikmeli;
     const komutlar = tamAd ? [] : komutAdaylari(duz, ogeler);
     if (komutlar.length === 0) return parlaklikSorgusu(duz, ogeler);
     const komutSatirlari = komutlar.map(({ oge, puan, konumlar, k }) => ({
@@ -575,13 +688,178 @@
     return adaylar.length > 0 ? seviyeIsle(adaylar) : duzSonuc([]);
   }
 
+  // --- Gecikmeli eylem sözdizimi (o-15): "salon 10 dk sonra kapat", "salon off in 10 min", "fan 30dk", "fan 2sa" ---------------------
+  // Süre HER ZAMAN bir birimle yazılır ("30dk", "2 sa", "1sa30dk"): birimsiz sayı parlaklıktır ("ışık 40"), süre değildir. Üç biçim:
+  //   "<ad> <süre> sonra <fiil>"   fiil aç/kapat: o kadar sonra aç ya da kapat
+  //   "<ad> <fiil> in <süre>"      İngilizce karşılığı
+  //   "<ad> <süre>"                süreli: HEMEN aç, süre dolunca kapat ("fan 30dk")
+  // Çözümleme yalnız ayrıştırır; adın hangi öğeye ait olduğunu ve öğenin ertelenebilir olup olmadığını çağıran belirler. Doğrulama ana
+  // süreçtedir (src/lib/gecikmeli-eylem.js): alan, eylem sınıfı, Kapı Kuralı, süre sınırı ve bekleyen sayısı orada yeniden denetlenir.
+  const GECIKME_BIRIMLERI = new Map([
+    ['dk', 1], ['dak', 1], ['dakika', 1], ['min', 1], ['mins', 1], ['minute', 1], ['minutes', 1],
+    ['sa', 60], ['saat', 60], ['h', 60], ['hr', 60], ['hrs', 60], ['hour', 60], ['hours', 60],
+  ]);
+  const GECIKME_SOZLERI = new Set(['sonra', 'later']); // "10 dk sonra kapat"
+  const GECIKME_ONCULERI = new Set(['in']); // "off in 10 min"
+  const GECIKME_ALANLARI = new Set(['light', 'switch', 'fan', 'input_boolean', 'humidifier']); // ertelenebilen alanlar (ana süreç aynı listeyi yeniden uygular)
+  const EN_AZ_GECIKME_DK = 1;
+  const EN_COK_GECIKME_DK = 1440; // 24 saat
+  const SAYI_PARCASI = /^\d{1,4}(?:[.,]\d{1,2})?$/;
+  const BIRLESIK_SURE = /^(\d{1,3})(sa|saat|h|hr|hrs)(\d{1,3})(dk|dak|dakika|min|mins)$/;
+  const TEK_SURE = /^(\d{1,4}(?:[.,]\d{1,2})?)([a-z]+)$/;
+
+  /** Katlanmış parça dizisinde `bas`tan `uzunluk` parçalık süreyi okur: dakika (yuvarlanmış, sınırsız) ya da null. */
+  function gecikmeSuresiOku(parcalar, bas, uzunluk) {
+    const metin = parcalar.slice(bas, bas + uzunluk);
+    if (metin.length !== uzunluk || uzunluk < 1 || uzunluk > 2) return null;
+    if (uzunluk === 1) {
+      const birlesik = BIRLESIK_SURE.exec(metin[0]);
+      if (birlesik) return Number(birlesik[1]) * 60 + Number(birlesik[3]);
+      const tek = TEK_SURE.exec(metin[0]);
+      if (!tek || !GECIKME_BIRIMLERI.has(tek[2])) return null;
+      return Math.round(Number(tek[1].replace(',', '.')) * GECIKME_BIRIMLERI.get(tek[2]));
+    }
+    if (!SAYI_PARCASI.test(metin[0]) || !GECIKME_BIRIMLERI.has(metin[1])) return null;
+    return Math.round(Number(metin[0].replace(',', '.')) * GECIKME_BIRIMLERI.get(metin[1]));
+  }
+
+  const gecikmeYonu = (fiil) => (YON_ACMA.includes(fiil) ? 'ac' : YON_KAPATMA.includes(fiil) ? 'kapat' : null);
+
+  /**
+   * @param {string} sorgu
+   * @returns {{metin: string, dakika: number, yon: 'ac'|'kapat'|'sureli', hata?: 'sinir'}|null}
+   *   yon 'sureli': hemen aç, süre sonra kapat. dakika 1..1440 dışındaysa `hata: 'sinir'` taşır (çağıran satırı "aralık dışı" gösterir).
+   */
+  function gecikmeCoz(sorgu) {
+    const parcalar = String(sorgu ?? '').trim().split(/\s+/).filter((p) => p !== '');
+    if (parcalar.length < 2 || parcalar.length > 12) return null;
+    const katli = parcalar.map(katla);
+    const son = katli.length;
+    const sonuc = (adParcalari, dakika, yon) => {
+      const metin = adParcalari.join(' ').trim();
+      if (metin === '') return null;
+      const r = { metin, dakika, yon };
+      if (dakika < EN_AZ_GECIKME_DK || dakika > EN_COK_GECIKME_DK) r.hata = 'sinir';
+      return r;
+    };
+    const sonYon = gecikmeYonu(katli[son - 1]);
+    if (sonYon && son >= 4 && GECIKME_SOZLERI.has(katli[son - 2])) {
+      for (const uzunluk of [1, 2]) {
+        const bas = son - 2 - uzunluk;
+        const dakika = bas >= 1 ? gecikmeSuresiOku(katli, bas, uzunluk) : null;
+        if (dakika !== null) return sonuc(parcalar.slice(0, bas), dakika, sonYon);
+      }
+    }
+    for (let i = 1; i + 2 < son; i += 1) {
+      const yon = gecikmeYonu(katli[i]);
+      if (!yon || !GECIKME_ONCULERI.has(katli[i + 1])) continue;
+      const dakika = gecikmeSuresiOku(katli, i + 2, son - (i + 2));
+      if (dakika !== null) return sonuc(parcalar.slice(0, i), dakika, yon);
+    }
+    for (const uzunluk of [1, 2]) {
+      const bas = son - uzunluk;
+      const dakika = bas >= 1 ? gecikmeSuresiOku(katli, bas, uzunluk) : null;
+      if (dakika !== null) return sonuc(parcalar.slice(0, bas), dakika, 'sureli');
+    }
+    return null;
+  }
+
+  /**
+   * Palet için gecikmeli eylem satırları: ad kısmı ertelenebilir alandaki (ışık, priz, vantilatör, input_boolean, nem alıcı) ve yıkıcı
+   * olmayan, kullanılabilir öğelerle eşleşir. Eşleşen öğe yoksa null (normal arama sürer). Sınır dışı süre satırı `komutHatasi: 'sinir'` ile döner.
+   */
+  function gecikmeSatirlari(duz, ogeler) {
+    const g = gecikmeCoz(duz);
+    if (!g) return null;
+    const uygun = (Array.isArray(ogeler) ? ogeler : []).filter((oge) => GECIKME_ALANLARI.has(oge?.alan) && oge.yikici !== true && oge.kullanilabilir !== false);
+    // Yan etkili eylem: dağınık harf eşleşmesi ("ses" -> "LED şerit Işık") yeterli değildir; her sözcük adın (ya da grubun) içinde AYNEN geçmeli.
+    const sozcukler = katla(g.metin).split(/\s+/).filter((s) => s !== '');
+    const bulunan = ara(g.metin, uygun).filter((r) => {
+      const saman = katla(`${r.oge.etiket ?? ''} ${r.oge.grupEtiketi ?? ''}`);
+      return sozcukler.every((s) => saman.includes(s));
+    });
+    if (bulunan.length === 0) return null;
+    const sonuclar = bulunan.map((r) => ({
+      ...r,
+      parlaklik: null,
+      kapat: false,
+      parlaklikDesteklenmiyor: false,
+      eylem: null,
+      gecikme: { dakika: g.dakika, yon: g.yon },
+      ...(g.hata ? { komutHatasi: g.hata } : {}),
+    }));
+    return { sonuclar, parlaklik: null, kapat: false, parlaklikDesteklenmiyor: false };
+  }
+
+  // --- Son değişenler (o-18): "@" ile başlayan sorgu ------------------------------------------------------------------------------
+  // "@" tek başına son değişenlerin hepsini (en yeni üstte) listeler; "@salon" adı süzer. Liste ana süreçten gelir (model.eylem.degisenler);
+  // burası yalnız önek çözümlemesi ve süzmedir.
+
+  /**
+   * @param {string} sorgu
+   * @returns {{metin: string}|null} "@" ile başlıyorsa süzgeç metni (boş olabilir); değilse null
+   */
+  function degisenSorgusu(sorgu) {
+    const duz = String(sorgu ?? '').trimStart();
+    return duz.startsWith('@') ? { metin: duz.slice(1).trim() } : null;
+  }
+
+  /**
+   * @param {string} metin süzgeç metni (boşsa hepsi, listenin kendi sırasıyla)
+   * @param {{ad: string}[]} degisenler
+   * @returns {{degisen: object, puan: number, konumlar: number[]}[]}
+   */
+  function degisenSatirlari(metin, degisenler) {
+    const liste = (Array.isArray(degisenler) ? degisenler : []).filter((d) => d && typeof d === 'object' && typeof d.ad === 'string');
+    return ara(metin, liste.map((d) => ({ etiket: d.ad, d }))).map((r) => ({ degisen: r.oge.d, puan: r.puan, konumlar: r.konumlar }));
+  }
+
+  // --- Favori dışı cihazlar (o-46): "*" ile başlayan sorgu ---------------------------------------------------------------------
+  // "*" tek başına listeyi (ada göre) gösterir; "*salon" adı (ve varsa oda adını) süzer; ilk ya da son sözcük bir alan sözcüğüyse
+  // ("*ışık salon", "*salon priz", "*sahne") alan süzgeci olur. Liste ana süreçten gelir (src/lib/diger-cihazlar.js: yalnız Kapı Kuralı'ndan
+  // geçmiş, zararsız, favori olmayan cihazlar); burası yalnız önek çözümlemesi ve süzmedir.
+  const DIGER_ALAN_SOZLERI = new Map([
+    ['isik', 'light'], ['light', 'light'], ['lights', 'light'],
+    ['priz', 'switch'], ['prize', 'switch'], ['switch', 'switch'], ['plug', 'switch'],
+    ['sahne', 'scene'], ['scene', 'scene'],
+    ['fan', 'fan'], ['vantilator', 'fan'],
+    ['yardimci', 'input_boolean'], ['sanal', 'input_boolean'], ['helper', 'input_boolean'],
+    ['nem', 'humidifier'], ['humidifier', 'humidifier'],
+  ]);
+  const DIGER_ALANLARI = Object.freeze(['light', 'switch', 'fan', 'input_boolean', 'humidifier', 'scene']);
+
+  /**
+   * @param {string} sorgu
+   * @returns {{alan: string|null, metin: string}|null} "*" ile başlıyorsa alan süzgeci (yoksa null) ve süzgeç metni (boş olabilir); değilse null
+   */
+  function digerSorgusu(sorgu) {
+    const duz = String(sorgu ?? '').trimStart();
+    if (!duz.startsWith('*')) return null;
+    const parcalar = duz.slice(1).trim().split(/\s+/).filter((p) => p !== '');
+    let alan = null;
+    if (parcalar.length > 0 && DIGER_ALAN_SOZLERI.has(katla(parcalar[0]))) alan = DIGER_ALAN_SOZLERI.get(katla(parcalar.shift()));
+    else if (parcalar.length > 1 && DIGER_ALAN_SOZLERI.has(katla(parcalar[parcalar.length - 1]))) alan = DIGER_ALAN_SOZLERI.get(katla(parcalar.pop()));
+    return { alan, metin: parcalar.join(' ') };
+  }
+
+  /**
+   * @param {{alan: string|null, metin: string}} cozum digerSorgusu sonucu
+   * @param {{ad: string, alan: string, oda?: string}[]} liste ana süreçten gelen favori dışı cihazlar
+   * @returns {{diger: object, puan: number, konumlar: number[]}[]} metin boşsa listenin kendi sırasıyla
+   */
+  function digerSatirlari(cozum, liste) {
+    const alan = cozum && typeof cozum.alan === 'string' ? cozum.alan : null;
+    const girdi = (Array.isArray(liste) ? liste : []).filter((d) => d && typeof d === 'object' && typeof d.ad === 'string' && (alan === null || d.alan === alan));
+    return ara(typeof cozum?.metin === 'string' ? cozum.metin : '', girdi.map((d) => ({ etiket: d.ad, grupEtiketi: typeof d.oda === 'string' ? d.oda : '', d }))).map((r) => ({ diger: r.oge.d, puan: r.puan, konumlar: r.konumlar }));
+  }
+
   // --- Yön sözdizimi (o-13): "led +10", "led -10", "salon ac", "salon kapat" ---------------------------------------------------
   // Sondaki sözcük ya işaretli bir adımdır (+10, -10, +10%, +%10, −5) ya da bir fiildir. İşaret ve rakam bitişik olmalıdır: "Ses +" ve
   // "Salon - Işık" gibi adlar bundan etkilenmez ("led - 10" yön değildir). Çözümleme yalnız ayrıştırır; adın hangi öğeye ait olduğunu
   // ve öğenin bu yönü destekleyip desteklemediğini çağıran belirler. Tam adı bu metin olan bir öğe varsa çağıran yönü hiç aramalıdır.
-  const YON_ACMA = ['ac', 'yak', 'on'];
-  const YON_KAPATMA = ['kapat', 'sondur', 'off'];
-  const YON_DEGISTIRME = ['degistir', 'toggle'];
+  const YON_ACMA = ['ac', 'yak', 'on', 'an', 'ein', 'einschalten', 'anschalten', 'allume', 'allumer', 'marche', 'enciende', 'encender', 'prende', 'prender'];
+  const YON_KAPATMA = ['kapat', 'sondur', 'off', 'aus', 'ausschalten', 'abschalten', 'eteins', 'eteindre', 'arret', 'apaga', 'apagar'];
+  const YON_DEGISTIRME = ['degistir', 'toggle', 'umschalten', 'wechseln', 'basculer', 'inverser', 'alterner', 'alternar', 'conmutar', 'cambiar'];
   const GORELI_SONEKI = /^(.*\S)\s+([+\-−–])%?(\d{1,3})%?$/;
   const EN_BUYUK_GORELI_ADIM = 100;
 
@@ -617,6 +895,11 @@
     ara,
     sorguCoz,
     yonCoz,
+    gecikmeCoz,
+    degisenSorgusu,
+    degisenSatirlari,
+    digerSorgusu,
+    digerSatirlari,
     bosSorguListesi,
     paletSorgusu,
     alanKomutu,
@@ -624,6 +907,10 @@
     kuyrukBolumleri,
     BEYAZ_TONLAR,
     RENK_PALETI,
+    GECIKME_ALANLARI,
+    DIGER_ALANLARI,
+    EN_AZ_GECIKME_DK,
+    EN_COK_GECIKME_DK,
     ALAKA_ORANI,
     PARLAKLIK_YAKINLIGI,
     SON_SAYISI,

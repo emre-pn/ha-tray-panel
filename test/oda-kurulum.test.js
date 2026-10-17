@@ -180,3 +180,22 @@ test('modül yalnız lib modüllerini ister: elektron, ağ, dosya sistemi ve ser
   for (const m of istenenler) assert.match(m, /^\.\//, `${m}: yalnız ./ modülleri`);
   assert.doesNotMatch(kaynak, /fetch\(|call_service|callService|haIstek|ipcMain|ipcRenderer|fs\./);
 });
+
+test('1.4.0 cihaz grubu: perde sınıflı cover önerilir (zararsız); vana, otomasyon, kamera, garaj/sınıfsız cover önerilmez (zorunlu onaylı ya da yasak)', () => {
+  const perde = durum('cover.salon_perde', 'Salon Perde', 'open', { device_class: 'curtain' });
+  const jaluzi = durum('cover.salon_jaluzi', 'Salon Jaluzi', 'closed', { device_class: 'blind' });
+  const haric = [
+    durum('valve.bahce_suyu', 'Bahçe Suyu', 'open'),
+    durum('automation.gece', 'Gece Modu', 'on'),
+    durum('camera.salon', 'Salon Kamera', 'idle'),
+    durum('cover.garaj', 'Depo', 'closed', { device_class: 'garage' }),
+    durum('cover.sinifsiz', 'Bir Şey', 'closed'),
+    durum('cover.kapi_perdesi', 'Ön Kapı Perdesi', 'open', { device_class: 'curtain' }),
+  ];
+  assert.equal(onerilebilirMi(perde), true);
+  assert.equal(onerilebilirMi(jaluzi), true);
+  for (const d of haric) assert.equal(onerilebilirMi(d), false, `${d.entity_id} önerilmemeli`);
+  const tum = [perde, jaluzi, ...haric];
+  const odalar = odaOnerileri({ durumlar: tum, alanVerisi: eslestir(alanlar(['salon', 'Salon']), Object.fromEntries(tum.map((d) => [d.entity_id, 'salon']))) });
+  assert.deepEqual(odalar[0].cihazlar.map((c) => c.entity_id).sort(), ['cover.salon_jaluzi', 'cover.salon_perde']);
+});

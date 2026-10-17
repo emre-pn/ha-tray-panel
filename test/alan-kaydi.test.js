@@ -1,8 +1,9 @@
 'use strict';
 
 /**
- * Alan kaydı (src/lib/alan-kaydi.js) — 1.4.0. Tablo yalnız bilinçli olarak genişler: Kapı Kuralı alanları ve bu sürümde
- * dışarıda bırakılanlar (cover — perde dahil —, camera, valve...) tabloya giremez.
+ * Alan kaydı (src/lib/alan-kaydi.js) — 1.4.0. Tablo yalnız bilinçli olarak genişler: Kapı Kuralı alanları (kilit, alarm, siren)
+ * ve bu sürümde hâlâ dışarıda bırakılanlar (camera — kendi izin listesiyle ayrı yoldadır —, çim biçme...) tabloya giremez.
+ * 1.4.0 cihaz grubu: cover (yalnız perde/jaluzi sınıfı; suzgec.js), valve ve automation (ikisi ZORUNLU onaylı) bilinçli eklendi.
  */
 
 const test = require('node:test');
@@ -31,6 +32,9 @@ const BEKLENEN = [
   'number',
   'timer',
   'todo',
+  'cover',
+  'valve',
+  'automation',
   'sensor',
   'binary_sensor',
   'weather',
@@ -44,8 +48,8 @@ test('kayıt: tablo tam olarak beklenen alanlardır (yeni alan bilinçli eklenir
   for (const a of BEKLENEN) assert.ok(Object.isFrozen(K.ALAN_KAYDI[a]), a);
 });
 
-test('KAPI KURALI: kilit, alarm, siren, cover (perde dahil), kamera, vana, otomasyon, çim biçme kayıtta yok', () => {
-  for (const a of ['lock', 'alarm_control_panel', 'siren', 'cover', 'camera', 'valve', 'automation', 'lawn_mower', 'update', 'device_tracker', 'person', 'image', 'notify', 'remote', 'water_heater', 'event', 'text']) {
+test('KAPI KURALI: kilit, alarm, siren, kamera (kayıtta değil: kendi izin listesiyle ayrı yol), çim biçme kayıtta yok', () => {
+  for (const a of ['lock', 'alarm_control_panel', 'siren', 'camera', 'lawn_mower', 'update', 'device_tracker', 'person', 'image', 'notify', 'remote', 'water_heater', 'event', 'text']) {
     assert.equal(K.kayitliAlanMi(a), false, a);
     assert.equal(K.karoAlaniMi(a), false, a);
     assert.equal(K.eylemAlaniMi(a), false, a);
@@ -64,7 +68,7 @@ test('bilinmeyen ya da garip girdi: hiçbir sorgu true dönmez, fırlatmaz', () 
     assert.equal(K.onayVarsayilanMi(kotu), false);
     assert.equal(K.alanModeli(kotu), null);
   }
-  assert.equal(K.alanSirasi('cover'), BEKLENEN.length, 'bilinmeyen alan en sona');
+  assert.equal(K.alanSirasi('camera'), BEKLENEN.length, 'bilinmeyen alan en sona');
   assert.equal(K.alanSirasi('light'), 0);
 });
 
@@ -95,13 +99,35 @@ test('her eylem alanının servis izinleri var; varsayılan servis izin listesin
   for (const a of Object.keys(SERVIS_IZINLERI)) assert.ok(K.eylemAlaniMi(a), a);
 });
 
+test('1.4.0 cihaz grubu: cover (perde) tek tıklama eylemi yok; valve ve automation zorunlu onaylı alan; üçü karo ve eylem alanı', () => {
+  for (const a of ['cover', 'valve', 'automation']) {
+    assert.equal(K.kayitliAlanMi(a), true, a);
+    assert.equal(K.karoAlaniMi(a), true, a);
+    assert.equal(K.eylemAlaniMi(a), true, a);
+  }
+  assert.equal(K.varsayilanServis('cover'), null, 'perde: düz tıklama servis göndermez (kendi kartı var)');
+  assert.equal(K.varsayilanServis('valve'), null, 'vana: düz tıklama servis göndermez');
+  assert.equal(K.varsayilanServis('automation'), 'trigger');
+  assert.equal(K.onayVarsayilanMi('cover'), false);
+  assert.equal(K.onayVarsayilanMi('valve'), true);
+  assert.equal(K.onayVarsayilanMi('automation'), true);
+});
+
+test('dış tetik yasağı (dis grubu için tek kaynak): valve, automation, camera dış tetiklenemez; perde ve diğer alanlar yasaklı değil', () => {
+  assert.deepEqual([...K.DIS_TETIK_YASAK_ALANLAR].sort(), ['automation', 'camera', 'valve']);
+  for (const a of ['valve', 'automation', 'camera']) assert.equal(K.disTetikYasakAlanMi(a), true, a);
+  for (const a of ['cover', 'light', 'switch', 'climate', 'script', 'scene']) assert.equal(K.disTetikYasakAlanMi(a), false, a);
+  for (const kotu of [undefined, null, '', 42, {}, 'VALVE', '__proto__']) assert.equal(K.disTetikYasakAlanMi(kotu), false);
+  assert.ok(Object.isFrozen(K.DIS_TETIK_YASAK_ALANLAR));
+});
+
 test('karo olmayanlar: todo ve calendar (yalnız kendi özelliğinin ayarıyla)', () => {
   assert.deepEqual(BEKLENEN.filter((a) => !K.karoAlaniMi(a)), ['todo', 'calendar']);
   assert.deepEqual([...K.KARO_ALAN_SIRASI], BEKLENEN.filter(K.karoAlaniMi));
 });
 
 test('varsayılan onay: düğme, sanal düğme, script, seçiciler, sayılar, zamanlayıcı', () => {
-  assert.deepEqual(BEKLENEN.filter(K.onayVarsayilanMi), ['script', 'button', 'input_button', 'input_select', 'select', 'input_number', 'number', 'timer']);
+  assert.deepEqual(BEKLENEN.filter(K.onayVarsayilanMi), ['script', 'button', 'input_button', 'input_select', 'select', 'input_number', 'number', 'timer', 'valve', 'automation']);
 });
 
 test('her kayıtlı alanın tr ve en alan etiketi var (alan.<alan>), İngilizcede Türkçe harf yok', () => {

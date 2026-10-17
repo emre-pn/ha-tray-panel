@@ -50,8 +50,11 @@ const OKUMA_KOMUTLARI = Object.freeze([
   'todo/item/list',
   'auth/current_user',
 ]);
-/** 1.4.0: yalnız okuyan abonelikler (olay akışı). */
-const ABONELIK_KOMUTLARI = Object.freeze(['persistent_notification/subscribe', 'weather/subscribe_forecast']);
+/**
+ * 1.4.0: yalnız okuyan abonelikler (olay akışı). o-61: 'mobile_app/push_notification_channel' kullanıcının açıkça kaydolduğu mobile_app
+ * cihazının bildirim kanalıdır (HA bildirimi bu soketten iter); HA'ya hiçbir şey yazmaz, yalnız bildirim alır.
+ */
+const ABONELIK_KOMUTLARI = Object.freeze(['persistent_notification/subscribe', 'weather/subscribe_forecast', 'mobile_app/push_notification_channel']);
 const KOMUT_ALAN_DESENI = /^[a-z_]{1,40}$/;
 const KOMUT_BAYT_SINIRI = 1024;
 

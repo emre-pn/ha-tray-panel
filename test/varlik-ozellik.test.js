@@ -26,7 +26,7 @@ test('GÜVENLİK: resim, erişim anahtarı, konum ve canlı HA adı hiçbir mode
     latitude: 41,
     longitude: 29,
   };
-  for (const kimlik of ['light.a', 'switch.a', 'fan.a', 'climate.a', 'media_player.a', 'humidifier.a', 'vacuum.a', 'input_select.a', 'select.a', 'input_number.a', 'number.a', 'timer.a', 'todo.a', 'sensor.a', 'binary_sensor.a', 'weather.a', 'calendar.a']) {
+  for (const kimlik of ['light.a', 'switch.a', 'fan.a', 'climate.a', 'media_player.a', 'humidifier.a', 'vacuum.a', 'input_select.a', 'select.a', 'input_number.a', 'number.a', 'timer.a', 'todo.a', 'sensor.a', 'binary_sensor.a', 'weather.a', 'calendar.a', 'cover.a', 'valve.a', 'automation.a']) {
     const o = guvenliOzellikler(v(kimlik, 'on', zehirli));
     const metin = JSON.stringify(o);
     assert.ok(!metin.includes('GIZLI'), kimlik);
@@ -36,7 +36,7 @@ test('GÜVENLİK: resim, erişim anahtarı, konum ve canlı HA adı hiçbir mode
 });
 
 test('kayıtsız / Kapı Kuralı alanı ya da bozuk girdi: null', () => {
-  for (const kotu of [null, undefined, 'light.a', {}, v('lock.a', 'locked'), v('cover.perde', 'open'), v('camera.a', 'idle'), { entity_id: 5 }]) {
+  for (const kotu of [null, undefined, 'light.a', {}, v('lock.a', 'locked'), v('lawn_mower.a', 'mowing'), v('camera.a', 'idle'), { entity_id: 5 }]) {
     assert.equal(guvenliOzellikler(kotu), null, JSON.stringify(kotu));
   }
   assert.equal(guvenliOzellikler(v('switch.a', 'on')), null, 'aç/kapa için ek öznitelik yok');
@@ -113,4 +113,32 @@ test('yardımcılar: sayiAl ve isoAl', () => {
   assert.equal(isoAl('2026-10-16T10:00:00Z'), '2026-10-16T10:00:00Z');
   assert.equal(isoAl('2026-13-40T99:00'), null);
   assert.equal(isoAl('dün'), null);
+});
+
+test('1.4.0 cihaz grubu: perde modeli (durum, konum, sınıf, destek bit alanı); bozuk değerler null', () => {
+  const p = guvenliOzellikler(v('cover.salon', 'open', { device_class: 'curtain', current_position: 70, supported_features: 15, friendly_name: 'Salon' }));
+  assert.deepEqual(p, { durum: 'open', konum: 70, sinif: 'curtain', destek: 15 });
+  assert.deepEqual(guvenliOzellikler(v('cover.salon', 'opening', { device_class: 'blind' })), { durum: 'opening', konum: null, sinif: 'blind', destek: null });
+  assert.deepEqual(guvenliOzellikler(v('cover.salon', 'closing', { device_class: 'awning', current_position: 0 })), { durum: 'closing', konum: 0, sinif: 'awning', destek: null });
+  // konum 0-100 dışı, metin ya da sonsuz; durum bilinmiyorsa; sınıf perde sınıfı değilse; destek 16 bit dışı
+  const kotu = guvenliOzellikler(v('cover.salon', 'stopped', { device_class: 'garage', current_position: 140, supported_features: -1 }));
+  assert.deepEqual(kotu, { durum: null, konum: null, sinif: null, destek: null });
+  for (const konum of ['x', Infinity, NaN, -5, {}, []]) assert.equal(guvenliOzellikler(v('cover.salon', 'open', { current_position: konum })).konum, null, String(konum));
+  assert.equal(guvenliOzellikler(v('cover.salon', 'open', { supported_features: 70000 })).destek, null);
+  assert.equal(guvenliOzellikler(v('cover.salon', 'open', { supported_features: 4.5 })).destek, null);
+  assert.equal(guvenliOzellikler(v('cover.salon', 'unavailable')).durum, null);
+  assert.equal(guvenliOzellikler(v('cover.salon', 'open', 'bozuk')).konum, null);
+});
+
+test('1.4.0 cihaz grubu: vana modeli (durum, konum, destek) ve otomasyon modeli (acik, sonTetik)', () => {
+  assert.deepEqual(guvenliOzellikler(v('valve.su', 'closed', { current_position: 0, supported_features: 3, friendly_name: 'Su' })), { durum: 'closed', konum: 0, destek: 3 });
+  assert.deepEqual(guvenliOzellikler(v('valve.su', 'opening')), { durum: 'opening', konum: null, destek: null });
+  assert.equal(guvenliOzellikler(v('valve.su', 'broken')).durum, null);
+  assert.deepEqual(guvenliOzellikler(v('automation.gece', 'on', { last_triggered: '2026-10-16T22:00:00+00:00', id: 'gizli-kimlik', current: 2 })), { acik: true, sonTetik: '2026-10-16T22:00:00+00:00' });
+  assert.deepEqual(guvenliOzellikler(v('automation.gece', 'off', { last_triggered: null })), { acik: false, sonTetik: null });
+  assert.deepEqual(guvenliOzellikler(v('automation.gece', 'unavailable', { last_triggered: 'dün' })), { acik: null, sonTetik: null });
+});
+
+test('kamera: öznitelik modeli yok (görüntü ve adres panele hiçbir yoldan taşınmaz)', () => {
+  assert.equal(guvenliOzellikler(v('camera.salon', 'idle', { entity_picture: '/api/camera_proxy/camera.salon?token=GIZLI', access_token: 'GIZLI' })), null);
 });

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title data-i18n="itme.sayfaBasligi">Ev Paneli — Home Assistant bildirimi</title>
+  <link rel="stylesheet" href="itme-kart.css">
+</head>
+<body>
+  <div id="kart" class="kart" role="alertdialog" aria-labelledby="kartBaslik" aria-describedby="kartMesaj">
+    <div class="ust">
+      <span id="kartBaslik" class="baslik"></span>
+      <button id="btnKartKapat" class="kapat" type="button" aria-label="Kapat" title="Kapat" data-i18n-attr="aria-label:itme.kapat;title:itme.kapat">×</button>
+    </div>
+    <p id="kartMesaj" class="mesaj"></p>
+    <div id="kartDugmeler" class="dugmeler"></div>
+  </div>
+  <script src="lib/dil.js"></script>
+  <script src="lib/ceviri/yuzey.js"></script>
+  <script src="lib/tema-renk.js"></script>
+  <script src="itme-kart-sayfa.js"></script>
+</body>
+</html>

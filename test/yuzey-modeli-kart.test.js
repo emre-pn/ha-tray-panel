@@ -35,8 +35,8 @@ const durumAl = (k) => DEPO[k];
 const TUMU = Object.keys(DEPO).map((k) => favori(k));
 const harita = (model) => new Map(model.gruplar.flatMap((g) => g.karolar.map((k) => [k.id, { ...k, grupKodu: g.kod }])));
 
-test('grup tablosu: Işık, İklim, Sahne, PC, Medya, Yardımcılar, Sensör, Diğer sırası; her grubun iki dilde etiketi var', () => {
-  assert.deepEqual(GRUPLAR.map((g) => g.kod), ['isik', 'iklim', 'sahne', 'pc', 'medya', 'yardimci', 'sensor', 'diger']);
+test('grup tablosu: Işık, İklim, Perde, Sahne, PC, Medya, Yardımcılar, Sensör, Diğer sırası; her grubun iki dilde etiketi var', () => {
+  assert.deepEqual(GRUPLAR.map((g) => g.kod), ['isik', 'iklim', 'perde', 'sahne', 'pc', 'medya', 'yardimci', 'sensor', 'diger']);
   for (const g of GRUPLAR) {
     const satir = ANA.satirlar?.find?.((s) => s[0] === `grup.${g.kod}`) ?? null;
     assert.ok(satir || ANA.tr?.[`grup.${g.kod}`], `grup.${g.kod} sözlükte`);
@@ -163,7 +163,6 @@ test('Kapı Kuralı: kapı sözcüklü ad ya da seçenek taşıyan yeni alan kar
     'input_number.kepenk': varlik('input_number.kepenk', '1', { friendly_name: 'Kepenk', min: 0, max: 3, step: 1 }),
     'cover.perde': varlik('cover.perde', 'open', { friendly_name: 'Perde' }),
     'camera.salon': varlik('camera.salon', 'idle', { friendly_name: 'Salon kamera' }),
-    'valve.su': varlik('valve.su', 'open', { friendly_name: 'Su vanası' }),
     'climate.iyi': varlik('climate.iyi', 'heat', { friendly_name: 'Yatak klima', hvac_modes: ['heat'] }),
   };
   const model = yuzeyModeliOlustur({ favoriler: Object.keys(kapi).map((k) => ({ entity_id: k, ad: kapi[k].attributes.friendly_name })), durumAl: (k) => kapi[k] });

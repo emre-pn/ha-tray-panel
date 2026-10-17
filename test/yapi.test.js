@@ -73,11 +73,15 @@ test('src ve test içinde JWT benzeri sabit yok (sır koda girmez)', () => {
 });
 
 test('sertifika doğrulaması bastırılmıyor (ev içi https sertifikası normal doğrulanır)', () => {
-  const yasakli = /certificate-error|setCertificateVerifyProc|ignore-certificate-errors/;
+  const yasakli = /certificate-error|ignore-certificate-errors/;
+  // Oturum doğrulama kancası (1.4.0, o-56) yalnız HA ana bilgisayarına özel CA / parmak izi sabitleme yapan yöneticide; başka hiçbir src dosyasında.
+  const kanca = /setCertificateVerifyProc/;
   for (const dosya of metinDosyalari) {
     const g = goreli(dosya);
     if (!g.startsWith('src/')) continue;
-    assert.ok(!yasakli.test(fs.readFileSync(dosya, 'utf8')), `${g} sertifika hatası bastırıyor`);
+    const icerik = fs.readFileSync(dosya, 'utf8');
+    assert.ok(!yasakli.test(icerik), `${g} sertifika hatası bastırıyor`);
+    if (g !== 'src/sertifika-yoneticisi.js') assert.ok(!kanca.test(icerik), `${g} sertifika doğrulama kancası kullanıyor`);
   }
 });
 
@@ -120,10 +124,17 @@ test('varsayılan ayarlar güvenli: favori yok, kısayol geçerli', () => {
 
 const YEREL_SAYFALAR = tumDosyalar.filter((d) => goreli(d).startsWith('src/') && d.endsWith('.html')).map(goreli);
 const RENDERER_BETIKLERI = [
-  'src/ayarlar.js', 'src/offline.js', 'src/kose-sayfa.js', 'src/yuzey-sayfa.js', 'src/masaustu-karo-sayfa.js', 'src/yuzey-kartlar.js', 'src/yuzey-bilgi.js',
+  'src/ayarlar.js', 'src/offline.js', 'src/kose-sayfa.js', 'src/yuzey-sayfa.js', 'src/masaustu-karo-sayfa.js', 'src/yuzey-kartlar.js', 'src/yuzey-bilgi.js', 'src/yuzey-kamera.js',
   'src/lib/arama.js', 'src/lib/ayar-arama.js', 'src/lib/kaydirici.js', 'src/lib/kisayol.js', 'src/lib/dil.js', 'src/lib/bilgi-bicim.js', 'src/lib/grafik.js',
   'src/lib/ceviri/ana.js', 'src/lib/ceviri/ayarlar.js', 'src/lib/ceviri/yuzey.js',
-  'src/ayarlar-duzen.js', 'src/yuzey-duzen.js', 'src/lib/karo-gorunum.js', 'src/lib/duzen-islemleri.js',
+  'src/ayarlar-duzen.js', 'src/ayarlar-eylem.js', 'src/yuzey-duzen.js', 'src/yuzey-eylem.js', 'src/lib/karo-gorunum.js', 'src/lib/duzen-islemleri.js',
+  // 1.4.0 dis grubu: hızlı paneldeki evpaneli:// bağlantı izni (o-54) ve Ayarlar > Dış tetikler bölümü
+  'src/yuzey-dis-onay.js', 'src/ayarlar-dis.js',
+  'src/itme-kart-sayfa.js', // o-61: düğmeli itme bildirimi kartı
+  'src/ayarlar-baglanti.js', // 1.4.0 bağlantı katmanı (o-55..o-58)
+  'src/ayarlar-sertifika.js', // 1.4.0 sertifika güveni (o-56)
+  'src/ayarlar-oturum.js', // 1.4.0 tarayıcıyla giriş (o-57)
+  'src/ayarlar-esitleme.js', // 1.4.0 klasörle eşitleme (o-58)
 ];
 // preload.js'in window.evPaneli altında açtığı tam liste (başka işlev açılırsa bu test bilinçli güncellenmeli).
 const EV_PANELI_KOPRUSU = [
@@ -150,6 +161,8 @@ const EV_PANELI_KOPRUSU = [
   // 1.4.0 düzen grubu (o-16, o-28, o-30): düzen geçmişi, geçmişe dönüş, kullanılamayan favoriyi onarma, panel menüsünden "Düzenle…"
   'duzenGecmisiniGetir',
   'duzeneDon',
+  'etkinlikListesi',
+  'etkinlikTemizle',
   'favoriyiOnar',
   'onFavoriyeGit',
   // arac grubu (o-40): sürüm denetimi ve Yenilikler
@@ -157,6 +170,11 @@ const EV_PANELI_KOPRUSU = [
   'surumuDenetle',
   'yenilikleriGetir',
   'surumSayfasiniAc',
+  // guncelleme grubu (o-51): uygulama içi güncelleme (durum, indir, kur, ilerleme olayı)
+  'guncellemeDurumu',
+  'guncellemeyiIndir',
+  'guncellemeyiKur',
+  'onGuncellemeDegisti',
   // arac grubu (o-41): tanılama raporu (önizleme, kopyalama) ve günlük klasörü
   'tanilamaGetir',
   'tanilamaKopyala',
@@ -164,15 +182,60 @@ const EV_PANELI_KOPRUSU = [
   // arac grubu (o-44): odadan ilk kurulum önerisi (yalnız okur)
   'odalariGetir',
   'onBolumAc',
+  // etkilesim grubu (o-43): anahtarın kullanıcısı yönetici mi (yalnız boolean/null; Ayarlar uyarı gösterir)
+  'onAnahtarYonetici',
+  // dis grubu (o-21, o-47, o-52, o-53, o-54): Dış tetikler bölümü. Durum jeton taşımaz (yalnız jetonVar); jeton yalnız ana süreçte panoya yazılır.
+  'disTetikDurumu',
+  'disKisayolOlustur',
+  'disBaglantiKopyala',
+  'disJetonKopyala',
+  'disJetonYenile',
+  'disIzinKaldir',
+  'onDisDurumDegisti',
+  // guncel grubu (o-61): Home Assistant mobile_app kaydı (durum, kaydol, kaydı sil, durum olayı)
+  'mobilDurumu',
+  'mobilKaydol',
+  'mobilKaydiSil',
+  'onMobilDegisti',
+  // 1.4.0 bağlantı grubu (o-55): durum (yalnız adlar), özel üstbilgileri kaydet / sil / dene
+  'baglantiDurumuGetir',
+  'ustbilgileriKaydet',
+  'ustbilgileriSil',
+  'ustbilgileriDene',
+  // 1.4.0 bağlantı grubu (o-56): sertifika güveni (yalnız HA adresleri; dosya yolu arayüze gelmez)
+  'sertifikaOku',
+  'parmakIziniSabitle',
+  'parmakSabitlemeyiKaldir',
+  'kokSertifikaEkle',
+  'kokSertifikayiKaldir',
+  'oturumDurumuGetir', // 1.4.0 (o-57): tarayıcıyla giriş durumu (jeton/kod dönmez)
+  'tarayiciGirisiBaslat',
+  'tarayiciGirisiniIptalEt',
+  'tarayiciOturumunuKapat',
+  'onOturumDegisti',
+  // 1.4.0 bağlantı grubu (o-58): klasör eşitleme (klasörü yalnız ana süreç diyaloğu seçer; parola yanıtlarda dönmez)
+  'esitlemeDurumuGetir',
+  'esitlemeKlasoruSec',
+  'esitlemeyiAyarla',
+  'simdiEsitle',
+  'esitlemeParolasiniKaydet',
+  'esitlemeParolasiniSil',
+  'onEsitlemeDegisti',
 ];
 // preload-yuzey.js'in window.evYuzey altında açtığı tam liste (hızlı panel / palet; Dalga 3).
-// 1.4.0: 'oku' (yuzey:oku; geçmiş/takvim/hava/yapılacaklar, yalnız kayıtlı varlıklar, ana süreçte süzülür) bilinçli eklendi.
-const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'basiliBasla', 'basiliBirak', 'kapat', 'boyut', 'haAc', 'ayarlarAc', 'sagTik'];
+// 1.4.0: 'oku' (yuzey:oku; geçmiş/takvim/hava/yapılacaklar, yalnız kayıtlı varlıklar, ana süreçte süzülür) ve 'kamera' (yuzey:kamera; yalnız panel, izinli kameralar) bilinçli eklendi.
+// etkilesim grubu (o-20, o-23): 'sabitle' (paneli sabitle / çöz; yuzey:sabitle) ve 'onEtkilesim' (tekerlek / sabit ayarı değişti) bilinçli eklendi.
+// 1.4.0 dis grubu (o-54): 'disOnayAl', 'disOnayYanitla', 'onDisOnay' (evpaneli:// bağlantı izni; soru yalnız açık panelde okunur,
+// karar yalnız sorunun biletiyle kabul edilir, src/yuzey-yoneticisi.js) bilinçli eklendi.
+// eylem grubu: 'geriAl' (o-12), 'geciktir' / 'gecikmeliIptal' (o-15), 'odaKapat' (o-14), 'digerCihazlar' / 'digerCalistir' / 'digerFavoriEkle' (o-46) bilinçli eklendi.
+const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onEtkilesim', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'kamera', 'basiliBasla', 'basiliBirak', 'kapat', 'sabitle', 'boyut', 'haAc', 'ayarlarAc', 'sagTik', 'disOnayAl', 'disOnayYanitla', 'onDisOnay', 'geriAl', 'geciktir', 'gecikmeliIptal', 'odaKapat', 'digerCihazlar', 'digerCalistir', 'digerFavoriEkle'];
 // preload-karo.js'in window.evKaro altında açtığı tam liste (masaüstü karosu, 1.4.0 o-33): yalnız kendi karosunun durumu, tıkla/ön ayar ve kaldır.
 const EV_KARO_KOPRUSU = ['durumAl', 'onDurum', 'onDilDegisti', 'calistir', 'kaldir'];
+// preload-itme.js'in window.evItme altında açtığı tam liste (düğmeli itme bildirimi kartı, o-61): yalnız kendi kartı için.
+const EV_ITME_KOPRUSU = ['onGoster', 'onDilDegisti', 'eylem', 'kapat'];
 
-test('yerel sayfalar bulundu (ayarlar, çevrimdışı, köşe bildirimi, hızlı panel/palet, masaüstü karosu)', () => {
-  assert.deepEqual([...YEREL_SAYFALAR].sort(), ['src/ayarlar.html', 'src/kose-bildirim.html', 'src/masaustu-karo.html', 'src/offline.html', 'src/yuzey.html']);
+test('yerel sayfalar bulundu (ayarlar, çevrimdışı, köşe bildirimi, itme kartı, hızlı panel/palet, masaüstü karosu)', () => {
+  assert.deepEqual([...YEREL_SAYFALAR].sort(), ['src/ayarlar.html', 'src/itme-kart.html', 'src/kose-bildirim.html', 'src/masaustu-karo.html', 'src/offline.html', 'src/yuzey.html']);
 });
 
 test('yerel sayfalarda satır içi betik gövdesi ve on* olay özniteliği yok; betikler yerel dosyalara bağlı', () => {
@@ -228,17 +291,27 @@ test('renderer betikleri HTML ataması, eval ve uzak yükleme kullanmaz (metin y
 });
 
 test('renderer betikleri yalnız preload\'un açtığı işlevleri çağırır; Ayarlar betiğinin kimlikleri HTML\'de var', () => {
-  for (const betik of ['src/ayarlar.js', 'src/ayarlar-duzen.js', 'src/offline.js']) {
+  for (const betik of ['src/ayarlar.js', 'src/ayarlar-duzen.js', 'src/ayarlar-baglanti.js', 'src/ayarlar-sertifika.js', 'src/ayarlar-oturum.js', 'src/ayarlar-esitleme.js', 'src/offline.js']) {
     for (const [, ad] of oku(betik).matchAll(/window\.evPaneli\.(\w+)/g)) {
       assert.ok(EV_PANELI_KOPRUSU.includes(ad), `${betik}: evPaneli.${ad} preload'da yok`);
     }
   }
-  for (const [, ad] of oku('src/yuzey-sayfa.js').matchAll(/(?:evYuzey|kopru)\.(\w+)/g)) {
-    assert.ok(EV_YUZEY_KOPRUSU.includes(ad), `yuzey-sayfa.js: evYuzey.${ad} preload-yuzey'de yok`);
+  // ayarlar-dis.js köprüyü ayarlar.js'ten `kopru` olarak alır (window.evPaneli); kimlikleri `$('...')` ile bulur.
+  const disBetigi = oku('src/ayarlar-dis.js');
+  const disKoprusu = [...disBetigi.matchAll(/kopru\.(\w+)/g)].map((m) => m[1]);
+  assert.ok(disKoprusu.length >= 7, 'ayarlar-dis.js köprü çağrıları bulunamadı');
+  for (const ad of disKoprusu) assert.ok(EV_PANELI_KOPRUSU.includes(ad), `ayarlar-dis.js: evPaneli.${ad} preload'da yok`);
+  for (const [, kimlik] of disBetigi.matchAll(/\$\('([^']+)'\)/g)) assert.ok(oku('src/ayarlar.html').includes(`id="${kimlik}"`), `ayarlar.html: #${kimlik} yok (ayarlar-dis.js)`);
+  for (const betik of ['src/yuzey-sayfa.js', 'src/yuzey-dis-onay.js']) {
+    for (const [, ad] of oku(betik).matchAll(/(?:evYuzey|kopru)\.(\w+)/g)) {
+      assert.ok(EV_YUZEY_KOPRUSU.includes(ad), `${betik}: evYuzey.${ad} preload-yuzey'de yok`);
+    }
   }
   const yuzeyHtml = oku('src/yuzey.html');
-  for (const [, kimlik] of oku('src/yuzey-sayfa.js').matchAll(/getElementById\('([^']+)'\)/g)) {
-    assert.ok(yuzeyHtml.includes(`id="${kimlik}"`), `yuzey.html: #${kimlik} yok`);
+  for (const betik of ['src/yuzey-sayfa.js', 'src/yuzey-dis-onay.js']) {
+    for (const [, kimlik] of oku(betik).matchAll(/getElementById\('([^']+)'\)/g)) {
+      assert.ok(yuzeyHtml.includes(`id="${kimlik}"`), `yuzey.html: #${kimlik} yok (${betik})`);
+    }
   }
   const html = oku('src/ayarlar.html');
   // ayarlar.js öğeleri `$('kimlik')` kısayoluyla (document.getElementById sarmalayıcısı) alır; ikisi de denetlenir.
@@ -247,6 +320,24 @@ test('renderer betikleri yalnız preload\'un açtığı işlevleri çağırır; 
   for (const kimlik of ayarlarKimlikleri) {
     assert.ok(html.includes(`id="${kimlik}"`), `ayarlar.html: #${kimlik} yok`);
   }
+  // 1.4.0 bağlantı katmanı: köprü `kopru` adıyla geçirilir; çağrılan her işlev preload'da olmalı.
+  for (const [, ad] of oku('src/ayarlar-baglanti.js').matchAll(/kopru\.(\w+)/g)) assert.ok(EV_PANELI_KOPRUSU.includes(ad), `ayarlar-baglanti.js: kopru.${ad} preload'da yok`);
+  // 1.4.0 bağlantı katmanı: ayarlar-baglanti.js de öğeleri `$('kimlik')` ile alır; hepsi ayarlar.html'de olmalı.
+  const baglantiKimlikleri = [...oku('src/ayarlar-baglanti.js').matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(baglantiKimlikleri.length >= 7, 'ayarlar-baglanti.js öğe kimlikleri bulunamadı');
+  for (const kimlik of baglantiKimlikleri) assert.ok(html.includes(`id="${kimlik}"`), `ayarlar.html: #${kimlik} yok (ayarlar-baglanti.js)`);
+  for (const [, ad] of oku('src/ayarlar-sertifika.js').matchAll(/kopru\.(\w+)/g)) assert.ok(EV_PANELI_KOPRUSU.includes(ad), `ayarlar-sertifika.js: kopru.${ad} preload'da yok`);
+  const sertifikaKimlikleri = [...oku('src/ayarlar-sertifika.js').matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(sertifikaKimlikleri.length >= 5, 'ayarlar-sertifika.js öğe kimlikleri bulunamadı');
+  for (const kimlik of sertifikaKimlikleri) assert.ok(html.includes(`id="${kimlik}"`), `ayarlar.html: #${kimlik} yok (ayarlar-sertifika.js)`);
+  for (const [, ad] of oku('src/ayarlar-oturum.js').matchAll(/kopru\.(\w+)/g)) assert.ok(EV_PANELI_KOPRUSU.includes(ad), `ayarlar-oturum.js: kopru.${ad} preload'da yok`);
+  const oturumKimlikleri = [...oku('src/ayarlar-oturum.js').matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(oturumKimlikleri.length >= 5, 'ayarlar-oturum.js öğe kimlikleri bulunamadı');
+  for (const kimlik of oturumKimlikleri) assert.ok(html.includes(`id="${kimlik}"`), `ayarlar.html: #${kimlik} yok (ayarlar-oturum.js)`);
+  for (const [, ad] of oku('src/ayarlar-esitleme.js').matchAll(/kopru\.(\w+)/g)) assert.ok(EV_PANELI_KOPRUSU.includes(ad), `ayarlar-esitleme.js: kopru.${ad} preload'da yok`);
+  const esitlemeKimlikleri = [...oku('src/ayarlar-esitleme.js').matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(esitlemeKimlikleri.length >= 12, 'ayarlar-esitleme.js öğe kimlikleri bulunamadı');
+  for (const kimlik of esitlemeKimlikleri) assert.ok(html.includes(`id="${kimlik}"`), `ayarlar.html: #${kimlik} yok (ayarlar-esitleme.js)`);
   for (const [, kimlik] of oku('src/offline.js').matchAll(/getElementById\('([^']+)'\)/g)) {
     assert.ok(oku('src/offline.html').includes(`id="${kimlik}"`), `offline.html: #${kimlik} yok`);
   }
@@ -308,7 +399,7 @@ test('preload-kose.js: köşe bildirimi köprüsü yalnız file: sayfasında ve 
   assert.deepEqual(Object.keys(acilan.evKose), ['onGoster', 'onDilDegisti']);
 });
 
-test('preload-yuzey.js: hızlı panel köprüsü yalnız file: sayfasında ve yalnız bilinen on işlevle açılır', () => {
+test('preload-yuzey.js: hızlı panel köprüsü yalnız file: sayfasında ve yalnız bilinen işlevlerle açılır', () => {
   for (const protokol of ['http:', 'https:', 'about:', 'data:', 'blob:']) {
     assert.deepEqual(preloadCalistir('src/preload-yuzey.js', protokol), {}, `${protokol} sayfasına köprü açılmamalı`);
   }
@@ -341,6 +432,33 @@ test('masaustu-karo-sayfa.js yalnız preload-karo\'nun açtığı işlevleri ça
   for (const [, ad] of betik.matchAll(/kopru\.(\w+)/g)) assert.ok(EV_KARO_KOPRUSU.includes(ad), `masaustu-karo-sayfa.js: evKaro.${ad} preload-karo'da yok`);
   const html = oku('src/masaustu-karo.html');
   for (const [, kimlik] of betik.matchAll(/getElementById\('([^']+)'\)/g)) assert.ok(html.includes(`id="${kimlik}"`), `masaustu-karo.html: #${kimlik} yok`);
+});
+
+test('preload-itme.js: itme kartı köprüsü yalnız file: sayfasında ve yalnız bilinen işlevlerle açılır; anahtar/ayar/webhook kanalı yok', () => {
+  for (const protokol of ['http:', 'https:', 'about:', 'data:', 'blob:']) {
+    assert.deepEqual(preloadCalistir('src/preload-itme.js', protokol), {}, `${protokol} sayfasına köprü açılmamalı`);
+  }
+  const acilan = preloadCalistir('src/preload-itme.js', 'file:');
+  assert.deepEqual(Object.keys(acilan), ['evItme']);
+  assert.deepEqual(Object.keys(acilan.evItme).sort(), [...EV_ITME_KOPRUSU].sort());
+  const kaynak = oku('src/preload-itme.js');
+  assert.ok(kaynak.indexOf("location.protocol === 'file:'") < kaynak.indexOf('exposeInMainWorld'));
+  assert.equal(kaynak.match(/exposeInMainWorld/g)?.length, 1);
+  const koduYalnizca = kaynak.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.ok(!/anahtarAl|getToken|readFile|child_process|shell|webhook|'ayarlar:|'yuzey:|'mobil:/.test(koduYalnizca), 'preload-itme anahtar/ayar/yüzey/mobil kanalı açmaz');
+  // Yalnız iki istek kanalı (düğme sırası ve kapat) ve iki dinleme kanalı; eylem kimliği sayfadan gitmez (yalnız kartNo ve sıra tamsayıdır).
+  assert.deepEqual([...kaynak.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map((m) => m[1]).sort(), ['itme:eylem', 'itme:kapat']);
+  assert.deepEqual([...kaynak.matchAll(/ipcRenderer\.on\('([^']+)'/g)].map((m) => m[1]).sort(), ['dil:degisti', 'itme:goster']);
+});
+
+test('itme-kart-sayfa.js yalnız preload-itme\'nin açtığı işlevleri çağırır; kimlikleri itme-kart.html\'de var; eylem kimliği sayfada geçmez', () => {
+  const betik = oku('src/itme-kart-sayfa.js');
+  for (const [, ad] of betik.matchAll(/evItme\.(\w+)/g)) assert.ok(EV_ITME_KOPRUSU.includes(ad), `itme-kart-sayfa.js: evItme.${ad} preload-itme'de yok`);
+  const html = oku('src/itme-kart.html');
+  const kimlikler = [...betik.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(kimlikler.length >= 5, 'itme-kart-sayfa.js öğe kimlikleri bulunamadı');
+  for (const kimlik of kimlikler) assert.ok(html.includes(`id="${kimlik}"`), `itme-kart.html: #${kimlik} yok`);
+  assert.doesNotMatch(betik, /\.eylemKimligi|\.action\b|webhook|mobile_app/, 'kart sayfası eylem kimliğini görmez');
 });
 
 test('preload.js: sır, adres ya da anahtar ismi içermez; koruma exposeInMainWorld\'den ÖNCE gelir', () => {
@@ -510,6 +628,15 @@ test('kaldırıcı: otomatik başlatma kayıtları yalnız gerçek kaldırmada (
   assert.doesNotMatch(nsh, /Güncelleme sırasında da çalışır/);
   assert.match(nsh, /YALNIZ gerçek kaldırmada/);
   assert.match(nsh, /1\.1\.0'dan SONRAKİ/);
+  // 1.4.0 (o-54): evpaneli:// kaydı yalnız gerçek kaldırmada ve yalnız komutu BU kurulumun exe'sini gösteriyorsa silinir.
+  const satirlar = blok.split('\n').map((s) => s.trim());
+  const oku_ = satirlar.indexOf('ReadRegStr $0 HKCU "Software\\Classes\\evpaneli\\shell\\open\\command" ""');
+  const kosul = satirlar.indexOf('${if} $0 == "$\\"$INSTDIR\\${APP_EXECUTABLE_FILENAME}$\\""');
+  const sil = satirlar.indexOf('DeleteRegKey HKCU "Software\\Classes\\evpaneli"');
+  assert.ok(oku_ >= 0 && oku_ < kosul && kosul < sil, 'önce komut okunur, exe karşılaştırılır, sonra silinir');
+  assert.equal(satirlar[sil + 1], '${endIf}', 'silme yalnız karşılaştırma bloğunda');
+  assert.equal(nsh.match(/^\s*DeleteRegKey\b/gm)?.length, 1, 'başka anahtar silinmez');
+  assert.equal(blok.match(/^\s*Push \$\d/gm)?.length, blok.match(/^\s*Pop \$\d/gm)?.length, 'yazmaçlar geri yüklenir');
 });
 
 test('kaldırıcı: isUpdated electron-builder şablonlarında tanımlı ve customUnInstall kaldırıcı betiğinde çağrılıyor (şablon değişirse haber verir)', { skip: !fs.existsSync(path.join(KOK, 'node_modules', 'app-builder-lib', 'templates', 'nsis', 'uninstaller.nsh')) }, () => {
@@ -522,6 +649,8 @@ test('kaldırıcı: isUpdated electron-builder şablonlarında tanımlı ve cust
   assert.match(hedef, /flags\(\[\s*"updated"/);
   const eski = fs.readFileSync(path.join(sablon, 'templates', 'nsis', 'include', 'installUtil.nsh'), 'utf8');
   assert.match(eski, /StrCpy \$0 "\$0 --updated"/, 'güncellemede eski kaldırıcıya --updated geçirilir');
+  // 1.4.0 (o-54): evpaneli:// silme koşulu exe adını şablonun ortak tanımından alır (kurucu ve kaldırıcıda aynı).
+  assert.match(fs.readFileSync(path.join(sablon, 'templates', 'nsis', 'common.nsh'), 'utf8'), /!define APP_EXECUTABLE_FILENAME "\$\{PRODUCT_FILENAME\}\.exe"/);
 });
 
 test('main.js: göç öncesi yedek, ayarlar yeni biçimle yazılmadan ÖNCE ve "bozuk dosya" bloğunun DIŞINDA alınır', () => {
@@ -579,7 +708,9 @@ test('yetki kesici: kimlikli isteğin başlığı, REST çağrısı ve WebSocket
     // adres-sina.js (k-14 "Bağlantıyı sına") bilinçli ikinci istisnadır: kimliksiz tek GET; ayrıntılı sınırları aşağıdaki testte.
     // surum-denetimi.js (o-40) üçüncü bilinçli istisnadır: kimliksiz, çerezsiz tek GET (GitHub sürüm adresi); varsayılan KAPALI seçenek; sınırları test/surum-denetimi.test.js'te.
     if (!['src/ha-istemcisi.js', 'src/main.js', 'src/lib/adres-sina.js', 'src/lib/surum-denetimi.js'].includes(g)) assert.ok(!/\bnet\.fetch\s*\(|\bfetch\s*\(|net\.request\s*\(|https?\.request\s*\(/.test(icerik), `${g}: ağ isteği`);
-    if (g !== 'src/ha-ws.js') assert.ok(!/new\s+WebSocket\w*\s*\(/.test(icerik), `${g}: soket yalnız ha-ws.js'te açılır`);
+    // baglanti-yoneticisi.js (1.4.0, o-55/o-56) ha-ws.js'e verilen WebSocket SINIFINI kurar (üstbilgi / özel sertifika için küresel WebSocket'e ya da src/lib/ws-istemci.js'e
+    // karar verir); soketi ha-ws.js açar ve kesici köprüsü orada işler. Yalnız ha-ws'e verilmesi test/baglanti-yapi.test.js'te sınanır.
+    if (!['src/ha-ws.js', 'src/baglanti-yoneticisi.js'].includes(g)) assert.ok(!/new\s+WebSocket\w*\s*\(/.test(icerik), `${g}: soket yalnız ha-ws.js'te açılır`);
   }
   const istemci = oku('src/ha-istemcisi.js');
   assert.equal(istemci.match(/Authorization:/g)?.length, 1, 'Authorization tek yerde (tekIstek)');

@@ -25,6 +25,7 @@ const BETIK = oku('src/yuzey-sayfa.js');
 const BILGI_BICIM = oku('src/lib/bilgi-bicim.js');
 const GRAFIK = oku('src/lib/grafik.js');
 const YUZEY_BILGI = oku('src/yuzey-bilgi.js');
+const YUZEY_EYLEM = oku('src/yuzey-eylem.js');
 
 class SahteOge {
   /** `odak`: sayfanın { aktif } kaydı (document.activeElement); focus() buraya yazar, DOM'dan çıkarılan odaklı öğe odağı yitirir. */
@@ -200,7 +201,7 @@ const MODEL = {
  * `dil`: durumAl yanıtındaki etkin arayüz dili (verilmezse yanıtta yoktur: sayfa Türkçe kalır). Sayfadaki data-i18n / data-i18n-attr
  * öğeleri HTML'den okunur (document.querySelectorAll), böylece sayfayiCevir gerçek sayfadaki gibi çalışır.
  */
-function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true }, malzeme, aramaYama, dil, okuYaniti = (istek) => ({ ok: true, veri: istek.tur === 'gecmis' ? {} : [] }), bildirimYaniti = { ok: true } } = {}) {
+function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true }, malzeme, aramaYama, dil, okuYaniti = (istek) => ({ ok: true, veri: istek.tur === 'gecmis' ? {} : [] }), bildirimYaniti = { ok: true }, eylemBetigi = false, geriAlYaniti = { ok: true }, geriAlKopru = true, geciktirYaniti = { ok: true }, geciktirKopru = true, gecikmeliIptalYaniti = { ok: true }, odaKapatYaniti = { ok: true }, odaKapatKopru = true, digerYaniti = { ok: true, liste: [] }, digerCalistirYaniti = { ok: true }, digerFavoriYaniti = { ok: true }, digerKopru = true } = {}) {
   const odak = { aktif: null };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
@@ -260,6 +261,46 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
     haAc: async () => cagrilar.push(['haAc']),
     ayarlarAc: async () => cagrilar.push(['ayarlarAc']),
   };
+  // 1.4.0 eylem grubu (o-12): geri al köprüsü; eylemBetigi: src/yuzey-eylem.js yüklenir (yoksa panel eskisi gibi çalışır)
+  if (geriAlKopru) {
+    kopru.geriAl = async () => {
+      cagrilar.push(['geriAl']);
+      return typeof geriAlYaniti === 'function' ? geriAlYaniti() : geriAlYaniti;
+    };
+  }
+  // 1.4.0 eylem grubu (o-15): gecikmeli eylem köprüsü (palet satırı) ve bekleyen iptali (panel şeridi)
+  if (geciktirKopru) {
+    kopru.geciktir = async (yuk) => {
+      cagrilar.push(['geciktir', JSON.parse(JSON.stringify(yuk))]);
+      return typeof geciktirYaniti === 'function' ? geciktirYaniti(yuk) : geciktirYaniti;
+    };
+    kopru.gecikmeliIptal = async (id) => {
+      cagrilar.push(['gecikmeliIptal', id]);
+      return typeof gecikmeliIptalYaniti === 'function' ? gecikmeliIptalYaniti(id) : gecikmeliIptalYaniti;
+    };
+  }
+  // 1.4.0 eylem grubu (o-14): odayı kapat köprüsü (oda grubu başlığındaki düğme)
+  if (odaKapatKopru) {
+    kopru.odaKapat = async (kod) => {
+      cagrilar.push(['odaKapat', kod]);
+      return typeof odaKapatYaniti === 'function' ? odaKapatYaniti(kod) : odaKapatYaniti;
+    };
+  }
+  // 1.4.0 eylem grubu (o-46): palette "*" favori dışı cihazlar (liste, çalıştır, favoriye ekle)
+  if (digerKopru) {
+    kopru.digerCihazlar = async () => {
+      cagrilar.push(['digerCihazlar']);
+      return typeof digerYaniti === 'function' ? digerYaniti() : digerYaniti;
+    };
+    kopru.digerCalistir = async (yuk) => {
+      cagrilar.push(['digerCalistir', JSON.parse(JSON.stringify(yuk))]);
+      return typeof digerCalistirYaniti === 'function' ? digerCalistirYaniti(yuk) : digerCalistirYaniti;
+    };
+    kopru.digerFavoriEkle = async (kimlik) => {
+      cagrilar.push(['digerFavoriEkle', kimlik]);
+      return typeof digerFavoriYaniti === 'function' ? digerFavoriYaniti(kimlik) : digerFavoriYaniti;
+    };
+  }
   const belgeDinleyicileri = {};
   const pencereDinleyicileri = {};
   const govde = { className: '' };
@@ -299,6 +340,7 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
   vm.runInContext(BILGI_BICIM, sandbox, { filename: 'lib/bilgi-bicim.js' });
   vm.runInContext(GRAFIK, sandbox, { filename: 'lib/grafik.js' });
   vm.runInContext(YUZEY_BILGI, sandbox, { filename: 'yuzey-bilgi.js' });
+  if (eylemBetigi) vm.runInContext(YUZEY_EYLEM, sandbox, { filename: 'yuzey-eylem.js' });
   vm.runInContext(BETIK, sandbox, { filename: 'yuzey-sayfa.js' });
   return {
     oge: (kimlik) => ogeler.get(kimlik),
@@ -2757,4 +2799,886 @@ test('bildirim: yuzey.css palette şeridi gizler ve bildirim kurallarına renk k
   const kurallar = [...css.matchAll(/(^|\n)\s*([^{}\n]*\.bildirim[^{}]*)\{([^}]*)\}/g)];
   assert.ok(kurallar.length >= 8, 'bildirim kuralları bulundu');
   for (const [, , secici, govde] of kurallar) assert.doesNotMatch(govde, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `${secici.trim()} renk kodu gömüyor`);
+});
+
+// --- eylem grubu: geri al düğmesi (o-12; src/yuzey-eylem.js) -----------------------------------------
+
+const GERI_ALINABILIR = (ek = {}) => ({ ...MODEL, eylem: { geriAl: { adet: 1, ad: 'Salon lambası', bitis: 1_000_000 + 600_000, ...ek } } });
+const geriAlCagrilari = (sayfa) => sayfa.cagrilar.filter((c) => c[0] === 'geriAl');
+
+test('geri al (o-12): model geri alınacak girdi taşıyorsa alt şeritteki düğme görünür ve adı ipucunda yazar; yoksa gizli kalır', async () => {
+  const yok = await panelAc({ eylemBetigi: true });
+  assert.equal(yok.oge('geriAl').hidden, true);
+  assert.equal(yok.oge('geriAl').title, '');
+  const acik = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR() });
+  const dugme = acik.oge('geriAl');
+  assert.equal(dugme.hidden, false);
+  assert.equal(dugme.title, 'Geri al: Salon lambası');
+  assert.equal(dugme.attributes['aria-label'], 'Geri al: Salon lambası');
+  assert.equal(dugme.textContent, 'Geri al', 'HTML varsayılanı Türkçe');
+  // model sonradan değişince (süre doldu ya da geri alındı) düğme gizlenir
+  acik.durum({ ...MODEL, eylem: { geriAl: null } });
+  assert.equal(acik.oge('geriAl').hidden, true);
+  acik.durum(GERI_ALINABILIR({ ad: 'Priz' }));
+  assert.equal(acik.oge('geriAl').title, 'Geri al: Priz');
+});
+
+test('geri al (o-12): tıklama ana sürece YÜKSÜZ "geri al" der; yanıt gelene kadar ikinci tıklama yok sayılır', async () => {
+  let coz;
+  const sayfa = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR(), geriAlYaniti: () => new Promise((c) => (coz = c)) });
+  sayfa.oge('geriAl').gonder('click');
+  sayfa.oge('geriAl').gonder('click');
+  await akit();
+  assert.deepEqual(geriAlCagrilari(sayfa), [['geriAl']], 'tek istek, yük yok');
+  assert.equal(sayfa.oge('geriAl').disabled, true, 'beklerken pasif');
+  coz({ ok: true });
+  await akit();
+  assert.equal(sayfa.oge('geriAl').disabled, false);
+  sayfa.oge('geriAl').gonder('click');
+  await akit();
+  assert.equal(geriAlCagrilari(sayfa).length, 2);
+});
+
+test('geri al (o-12): köprü hata verirse düğme takılı kalmaz; köprüde geriAl yoksa düğme hiç görünmez', async () => {
+  const hatali = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR(), geriAlYaniti: () => Promise.reject(new Error('ipc')) });
+  hatali.oge('geriAl').gonder('click');
+  await akit();
+  assert.equal(hatali.oge('geriAl').disabled, false);
+  const koprusuz = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR(), geriAlKopru: false });
+  assert.equal(koprusuz.oge('geriAl').hidden, true);
+});
+
+test('geri al (o-12): süresi geçmiş girdi model güncellenmese de düğmeyi göstermez; bozuk model düğme açmaz; ad yalnız özniteliğe yazılır', async () => {
+  const gecmis = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR({ bitis: 999_999 }) });
+  assert.equal(gecmis.oge('geriAl').hidden, true);
+  for (const bozuk of [{ adet: 0, ad: 'x', bitis: 2_000_000 }, { adet: 1, ad: 'x', bitis: 'yarin' }, { adet: 1.5, ad: 'x', bitis: 2_000_000 }, 'metin', 5]) {
+    const sayfa = await panelAc({ eylemBetigi: true, model: { ...MODEL, eylem: { geriAl: bozuk } } });
+    assert.equal(sayfa.oge('geriAl').hidden, true, JSON.stringify(bozuk));
+  }
+  const zararli = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR({ ad: '<img src=x onerror=alert(1)>' }) });
+  assert.equal(zararli.oge('geriAl').title, 'Geri al: <img src=x onerror=alert(1)>');
+  assert.equal(zararli.oge('geriAl').children.length, 0, 'düğmeye alt öğe eklenmez');
+});
+
+test('geri al (o-12): dil çalışma anında değişince etiket ve ipucu yeni dilde yazılır', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR(), dil: 'en' });
+  assert.equal(sayfa.oge('geriAl').textContent, 'Undo');
+  assert.equal(sayfa.oge('geriAl').title, 'Undo: Salon lambası');
+  sayfa.dilDegisti({ dil: 'de' });
+  assert.equal(sayfa.oge('geriAl').textContent, 'Rückgängig');
+  assert.equal(sayfa.oge('geriAl').title, 'Rückgängig: Salon lambası');
+});
+
+test('geri al (o-12): yuzey-eylem.js yüklenmese bile panel eskisi gibi çalışır (düğmeye dokunulmaz)', async () => {
+  const sayfa = await panelAc({ model: GERI_ALINABILIR() });
+  assert.deepEqual(etiketler(sayfa), ['LED şerit', 'Ampul', 'Film', 'PC kapat', 'Ses +']);
+  assert.equal(sayfa.oge('geriAl').hidden, false, 'betik yok: hidden niteliğini kimse yönetmez (gerçek HTML’de hidden başlar)');
+  assert.match(HTML, /<button id="geriAl"[^>]*\bhidden\b/, 'yuzey.html: düğme gizli başlar');
+});
+
+test('yuzey.html: geri al düğmesi alt şeritte, betik sırası yuzey-eylem.js önce yuzey-sayfa.js sonra; CSP gevşemez', () => {
+  const sira = [...HTML.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(sira.indexOf('yuzey-eylem.js') >= 0 && sira.indexOf('yuzey-eylem.js') < sira.indexOf('yuzey-sayfa.js'));
+  assert.match(HTML, /<footer id="alt"[\s\S]*id="geriAl"[\s\S]*id="haAc"[\s\S]*<\/footer>/);
+  assert.doesNotMatch(HTML, /unsafe-inline|unsafe-eval/);
+  const betik = oku('src/yuzey-eylem.js').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(betik, /innerHTML|insertAdjacentHTML|eval\s*\(|new Function|require\s*\(|fetch\s*\(|XMLHttpRequest/, 'yuzey-eylem.js: HTML ataması, eval, require, ağ yok');
+});
+
+// --- eylem grubu: zamanlı eylemler (o-15; palet satırı + panel şeridi) ---------------------------------------
+
+const geciktirCagrilari = (sayfa) => sayfa.cagrilar.filter((c) => c[0] === 'geciktir').map((c) => c[1]);
+const gecikmeliModel = (liste) => ({ ...MODEL, eylem: { geriAl: null, gecikmeli: liste } });
+const BEKLEYEN = (ek = {}) => ({ id: 'g1', ad: 'Salon lambası', yon: 'kapat', bitis: 1_000_000 + 600_000, ...ek });
+
+async function paletSorgula(sorgu, secenek = {}) {
+  const sayfa = await paletAc({ eylemBetigi: true, model: { ...MODEL, sonlar: [] }, ...secenek });
+  sayfa.oge('arama').value = sorgu;
+  sayfa.oge('arama').gonder('input');
+  return sayfa;
+}
+
+test('palet (o-15): "ampul 10 dk sonra kapat" rozet gösterir, Enter YALNIZ gecikmeli eylem gönderir (hemen eylem yok) ve paleti kapatır', async () => {
+  const sayfa = await paletSorgula('ampul 10 dk sonra kapat');
+  const satirlar = paletSatirlari(sayfa);
+  assert.equal(satirlar.length, 1);
+  assert.match(satirlar[0].textContent, /Ampul/);
+  assert.match(satirlar[0].textContent, /10 dk sonra kapat/);
+  assert.doesNotMatch(satirlar[0].className, /yikici/);
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  assert.deepEqual(geciktirCagrilari(sayfa), [{ kimlik: 'light.ampul', yon: 'kapat', dakika: 10 }]);
+  assert.deepEqual(sayfa.calistirmalar(), [], 'şimdi hiçbir eylem gönderilmez');
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'kapat').length, 0, 'yanıt gelene kadar palet kapanmaz');
+  await akit();
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'kapat').length, 1);
+});
+
+test('palet (o-15): "led 30dk" süreli (şimdi aç, 30 dk sonra kapat); "led 2sa" 120 dakika; "led 1sa30dk" 90 dakika; fare tıklaması da aynı yolu kullanır', async () => {
+  for (const [sorgu, dakika, rozet] of [['led 30dk', 30, /Aç, 30 dk sonra kapat/], ['led 2sa', 120, /Aç, 2 sa sonra kapat/], ['led 1sa30dk', 90, /Aç, 1 sa 30 dk sonra kapat/]]) {
+    const sayfa = await paletSorgula(sorgu);
+    assert.match(paletSatirlari(sayfa)[0].textContent, rozet, sorgu);
+    sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+    assert.deepEqual(geciktirCagrilari(sayfa), [{ kimlik: 'light.led_serit', yon: 'sureli', dakika }], sorgu);
+    assert.deepEqual(sayfa.calistirmalar(), [], `${sorgu}: açma işini ana süreç yapar`);
+  }
+  const tik = await paletSorgula('ampul 5 dk sonra aç');
+  assert.match(paletSatirlari(tik)[0].textContent, /5 dk sonra aç/);
+  paletSatirlari(tik)[0].gonder('click');
+  assert.deepEqual(geciktirCagrilari(tik), [{ kimlik: 'light.ampul', yon: 'ac', dakika: 5 }]);
+});
+
+test('palet (o-15): birimsiz sayı süre DEĞİLDİR ("led 40" parlaklık); ertelenemeyen karolar (sahne, yıkıcı PC düğmesi, ses düğmesi) gecikmeli satır olmaz', async () => {
+  const led = await paletSorgula('led 40');
+  led.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  assert.deepEqual(geciktirCagrilari(led), []);
+  assert.deepEqual(led.calistirmalar(), [{ kimlik: 'light.led_serit', parlaklik: 40, sonDeger: true }]);
+  for (const sorgu of ['film 10dk', 'pc kapat 10 dk sonra kapat', 'ses 10dk', 'film 10 dk sonra kapat']) {
+    const sayfa = await paletSorgula(sorgu);
+    assert.ok(paletSatirlari(sayfa).every((s) => !/sonra (kapat|aç)/.test(s.textContent)), sorgu);
+    sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+    sayfa.zaman.ilerle(2000);
+    assert.deepEqual(geciktirCagrilari(sayfa), [], sorgu);
+    assert.deepEqual(sayfa.cagrilar.filter((c) => c[0] === 'basiliBasla'), [], `${sorgu}: basılı tutma da başlamaz`);
+  }
+});
+
+test('palet (o-15): süre aralık dışıysa ("5000 dk") satır "aralık dışı" der, Enter hiçbir şey göndermez ve nedeni söyler', async () => {
+  const sayfa = await paletSorgula('ampul 5000 dk sonra kapat');
+  assert.match(paletSatirlari(sayfa)[0].textContent, /aralık dışı/i);
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  assert.deepEqual(geciktirCagrilari(sayfa), []);
+  assert.match(sayfa.oge('ipucu').textContent, /Ampul/);
+  const sifir = await paletSorgula('ampul 0dk');
+  sifir.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  assert.deepEqual(geciktirCagrilari(sifir), []);
+});
+
+test('palet (o-15): ana süreç reddederse palet AÇIK kalır ve neden ipucunda yazar (dolu, kapalı, uygun değil, olmadı)', async () => {
+  for (const [yanit, beklenen] of [
+    [{ ok: false, tur: 'dolu' }, /en çok 10/],
+    [{ ok: false, tur: 'kapali' }, /Ayarlar’dan kapatılmış/],
+    [{ ok: false, tur: 'kaynak-izinsiz' }, /uygun değil/],
+    [{ ok: false, tur: 'yasak' }, /uygun değil/],
+    [{ ok: false, tur: 'ulasilamiyor' }, /kurulamadı/],
+    [{ ok: false }, /kurulamadı/],
+  ]) {
+    const sayfa = await paletSorgula('ampul 10 dk sonra kapat', { geciktirYaniti: yanit });
+    sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+    await akit();
+    assert.match(sayfa.oge('ipucu').textContent, beklenen, JSON.stringify(yanit));
+    assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'kapat').length, 0, 'palet kapanmadı');
+  }
+  const hata = await paletSorgula('ampul 10 dk sonra kapat', { geciktirYaniti: () => Promise.reject(new Error('ipc')) });
+  hata.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  await akit();
+  assert.match(hata.oge('ipucu').textContent, /kurulamadı/);
+});
+
+test('palet (o-15): köprüde geciktir yoksa Enter hiçbir şey yapmaz (çökmez); gecikmeli satır "Seviye" menüsü açmaz', async () => {
+  const sayfa = await paletSorgula('ampul 10 dk sonra kapat', { geciktirKopru: false });
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  await akit();
+  assert.deepEqual(geciktirCagrilari(sayfa), []);
+  assert.deepEqual(sayfa.calistirmalar(), []);
+});
+
+test('palet (o-15): gecikmeli satırın rozeti yeni dilde yazılır (İngilizce "Off in 10 min")', async () => {
+  const sayfa = await paletSorgula('ampul 10 dk sonra kapat', { dil: 'en' });
+  assert.match(paletSatirlari(sayfa)[0].textContent, /Off in 10 min/);
+  const sureli = await paletSorgula('led 2sa', { dil: 'en' });
+  assert.match(paletSatirlari(sureli)[0].textContent, /On now, off in 2 h/);
+});
+
+test('panel (o-15): bekleyen zamanlı eylemler şeritte listelenir; yoksa şerit gizli; öğe yalnız textContent ile yazılır', async () => {
+  const yok = await panelAc({ eylemBetigi: true, model: MODEL });
+  assert.equal(yok.oge('gecikmeliSerit').hidden, true);
+  const sayfa = await panelAc({ eylemBetigi: true, model: gecikmeliModel([BEKLEYEN(), BEKLEYEN({ id: 'g2', ad: '<img src=x onerror=alert(1)>', yon: 'ac', bitis: 1_000_000 + 1_200_000 })]) });
+  const serit = sayfa.oge('gecikmeliSerit');
+  assert.equal(serit.hidden, false);
+  const metinler = serit.bul((o) => o.className === 'gecikmeli-metin').map((o) => o.textContent);
+  assert.equal(metinler.length, 2);
+  assert.match(metinler[0], /^Salon lambası · \d{1,2}[:.]\d{2}.* kapanır$/);
+  assert.match(metinler[1], /^<img src=x onerror=alert\(1\)> · .* açılır$/);
+  assert.equal(serit.bul((o) => o.etiket === 'img').length, 0);
+  const iptaller = serit.bul((o) => o.className === 'gecikmeli-iptal');
+  assert.deepEqual(iptaller.map((d) => d.attributes['aria-label']), ['Zamanlı eylemi iptal et: Salon lambası', 'Zamanlı eylemi iptal et: <img src=x onerror=alert(1)>']);
+  // model boşalınca şerit gizlenir
+  sayfa.durum(MODEL);
+  assert.equal(sayfa.oge('gecikmeliSerit').hidden, true);
+  assert.equal(sayfa.oge('gecikmeliSerit').children.length, 0);
+});
+
+test('panel (o-15): × yalnız opak kimliği ana sürece iletir; yanıtı beklerken düğme pasif, hatada geri açılır', async () => {
+  let coz;
+  const sayfa = await panelAc({ eylemBetigi: true, model: gecikmeliModel([BEKLEYEN({ id: 'g7' })]), gecikmeliIptalYaniti: () => new Promise((c) => (coz = c)) });
+  const dugme = sayfa.oge('gecikmeliSerit').bul((o) => o.className === 'gecikmeli-iptal')[0];
+  dugme.gonder('click');
+  await akit();
+  assert.deepEqual(sayfa.cagrilar.filter((c) => c[0] === 'gecikmeliIptal'), [['gecikmeliIptal', 'g7']]);
+  assert.equal(dugme.disabled, true);
+  coz({ ok: true });
+  await akit();
+  assert.equal(dugme.disabled, false);
+
+  const hatali = await panelAc({ eylemBetigi: true, model: gecikmeliModel([BEKLEYEN()]), gecikmeliIptalYaniti: () => Promise.reject(new Error('ipc')) });
+  const d2 = hatali.oge('gecikmeliSerit').bul((o) => o.className === 'gecikmeli-iptal')[0];
+  d2.gonder('click');
+  await akit();
+  assert.equal(d2.disabled, false);
+});
+
+test('panel (o-15): bozuk / fazla / süresi geçmiş bekleyenler gösterilmez; köprüde gecikmeliIptal yoksa şerit görünmez; en çok 10', async () => {
+  const bozuklar = [null, 'x', { id: 'a1', ad: 'x', yon: 'kapat', bitis: 2_000_000 }, { id: 'g1', ad: 'x', yon: 'baska', bitis: 2_000_000 }, { id: 'g2', ad: 'x', yon: 'ac', bitis: 'yarin' }, { id: 'g3', ad: 'x', yon: 'ac', bitis: -5 }];
+  const sayfa = await panelAc({ eylemBetigi: true, model: gecikmeliModel(bozuklar) });
+  assert.equal(sayfa.oge('gecikmeliSerit').hidden, true);
+  const gecmis = await panelAc({ eylemBetigi: true, model: gecikmeliModel([BEKLEYEN({ bitis: 999_999 })]) });
+  assert.equal(gecmis.oge('gecikmeliSerit').hidden, true, 'süresi geçmiş');
+  const koprusuz = await panelAc({ eylemBetigi: true, model: gecikmeliModel([BEKLEYEN()]), geciktirKopru: false });
+  assert.equal(koprusuz.oge('gecikmeliSerit').hidden, true);
+  const cok = await panelAc({ eylemBetigi: true, model: gecikmeliModel(Array.from({ length: 14 }, (_, i) => BEKLEYEN({ id: `g${i + 1}`, bitis: 1_000_000 + 60_000 * (i + 1) }))) });
+  assert.equal(cok.oge('gecikmeliSerit').bul((o) => o.className === 'gecikmeli-oge').length, 10);
+});
+
+test('panel (o-15): şerit metni dil değişince yeni dilde yazılır', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: gecikmeliModel([BEKLEYEN()]), dil: 'en' });
+  assert.match(sayfa.oge('gecikmeliSerit').bul((o) => o.className === 'gecikmeli-metin')[0].textContent, /^Salon lambası · off at /);
+  sayfa.dilDegisti({ dil: 'de' });
+  assert.match(sayfa.oge('gecikmeliSerit').bul((o) => o.className === 'gecikmeli-metin')[0].textContent, /^Salon lambası · aus um /);
+});
+
+test('yuzey-eylem.js (o-15): sureMetni ve gecikmeliDuzelt saf işlevleri', () => {
+  const sanal = {};
+  vm.runInNewContext(YUZEY_EYLEM, sanal);
+  const E = sanal.EvYuzeyEylem;
+  const cevir = (anahtar, d) => `${anahtar}:${JSON.stringify(d)}`;
+  assert.equal(E.sureMetni(1, cevir), 'yuzey.sure.dk:{"n":1}');
+  assert.equal(E.sureMetni(59, cevir), 'yuzey.sure.dk:{"n":59}');
+  assert.equal(E.sureMetni(60, cevir), 'yuzey.sure.sa:{"n":1}');
+  assert.equal(E.sureMetni(150, cevir), 'yuzey.sure.saDk:{"sa":2,"dk":30}');
+  assert.equal(E.sureMetni('x', cevir), 'yuzey.sure.dk:{"n":0}');
+  assert.deepEqual(JSON.parse(JSON.stringify(E.gecikmeliDuzelt([{ id: 'g2', ad: 'B', yon: 'ac', bitis: 20.9 }, { id: 'g1', ad: 'A', yon: 'kapat', bitis: 10, kimlik: 'light.gizli' }]))), [
+    { id: 'g1', ad: 'A', yon: 'kapat', bitis: 10 },
+    { id: 'g2', ad: 'B', yon: 'ac', bitis: 20 },
+  ]);
+  assert.equal(E.gecikmeliDuzelt('x').length, 0);
+  assert.equal(E.modelDuzelt(undefined).gecikmeli.length, 0);
+});
+
+test('yuzey.html (o-15): zamanlı eylemler şeridi alt şeridin hemen üstünde ve gizli başlar; palet kipinde CSS ile gizlenir', () => {
+  assert.match(HTML, /<div id="gecikmeliSerit"[^>]*\bhidden\b[^>]*><\/div>\s*<footer id="alt"/);
+  const css = oku('src/yuzey.css');
+  assert.match(css, /\.mod-palet \.gecikmeli-serit,/);
+});
+
+// --- eylem grubu: son değişenler (o-18; palet "@") ------------------------------------------------------------
+
+const DEGISEN = (ek = {}) => ({ kimlik: 'light.ampul', ad: 'Ampul', alan: 'light', tur: 'acildi', zaman: 1_000_000 - 3 * 60_000, ...ek });
+const degisenModel = (liste, ek = {}) => ({ ...MODEL, sonlar: [], eylem: { geriAl: null, gecikmeli: [], degisenler: liste, degisenAcik: true, ...ek } });
+async function degisenSorgula(sorgu, liste, secenek = {}) {
+  const sayfa = await paletAc({ eylemBetigi: true, model: degisenModel(liste), ...secenek });
+  sayfa.oge('arama').value = sorgu;
+  sayfa.oge('arama').gonder('input');
+  return sayfa;
+}
+
+test('palet "@" (o-18): son değişenler en yeni üstte listelenir; satırda "Açıldı · 3 dk önce" ve ad görünür', async () => {
+  const sayfa = await degisenSorgula('@', [DEGISEN({ kimlik: 'switch.priz', ad: 'Masa prizi', alan: 'switch', tur: 'kapandi', zaman: 1_000_000 - 30_000 }), DEGISEN(), DEGISEN({ kimlik: 'scene.film', ad: 'Film', alan: 'scene', tur: 'calisti', zaman: 1_000_000 - 12 * 60_000 })]);
+  const satirlar = paletSatirlari(sayfa);
+  assert.equal(satirlar.length, 3);
+  assert.match(satirlar[0].textContent, /Masa prizi/);
+  assert.match(satirlar[0].textContent, /Kapandı · az önce/);
+  assert.match(satirlar[1].textContent, /Ampul/);
+  assert.match(satirlar[1].textContent, /Açıldı · 3 dk önce/);
+  assert.match(satirlar[2].textContent, /Çalıştırıldı · 12 dk önce/);
+  assert.equal(sayfa.oge('icerik').bul((o) => o.className === 'palet-baslik').map((o) => o.textContent)[0], 'Son değişenler');
+});
+
+test('palet "@salon": ad süzer; eşleşme yoksa "eşleşme yok"; hiç değişiklik yoksa ya da özellik kapalıysa kendi iletisi', async () => {
+  const liste = [DEGISEN(), DEGISEN({ kimlik: 'light.led_serit', ad: 'LED şerit', zaman: 1_000_000 - 60_000 })];
+  const sus = await degisenSorgula('@led', liste);
+  assert.deepEqual(paletSatirlari(sus).map((s) => /LED şerit/.test(s.textContent)), [true]);
+  const yok = await degisenSorgula('@mutfak', liste);
+  assert.equal(paletSatirlari(yok).length, 0);
+  assert.match(yok.oge('icerik').textContent, /Eşleşen sonuç yok|eşleş/i);
+  const bos = await degisenSorgula('@', []);
+  assert.match(bos.oge('icerik').textContent, /Henüz değişiklik yok/);
+  const kapali = await paletAc({ eylemBetigi: true, model: degisenModel([], { degisenAcik: false }) });
+  kapali.oge('arama').value = '@';
+  kapali.oge('arama').gonder('input');
+  assert.match(kapali.oge('icerik').textContent, /kapalı/);
+});
+
+test('palet "@" (o-18): favori satırda Enter normal eylem yolundan çalışır (aç/kapat); fare tıklaması da aynıdır', async () => {
+  const sayfa = await degisenSorgula('@', [DEGISEN()]);
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'light.ampul' }]);
+  const tik = await degisenSorgula('@', [DEGISEN()]);
+  paletSatirlari(tik)[0].gonder('click');
+  assert.deepEqual(tik.calistirmalar(), [{ kimlik: 'light.ampul' }]);
+});
+
+test('palet "@" (o-18): onay isteyen (yıkıcı) favori yine basılı tutma ister; Enter ile eylem hemen gönderilmez', async () => {
+  const oyun = karo('switch.oyun', 'Oyun priz', { sinif: 'yikici' });
+  const model = { ...degisenModel([DEGISEN({ kimlik: 'switch.oyun', ad: 'Oyun priz', alan: 'switch', tur: 'kapandi' })]), gruplar: [...MODEL.gruplar, { kod: 'onayli', etiket: 'Onaylı', karolar: [oyun] }] };
+  const sayfa = await paletAc({ eylemBetigi: true, model });
+  sayfa.oge('arama').value = '@';
+  sayfa.oge('arama').gonder('input');
+  assert.match(paletSatirlari(sayfa)[0].className, /yikici/);
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  assert.deepEqual(sayfa.calistirmalar(), []);
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'basiliBasla').length, 1, 'basılı tutma başladı; tamamlanmadan eylem yok');
+});
+
+test('palet "@" (o-18): favori olmayan satır yalnız bilgidir; Enter ve tıklama hiçbir eylem göndermez, nedeni söyler; Shift+Enter seviye menüsü açmaz', async () => {
+  const sayfa = await degisenSorgula('@', [DEGISEN({ kimlik: 'light.mutfak', ad: 'Mutfak', zaman: 1_000_000 - 60_000 })]);
+  assert.equal(paletSatirlari(sayfa).length, 1);
+  assert.match(paletSatirlari(sayfa)[0].textContent, /Mutfak/);
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
+  assert.deepEqual(sayfa.calistirmalar(), []);
+  assert.match(sayfa.oge('ipucu').textContent, /Mutfak favorilerde değil/);
+  paletSatirlari(sayfa)[0].gonder('click');
+  sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false, shiftKey: true });
+  assert.deepEqual(sayfa.calistirmalar(), []);
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'basiliBasla').length, 0);
+});
+
+test('palet "@" (o-18): bozuk / fazla / yasak alanlı girdiler gösterilmez; en çok 20; metin yalnız textContent ile yazılır', async () => {
+  const bozuklar = [null, 5, 'x', { kimlik: 'sensor.sicaklik', ad: 'Sıcaklık', alan: 'sensor', tur: 'degisti', zaman: 5 }, { kimlik: 'lock.on_kapi', ad: 'Kapı', alan: 'lock', tur: 'acildi', zaman: 5 }, DEGISEN({ tur: 'patladi' }), DEGISEN({ zaman: 'dün' }), DEGISEN({ kimlik: 'light.ampul', alan: 'switch' }), DEGISEN({ kimlik: 'Light Ampul' })];
+  const sayfa = await degisenSorgula('@', bozuklar);
+  assert.equal(paletSatirlari(sayfa).length, 0);
+  const cok = await degisenSorgula('@', Array.from({ length: 30 }, (_, i) => DEGISEN({ kimlik: `light.l_${i}`, ad: `Lamba ${i}`, zaman: 1_000_000 - 1000 * (i + 1) })));
+  assert.equal(paletSatirlari(cok).length, 20);
+  const xss = await degisenSorgula('@', [DEGISEN({ kimlik: 'light.x', ad: '<img src=x onerror=alert(1)>' })]);
+  assert.match(paletSatirlari(xss)[0].textContent, /<img src=x onerror=alert\(1\)>/);
+  assert.equal(paletSatirlari(xss)[0].bul((o) => o.etiket === 'img').length, 0);
+});
+
+test('palet "@" (o-18): eylem betiği yüklenmediyse "@" düz arama olarak kalır (çökmez)', async () => {
+  const sayfa = await paletAc({ eylemBetigi: false, model: { ...MODEL, sonlar: [] } });
+  sayfa.oge('arama').value = '@ampul';
+  sayfa.oge('arama').gonder('input');
+  assert.ok(Array.isArray(paletSatirlari(sayfa)));
+});
+
+test('palet "@" (o-18): metinler yeni dilde yazılır (İngilizce "Turned on · 3 min ago")', async () => {
+  const sayfa = await degisenSorgula('@', [DEGISEN()], { dil: 'en' });
+  assert.match(paletSatirlari(sayfa)[0].textContent, /Turned on · 3 min ago/);
+  assert.equal(sayfa.oge('icerik').bul((o) => o.className === 'palet-baslik')[0].textContent, 'Recent changes');
+});
+
+test('palet (o-18): "@" ile başlamayan sorgular etkilenmez; panel kipinde "@" listesi çizilmez', async () => {
+  const sayfa = await paletAc({ eylemBetigi: true, model: degisenModel([DEGISEN()]) });
+  sayfa.oge('arama').value = 'ampul';
+  sayfa.oge('arama').gonder('input');
+  assert.ok(paletSatirlari(sayfa).every((s) => !/Açıldı/.test(s.textContent)));
+});
+
+test('yuzey-eylem.js (o-18): degisenDuzelt doğrular, sıralar, 20 ile sınırlar; oncekiMetni dakika/saat/gün ölçeğinde', () => {
+  const sanal = {};
+  vm.runInNewContext(YUZEY_EYLEM, sanal);
+  const E = sanal.EvYuzeyEylem;
+  const cevir = (anahtar, d) => `${anahtar}:${JSON.stringify(d)}`;
+  const duz = JSON.parse(JSON.stringify(E.degisenDuzelt([
+    { kimlik: 'light.a', ad: 'A', alan: 'light', tur: 'acildi', zaman: 10, gizli: 'x' },
+    { kimlik: 'switch.b', ad: 'B', alan: 'switch', tur: 'kapandi', zaman: 20.7 },
+    { kimlik: 'fan.c', ad: 'C', alan: 'fan', tur: 'acildi', zaman: 30 },
+    { kimlik: 'light.d', ad: 'D', alan: 'switch', tur: 'acildi', zaman: 30 },
+    { kimlik: 'light.e', ad: 'E', alan: 'light', tur: 'bilinmez', zaman: 30 },
+  ])));
+  assert.deepEqual(duz, [{ kimlik: 'switch.b', ad: 'B', alan: 'switch', tur: 'kapandi', zaman: 20 }, { kimlik: 'light.a', ad: 'A', alan: 'light', tur: 'acildi', zaman: 10 }]);
+  assert.equal(E.degisenDuzelt('x').length, 0);
+  assert.equal(E.degisenDuzelt(Array.from({ length: 40 }, (_, i) => ({ kimlik: `light.l${i}`, ad: 'L', alan: 'light', tur: 'acildi', zaman: i + 1 }))).length, E.EN_COK_DEGISEN);
+  assert.equal(E.oncekiMetni(0, cevir), 'yuzey.degisen.azOnce:{}');
+  assert.equal(E.oncekiMetni(59_999, cevir), 'yuzey.degisen.azOnce:{}');
+  assert.equal(E.oncekiMetni(60_000, cevir), 'yuzey.degisen.dkOnce:{"n":1}');
+  assert.equal(E.oncekiMetni(59 * 60_000, cevir), 'yuzey.degisen.dkOnce:{"n":59}');
+  assert.equal(E.oncekiMetni(3_600_000, cevir), 'yuzey.degisen.saOnce:{"n":1}');
+  assert.equal(E.oncekiMetni(86_400_000, cevir), 'yuzey.degisen.gunOnce:{"n":1}');
+  assert.equal(E.oncekiMetni(-5, cevir), 'yuzey.degisen.azOnce:{}');
+  assert.equal(E.oncekiMetni('x', cevir), 'yuzey.degisen.azOnce:{}');
+  const m = E.modelDuzelt({ degisenler: [{ kimlik: 'light.a', ad: 'A', alan: 'light', tur: 'acildi', zaman: 5 }], degisenAcik: true });
+  assert.equal(m.degisenler.length, 1);
+  assert.equal(m.degisenAcik, true);
+  assert.equal(E.modelDuzelt(undefined).degisenAcik, false);
+  assert.equal(E.modelDuzelt({ degisenAcik: 'evet' }).degisenAcik, false);
+});
+
+// --- eylem grubu: oda grupları ve "Odayı kapat" (o-14; src/yuzey-eylem.js) -------------------------------
+
+const SALON_KODU = 'oda-0123abcd';
+const odaGrubu = (ek = {}) => ({
+  kod: SALON_KODU,
+  etiket: 'Salon',
+  oda: true,
+  karolar: [karo('light.salon_lamba', 'light.salon_lamba', { durum: 'acik', grup: 'isik', grupEtiketi: 'Işık' }), karo('switch.salon_priz', 'switch.salon_priz', { durum: 'acik' }), karo('light.salon_kapali', 'light.salon_kapali', { durum: 'kapali' }), karo('scene.salon_film', 'scene.salon_film', { durum: 'notr' })],
+  ...ek,
+});
+const ODALI_MODEL = (ek = {}) => ({ ...MODEL, gruplar: [odaGrubu(ek), ...MODEL.gruplar] });
+const odaDugmesi = (sayfa) => sayfa.oge('icerik').bul((o) => o.etiket === 'button' && o.className.split(' ').includes('oda-kapat'))[0];
+const odaCagrilari = (sayfa) => sayfa.cagrilar.filter((c) => c[0] === 'odaKapat');
+
+test('oda grubu (o-14): başlığın yanında "Odayı kapat (n)" çıkar; n yalnız AÇIK ışık/priz sayısıdır (sahne ve kapalı sayılmaz); oda olmayan grupta düğme yok', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL() });
+  const dugme = odaDugmesi(sayfa);
+  assert.ok(dugme, 'düğme var');
+  assert.equal(dugme.textContent, 'Odayı kapat (2)');
+  assert.equal(dugme.attributes['aria-label'], 'Odayı kapat: Salon, 2 açık cihaz');
+  assert.equal(dugme.type, 'button');
+  assert.equal(sayfa.oge('icerik').bul((o) => o.etiket === 'button' && o.className.split(' ').includes('oda-kapat')).length, 1, 'yalnız oda grubunda');
+  const baslik = sayfa.oge('icerik').bul((o) => o.etiket === 'h2' && o.textContent === 'Salon');
+  assert.equal(baslik.length, 1, 'başlık metni korunur (textContent)');
+  const kap = sayfa.oge('icerik').bul((o) => o.className === 'bolum-ust');
+  assert.equal(kap.length, 1);
+  assert.equal(kap[0].children.length, 2, 'başlık + düğme yan yana');
+});
+
+test('oda grubu (o-14): açık cihaz yoksa, oda işareti yoksa ya da kod bozuksa düğme çıkmaz (başlık eskisi gibi)', async () => {
+  const kapali = await panelAc({ eylemBetigi: true, model: ODALI_MODEL({ karolar: [karo('light.a', 'light.a', { durum: 'kapali' }), karo('scene.b', 'scene.b', { durum: 'notr' })] }) });
+  assert.equal(odaDugmesi(kapali), undefined);
+  assert.equal(kapali.oge('icerik').bul((o) => o.etiket === 'h2' && o.textContent === 'Salon').length, 1);
+  const isaretsiz = await panelAc({ eylemBetigi: true, model: ODALI_MODEL({ oda: false }) });
+  assert.equal(odaDugmesi(isaretsiz), undefined);
+  for (const kod of ['oda-XYZ', 'oda-0123ABCD', 'isik2', 'oda-0123abcde']) {
+    const bozuk = await panelAc({ eylemBetigi: true, model: ODALI_MODEL({ kod }) });
+    assert.equal(odaDugmesi(bozuk), undefined, kod);
+  }
+});
+
+test('oda grubu (o-14): yıkıcı ve ulaşılamayan karolar açık sayısına girmez; kilit/perde/klima gibi alanlar sayılmaz', async () => {
+  const model = ODALI_MODEL({
+    karolar: [karo('light.a', 'light.a', { durum: 'acik' }), karo('light.b', 'light.b', { durum: 'acik', sinif: 'yikici' }), karo('light.c', 'light.c', { durum: 'acik', ulasilamiyor: true }), karo('cover.perde', 'cover.perde', { durum: 'acik' }), karo('climate.klima', 'climate.klima', { durum: 'acik' }), karo('fan.f', 'fan.f', { durum: 'acik' })],
+  });
+  const sayfa = await panelAc({ eylemBetigi: true, model });
+  assert.equal(odaDugmesi(sayfa).textContent, 'Odayı kapat (2)');
+});
+
+test('oda grubu (o-14): İKİ ADIM — ilk tıklama yalnız "Emin misin?" der ve hiçbir şey göndermez; ikinci tıklama grup KODUNU gönderir', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL() });
+  odaDugmesi(sayfa).gonder('click');
+  assert.equal(odaDugmesi(sayfa).textContent, 'Emin misin? Kapat (2)');
+  assert.equal(odaDugmesi(sayfa).attributes['aria-label'], 'Onayla: Salon için 2 açık cihazı kapat');
+  assert.ok(odaDugmesi(sayfa).className.split(' ').includes('onay'));
+  await akit();
+  assert.deepEqual(odaCagrilari(sayfa), [], 'ilk tıklama istek göndermez');
+  odaDugmesi(sayfa).gonder('click');
+  await akit();
+  assert.deepEqual(odaCagrilari(sayfa), [['odaKapat', SALON_KODU]], 'yük yalnız kod');
+  assert.equal(odaDugmesi(sayfa).textContent, 'Odayı kapat (2)', 'onay durumu sıfırlandı');
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'calistir').length, 0, 'renderer tek tek cihaz eylemi göndermez');
+});
+
+test('oda grubu (o-14): onay 4 sn içinde verilmezse sıfırlanır; ardından tek tıklama yine yalnız onay ister', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL() });
+  odaDugmesi(sayfa).gonder('click');
+  sayfa.zaman.ilerle(3900);
+  assert.equal(odaDugmesi(sayfa).textContent, 'Emin misin? Kapat (2)');
+  sayfa.zaman.ilerle(200);
+  assert.equal(odaDugmesi(sayfa).textContent, 'Odayı kapat (2)');
+  odaDugmesi(sayfa).gonder('click');
+  await akit();
+  assert.deepEqual(odaCagrilari(sayfa), [], 'süre dolduktan sonraki tıklama yeni bir ilk adımdır');
+  assert.equal(odaDugmesi(sayfa).textContent, 'Emin misin? Kapat (2)');
+});
+
+test('oda grubu (o-14): onay beklerken model yenilense bile onay durumu korunur; yanıt beklerken düğme pasiftir ve çift gönderim olmaz', async () => {
+  let coz;
+  const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL(), odaKapatYaniti: () => new Promise((c) => (coz = c)) });
+  odaDugmesi(sayfa).gonder('click');
+  sayfa.durum(ODALI_MODEL({ etiket: 'Salon' })); // başka bir cihaz değişti: aynı model
+  sayfa.durum({ ...ODALI_MODEL(), ust: { ...MODEL.ust, medyaCaliyor: false } });
+  assert.equal(odaDugmesi(sayfa).textContent, 'Emin misin? Kapat (2)', 'yeniden çizimde onay durumu korunur');
+  odaDugmesi(sayfa).gonder('click');
+  odaDugmesi(sayfa).gonder('click');
+  await akit();
+  assert.equal(odaCagrilari(sayfa).length, 1, 'tek istek');
+  assert.equal(odaDugmesi(sayfa).disabled, true);
+  coz({ ok: true });
+  await akit();
+  assert.equal(odaDugmesi(sayfa).disabled, false);
+  assert.equal(sayfa.oge('ipucu').textContent, '', 'başarıda ipucu yok (özet bildirimini ana süreç verir)');
+});
+
+test('oda grubu (o-14): başarısız ya da hata veren yanıtta kısa ipucu çıkar ve düğme takılı kalmaz', async () => {
+  for (const yanit of [{ ok: false, tur: 'hata' }, () => Promise.reject(new Error('ipc')), null]) {
+    const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL(), odaKapatYaniti: yanit });
+    odaDugmesi(sayfa).gonder('click');
+    odaDugmesi(sayfa).gonder('click');
+    await akit();
+    assert.equal(sayfa.oge('ipucu').textContent, 'Oda kapatılamadı.');
+    assert.equal(odaDugmesi(sayfa).disabled, false);
+  }
+});
+
+test('oda grubu (o-14): köprüde odaKapat yoksa ya da eylem betiği yüklenmediyse düğme hiç çıkmaz (panel eskisi gibi)', async () => {
+  const koprusuz = await panelAc({ eylemBetigi: true, model: ODALI_MODEL(), odaKapatKopru: false });
+  assert.equal(odaDugmesi(koprusuz), undefined);
+  assert.equal(koprusuz.oge('icerik').bul((o) => o.etiket === 'h2' && o.textContent === 'Salon').length, 1);
+  const betiksiz = await panelAc({ eylemBetigi: false, model: ODALI_MODEL() });
+  assert.equal(odaDugmesi(betiksiz), undefined);
+  assert.equal(betiksiz.oge('icerik').bul((o) => o.etiket === 'h2' && o.textContent === 'Salon').length, 1);
+});
+
+test('oda grubu (o-14): etiket yalnız textContent ile yazılır; dil çalışma anında değişince düğme yeni dilde yazılır', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL({ etiket: '<img src=x onerror=alert(1)>' }), dil: 'en' });
+  assert.equal(odaDugmesi(sayfa).textContent, 'Turn off room (2)');
+  assert.equal(odaDugmesi(sayfa).attributes['aria-label'], 'Turn off room <img src=x onerror=alert(1)>: 2 device(s) on'.slice(0, 200));
+  sayfa.dilDegisti({ dil: 'de' });
+  assert.equal(odaDugmesi(sayfa).textContent, 'Raum ausschalten (2)');
+  sayfa.dilDegisti({ dil: 'tr' });
+  assert.equal(odaDugmesi(sayfa).textContent, 'Odayı kapat (2)');
+});
+
+test('oda grubu (o-14): düğme ok tuşu gezintisine dahildir (başlığın altındaki karolardan ÖNCE) ve odak anahtarıyla yeniden çizimde korunur', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL() });
+  const bas = (tus, hedef) => sayfa.belgeOlayi('keydown', { key: tus, target: hedef ?? sayfa.odakta() });
+  const dugme = odaDugmesi(sayfa);
+  const son = sonlariBul(sayfa)[0];
+  sayfa.odakVer(son);
+  assert.equal(bas('ArrowDown').onlendi, true);
+  assert.equal(sayfa.odakta(), dugme, 'Son kullanılanlar satırından oda başlığındaki düğmeye');
+  bas('ArrowDown');
+  const ilkKaro = dugmeBul(sayfa, 'light.salon_lamba');
+  assert.equal(sayfa.odakta(), ilkKaro, 'düğmeden odanın ilk karosuna');
+  bas('ArrowUp');
+  assert.equal(sayfa.odakta(), dugme, 'yukarı ok düğmeye döner');
+  sayfa.durum({ ...ODALI_MODEL(), ust: { ...MODEL.ust, medyaCaliyor: false } });
+  assert.equal(sayfa.odakta(), odaDugmesi(sayfa), 'yeniden çizimde odak aynı düğmede');
+});
+
+test('yuzey-eylem.js (o-14): odaAcikSayisi saf işlevi; bozuk grup 0 verir', () => {
+  const E = oku('src/yuzey-eylem.js');
+  const kutu = {};
+  vm.runInNewContext(E, kutu);
+  const { odaAcikSayisi } = kutu.EvYuzeyEylem;
+  assert.equal(odaAcikSayisi(odaGrubu()), 2);
+  for (const bozuk of [null, undefined, {}, { karolar: 'x' }, { karolar: [null, 5, {}] }]) assert.equal(odaAcikSayisi(bozuk), 0);
+});
+
+// --- eylem grubu: palette favori olmayan güvenli cihazlar (o-46; "*" öneki, Enter, Shift+Enter menüsü) -------------------
+
+const DIGER_LISTESI = [
+  { kimlik: 'light.mutfak', ad: 'Mutfak lambası', alan: 'light', durum: 'acik', oda: 'Mutfak' },
+  { kimlik: 'light.bahce', ad: 'Bahçe lambası', alan: 'light', durum: 'kapali' },
+  { kimlik: 'scene.sinema', ad: 'Sinema', alan: 'scene', durum: 'notr' },
+  { kimlik: 'fan.balkon', ad: 'Balkon vantilatörü', alan: 'fan', durum: 'kapali' },
+];
+const digerCagrilari = (sayfa, ad) => sayfa.cagrilar.filter((c) => c[0] === ad).map((c) => c[1]);
+const menuOgeleri = (sayfa) => sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('seviye-oge')).map((o) => o.textContent);
+const tus = (sayfa, key, ek = {}) => sayfa.oge('arama').gonder('keydown', { key, repeat: false, ...ek });
+const satirMetinleri = (sayfa) => paletSatirlari(sayfa).map((s) => s.textContent);
+
+async function digerSorgula(sorgu, secenek = {}) {
+  const sayfa = await paletSorgula(sorgu, { digerYaniti: { ok: true, liste: DIGER_LISTESI }, ...secenek });
+  await akit();
+  return sayfa;
+}
+
+test('palet "*" (o-46): liste istenirken "alınıyor" yazar, gelince başlık ve satırlar (ad, oda · tür, durum) çizilir; aynı gösterimde liste bir kez istenir', async () => {
+  let coz;
+  const sayfa = await paletSorgula('*', { digerYaniti: () => new Promise((c) => (coz = c)) });
+  assert.match(sayfa.oge('icerik').textContent, /Cihazlar alınıyor/);
+  assert.equal(paletSatirlari(sayfa).length, 0);
+  assert.deepEqual(digerCagrilari(sayfa, 'digerCihazlar').length, 1);
+  coz({ ok: true, liste: DIGER_LISTESI });
+  await akit();
+  const metinler = satirMetinleri(sayfa);
+  assert.equal(metinler.length, 4);
+  assert.match(sayfa.oge('icerik').textContent, /Favori olmayan cihazlar/);
+  assert.match(metinler[0], /Mutfak lambası/);
+  assert.match(metinler[0], /Mutfak · Işık/, 'oda adı ve tür');
+  assert.match(metinler[0], /açık/i);
+  assert.match(metinler[1], /Bahçe lambası/);
+  assert.match(metinler[1], /Işık/);
+  assert.match(metinler[1], /kapalı/i);
+  assert.match(metinler[2], /Sahne/);
+  // yazmaya devam etmek listeyi yeniden istemez
+  sayfa.oge('arama').value = '*mutfak';
+  sayfa.oge('arama').gonder('input');
+  sayfa.oge('arama').value = '*bahce';
+  sayfa.oge('arama').gonder('input');
+  await akit();
+  assert.equal(digerCagrilari(sayfa, 'digerCihazlar').length, 1);
+  assert.deepEqual(sayfa.calistirmalar(), [], 'listeleme hiçbir eylem göndermez');
+});
+
+test('palet "*" (o-46): ad ve alan süzgeci ("*mutfak", "*ışık", "*sahne", "*bahçe ışık"); eşleşme yoksa bilgi satırı', async () => {
+  const sayfa = await digerSorgula('*mutfak');
+  assert.deepEqual(satirMetinleri(sayfa).map((m) => /Mutfak lambası/.test(m)), [true]);
+  for (const [sorgu, adet] of [['*ışık', 2], ['*isik bahce', 1], ['*sahne', 1], ['*vantilatör', 1], ['*lambasi', 2], ['*', 4]]) {
+    sayfa.oge('arama').value = sorgu;
+    sayfa.oge('arama').gonder('input');
+    assert.equal(paletSatirlari(sayfa).length, adet, sorgu);
+  }
+  sayfa.oge('arama').value = '*yokboyle';
+  sayfa.oge('arama').gonder('input');
+  assert.equal(paletSatirlari(sayfa).length, 0);
+  assert.match(sayfa.oge('icerik').textContent, /Eşleşen cihaz yok/);
+});
+
+test('palet "*" (o-46): Enter aç-kapa gönderir (ışık: değiştir, sahne: aç), YALNIZ { kimlik, islem } ile; panel eylem yolu kullanılmaz, basılı tutma yok; yanıtla palet kapanır', async () => {
+  const sayfa = await digerSorgula('*mutfak');
+  tus(sayfa, 'Enter');
+  assert.deepEqual(digerCagrilari(sayfa, 'digerCalistir'), [{ kimlik: 'light.mutfak', islem: 'degistir' }]);
+  assert.deepEqual(sayfa.calistirmalar(), []);
+  assert.deepEqual(sayfa.cagrilar.filter((c) => c[0] === 'basiliBasla'), []);
+  assert.equal(kapatSayisi(sayfa), 0, 'yanıt gelene kadar kapanmaz');
+  await akit();
+  assert.equal(kapatSayisi(sayfa), 1);
+
+  const sahne = await digerSorgula('*sahne');
+  assert.doesNotMatch(paletSatirlari(sahne)[0].className, /yikici/);
+  tus(sahne, 'Enter');
+  assert.deepEqual(digerCagrilari(sahne, 'digerCalistir'), [{ kimlik: 'scene.sinema', islem: 'ac' }]);
+
+  const tikla = await digerSorgula('*bahce');
+  paletSatirlari(tikla)[0].gonder('click');
+  assert.deepEqual(digerCagrilari(tikla, 'digerCalistir'), [{ kimlik: 'light.bahce', islem: 'degistir' }]);
+});
+
+test('palet "*" (o-46): yanıt beklerken ikinci Enter/tıklama ikinci istek göndermez', async () => {
+  let coz;
+  const sayfa = await digerSorgula('*mutfak', { digerCalistirYaniti: () => new Promise((c) => (coz = c)) });
+  tus(sayfa, 'Enter');
+  tus(sayfa, 'Enter');
+  paletSatirlari(sayfa)[0].gonder('click');
+  assert.equal(digerCagrilari(sayfa, 'digerCalistir').length, 1);
+  coz({ ok: true });
+  await akit();
+  assert.equal(kapatSayisi(sayfa), 1);
+});
+
+test('palet "*" (o-46): Shift+Enter menüsü ışıkta Aç / Kapat / Favoriye ekle / Home Assistant’ta aç, sahnede Çalıştır / Favoriye ekle / Home Assistant’ta aç; Esc yalnız menüyü kapatır', async () => {
+  const isik = await digerSorgula('*mutfak');
+  tus(isik, 'Enter', { shiftKey: true });
+  assert.deepEqual(menuOgeleri(isik), ['Aç', 'Kapat', 'Favoriye ekle', 'Home Assistant’ta aç']);
+  assert.deepEqual(digerCagrilari(isik, 'digerCalistir'), [], 'menü açmak hiçbir şey göndermez');
+  tus(isik, 'Escape');
+  assert.deepEqual(menuOgeleri(isik), []);
+  assert.equal(kapatSayisi(isik), 0, 'Esc önce menüyü kapatır');
+  tus(isik, 'Escape');
+  assert.equal(kapatSayisi(isik), 1);
+
+  const sahne = await digerSorgula('*sahne');
+  tus(sahne, 'Enter', { shiftKey: true });
+  assert.deepEqual(menuOgeleri(sahne), ['Çalıştır', 'Favoriye ekle', 'Home Assistant’ta aç'], 'sahne kapatılamaz');
+  tus(sahne, 'Enter', { shiftKey: true });
+  assert.deepEqual(menuOgeleri(sahne), [], 'Shift+Enter menüyü kapatır');
+});
+
+test('palet "*" (o-46): menüde sol/sağ ok gezer ve Enter seçileni çalıştırır (Kapat -> islem "kapat"); fare tıklaması da çalışır', async () => {
+  const sayfa = await digerSorgula('*mutfak');
+  tus(sayfa, 'Enter', { shiftKey: true });
+  tus(sayfa, 'ArrowRight');
+  tus(sayfa, 'Enter');
+  assert.deepEqual(digerCagrilari(sayfa, 'digerCalistir'), [{ kimlik: 'light.mutfak', islem: 'kapat' }]);
+  await akit();
+  assert.equal(kapatSayisi(sayfa), 1);
+
+  const ac = await digerSorgula('*mutfak');
+  tus(ac, 'Enter', { shiftKey: true });
+  tus(ac, 'Enter');
+  assert.deepEqual(digerCagrilari(ac, 'digerCalistir'), [{ kimlik: 'light.mutfak', islem: 'ac' }], 'ilk öğe Aç');
+
+  const dolanma = await digerSorgula('*mutfak');
+  tus(dolanma, 'Enter', { shiftKey: true });
+  tus(dolanma, 'ArrowLeft');
+  tus(dolanma, 'Enter');
+  assert.equal(digerCagrilari(dolanma, 'digerCalistir').length, 0, 'sola dolanıp "Home Assistant’ta aç"a geldi');
+  assert.equal(dolanma.cagrilar.filter((c) => c[0] === 'haAc').length, 1);
+
+  const fare = await digerSorgula('*bahce');
+  tus(fare, 'Enter', { shiftKey: true });
+  fare.oge('icerik').bul((o) => o.className.split(' ').includes('seviye-oge') && o.textContent === 'Kapat')[0].gonder('click');
+  assert.deepEqual(digerCagrilari(fare, 'digerCalistir'), [{ kimlik: 'light.bahce', islem: 'kapat' }]);
+});
+
+test('palet "*" (o-46): menüden "Favoriye ekle" kimliği ana sürece verir, satır listeden çıkar, ipucu söyler ve palet AÇIK kalır; eklenemezse neden yazar', async () => {
+  const sayfa = await digerSorgula('*ışık');
+  assert.equal(paletSatirlari(sayfa).length, 2);
+  tus(sayfa, 'Enter', { shiftKey: true });
+  tus(sayfa, 'ArrowRight');
+  tus(sayfa, 'ArrowRight');
+  tus(sayfa, 'Enter');
+  assert.deepEqual(digerCagrilari(sayfa, 'digerFavoriEkle'), ['light.mutfak']);
+  await akit();
+  assert.match(sayfa.oge('ipucu').textContent, /Mutfak lambası favorilere eklendi/);
+  assert.equal(kapatSayisi(sayfa), 0, 'palet açık kalır');
+  assert.deepEqual(menuOgeleri(sayfa), [], 'menü kapanır');
+  assert.deepEqual(satirMetinleri(sayfa).map((m) => /Bahçe lambası/.test(m)), [true], 'favori olan satır listeden çıktı');
+  assert.equal(digerCagrilari(sayfa, 'digerCihazlar').length, 1, 'liste yeniden istenmedi');
+
+  for (const [yanit, beklenen] of [[{ ok: false, tur: 'dolu' }, /sınırına ulaşıldı/], [{ ok: false, tur: 'yazilamadi' }, /eklenemedi/], [{ ok: false }, /eklenemedi/]]) {
+    const hata = await digerSorgula('*mutfak', { digerFavoriYaniti: yanit });
+    tus(hata, 'Enter', { shiftKey: true });
+    tus(hata, 'ArrowLeft');
+    tus(hata, 'ArrowLeft');
+    tus(hata, 'Enter');
+    await akit();
+    assert.match(hata.oge('ipucu').textContent, beklenen, JSON.stringify(yanit));
+    assert.equal(paletSatirlari(hata).length, 1, 'eklenemedi: satır yerinde');
+  }
+  const reddedildi = await digerSorgula('*mutfak', { digerFavoriYaniti: () => Promise.reject(new Error('ipc')) });
+  tus(reddedildi, 'Enter', { shiftKey: true });
+  tus(reddedildi, 'ArrowLeft');
+  tus(reddedildi, 'ArrowLeft');
+  tus(reddedildi, 'Enter');
+  await akit();
+  assert.match(reddedildi.oge('ipucu').textContent, /eklenemedi/);
+});
+
+test('palet "*" (o-46): menüde "Home Assistant’ta aç" köprünün haAc işlevini çağırır (HA\'ya ayrı istek yok)', async () => {
+  const sayfa = await digerSorgula('*mutfak');
+  tus(sayfa, 'Enter', { shiftKey: true });
+  tus(sayfa, 'ArrowLeft');
+  tus(sayfa, 'Enter');
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'haAc').length, 1);
+  assert.deepEqual(digerCagrilari(sayfa, 'digerCalistir'), []);
+  assert.deepEqual(digerCagrilari(sayfa, 'digerFavoriEkle'), []);
+});
+
+test('palet "*" (o-46): ana süreç reddederse palet AÇIK kalır ve neden ipucunda yazar; "bulunamadı" listeyi yeniden okutur; hız sınırı uyarısında ek ipucu yok', async () => {
+  for (const [yanit, beklenen] of [
+    [{ ok: false, tur: 'yasak' }, /bu listeden çalıştırılamaz/],
+    [{ ok: false, tur: 'kaynak-izinsiz' }, /bu listeden çalıştırılamaz/],
+    [{ ok: false, tur: 'gecersiz' }, /bu listeden çalıştırılamaz/],
+    [{ ok: false, tur: 'ulasilamiyor' }, /işlem yapılamadı/],
+    [{ ok: false, tur: 'ha-hatasi' }, /işlem yapılamadı/],
+    [{ ok: false }, /işlem yapılamadı/],
+  ]) {
+    const sayfa = await digerSorgula('*mutfak', { digerCalistirYaniti: yanit });
+    tus(sayfa, 'Enter');
+    await akit();
+    assert.match(sayfa.oge('ipucu').textContent, beklenen, JSON.stringify(yanit));
+    assert.match(sayfa.oge('ipucu').textContent, /Mutfak lambası/);
+    assert.equal(kapatSayisi(sayfa), 0, 'palet kapanmadı');
+  }
+  const hizli = await digerSorgula('*mutfak', { digerCalistirYaniti: { ok: false, tur: 'cok-sik' } });
+  tus(hizli, 'Enter');
+  await akit();
+  assert.equal(hizli.oge('ipucu').textContent, '');
+  assert.equal(kapatSayisi(hizli), 0);
+
+  const bayat = await digerSorgula('*mutfak', { digerCalistirYaniti: { ok: false, tur: 'bulunamadi' } });
+  tus(bayat, 'Enter');
+  await akit();
+  assert.match(bayat.oge('ipucu').textContent, /bu listeden çalıştırılamaz/);
+  bayat.oge('arama').value = '*mutfak lamba';
+  bayat.oge('arama').gonder('input');
+  await akit();
+  assert.equal(digerCagrilari(bayat, 'digerCihazlar').length, 2, 'bayat liste yeniden okutuldu');
+
+  const reddedildi = await digerSorgula('*mutfak', { digerCalistirYaniti: () => Promise.reject(new Error('ipc')) });
+  tus(reddedildi, 'Enter');
+  await akit();
+  assert.match(reddedildi.oge('ipucu').textContent, /işlem yapılamadı/);
+  assert.equal(kapatSayisi(reddedildi), 0);
+});
+
+test('palet "*" (o-46): ayar kapalı ("kapali"), liste alınamadı, boş liste ve eski preload (köprü yok) için bilgi satırı; Enter hiçbir şey göndermez', async () => {
+  const kapali = await digerSorgula('*', { digerYaniti: { ok: false, tur: 'kapali' } });
+  assert.match(kapali.oge('icerik').textContent, /Ayarlar > Eylemler/);
+  assert.equal(paletSatirlari(kapali).length, 0);
+  tus(kapali, 'Enter');
+  assert.deepEqual(digerCagrilari(kapali, 'digerCalistir'), []);
+  // 'kapali' yeniden denenmez
+  kapali.oge('arama').value = '*sal';
+  kapali.oge('arama').gonder('input');
+  kapali.zaman.ilerle(60_000);
+  kapali.oge('arama').value = '*salo';
+  kapali.oge('arama').gonder('input');
+  await akit();
+  assert.equal(digerCagrilari(kapali, 'digerCihazlar').length, 1);
+
+  const hata = await digerSorgula('*', { digerYaniti: { ok: false, tur: 'hata' } });
+  assert.match(hata.oge('icerik').textContent, /Cihaz listesi alınamadı/);
+  // hata: 5 sn içinde yeniden denenmez, sonrasında sonraki yazışta denenir
+  hata.oge('arama').value = '*a';
+  hata.oge('arama').gonder('input');
+  await akit();
+  assert.equal(digerCagrilari(hata, 'digerCihazlar').length, 1);
+  hata.zaman.ilerle(6000);
+  hata.oge('arama').value = '*ab';
+  hata.oge('arama').gonder('input');
+  await akit();
+  assert.equal(digerCagrilari(hata, 'digerCihazlar').length, 2);
+
+  const reddedildi = await digerSorgula('*', { digerYaniti: () => Promise.reject(new Error('ipc')) });
+  assert.match(reddedildi.oge('icerik').textContent, /Cihaz listesi alınamadı/);
+
+  const bos = await digerSorgula('*', { digerYaniti: { ok: true, liste: [] } });
+  assert.match(bos.oge('icerik').textContent, /uygun cihaz yok/);
+  assert.match(bos.oge('icerik').textContent, /script/);
+
+  const koprusuz = await digerSorgula('*', { digerKopru: false });
+  assert.match(koprusuz.oge('icerik').textContent, /Ayarlar > Eylemler/);
+  tus(koprusuz, 'Enter');
+  assert.deepEqual(koprusuz.calistirmalar(), []);
+});
+
+test('palet "*" (o-46): bozuk liste satırları (geçersiz alan/durum/ad) atılır; alan beyaz listede olmayan kilit/perde çizilmez', async () => {
+  const sayfa = await digerSorgula('*', {
+    digerYaniti: {
+      ok: true,
+      liste: [
+        { kimlik: 'lock.on_kapi', ad: 'Ön kapı', alan: 'lock', durum: 'acik' },
+        { kimlik: 'cover.perde', ad: 'Perde', alan: 'cover', durum: 'acik' },
+        { kimlik: 'light.x', ad: 'X', alan: 'light', durum: 'garip' },
+        { kimlik: 'light.y', ad: '', alan: 'light', durum: 'acik' },
+        { kimlik: 5, ad: 'Z', alan: 'light', durum: 'acik' },
+        null,
+        'x',
+        { kimlik: 'light.iyi', ad: 'İyi lamba', alan: 'light', durum: 'kapali' },
+      ],
+    },
+  });
+  assert.deepEqual(satirMetinleri(sayfa).map((m) => /İyi lamba/.test(m)), [true]);
+});
+
+test('palet "*" (o-46): yanıt gelmeden palet kapanıp yeniden açılırsa eski liste yeni gösterime girmez; yeni gösterim listeyi yeniden ister', async () => {
+  const bekleyen = [];
+  const sayfa = await paletSorgula('*', { digerYaniti: () => new Promise((c) => bekleyen.push(c)) });
+  assert.equal(bekleyen.length, 1);
+  sayfa.goster('palet'); // yeniden açıldı: sorgu temizlenir
+  sayfa.oge('arama').value = '*';
+  sayfa.oge('arama').gonder('input');
+  assert.equal(bekleyen.length, 2, 'yeni gösterimde liste yeniden istenir');
+  bekleyen[0]({ ok: true, liste: [{ kimlik: 'light.eski', ad: 'Eski gösterim', alan: 'light', durum: 'acik' }] });
+  await akit();
+  assert.equal(paletSatirlari(sayfa).length, 0, 'eski yanıt yoksayıldı');
+  bekleyen[1]({ ok: true, liste: DIGER_LISTESI });
+  await akit();
+  assert.equal(paletSatirlari(sayfa).length, 4);
+});
+
+test('palet "*" (o-46): dil değişince başlık, tür, durum ve menü yeni dilde yazılır; kimlik/ad değişmez', async () => {
+  const sayfa = await digerSorgula('*mutfak');
+  tus(sayfa, 'Enter', { shiftKey: true });
+  sayfa.dilDegisti({ dil: 'en' });
+  await akit();
+  assert.match(sayfa.oge('icerik').textContent, /Devices that are not favorites/);
+  assert.match(satirMetinleri(sayfa)[0], /Mutfak lambası/);
+  assert.match(satirMetinleri(sayfa)[0], /Mutfak · Light/);
+  assert.deepEqual(menuOgeleri(sayfa).length === 4 ? menuOgeleri(sayfa) : [], ['Turn on', 'Turn off', 'Add to favorites', 'Open in Home Assistant']);
+});
+
+test('palet "*" (o-46): "*" öneki olmayan sorgular etkilenmez; "*" ortada ya da sonda liste istemez; boş sorgu favorileri gösterir', async () => {
+  const sayfa = await paletSorgula('ampul');
+  assert.equal(digerCagrilari(sayfa, 'digerCihazlar').length, 0);
+  assert.match(satirMetinleri(sayfa)[0], /Ampul/);
+  sayfa.oge('arama').value = 'ampul *';
+  sayfa.oge('arama').gonder('input');
+  sayfa.oge('arama').value = '';
+  sayfa.oge('arama').gonder('input');
+  assert.equal(digerCagrilari(sayfa, 'digerCihazlar').length, 0);
+});
+
+test('palet "*" (o-46): panel kipinde "*" hiçbir köprü çağrısı yapmaz (palet dışında özellik yok)', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, digerYaniti: { ok: true, liste: DIGER_LISTESI } });
+  assert.equal(digerCagrilari(sayfa, 'digerCihazlar').length, 0);
+});
+
+test('yuzey-sayfa.js (o-46): "*" betiği HTML ataması, eval, ağ ve satır içi komut kullanmaz; ana süreç kanalları yalnız köprüden çağrılır', () => {
+  const betik = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'yuzey-sayfa.js'), 'utf8');
+  assert.doesNotMatch(betik, /innerHTML|insertAdjacentHTML|eval\s*\(|new Function|require\s*\(|fetch\s*\(|XMLHttpRequest|ipcRenderer/);
+  assert.match(betik, /kopru\.digerCalistir\(\{ kimlik: d\.kimlik, islem: islem \}\)/, 'yük yalnız kimlik ve işlem');
 });

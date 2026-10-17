@@ -9,6 +9,7 @@
  *   2. kimlik ayardaki favorilerde olmalı (serbest metin eylem YOK)                -> 'bilinmeyen-favori'
  *   3. kayıtlı adla önsüzgeç; HA'daki GÜNCEL durumla GÜVENLİK KURALI yeniden       -> 'yasak' / 'ulasilamiyor'
  *   4. eylem sınıfı + yüzey izni + onay (basılı tutma / onay penceresi)            -> 'kaynak-izinsiz' / 'onay-gerekli'
+ *      (1.4.0 dış tetiklerde ayrıca disKaynakIzni: valf/otomasyon/kamera/perde, klima modu) -> 'kaynak-izinsiz'
  *   5. servis, sabit izin listesinden (alan + eylem)                               -> 'gecersiz'
  *   6. varlık başına hız sınırı (sürükleme/basılı tutma); son değer sınırı aşar    -> 'cok-sik'
  *   7. POST tam BİR kez (asla yeniden denenmez)                                    -> 'ha-hatasi'
@@ -31,7 +32,7 @@ const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
 const { alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
 const { eylemAlaniMi, varsayilanServis } = require('./alan-kaydi');
 const { servisDogrula, varliksizServisDogrula } = require('./servis-izinleri');
-const { SINIF, KAYNAKLAR, eylemSinifi, kaynakIzni } = require('./eylem-sinifi');
+const { SINIF, KAYNAKLAR, DIS_KAYNAKLAR, eylemSinifi, kaynakIzni, disKaynakIzni } = require('./eylem-sinifi');
 
 /**
  * 1.3.0'ın PARAMETRESİZ servisleri (sabit izin listesi). İlk eleman varsayılan servistir (alan-kaydi.js varsayilanServis ile aynı).
@@ -162,6 +163,26 @@ function servisKur(alan, kimlik, favori, eylem, varlik) {
   return { servis, govde: dogrulama.govde, servisEylemi: true };
 }
 
+/**
+ * Eylem grubu (o-12 geri al): eylemden ÖNCEKİ durumun küçük, süzülmüş anlık görüntüsü. Yalnız geri yüklemeye yarayan öznitelikler
+ * (parlaklık, renk, vantilatör yüzdesi, sahne üyeleri) ve yalnız basit değerler (sayı, kısa metin, küçük sayı/metin dizisi) alınır;
+ * başka hiçbir öznitelik (adres, resim adresi, kullanıcı metni) dışarı çıkmaz.
+ */
+const ONCE_OZNITELIKLERI = Object.freeze(['brightness', 'color_temp_kelvin', 'rgb_color', 'hs_color', 'xy_color', 'color_mode', 'percentage', 'entity_id']);
+const ONCE_DIZI_SINIRI = 40;
+
+function oncekiGoruntu(varlik) {
+  const nitelikler = varlik?.attributes && typeof varlik.attributes === 'object' ? varlik.attributes : {};
+  const alinan = {};
+  for (const ad of ONCE_OZNITELIKLERI) {
+    const d = nitelikler[ad];
+    if (typeof d === 'number' && Number.isFinite(d)) alinan[ad] = d;
+    else if (typeof d === 'string' && d.length <= 80) alinan[ad] = d;
+    else if (Array.isArray(d) && d.length <= ONCE_DIZI_SINIRI && d.every((e) => (typeof e === 'number' && Number.isFinite(e)) || (typeof e === 'string' && e.length <= 80))) alinan[ad] = [...d];
+  }
+  return { state: String(varlik?.state ?? '').slice(0, 40), attributes: alinan };
+}
+
 function hataTuru(hata) {
   return typeof hata?.tur === 'string' ? hata.tur : 'bilinmeyen';
 }
@@ -186,12 +207,15 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
    * @param {{kimlik: string, kaynak: string, onay?: 'diyalog'|'basili', eylem?: {parlaklik?: number, servis?: string, veri?: object}, sonDeger?: boolean}} istek
    *   onay: YALNIZ ana sürecin kendi koduyla verilir ('diyalog': onay penceresi yanıtlandı; 'basili': basılı tutma isteği).
    *   eylem.servis + eylem.veri (1.4.0): servis eylemi; veri, servis-izinleri.js şemasıyla doğrulanır.
-   * @returns {Promise<{ok: true, ad: string, alan: string, servis: string, sinif: string, onceki: string, yeni?: string, parlaklik?: number, servisEylemi: boolean}
+   * @param {object} [ic] YALNIZ ana süreç içi (src/eylem.js) çağrılar için: ic.kayit = tek seferlik kayıt { entity_id, ad, ... }; verilirse
+   *   "kimlik ayardaki favorilerde olmalı" adımında favoriAl yerine bu kayıt kullanılır (geri al ve "diğer cihazlar" yolları). Renderer'dan
+   *   gelen istek bu nesneyi taşıyamaz; geri kalan TÜM adımlar (süzgeç, sınıf, yüzey izni, servis listesi, hız sınırı, tek POST) aynen çalışır.
+   * @returns {Promise<{ok: true, ad: string, alan: string, servis: string, sinif: string, onceki: string, once: {state: string, attributes: object}, yeni?: string, parlaklik?: number, servisEylemi: boolean}
    *   | {ok: false, tur: string, neden?: string, ad?: string}>}
    *   'gecersiz' sonucunda neden (5. adımda): 'servis' | 'parametre' | 'eksik' | 'sinir' | 'adim' | 'desteklenmiyor' | 'guvenlik'
    *   tur: 'gecersiz' | 'bilinmeyen-favori' | 'yasak' | 'ulasilamiyor' | 'bulunamadi' | 'kaynak-izinsiz' | 'onay-gerekli' | 'cok-sik' | 'ha-hatasi'
    */
-  return async function calistir(istek) {
+  return async function calistir(istek, ic) {
     const { kimlik, kaynak, onay, eylem, sonDeger } = istek && typeof istek === 'object' ? istek : {};
     // 1. biçim
     if (typeof kimlik !== 'string' || !VARLIK_KIMLIGI_DESENI.test(kimlik)) return { ok: false, tur: 'gecersiz' };
@@ -200,7 +224,7 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
     if (!eylemBicimiGecerliMi(eylem)) return { ok: false, tur: 'gecersiz' };
 
     // 2. favori listesinde olmalı
-    const favori = favoriAl(kimlik);
+    const favori = ic && typeof ic === 'object' && ic.kayit !== undefined ? ic.kayit : favoriAl(kimlik);
     if (!favori || typeof favori !== 'object' || favori.entity_id !== kimlik) return { ok: false, tur: 'bilinmeyen-favori' };
 
     // 3. güvenlik: önce kayıtlı adla (ağsız), sonra HA'daki güncel durumla
@@ -228,6 +252,9 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
       const onayli = izin.onayTuru === 'diyalog' ? onay === 'diyalog' : onay === 'basili' && basiliOnayi(kimlik) === true;
       if (!onayli) return { ok: false, tur: 'onay-gerekli', ad };
     }
+    // 4b. 1.4.0 dış tetikler (Jump List, .lnk, yerel API, evpaneli://, PC olayı, toplantı ışığı): valf, otomasyon, kamera, perde/kepenk ve
+    // klima modu değişimi zararsız sayılsa da çalışmaz (src/lib/dis-tetik.js kapısı da bakar; bu savunma derinliğidir).
+    if (DIS_KAYNAKLAR.includes(kaynak) && !disKaynakIzni(alan, istenenServis(eylem) ?? varsayilanServis(alan) ?? undefined)) return { ok: false, tur: 'kaynak-izinsiz', ad };
 
     // 5. servis (sabit izin listesi + parametre sınırları; servis-izinleri.js servisDogrula)
     const kurulan = servisKur(alan, kimlik, favori, eylem, varlik);
@@ -238,6 +265,7 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
     if (!hizSiniri.dene(kimlik, { sinir, sonDeger: sonDeger === true })) return { ok: false, tur: 'cok-sik', ad };
 
     // 7. POST tam bir kez
+    const once = oncekiGoruntu(varlik); // eylemden ÖNCEKİ durum (geri al, o-12); POST'tan önce alınır
     let yanit;
     try {
       yanit = await servisPostla(haIstek, alan, kurulan.servis, kurulan.govde);
@@ -245,7 +273,7 @@ function eylemHattiOlustur({ favoriAl, guncelDurum, haIstek, basiliOnayi = () =>
       return hataSonucu(hata, ad);
     }
     const yeni = Array.isArray(yanit) ? yanit.find((d) => d?.entity_id === kimlik)?.state : undefined;
-    const sonuc = { ok: true, ad, alan, servis: kurulan.servis, sinif: siniflama.sinif === SINIF.YIKICI ? 'yikici' : 'zararsiz', onceki: varlik.state, servisEylemi: kurulan.servisEylemi };
+    const sonuc = { ok: true, ad, alan, servis: kurulan.servis, sinif: siniflama.sinif === SINIF.YIKICI ? 'yikici' : 'zararsiz', onceki: varlik.state, once, servisEylemi: kurulan.servisEylemi };
     if (typeof yeni === 'string') sonuc.yeni = yeni;
     if (kurulan.govde.brightness_pct !== undefined) sonuc.parlaklik = kurulan.govde.brightness_pct;
     return sonuc;
@@ -294,6 +322,8 @@ module.exports = {
   ORAN_SINIRI_SON,
   BILDIRIM_ORAN_SINIRI,
   BASILI_SURE_MS,
+  ONCE_OZNITELIKLERI,
+  oncekiGoruntu,
   basiliTutmaDeposu,
   hizSiniriOlustur,
   eylemHattiOlustur,

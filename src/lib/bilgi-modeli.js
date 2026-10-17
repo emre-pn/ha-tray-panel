@@ -5,8 +5,9 @@
  * varlık), o-10 takvim. Ayarlar'daki alanlardan (src/lib/ayar-alanlari.js) ve durum deposundan, panelin "bilgi" bölümünün modelini üretir.
  *
  * Model (ana süreç; yuzeyModeliOlustur sonucuna main.js `bilgi` olarak ekler):
- *   ayar      { saatBicimi, tarihBicimi, takvimGunSayisi, sensorGrafik, sensorGrafikSaat, pilEsigi }
- *   kartlar   [{ yuva: 1|2, tur: 'hava'|'saat'|'varlik', karo: Karo|null, secilmedi: boolean }]   ('yok' yuvası listede değildir)
+ *   ayar      { saatBicimi, tarihBicimi, takvimGunSayisi, sensorGrafik, sensorGrafikSaat, pilEsigi, havaTahmini: 'kapali'|'gunluk'|'saatlik' }
+ *   kartlar   [{ yuva: 1|2, tur: 'hava'|'saat'|'varlik'|'medya', karo: Karo|null, secilmedi: boolean }]   ('yok' yuvası listede değildir;
+ *             'medya': birincilMedya oynatıcısının şimdi çalan kartı, karo media_player karosudur ve kendi kontrolleriyle çizilir)
  *   serit     Karo[]            sensör şeridi (en çok 6; sensor / binary_sensor karoları)
  *   sensorler Karo[]            favori sensör karoları ("Sensör" grubu; panelde mini grafik ve gösterge çizilir, tıklayınca geçmiş açılır)
  *   takvimler [{ id, etiket, kullanilabilir, mesgul }]
@@ -17,7 +18,8 @@
  * (rendererBilgi). Takvim etkinlikleri, yapılacaklar öğeleri ve geçmiş verisi modelde yoktur: panel bunları yuzey:oku ile ister.
  *
  * Kayıt kaynağı (bilgiKaydi): seçili varlıklar favori olmasa da yuzey:oku / yuzey:calistir için "kayıtlı" sayılır
- * (eylem.kayitKaynagiEkle). Yalnız ayardaki kimlikler kayıtlıdır; serbest kimlik yok.
+ * (eylem.kayitKaynagiEkle). Yalnız ayardaki kimlikler kayıtlıdır; serbest kimlik yok. Medya kartının oynatıcısı da (birincilMedya,
+ * yalnız 'medya' yuvası seçiliyken ve yalnız media_player) böyledir: oynatıcı servisleri yine eylem hattının izin listesinden geçer.
  */
 
 const { alanAl, adGuvenliMi, guvenliVarlikMi } = require('./suzgec');
@@ -31,7 +33,8 @@ const ETIKET_SINIRI = 40;
 const EN_COK_SERIT = 6;
 const EN_COK_TAKVIM = 4;
 const EN_COK_LISTE = 4;
-const KART_DEGERLERI_OZEL = Object.freeze(['yok', 'saat', 'hava']);
+const KART_DEGERLERI_OZEL = Object.freeze(['yok', 'saat', 'hava', 'medya']);
+const TAHMIN_DEGERLERI = Object.freeze(['kapali', 'gunluk', 'saatlik']); // hava kartı tahmin şeridi (ayar: havaTahmini)
 
 const liste = (d) => (Array.isArray(d) ? d.filter((k) => typeof k === 'string') : []);
 const benzersiz = (d, enCok) => [...new Set(d)].slice(0, enCok);
@@ -51,12 +54,14 @@ function yapilandirma(ayarlar) {
   const a = ayarlar && typeof ayarlar === 'object' ? ayarlar : {};
   const kartlar = [a.ustKart1, a.ustKart2].map((deger, i) => ({ yuva: i + 1, deger: typeof deger === 'string' && deger !== '' ? deger : 'yok' }));
   const hava = typeof a.havaVarligi === 'string' ? a.havaVarligi : '';
+  const medya = typeof a.birincilMedya === 'string' ? a.birincilMedya : '';
   const takvimler = benzersiz(liste(a.takvimler), EN_COK_TAKVIM);
   const listeler = benzersiz(liste(a.yapilacakListeleri), EN_COK_LISTE);
   const hizli = typeof a.hizliListe === 'string' ? a.hizliListe : '';
   return {
     kartlar,
     hava,
+    medya,
     serit: benzersiz(liste(a.sensorSeridi), EN_COK_SERIT),
     takvimler,
     listeler,
@@ -67,14 +72,17 @@ function yapilandirma(ayarlar) {
 
 /** Kimlik, bilgi kaleminin kullandığı alanlardan birinde mi? (Ayar doğrulaması atlansa bile kayıt kaynağı başka alana yol açmaz.) */
 const alandaMi = (kimlik, alanlar) => typeof kimlik === 'string' && alanlar.includes(alanAl(kimlik));
+const MEDYA_KIMLIGI_DESENI = /^media_player\.[a-z0-9_]{1,80}$/; // medya kartı kimliği: ayar doğrulaması atlansa bile biçimsiz kimlik kayda girmez
+const medyaKimligiMi = (kimlik) => typeof kimlik === 'string' && MEDYA_KIMLIGI_DESENI.test(kimlik);
 const SENSOR_ALANLARI = Object.freeze(['sensor', 'binary_sensor']);
 
 /**
  * Bilgi bölümünün izlediği ve okuttuğu TÜM kimlikler (durum deposu aboneliği ve kayıt kaynağı için). Yalnız ayardaki kimlikler:
  * sensör şeridi, üst kartların varlıkları, kullanılan hava varlığı, takvimler, yapılacaklar listeleri ve hızlı liste.
  * Her kalem yalnız modelin gerçekten gösterdiği alanla sınırlıdır: şerit ve üst kart varlığı sensor / binary_sensor, hava weather,
- * takvim calendar, liste ve hızlı liste todo. Üst kart salt okunur olduğu için ışık, anahtar, script gibi eylem alanı kayıt kaynağına
- * (eylem hattına) hiçbir yoldan girmez; öyle bir varlık kayıtlı sayılsaydı panel, palet ya da basılı tutma onu çalıştırabilirdi.
+ * medya kartı media_player (yalnız 'medya' yuvası seçiliyken), takvim calendar, liste ve hızlı liste todo. Sensör ve hava kartı salt
+ * okunur olduğu için ışık, anahtar, script gibi eylem alanı kayıt kaynağına (eylem hattına) hiçbir yoldan girmez; öyle bir varlık
+ * kayıtlı sayılsaydı panel, palet ya da basılı tutma onu çalıştırabilirdi.
  * @returns {Set<string>}
  */
 function bilgiKimlikleri(ayarlar) {
@@ -88,6 +96,7 @@ function bilgiKimlikleri(ayarlar) {
     if (!KART_DEGERLERI_OZEL.includes(k.deger) && alandaMi(k.deger, SENSOR_ALANLARI)) kimlikler.add(k.deger);
   }
   if (y.kartlar.some((k) => k.deger === 'hava') && alandaMi(y.hava, ['weather'])) kimlikler.add(y.hava);
+  if (y.kartlar.some((k) => k.deger === 'medya') && medyaKimligiMi(y.medya)) kimlikler.add(y.medya);
   if (alandaMi(y.hizliHedef, ['todo'])) kimlikler.add(y.hizliHedef);
   return kimlikler;
 }
@@ -163,6 +172,9 @@ function bilgiModeliOlustur({ ayarlar, durumAl, t = TR, sensorKarolari = [] }) {
     } else if (deger === 'hava') {
       const karo = y.hava && alanAl(y.hava) === 'weather' ? bilgiKarosu(y.hava, durumAl, t) : null;
       kartlar.push({ yuva, tur: 'hava', karo, secilmedi: y.hava === '' });
+    } else if (deger === 'medya') {
+      const karo = medyaKimligiMi(y.medya) ? bilgiKarosu(y.medya, durumAl, t) : null;
+      kartlar.push({ yuva, tur: 'medya', karo, secilmedi: y.medya === '' });
     } else {
       const alan = alanAl(deger);
       const karo = alan === 'sensor' || alan === 'binary_sensor' ? bilgiKarosu(deger, durumAl, t) : null;
@@ -178,6 +190,7 @@ function bilgiModeliOlustur({ ayarlar, durumAl, t = TR, sensorKarolari = [] }) {
       sensorGrafik: a.sensorGrafik !== false,
       sensorGrafikSaat: [1, 6, 24].includes(a.sensorGrafikSaat) ? a.sensorGrafikSaat : 6,
       pilEsigi: Number.isInteger(a.pilEsigi) ? a.pilEsigi : 20,
+      havaTahmini: TAHMIN_DEGERLERI.includes(a.havaTahmini) ? a.havaTahmini : 'gunluk',
     },
     kartlar,
     serit,
@@ -238,10 +251,11 @@ function rendererBilgi(bilgi) {
       sensorGrafik: a.sensorGrafik !== false,
       sensorGrafikSaat: [1, 6, 24].includes(a.sensorGrafikSaat) ? a.sensorGrafikSaat : 6,
       pilEsigi: sayiAl(a.pilEsigi, 20),
+      havaTahmini: TAHMIN_DEGERLERI.includes(a.havaTahmini) ? a.havaTahmini : 'gunluk',
     },
     kartlar: dizi(bilgi?.kartlar).map((k) => ({
       yuva: k.yuva === 2 ? 2 : 1,
-      tur: ['hava', 'saat', 'varlik'].includes(k.tur) ? k.tur : 'saat',
+      tur: ['hava', 'saat', 'varlik', 'medya'].includes(k.tur) ? k.tur : 'saat',
       karo: k.karo ? rendererKaro(k.karo) : null,
       secilmedi: k.secilmedi === true,
     })),

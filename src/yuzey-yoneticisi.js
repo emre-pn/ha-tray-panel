@@ -33,6 +33,17 @@ const YUZEY_ODAK_KAYBI_MS = 100; // odak kaybında gizlemeden önce bekleme; tep
 const YUZEY_ODAK_YEDEK_MS = 300; // gösterimden sonra hâlâ odaksızsa öne alıp odağı yeniden isteme (Windows ön plan kilidi)
 const ILK_YUKLEME_GECIKMESI_MS = 1500;
 const KIPLER = ['panel', 'palet'];
+const DIGER_ISLEMLER = ['ac', 'kapat', 'degistir']; // palette "*" favori dışı cihaz işlemleri (o-46)
+const DIGER_ALANLARI = ['light', 'switch', 'fan', 'input_boolean', 'humidifier', 'scene'];
+const DIGER_DURUMLARI = ['acik', 'kapali', 'notr'];
+const EN_COK_DIGER_CIHAZ = 400;
+
+/** Palet "*" satırı sayfaya yalnız kısa, tipi doğrulanmış alanlarla gider (ham HA durumu/öznitelik gitmez). */
+function digerSatiriniTemizle(d) {
+  if (!d || typeof d.kimlik !== 'string' || typeof d.ad !== 'string' || !DIGER_ALANLARI.includes(d.alan) || !DIGER_DURUMLARI.includes(d.durum)) return null;
+  return { kimlik: d.kimlik.slice(0, 120), ad: d.ad.slice(0, 100), alan: d.alan, durum: d.durum, ...(typeof d.oda === 'string' && d.oda ? { oda: d.oda.slice(0, 100) } : {}) };
+}
+
 const OPAK_MALZEME = Object.freeze({ malzeme: 'yok', secenekler: Object.freeze({ backgroundColor: '#1b1f27' }) });
 
 function varsayilanZaman() {
@@ -67,9 +78,23 @@ function varsayilanZaman() {
  *   null ise (varsayılan görünüm) yüke hiç eklenmez
  * @param {() => number} [bag.metinOlcegiAl] Ayarlar > Görünüm > Metin boyutu çarpanı (1, 1.15, 1.3, 1.5): panel ve palet bu yakınlaştırmayla açılır,
  *   Ctrl 0 buna döner (o-25)
+ * @param {() => ({tekerlek: boolean, sabit: boolean}|null)} [bag.etkilesimAl] 1.4.0 etkileşim ayarları (o-20, o-23): tekerlek = karoTekerlegi (fare tekerleği
+ *   ışık/ses değiştirsin mi), sabit = panelSabit. Sayfaya `yuzey:goster` / `yuzey:durum-al` yükünde `etkilesim` olarak gider; null ise yüke eklenmez.
+ *   Sabitliyken (yalnız 'panel' kipi) odak kaybı paneli GİZLEMEZ; Esc, tepsi/kısayol ve "kapat" yine kapatır. Palet hiçbir zaman sabitlenmez.
+ * @param {((sabit: boolean) => boolean)|null} [bag.sabitDegistir] sayfadaki iğne düğmesi (yuzey:sabitle): ayarı yazar ve son durumu döner; verilmezse düğme çalışmaz
  * @param {{kapat: Function}|null} [bag.bildirim] 1.4.0 bildirim merkezi (src/lib/bildirim-akisi.js); yuzey:bildirim-kapat öğeyi bununla kapatır
+ * @param {{al: Function, temizle: Function}|null} [bag.kamera] 1.4.0 kamera anlık görüntüsü (src/lib/kamera.js kameraServisiOlustur);
+ *   yuzey:kamera yalnız açık HIZLI PANELDEN çağrılır, görüntü diske yazılmaz, panel gizlenince bellekteki kareler silinir
+ * @param {() => boolean} [bag.korumaAl] 1.4.0 kamera: panel/palet penceresi ekran görüntüsü ve kayıtlardan korunsun mu (setContentProtection);
+ *   kameraya izin verilmişse ana süreç true döndürür. Verilmezse false.
+ * @param {{al: Function, yanitla: Function, kapandi: Function}|null} [bag.disOnay] 1.4.0 dis grubu (o-54): evpaneli:// bağlantı izni
+ *   (src/dis-tetikler.js `onay`). Soru yalnız açık HIZLI PANELDE gösterilir; panel soru açıkken kapanır ya da palete geçerse reddedilmiş sayılır.
+ * @param {((kaynak: 'panel'|'palet') => Promise<{ok: boolean, tur?: string}>)|null} [bag.geriAl] 1.4.0 eylem grubu (o-12): yuzey:geri-al en yeni geri alma
+ *   girdisini bununla geri alır (src/lib/eylem-ekleri.js geriAl); adımlar yine tek güvenli eylem hattından geçer
+ * @param {object|null} [bag.eylemEk] 1.4.0 eylem grubu bağlayıcısı (src/lib/eylem-ekleri.js): gecikmeli eylem (o-15: yuzey:geciktir, yuzey:gecikmeli-iptal),
+ *   oda (o-14) ve diğer cihazlar (o-46) uçları bunun işlevlerini çağırır; yük burada biçimce doğrulanır, asıl doğrulama bağlayıcıdadır
  */
-function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, ustteAl = () => false, opaklikAl = () => 100, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null, sagTik = null, gorunumAl = () => null, metinOlcegiAl = () => 1, bildirim = null }) {
+function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarlarAc, malzemeAl = () => OPAK_MALZEME, ustteAl = () => false, opaklikAl = () => 100, t = TR, dilAl = null, gunluk = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), okuma = null, sagTik = null, gorunumAl = () => null, metinOlcegiAl = () => 1, bildirim = null, kamera = null, korumaAl = () => false, etkilesimAl = () => null, sabitDegistir = null, disOnay = null, geriAl = null, eylemEk = null }) {
   const izinYok = () => ({ ok: false, hata: t('ana.izinYok') });
   let pencere = null;
   let yuklendi = false;
@@ -85,6 +110,18 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   let yakinlastirma = 1; // Ctrl + / Ctrl − / Ctrl 0 (g-13); pencere gizlenip yeniden oluşturulsa da korunur
   let elleYakinlastirma = false; // kullanıcı Ctrl + / − ile tabandan ayrıldı: Ayarlar'daki metin boyutu değişse bile oturum seçimi korunur
   let uygulananOlcek = 1; // pencerenin sayfasına son yazılan yakınlaştırma (yeni pencerede 1)
+  let disOnaySoruldu = false; // o-54: panel bir bağlantı izni sorusu için açıldı ve soru henüz yanıtlanmadı
+
+  /** o-54: açık izin sorusu panel kapanınca / palete geçince reddedilir (dis-tetikler zaman aşımını da kendisi uygular). */
+  function disOnayiBirak() {
+    if (!disOnaySoruldu) return;
+    disOnaySoruldu = false;
+    try {
+      disOnay?.kapandi();
+    } catch {
+      gunluk('Bağlantı izni sorusu kapatılamadı.');
+    }
+  }
 
   /** Ayarlar > Görünüm > Metin boyutu (o-25): yakınlaştırmanın tabanı. Geçersiz ya da adımlarda olmayan değer 1 sayılır. */
   function tabanYakinlastirma() {
@@ -112,6 +149,24 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     }
   }
 
+  /** o-20 / o-23 etkileşim ayarları: yalnız iki boolean; geçersiz ya da okunamazsa hiçbir anahtar eklenmez. */
+  function etkilesimDegeri() {
+    try {
+      const e = etkilesimAl();
+      return e && typeof e === 'object' ? { tekerlek: e.tekerlek !== false, sabit: e.sabit === true } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function etkilesimEki() {
+    const e = etkilesimDegeri();
+    return e ? { etkilesim: e } : {};
+  }
+
+  /** Panel sabitli mi? Yalnız 'panel' kipinde geçerlidir (palet her zaman odak kaybında kapanır). */
+  const sabitMi = (kip) => kip === 'panel' && etkilesimDegeri()?.sabit === true;
+
   const canliMi = () => !!pencere && !pencere.isDestroyed();
   const gorunurMu = () => canliMi() && pencere.isVisible();
 
@@ -130,6 +185,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     odakKaybiniIptalEt();
     odakKaybiZamanlayicisi = zaman.setTimeout(() => {
       odakKaybiZamanlayicisi = null;
+      if (sabitMi(mod)) return; // o-23: sabitli panel dışarı tıklayınca kapanmaz
       if (pencere === bu && !bu.isDestroyed() && bu.isVisible() && !bu.isFocused()) gizle('odak');
     }, YUZEY_ODAK_KAYBI_MS);
   }
@@ -184,10 +240,12 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     gunluk(`Hızlı panel penceresi sıfırlandı (${neden}); sonraki açılışta yeniden oluşturulacak.`);
     odakKaybiniIptalEt();
     odakYedeginiIptalEt();
+    disOnayiBirak();
     pencere = null;
     yuklendi = false;
     mod = null;
     bekleyenMod = null;
+    kareleriTemizle();
     try {
       if (!bu.isDestroyed()) bu.destroy();
     } catch {
@@ -329,6 +387,25 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     }
   }
 
+  /**
+   * 1.4.0 kamera: kameraya izin verilmişse pencere ekran görüntüsü / ekran kaydı programlarından gizlenir (Electron setContentProtection;
+   * Windows'ta WDA_EXCLUDEFROMCAPTURE). Ayar değişince ve her gösterimde yeniden uygulanır; desteklenmiyorsa sessizce atlanır.
+   */
+  function korumaUygula() {
+    if (!canliMi() || typeof pencere.setContentProtection !== 'function') return;
+    let koru = false;
+    try {
+      koru = korumaAl() === true;
+    } catch {
+      koru = false;
+    }
+    try {
+      pencere.setContentProtection(koru);
+    } catch {
+      gunluk('Hızlı panel ekran görüntüsü koruması uygulanamadı.');
+    }
+  }
+
   function modelGonder() {
     if (!canliMi() || !yuklendi) return;
     try {
@@ -340,6 +417,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
 
   function goster(kip) {
     if (!KIPLER.includes(kip)) return false;
+    if (kip !== 'panel') disOnayiBirak();
     if (!canliMi()) olustur();
     if (!canliMi()) return false;
     if (!yuklendi) {
@@ -354,8 +432,9 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       if (yakinlastirma !== uygulananOlcek) yakinlastirmayiUygula(pencere.webContents); // ayarlar pencere oluştuktan sonra yüklendiyse
       yerlestir(kip);
       modelGonder();
-      pencere.webContents.send('yuzey:goster', { mod: kip, malzeme: malzemeAl().malzeme, ...gorunumEki() });
+      pencere.webContents.send('yuzey:goster', { mod: kip, malzeme: malzemeAl().malzeme, ...gorunumEki(), ...etkilesimEki() });
       opaklikUygula();
+      korumaUygula();
       ustSeviyesiniUygula(true);
       pencere.show();
       pencere.focus();
@@ -368,14 +447,25 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     return true;
   }
 
+  /** Kamera önbelleği (yalnız bellek) panel gizlenince/kapanınca silinir. */
+  function kareleriTemizle() {
+    try {
+      kamera?.temizle?.();
+    } catch {
+      gunluk('Kamera önbelleği temizlenemedi.');
+    }
+  }
+
   function gizle(neden = 'kapat') {
     odakKaybiniIptalEt();
     odakYedeginiIptalEt();
     menuAcik = 0;
     bekleyenMod = null;
+    disOnayiBirak();
     if (!canliMi()) return;
     const gorunurdu = pencere.isVisible();
     mod = null;
+    kareleriTemizle(); // kamera karesi panel kapanınca bellekte kalmaz
     if (gorunurdu) {
       if (neden === 'odak') sonOtomatikGizleme = simdi();
       pencere.hide();
@@ -383,18 +473,24 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     }
   }
 
-  /** Tepsi tıklaması ya da kısayol aynı kuralla (tiklamaKarari): pencere o kipte görünür VE odaktaysa kapat, değilse aç. */
+  /**
+   * Tepsi tıklaması ya da kısayol aynı kuralla (tiklamaKarari): pencere o kipte görünür VE odaktaysa kapat, değilse aç.
+   * Sabitli panel (o-23) dışarı tıklayınca kapanmadığından odaksız görünür: tepsi/kısayol onu her zaman KAPATIR (aksi halde tıklama
+   * yalnız odak verir ve panel Esc'ye kalırdı).
+   */
   function acKapat(kip, kaynak) {
     const gorunur = gorunurMu() && mod === kip;
-    const karar = tiklamaKarari({
-      kaynak,
-      gorunur,
-      odakta: gorunur && pencere.isFocused(),
-      bekleyenGizleme: odakKaybiZamanlayicisi !== null,
-      sonGizlemeMs: sonOtomatikGizleme,
-      sonOdakKaybiMs: sonOdakKaybi,
-      simdi: simdi(),
-    });
+    const karar = gorunur && sabitMi(kip)
+      ? 'kapat'
+      : tiklamaKarari({
+        kaynak,
+        gorunur,
+        odakta: gorunur && pencere.isFocused(),
+        bekleyenGizleme: odakKaybiZamanlayicisi !== null,
+        sonGizlemeMs: sonOtomatikGizleme,
+        sonOdakKaybiMs: sonOdakKaybi,
+        simdi: simdi(),
+      });
     if (karar === 'kapat') {
       gizle('tikla');
       return 'kapandi';
@@ -411,7 +507,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   function ipcKaydet() {
     ipcMain.handle('yuzey:durum-al', (olay) => {
       if (!yuzeydenMi(olay)) return izinYok();
-      return { ok: true, mod, model: rendererModeli(modelAl()), malzeme: malzemeAl().malzeme, ...(dilAl ? { dil: dilAl() } : {}), ...gorunumEki() };
+      return { ok: true, mod, model: rendererModeli(modelAl()), malzeme: malzemeAl().malzeme, ...(dilAl ? { dil: dilAl() } : {}), ...gorunumEki(), ...etkilesimEki() };
     });
     ipcMain.handle('yuzey:calistir', async (olay, yuk) => {
       if (!yuzeydenMi(olay)) return izinYok();
@@ -429,6 +525,20 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       if (!yuzeydenMi(olay)) return izinYok();
       eylem.basiliIptal(kimlik);
       return { ok: true };
+    });
+    // 1.4.0 (o-23): iğne düğmesi. Yük yalnız bir boolean'dır; yalnız açık HIZLI PANELDEN (palette düğme yok). Ayarı ana süreç yazar (bag.sabitDegistir) ve
+    // yanıtta KESİN son durumu döner (yazılamazsa eski durum). HA'ya hiçbir şey gitmez.
+    ipcMain.handle('yuzey:sabitle', (olay, sabit) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'panel' || typeof sabit !== 'boolean' || typeof sabitDegistir !== 'function') return { ok: false, tur: 'gecersiz' };
+      let son;
+      try {
+        son = sabitDegistir(sabit);
+      } catch {
+        gunluk('Panel sabitleme ayarı yazılamadı.');
+        return { ok: false, tur: 'yazilamadi' };
+      }
+      return typeof son === 'boolean' ? { ok: true, sabit: son } : { ok: false, tur: 'yazilamadi' };
     });
     ipcMain.on('yuzey:kapat', (olay) => {
       if (yuzeydenMi(olay)) gizle('renderer');
@@ -480,6 +590,87 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       if (typeof anahtar !== 'string' || anahtar.length === 0 || anahtar.length > 40) return { ok: false, tur: 'gecersiz' };
       return bildirim.kapat(anahtar, (haKimligi) => eylem.bildirimKapat(haKimligi));
     });
+    // 1.4.0 kamera anlık görüntüsü (o-48): yalnız açık HIZLI PANELDEN (palette ve diğer yüzeylerde kamera yok). Yük yalnız bir varlık
+    // kimliğidir; izin listesi, canlı durum, ad süzgeci, hız sınırı ve görüntü doğrulaması kamera servisindedir (src/lib/kamera.js).
+    // Yanıt: { ok:true, veri:'data:image/...', yas, onbellek } | { ok:false, tur }. Görüntü diske yazılmaz.
+    ipcMain.handle('yuzey:kamera', async (olay, kimlik) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'panel' || !kamera) return { ok: false, tur: 'gecersiz' };
+      if (typeof kimlik !== 'string' || kimlik.length === 0 || kimlik.length > 120) return { ok: false, tur: 'gecersiz' };
+      return kamera.al(kimlik);
+    });
+    // 1.4.0 dis grubu (o-54): evpaneli:// izni. Soru yalnız açık panelde okunur; karar yalnız sorunun biletiyle kabul edilir
+    // (dis-tetikler onay.yanitla: bilet, karar listesi ve "İzin ver" için en az görünme süresi orada denetlenir).
+    ipcMain.handle('yuzey:dis-onay-al', (olay) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'panel' || !disOnay || !disOnaySoruldu) return { ok: true, soru: null };
+      return { ok: true, soru: disOnay.al() };
+    });
+    ipcMain.handle('yuzey:dis-onay-yanit', (olay, bilet, karar) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'panel' || !disOnay || !disOnaySoruldu) return { ok: false, tur: 'gecersiz' };
+      const ok = disOnay.yanitla(bilet, karar) === true;
+      if (ok) disOnaySoruldu = false;
+      return { ok };
+    });
+    // 1.4.0 eylem grubu (o-12): "Geri al" düğmesi. Yük yoktur (renderer neyin geri alınacağını SEÇEMEZ); yalnız açık panel/paletten.
+    ipcMain.handle('yuzey:geri-al', async (olay) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      const kaynak = kaynakKip();
+      if (!kaynak || !geriAl) return { ok: false, tur: 'gecersiz' };
+      const sonuc = await geriAl(kaynak);
+      return { ok: sonuc?.ok === true, ...(typeof sonuc?.tur === 'string' ? { tur: sonuc.tur } : {}) };
+    });
+    // 1.4.0 eylem grubu (o-15): palet satırından gecikmeli eylem kur ("salon 10 dk sonra kapat", "fan 30dk"). Yük { kimlik, yon: 'ac'|'kapat'|'sureli',
+    // dakika }; alan, eylem sınıfı, Kapı Kuralı, süre ve bekleyen sayısı bağlayıcıda (src/lib/gecikmeli-eylem.js) yeniden doğrulanır.
+    ipcMain.handle('yuzey:geciktir', async (olay, yuk) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      const kaynak = kaynakKip();
+      if (!kaynak || !eylemEk) return { ok: false, tur: 'gecersiz' };
+      if (!yuk || typeof yuk !== 'object' || Array.isArray(yuk) || typeof yuk.kimlik !== 'string' || yuk.kimlik.length > 120) return { ok: false, tur: 'gecersiz' };
+      if (!['ac', 'kapat', 'sureli'].includes(yuk.yon) || !Number.isInteger(yuk.dakika)) return { ok: false, tur: 'gecersiz' };
+      const sonuc = await eylemEk.gecikmeliPlanla(kaynak, { kimlik: yuk.kimlik, yon: yuk.yon, dakika: yuk.dakika });
+      return { ok: sonuc?.ok === true, ...(typeof sonuc?.tur === 'string' ? { tur: sonuc.tur } : {}) };
+    });
+    // Bekleyen gecikmeli eylemi iptal eder: yük yalnız modeldeki opak kimliktir (g<n>); varlık kimliği sayfaya hiç gitmez.
+    ipcMain.handle('yuzey:gecikmeli-iptal', (olay, id) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      const kaynak = kaynakKip();
+      if (!kaynak || !eylemEk || typeof id !== 'string' || !/^g\d{1,9}$/.test(id)) return { ok: false, tur: 'gecersiz' };
+      return { ok: eylemEk.gecikmeliIptal(id, kaynak) === true };
+    });
+    // 1.4.0 eylem grubu (o-14): panelde odanın başlığındaki "Odayı kapat". Yük yalnız grup kodudur (oda-<8 onaltılık>); üyeleri (açık, zararsız
+    // ışık / priz / vantilatör / sanal anahtar / nem alıcı) ana süreç yeniden hesaplar ve her birini tek güvenli hattan çalıştırır. Yalnız PANELDEN.
+    ipcMain.handle('yuzey:oda-kapat', async (olay, kod) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      const kaynak = kaynakKip();
+      if (kaynak !== 'panel' || !eylemEk || typeof kod !== 'string' || !/^oda-[0-9a-f]{8}$/.test(kod)) return { ok: false, tur: 'gecersiz' };
+      const sonuc = await eylemEk.odaKapat(kaynak, kod);
+      return { ok: sonuc?.ok === true, ...(typeof sonuc?.tur === 'string' ? { tur: sonuc.tur } : {}), ...(Number.isInteger(sonuc?.adet) ? { adet: sonuc.adet } : {}) };
+    });
+    // 1.4.0 eylem grubu (o-46): palette "*" ile favori olmayan güvenli cihazlar. YALNIZ PALETTEN ve yalnız ayar açıkken; liste, doğrulama ve
+    // eylem ana süreçte (src/lib/diger-cihazlar.js): Kapı Kuralı + eylem sınıfı + servis izin listesi + hız sınırı. Sayfaya yalnız kısa alanlar gider.
+    ipcMain.handle('yuzey:diger-cihazlar', async (olay) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'palet' || !eylemEk) return { ok: false, tur: 'gecersiz' };
+      const sonuc = await eylemEk.digerListe('palet');
+      if (sonuc?.ok !== true || !Array.isArray(sonuc.liste)) return { ok: false, tur: typeof sonuc?.tur === 'string' ? sonuc.tur : 'hata' };
+      return { ok: true, liste: sonuc.liste.slice(0, EN_COK_DIGER_CIHAZ).map(digerSatiriniTemizle).filter(Boolean) };
+    });
+    // Yük { kimlik, islem: 'ac'|'kapat'|'degistir' }; kimlik ancak ana sürecin güncel listesinde varsa işlenir (serbest kimlikle eylem başlamaz).
+    ipcMain.handle('yuzey:diger-calistir', async (olay, yuk) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'palet' || !eylemEk) return { ok: false, tur: 'gecersiz' };
+      if (!yuk || typeof yuk !== 'object' || Array.isArray(yuk) || typeof yuk.kimlik !== 'string' || yuk.kimlik.length > 120 || !DIGER_ISLEMLER.includes(yuk.islem)) return { ok: false, tur: 'gecersiz' };
+      const sonuc = await eylemEk.digerCalistir('palet', { kimlik: yuk.kimlik, islem: yuk.islem });
+      return { ok: sonuc?.ok === true, ...(typeof sonuc?.tur === 'string' ? { tur: sonuc.tur } : {}) };
+    });
+    ipcMain.handle('yuzey:diger-favori-ekle', async (olay, kimlik) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'palet' || !eylemEk || typeof kimlik !== 'string' || kimlik.length > 120) return { ok: false, tur: 'gecersiz' };
+      const sonuc = await eylemEk.digerFavoriEkle('palet', kimlik);
+      return { ok: sonuc?.ok === true, ...(typeof sonuc?.tur === 'string' ? { tur: sonuc.tur } : {}) };
+    });
     ipcMain.handle('yuzey:ha-ac', (olay) => {
       if (!yuzeydenMi(olay)) return izinYok();
       gizle('ha-ac');
@@ -510,6 +701,11 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     ustteDegisti() {
       if (gorunurMu()) ustSeviyesiniUygula(true);
     },
+    /** 1.4.0 kamera izinleri değişti: ekran görüntüsü koruması açık pencereye hemen uygulanır, eski kareler silinir. */
+    kameraDegisti() {
+      kareleriTemizle();
+      korumaUygula();
+    },
     /** o-32: panel opaklığı ayarı değişti: açık pencereye hemen uygulanır (kapalıysa bir sonraki gösterimde). */
     opaklikDegisti() {
       if (gorunurMu()) opaklikUygula();
@@ -524,6 +720,36 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       if (!canliMi()) return;
       yakinlastirmayiUygula(pencere.webContents);
       if (gorunurMu() && KIPLER.includes(mod)) yerlestir(mod);
+    },
+    /**
+     * o-54: bağlantı izni sorusunu panelde gösterir (dis-tetikler panelOnayGoster). Panel açılamazsa false: çağıran yedek iletişim
+     * kutusuna düşer. Sayfa yükleniyorsa soru gösterim olayıyla (disOnayAl) okunur.
+     */
+    disOnayGoster() {
+      if (!disOnay) return false;
+      disOnaySoruldu = true;
+      if (!goster('panel')) {
+        disOnaySoruldu = false;
+        return false;
+      }
+      if (yuklendi && canliMi()) {
+        try {
+          pencere.webContents.send('yuzey:dis-onay');
+        } catch {
+          gunluk('Bağlantı izni sorusu panele gönderilemedi.');
+        }
+      }
+      return true;
+    },
+    /** o-54: soru başka yoldan bitti (zaman aşımı, yedek kutu): panel soruyu kaldırsın. */
+    disOnayBitti() {
+      disOnaySoruldu = false;
+      if (!canliMi() || !yuklendi) return;
+      try {
+        pencere.webContents.send('yuzey:dis-onay');
+      } catch {
+        /* sayfa yok */
+      }
     },
     panelAcKapat: (kaynak = 'tepsi') => acKapat('panel', kaynak),
     paletAcKapat: () => acKapat('palet', 'kisayol'),
@@ -544,6 +770,21 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       }
       if (gorunurMu()) modelGonder();
     },
+    /**
+     * o-20 / o-23: etkileşim ayarı (karoTekerlegi, panelSabit) değişti: açık sayfa `yuzey:etkilesim` ({ tekerlek, sabit }) ile haberdar edilir
+     * (iğne düğmesi ve tekerlek anında güncellenir). Gizli ya da yüklenmemiş pencereye bir şey gönderilmez; sonraki gösterim yükü zaten taşır.
+     */
+    etkilesimDegisti() {
+      const e = etkilesimDegeri();
+      if (!e || !canliMi() || !yuklendi) return;
+      try {
+        pencere.webContents.send('yuzey:etkilesim', e);
+      } catch {
+        gunluk('Hızlı panel etkileşim ayarı gönderilemedi.');
+      }
+      // Sabitleme Ayarlar'dan kaldırıldı ve panel odaksız açık kaldıysa, sıradan odak kaybı kuralı yeniden işler (kısa gecikmeyle gizlenir).
+      if (mod === 'panel' && !e.sabit && gorunurMu() && !pencere.isFocused()) odakKaybiniZamanla(pencere);
+    },
     /** Durum deposu değişti: pencere açıksa modeli tazele. */
     modelDegisti() {
       if (gorunurMu()) modelGonder();
@@ -563,9 +804,11 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       zaman.clearTimeout(yuklemeZamanlayicisi);
       odakKaybiniIptalEt();
       odakYedeginiIptalEt();
+      disOnayiBirak();
       const eski = pencere;
       pencere = null;
       mod = null;
+      kareleriTemizle();
       if (eski && !eski.isDestroyed()) eski.destroy();
     },
   };

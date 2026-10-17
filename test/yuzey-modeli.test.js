@@ -87,8 +87,8 @@ test('karolariGrupla: sabit sıra Işık, Sahne, PC, Medya, Diğer; yıkıcılar
   const onayli = modeli.gruplar.find((g) => g.kod === 'onayli');
   assert.deepEqual(onayli.karolar.map((k) => k.id).sort(), ['button.pc_bilgisayari_kapat', 'script.iyi_geceler']);
   assert.ok(onayli.karolar.every((k) => k.sinif === 'yikici'));
-  // 1.4.0: eski beş grup yerinde kalır; İklim, Yardımcılar ve Sensör grupları araya girer
-  assert.deepEqual(GRUPLAR.map((g) => g.kod), ['isik', 'iklim', 'sahne', 'pc', 'medya', 'yardimci', 'sensor', 'diger']);
+  // 1.4.0: eski beş grup yerinde kalır; İklim, Perde, Yardımcılar ve Sensör grupları araya girer
+  assert.deepEqual(GRUPLAR.map((g) => g.kod), ['isik', 'iklim', 'perde', 'sahne', 'pc', 'medya', 'yardimci', 'sensor', 'diger']);
   const toplam = modeli.gruplar.reduce((n, g) => n + g.karolar.length, 0);
   assert.equal(toplam, HAZIR_LISTE.length, 'hiçbir karo kaybolmaz');
 });
@@ -351,4 +351,20 @@ test('yuzeyModeliOlustur ve rendererModeli: bildirim modeli panele süzülmüş 
   const renderer = rendererModeli(model);
   assert.deepEqual(renderer.bildirim.ogeler.map((o) => o.anahtar), ['k0123456789abcdef']);
   assert.equal(renderer.bildirim.gizlenen, 1);
+});
+
+test('rendererModeli (o-14): oda grubu işareti yalnız oda-<8 onaltılık> kodlu ve oda:true grupta geçer; başka gruba sızmaz, ham alan kaydı gitmez', () => {
+  const karo = { id: 'light.a', etiket: 'A', grup: 'isik', grupEtiketi: 'Işık', durum: 'acik', yuzde: null, kullanilabilir: true, ulasilamiyor: false, sinif: 'zararsiz', parlaklikKontrol: false, tekrar: false };
+  const r = rendererModeli({
+    gruplar: [
+      { kod: 'oda-0123abcd', etiket: 'Salon', karolar: [karo], oda: true, alanId: 'salon_ozel', ham: { gizli: 1 } },
+      { kod: 'isik', etiket: 'Işık', karolar: [karo], oda: true }, // kod oda biçiminde değil: işaret atılır
+      { kod: 'oda-0123ABCD', etiket: 'Büyük', karolar: [karo], oda: true },
+      { kod: 'oda-0123abce', etiket: 'İşaretsiz', karolar: [karo] },
+      { kod: 'oda-0123abcf', etiket: 'Metin', karolar: [karo], oda: 'true' },
+    ],
+  });
+  assert.deepEqual(r.gruplar.map((g) => [g.kod, g.oda === true]), [['oda-0123abcd', true], ['isik', false], ['oda-0123ABCD', false], ['oda-0123abce', false], ['oda-0123abcf', false]]);
+  assert.deepEqual(Object.keys(r.gruplar[0]).sort(), ['etiket', 'karolar', 'kod', 'oda'], 'alanId ve ham alan gitmez');
+  assert.deepEqual(Object.keys(r.gruplar[1]).sort(), ['etiket', 'karolar', 'kod'], 'oda dışı grupta oda anahtarı hiç yok (eski biçim aynen)');
 });
