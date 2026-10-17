@@ -76,9 +76,9 @@ test('adresSinifiMetni: okunur sınıf + http/https; ana bilgisayar, IP ve port 
 test('satiriTemizle: anahtar, JWT, Bearer, URL, IP, yerel ad, kullanıcı klasörü, varlık kimliği ve parmak izi maskelenir; saat damgası ve sıradan metin kalır', () => {
   const satir = satiriTemizle(
     `2026-10-16T09:00:02.123Z Hata ${SAHTE_ANAHTAR} Bearer ${UZUN_ANAHTAR} http://192.168.1.10:8123/lovelace?token=xyz https://evim.ornek-alan.com/api/webhook/gizli-kimlik ` +
-      'ev.local 192.168.1.5:8123 fe80::1 C:\\Users\\emres\\AppData\\x /home/emre/x light.salon_lambasi switch.priz_1 parmak izi=ab12cd34 son',
+      'ev.local 192.168.1.5:8123 fe80::1 C:\\Users\\zeynepk\\AppData\\x /home/zeynep/x light.salon_lambasi switch.priz_1 parmak izi=ab12cd34 son',
   );
-  for (const sizinti of [SAHTE_ANAHTAR, UZUN_ANAHTAR, '192.168.1.10', '192.168.1.5', 'ornek-alan', 'ev.local', 'fe80', 'emres', '/home/emre', 'salon_lambasi', 'priz_1', 'ab12cd34', 'gizli-kimlik', 'token=xyz']) {
+  for (const sizinti of [SAHTE_ANAHTAR, UZUN_ANAHTAR, '192.168.1.10', '192.168.1.5', 'ornek-alan', 'ev.local', 'fe80', 'zeynepk', '/home/zeynep', 'salon_lambasi', 'priz_1', 'ab12cd34', 'gizli-kimlik', 'token=xyz']) {
     assert.equal(satir.includes(sizinti), false, `${sizinti} günlük satırında kaldı: ${satir}`);
   }
   assert.match(satir, /^2026-10-16T09:00:02\.123Z Hata /, 'saat damgası korunur');
@@ -117,17 +117,17 @@ test('satiriTemizle: URL olmayan genel ana bilgisayar adları (FQDN) da maskelen
 });
 
 test('maskeKur + satiriTemizle: Windows kullanıcı adı (boşluklu olsa da) tam eşleşmeyle maskelenir; yol kuralı tek başına boşluktan sonrasını bırakırdı', () => {
-  const satir = 'Ayarlar okunamadı: C:\\Users\\Emre Sav\\AppData\\Roaming\\x.json (hesap: Emre Sav, emre   sav)';
-  const eski = satiriTemizle(satir); // maskesiz: yol kuralı "Emre"yi alır, " Sav" kalır
-  assert.match(eski, /Sav/, 'maskesiz hâlde boşluklu ad sızıyordu');
-  const maske = maskeKur({ kullaniciAdlari: ['Emre Sav', 'emres'] });
+  const satir = 'Ayarlar okunamadı: C:\\Users\\Zeynep Kaya\\AppData\\Roaming\\x.json (hesap: Zeynep Kaya, zeynep   kaya)';
+  const eski = satiriTemizle(satir); // maskesiz: yol kuralı "Zeynep"yi alır, " Kaya" kalır
+  assert.match(eski, /Kaya/, 'maskesiz hâlde boşluklu ad sızıyordu');
+  const maske = maskeKur({ kullaniciAdlari: ['Zeynep Kaya', 'zeynepk'] });
   const temiz = satiriTemizle(satir, maske);
   assert.equal(temiz, 'Ayarlar okunamadı: C:\\Users\\[user]\\AppData\\Roaming\\x.json (hesap: [user], [user])');
-  assert.equal(/emre|sav/i.test(temiz), false);
+  assert.equal(/zeynep|kaya/i.test(temiz), false);
   // büyük/küçük harf ve ikinci ad (klasör adı) da maskelenir
-  assert.equal(satiriTemizle('Oturum: EMRES ve emres.', maske), 'Oturum: [user] ve [user].');
+  assert.equal(satiriTemizle('Oturum: ZEYNEPK ve zeynepk.', maske), 'Oturum: [user] ve [user].');
   // tam sözcük eşleşmesi: ad başka bir sözcüğün parçasıysa dokunulmaz
-  assert.equal(satiriTemizle('emresin emresiz Memres', maske), 'emresin emresiz Memres');
+  assert.equal(satiriTemizle('zeynepkin zeynepkiz Mzeynepk', maske), 'zeynepkin zeynepkiz Mzeynepk');
   // Türkçe harfli ad
   assert.equal(satiriTemizle('Kullanıcı Şükrü Çelik girdi', maskeKur({ kullaniciAdlari: ['Şükrü Çelik'] })), 'Kullanıcı [user] girdi');
   // regex özel karakterleri düz metindir
@@ -139,7 +139,7 @@ test('maskeKur: çok kısa adlar, maske etiketi adları, metin olmayan girdiler 
   const etiket = maskeKur({ kullaniciAdlari: ['user', 'HOST', 'url'], adresler: ['http://url:8123'] });
   assert.equal(etiket.kullanici, null);
   assert.equal(etiket.anaBilgisayar, null);
-  assert.equal(satiriTemizle('C:\\Users\\emre\\x [host] [url]', etiket), 'C:\\Users\\[user]\\x [host] [url]', 'etiketler yeniden maskelenip bozulmaz');
+  assert.equal(satiriTemizle('C:\\Users\\zeynep\\x [host] [url]', etiket), 'C:\\Users\\[user]\\x [host] [url]', 'etiketler yeniden maskelenip bozulmaz');
   assert.doesNotThrow(() => maskeKur());
   assert.doesNotThrow(() => maskeKur({ kullaniciAdlari: 'metin', adresler: 'metin' }));
   const bozuk = maskeKur({ kullaniciAdlari: [5, null, {}, undefined, 'Geçerli Ad'], adresler: [5, null, '', 'saçma', 'ftp://ftp.ornek.com', 'http://[fe80::1]:8123', 'http://192.168.1.10:8123'] });
@@ -299,15 +299,15 @@ test('raporOlustur: ayarlardaki ana bilgisayar adları (tek etiketli olsa da) ve
     ...TEMEL,
     yerelAdres: 'http://nas:8123',
     disAdres: 'https://Evim.Ornek-Alan.com',
-    kullaniciAdlari: ['Emre Sav', 'emres'],
+    kullaniciAdlari: ['Zeynep Kaya', 'zeynepk'],
     gunlukSatirlari: [
       '2026-10-16T09:00:01.000Z nas bağlantısı koptu (nas:8123)',
       '2026-10-16T09:00:02.000Z Dış adres evim.ornek-alan.com yanıt vermedi',
-      '2026-10-16T09:00:03.000Z Dosya C:\\Users\\Emre Sav\\AppData\\Roaming\\Ev Paneli\\ayarlar.json okunamadı (Emre Sav)',
+      '2026-10-16T09:00:03.000Z Dosya C:\\Users\\Zeynep Kaya\\AppData\\Roaming\\Ev Paneli\\ayarlar.json okunamadı (Zeynep Kaya)',
       '2026-10-16T09:00:04.000Z Yerel adres nasıl bulunur? Nashville değişmez',
     ],
   });
-  for (const sizinti of ['nas:', 'ornek-alan', 'Evim', 'Emre', 'Sav', 'emres']) assert.equal(metin.includes(sizinti), false, `${sizinti} rapora girdi:\n${metin}`);
+  for (const sizinti of ['nas:', 'ornek-alan', 'Evim', 'Zeynep', 'Kaya', 'zeynepk']) assert.equal(metin.includes(sizinti), false, `${sizinti} rapora girdi:\n${metin}`);
   assert.match(metin, /\[host\] bağlantısı koptu \(\[host\]\)/);
   assert.match(metin, /Dış adres \[host\] yanıt vermedi/);
   assert.match(metin, /C:\\Users\\\[user\]\\AppData\\Roaming\\Ev Paneli\\ayarlar\.json okunamadı \(\[user\]\)/);
@@ -315,7 +315,7 @@ test('raporOlustur: ayarlardaki ana bilgisayar adları (tek etiketli olsa da) ve
 });
 
 test('raporOlustur: kullaniciAdlari verilmese de genel kurallar çalışır (eski çağrılar bozulmaz)', () => {
-  const { metin } = raporOlustur({ ...TEMEL, gunlukSatirlari: ['2026-10-16T09:00:01.000Z ENOTFOUND ha.ornek-alan.com C:\\Users\\emres\\x'] });
+  const { metin } = raporOlustur({ ...TEMEL, gunlukSatirlari: ['2026-10-16T09:00:01.000Z ENOTFOUND ha.ornek-alan.com C:\\Users\\zeynepk\\x'] });
   assert.match(metin, /ENOTFOUND \[host\] C:\\Users\\\[user\]\\x/);
 });
 

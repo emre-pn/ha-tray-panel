@@ -387,9 +387,9 @@ test('yönetici anahtarı: anahtar silinince uyarı kalkar ve olay anahtar yokke
 
 test('yönetici anahtarı: yalnız bir doğru/yanlış bilgisi tutulur; sayfada kullanıcı adı ya da kimlik alanı yoktur', async () => {
   const sayfa = await sayfaAc({ anahtarYonetici: true });
-  await sayfa.anahtarYoneticiOlayi({ anahtarYonetici: true, kullanici: 'emre', kimlik: 'abc123' });
+  await sayfa.anahtarYoneticiOlayi({ anahtarYonetici: true, kullanici: 'zeynep', kimlik: 'abc123' });
   const metin = sayfa.tumOgeler().map((o) => o.textContent).join('\n');
-  assert.doesNotMatch(metin, /emre|abc123/);
+  assert.doesNotMatch(metin, /zeynep|abc123/);
 });
 
 // --- erişilebilirlik ve etiketler --------------------------------------------------------------------------------------

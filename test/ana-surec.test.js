@@ -3313,7 +3313,7 @@ ortamda('tanılama (o-41): günlük satırları rapora maskelenmiş girer (URL, 
   gunluguaYaz(
     ortam,
     ...satirlar,
-    `2026-10-16T09:10:00.000Z Sayfa yüklenemedi: ${YEREL_KOK}/lovelace/0 light.salon_lambasi 192.168.1.77 C:\\Users\\emres\\AppData\\x parmak izi=ab12cd34 Bearer ${TEST_ANAHTAR}`,
+    `2026-10-16T09:10:00.000Z Sayfa yüklenemedi: ${YEREL_KOK}/lovelace/0 light.salon_lambasi 192.168.1.77 C:\\Users\\zeynepk\\AppData\\x parmak izi=ab12cd34 Bearer ${TEST_ANAHTAR}`,
   );
   const { metin, gunlukSatiri } = await ortam.durum.ipc.get('tanilama:getir')(ayarlarOlayi(ortam));
   assert.equal(gunlukSatiri, 40);
@@ -3321,7 +3321,7 @@ ortamda('tanılama (o-41): günlük satırları rapora maskelenmiş girer (URL, 
   assert.match(metin, /Sayfa yüklenemedi: \[url\] light\.\[entity\] \[ip\] C:\\Users\\\[user\]\\AppData\\x parmak izi=\[masked\] Bearer \[gizli\]\n/);
   assert.doesNotMatch(metin, /eski olay (1|2|10|20)\n/, 'eski satırlar rapora girmez');
   assert.match(metin, /eski olay 60\n/);
-  for (const sizinti of [TEST_ANAHTAR, '192.168.1.77', '192.168.1.10', 'salon_lambasi', 'emres', 'ab12cd34']) assert.equal(metin.includes(sizinti), false, sizinti);
+  for (const sizinti of [TEST_ANAHTAR, '192.168.1.77', '192.168.1.10', 'salon_lambasi', 'zeynepk', 'ab12cd34']) assert.equal(metin.includes(sizinti), false, sizinti);
 });
 
 ortamda('tanılama (o-41): "tanilama:kopyala" AYNI metni panoya yazar ve önizleme için geri verir; günlüğe yalnız sabit bir satır düşer', { ...dalga3([SALON], {}, { ha: HA_VARLIKLARI }) }, async (ortam) => {

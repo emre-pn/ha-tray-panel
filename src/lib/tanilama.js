@@ -128,7 +128,7 @@ function adresAnaBilgisayari(adres) {
  * @returns {{ kullanici: RegExp|null, anaBilgisayar: RegExp|null }}
  */
 function maskeKur({ kullaniciAdlari = [], adresler = [] } = {}) {
-  const tekil = (liste) => [...new Set(liste)].sort((a, b) => b.length - a.length); // uzun ad önce: "emre sav" "emre"den önce
+  const tekil = (liste) => [...new Set(liste)].sort((a, b) => b.length - a.length); // uzun ad önce: "zeynep kaya" "zeynep"den önce
   const adlar = tekil(
     (Array.isArray(kullaniciAdlari) ? kullaniciAdlari : [])
       .filter((a) => typeof a === 'string')
@@ -141,7 +141,7 @@ function maskeKur({ kullaniciAdlari = [], adresler = [] } = {}) {
       .filter((h) => h.length >= EN_AZ_MASKE_UZUNLUGU && !h.startsWith('[') && !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(h) && !MASKE_ETIKETLERI.has(h)), // IP'ler kendi kuralıyla ([ip], [ip6]) maskelenir
   );
   return {
-    // Harf/rakam/alt çizgi sınırı: "emre" adı "emresin" içinde değil, yalnız tek başına eşleşir. Addaki boşluk, satırdaki boşluk grubuyla eşleşir.
+    // Harf/rakam/alt çizgi sınırı: "zeynep" adı "zeynepkin" içinde değil, yalnız tek başına eşleşir. Addaki boşluk, satırdaki boşluk grubuyla eşleşir.
     kullanici: adlar.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}_])(?:${adlar.map((a) => regexKacis(a).replace(/ /g, '\\s+')).join('|')})(?![\\p{L}\\p{N}_])`, 'giu') : null,
     anaBilgisayar: bilgisayarlar.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}_-])(?:${bilgisayarlar.map(regexKacis).join('|')})(?![\\p{L}\\p{N}_-])(?::\\d{1,5})?`, 'giu') : null,
   };

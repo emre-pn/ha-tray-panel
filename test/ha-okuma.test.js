@@ -375,7 +375,7 @@ test('yapılacaklar: başlık süzülür, tamamlandı bayrağı; yönetici bilgi
   const o = sahteOkuma({
     wsYanit: {
       'todo/item/list': (ileti) => ({ ok: true, sonuc: { items: [{ uid: '1', summary: 'Süt', status: 'needs_action', description: 'gizli' }, { uid: '2', summary: 'Kilidi yağla', status: 'needs_action' }, { uid: '3', summary: 'Ekmek', status: 'completed' }, { summary: 'uidsiz' }], ileti } }),
-      'auth/current_user': { ok: true, sonuc: { is_admin: false, name: 'Emre', id: 'x' } },
+      'auth/current_user': { ok: true, sonuc: { is_admin: false, name: 'Zeynep', id: 'x' } },
     },
   });
   assert.deepEqual(await o.okuma.yapilacaklar('todo.alisveris'), [

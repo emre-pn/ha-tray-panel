@@ -98,7 +98,7 @@ test('cevirmen: seçili dil, yer tutucular, Türkçeye ve anahtarın kendisine d
   const s2 = { tr: { a: 'ikinci', d: 'Dördüncü' }, en: { d: 'Fourth' } };
   const en = EvDil.cevirmen('en', s1, s2);
   assert.equal(en.dil, 'en');
-  assert.equal(en('a', { ad: 'Emre' }), 'Hello Emre');
+  assert.equal(en('a', { ad: 'Zeynep' }), 'Hello Zeynep');
   assert.equal(en('a'), 'Hello {ad}', 'değişken verilmezse yer tutucu kalır');
   assert.equal(en('b'), 'Yalnız Türkçe', 'İngilizcesi yoksa Türkçe');
   assert.equal(en('d'), 'Fourth', 'sonraki sözlük');
@@ -107,7 +107,7 @@ test('cevirmen: seçili dil, yer tutucular, Türkçeye ve anahtarın kendisine d
   assert.equal(en.var('b'), false, 'var(): seçili dilde karşılık var mı');
   const tr = EvDil.cevirmen('tr', s1, s2);
   assert.equal(tr.dil, 'tr');
-  assert.equal(tr('a', { ad: 'Emre' }), 'Merhaba Emre', 'önce verilen sözlük');
+  assert.equal(tr('a', { ad: 'Zeynep' }), 'Merhaba Zeynep', 'önce verilen sözlük');
   assert.equal(EvDil.cevirmen('it', s1).dil, 'tr', 'geçersiz dil tr olur');
   assert.equal(EvDil.cevirmen('DE', s1).dil, 'tr', 'büyük harfli dil kodu geçersiz');
   assert.equal(EvDil.cevirmen('en')('x'), 'x', 'sözlüksüz çalışır');
@@ -123,10 +123,10 @@ test('cevirmen: de/fr/es kendi sözlüğünden okur; karşılığı yoksa Türk�
     fr: { a: 'Bonjour {ad}' },
     es: { a: 'Hola {ad}' },
   };
-  for (const [dil, selam] of [['de', 'Hallo Emre'], ['fr', 'Bonjour Emre'], ['es', 'Hola Emre']]) {
+  for (const [dil, selam] of [['de', 'Hallo Zeynep'], ['fr', 'Bonjour Zeynep'], ['es', 'Hola Zeynep']]) {
     const t = EvDil.cevirmen(dil, s1);
     assert.equal(t.dil, dil);
-    assert.equal(t('a', { ad: 'Emre' }), selam);
+    assert.equal(t('a', { ad: 'Zeynep' }), selam);
     assert.equal(t.var('a'), true);
     assert.equal(t('b'), 'Yalnız Türkçe', `${dil}: karşılığı yoksa Türkçe (İngilizce değil)`);
     assert.equal(t.var('b'), false, `${dil}: var() yalnız kendi dilini sayar`);
