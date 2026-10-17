@@ -158,3 +158,13 @@ test('oturum kaydı: yaz/çöz gidiş-dönüş; erişim anahtarı dosyaya girmez
   assert.equal(coz({ istemci: 'http://127.0.0.1:99999/ev-paneli' }), null);
   assert.equal(coz({ istemci: 'http://127.0.0.1:41000/baska' }), null);
 });
+
+test('oturum kaydı: kökenler normalleşir (köken, tekrarsız, en çok 4, yalnız http/https); alan yoksa dönen kayıtta da yoktur', () => {
+  assert.deepEqual(oauth.kokenleriDuzelt(['http://192.168.1.50:8123/yol', 'http://192.168.1.50:8123', 'https://ha.example.com/', 'ftp://x', 'x', 5, null, '']), ['http://192.168.1.50:8123', 'https://ha.example.com']);
+  assert.deepEqual(oauth.kokenleriDuzelt('metin'), []);
+  assert.equal(oauth.kokenleriDuzelt(Array.from({ length: 9 }, (_, i) => `http://h${i}.example.com`)).length, 4);
+  const metin = oauth.oturumuYaz({ taban: 'https://ha.example.com', istemci: 'http://127.0.0.1:41000/ev-paneli', yenileme: JETON, kokenler: ['http://192.168.1.50:8123', 'https://baska.example.org/x'] });
+  assert.deepEqual(oauth.oturumuCoz(metin).kokenler, ['https://ha.example.com', 'http://192.168.1.50:8123', 'https://baska.example.org']);
+  assert.equal(JSON.parse(metin).erisim, undefined);
+  assert.equal(Object.hasOwn(oauth.oturumuCoz(oauth.oturumuYaz({ taban: 'https://ha.example.com', istemci: 'http://127.0.0.1:41000/ev-paneli', yenileme: JETON })), 'kokenler'), false);
+});

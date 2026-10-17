@@ -7,9 +7,10 @@
  * hizmetinin bildirimlerini WebSocket itme kanalından ('mobile_app/push_notification_channel') gönderir. Bu modül o kanaldan gelen
  * yükü GÜVENİLMEZ veri sayıp ekranda gösterilecek en küçük güvenli modele indirger:
  *
- *  - Başlık ve ileti düz metne çevrilir (HTML/Markdown işaretleri atılır) ve Kapı Kuralı süzgecinden (src/lib/suzgec.js guvenliMetin)
- *    geçer; ikisinden biri geçmezse bildirimin TAMAMI gösterilmez (kapı/kilit/alarm/garaj/bariyer/siren/kepenk içeren metin hiçbir
- *    yüzeye girmez).
+ *  - Başlık ve ileti düz metne çevrilir (HTML/Markdown işaretleri atılır) ve Kapı Kuralı süzgecinden (src/lib/suzgec.js guvenliGirisMetni:
+ *    genel kural + kamera giriş sözcükleri: zil, ziyaretçi, giriş, visitor, entrance...) geçer; ikisinden biri geçmezse bildirimin TAMAMI
+ *    gösterilmez (kapı/kilit/alarm/garaj/bariyer/siren/kepenk/zil/giriş içeren metin hiçbir yüzeye girmez). Gerekçe: "Zil çaldı" bildirimine
+ *    eklenen "Aç" düğmesi HA'da çoğunlukla kapı açan bir otomasyonu tetikler; düğmenin HA'da neyi tetikleyeceği bu uygulamadan bilinemez.
  *  - Düğmeler (data.actions): en çok 3; düğme başlığı VE eylem kimliği Kapı Kuralı'ndan geçmeyen, kimliği düz desene uymayan, bağlantı
  *    açan ('URI') ya da metin girişi isteyen (behavior: textInput) düğme sessizce düşer (kalanlar gösterilir). Eylem kimliği
  *    renderer'a GİTMEZ: sayfa yalnız düğme sırasını ve başlığını görür, hangi kimliğin HA'ya gideceğine ana süreç karar verir.
@@ -19,7 +20,7 @@
  * Bu dosya hiçbir şey günlüğe yazmaz ve ileti içeriğini hiçbir yere taşımaz.
  */
 
-const { guvenliMetin, adGuvenliMi } = require('./suzgec');
+const { guvenliGirisMetni, girisMetniGuvenliMi } = require('./suzgec');
 const { duzMetin } = require('./bildirim-merkezi');
 
 const EN_COK_DUGME = 3;
@@ -35,7 +36,7 @@ const duzNesneMi = (d) => !!d && typeof d === 'object' && !Array.isArray(d);
 
 /** Etiket (tag): düz desen + Kapı Kuralı; geçmezse null (bildirim yine gösterilir, etiketsiz). */
 function etiketDuzelt(ham) {
-  return typeof ham === 'string' && ETIKET_DESENI.test(ham) && adGuvenliMi('', ham) ? ham : null;
+  return typeof ham === 'string' && ETIKET_DESENI.test(ham) && girisMetniGuvenliMi(ham) ? ham : null;
 }
 
 /**
@@ -43,7 +44,7 @@ function etiketDuzelt(ham) {
  * @param {unknown} kimlik
  */
 function eylemKimligiGuvenliMi(kimlik) {
-  return typeof kimlik === 'string' && EYLEM_KIMLIGI_DESENI.test(kimlik) && kimlik.toUpperCase() !== 'URI' && adGuvenliMi('', kimlik);
+  return typeof kimlik === 'string' && EYLEM_KIMLIGI_DESENI.test(kimlik) && kimlik.toUpperCase() !== 'URI' && girisMetniGuvenliMi(kimlik);
 }
 
 /** Tek düğme girdisi -> { eylem, baslik } ya da null (düşer). */
@@ -52,7 +53,7 @@ function dugmeCoz(ham) {
   if (!eylemKimligiGuvenliMi(ham.action)) return null;
   if (typeof ham.uri === 'string' && ham.uri !== '') return null; // bağlantı açan düğme: bu uygulama adres açmaz
   if (ham.behavior === 'textInput') return null; // metin girişi arayüzü yok: yanıtsız eylem gönderilmez
-  const baslik = typeof ham.title === 'string' ? guvenliMetin(duzMetin(ham.title), DUGME_BASLIK_SINIRI) : null;
+  const baslik = typeof ham.title === 'string' ? guvenliGirisMetni(duzMetin(ham.title), DUGME_BASLIK_SINIRI) : null;
   return baslik === null ? null : { eylem: ham.action, baslik };
 }
 
@@ -75,7 +76,7 @@ function bildirimiCoz(olay) {
 
   const duz = duzMetin(olay.message);
   if (duz === '') return { tur: 'yoksay', neden: 'bos' };
-  const mesaj = guvenliMetin(duz, MESAJ_SINIRI);
+  const mesaj = guvenliGirisMetni(duz, MESAJ_SINIRI);
   if (mesaj === null) return { tur: 'yoksay', neden: 'guvensiz' };
 
   let baslik = null;
@@ -83,7 +84,7 @@ function bildirimiCoz(olay) {
     if (typeof olay.title !== 'string') return { tur: 'yoksay', neden: 'bicim' };
     const duzBaslik = duzMetin(olay.title);
     if (duzBaslik !== '') {
-      baslik = guvenliMetin(duzBaslik, BASLIK_SINIRI);
+      baslik = guvenliGirisMetni(duzBaslik, BASLIK_SINIRI);
       if (baslik === null) return { tur: 'yoksay', neden: 'guvensiz' };
     }
   }

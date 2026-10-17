@@ -1008,6 +1008,58 @@
       width: 90px;
     }
 
+    .cihaz-ek button.gorunum-emoji-sec {
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    .emoji-secici {
+      flex-basis: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px;
+      background: var(--bg);
+      border: 1px solid var(--kenar);
+      border-radius: 8px;
+    }
+
+    .emoji-secici input.emoji-ara {
+      width: 100%;
+      max-width: 260px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    .emoji-izgara {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .emoji-izgara button.emoji-oge {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      font-size: 20px;
+      line-height: 1;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+    }
+
+    .emoji-izgara button.emoji-oge:hover {
+      border-color: var(--kenar);
+    }
+
+    .cihaz-ek input[type="number"].gorunum-sayi {
+      width: 84px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
     .onar-kutusu {
       flex-basis: 100%;
       display: flex;
@@ -2046,6 +2098,14 @@
         <label for="tepsiRozetSensoru" data-i18n="ayar.rozet.sensorEtiket">Rozet sensörü</label>
         <select id="tepsiRozetSensoru"></select>
         <div class="ipucu" data-i18n="ayar.rozet.sensorIpucu">Yalnız sayısal sensörler (pil yüzdesi, sıcaklık gibi) çizilir; en çok üç karakter sığar, sığmayan değer için rozet çizilmez. Sensörler, Favoriler bölümünde cihazlar listelendiğinde dolar. Değer tepsi ipucuna da eklenir.</div>
+      </div>
+
+      <div class="form-grubu">
+        <label for="tepsiRozetSensoru2" data-i18n="ayar.rozet.sensor2Etiket">İkinci rozet sensörü</label>
+        <select id="tepsiRozetSensoru2"></select>
+        <label for="tepsiRozetSensoru3" data-i18n="ayar.rozet.sensor3Etiket">Üçüncü rozet sensörü</label>
+        <select id="tepsiRozetSensoru3"></select>
+        <div class="ipucu" data-i18n="ayar.rozet.ekIpucu">İsteğe bağlı: birden fazla sensör seçersen rozet 5 saniyede bir sırayla bu sensörlerin değerini gösterir. Çizilemeyen (sayı olmayan ya da sığmayan) sensör atlanır; tek sensör çizilebiliyorsa dönüş olmaz. Tepsi ipucunda hepsi birlikte yazılır.</div>
       </div>
     </div>
   </details>

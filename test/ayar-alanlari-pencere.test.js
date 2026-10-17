@@ -192,3 +192,11 @@ test('dışa aktarma: seçimler dosyaya girer, konum kayıtları ve tercih ekran
   assert.equal(cozum.ayarlar.panelOpaklik, 100);
   assert.equal(cozum.ayarlar.tepsiRozetSensoru, '');
 });
+
+test('tepsiRozetSensorleri: en çok 2 ek sensör; yalnız sensör alanı ve kapı kuralından geçenler, tekrarsız; dizi değilse reddedilir', () => {
+  assert.deepEqual(duzelt('tepsiRozetSensorleri', ['sensor.pil', 'sensor.nem']), ['sensor.pil', 'sensor.nem']);
+  assert.deepEqual(duzelt('tepsiRozetSensorleri', []), []);
+  assert.deepEqual(duzelt('tepsiRozetSensorleri', ['sensor.pil', 'sensor.pil', 'lock.on_kapi', 'light.salon', 'sensor.kapi_sicakligi', 'sensor.nem', 'sensor.fazla']), ['sensor.pil', 'sensor.nem'], 'geçersizler düşer, sınır 2');
+  assert.deepEqual(duzelt('tepsiRozetSensorleri', ['sensor.a', 'sensor.b', 'sensor.c']), ['sensor.a', 'sensor.b']);
+  for (const kotu of ['sensor.pil', null, undefined, {}, 5, true]) assert.equal(duzelt('tepsiRozetSensorleri', kotu), undefined, JSON.stringify(kotu));
+});

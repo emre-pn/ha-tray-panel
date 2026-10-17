@@ -12,6 +12,8 @@
  *  - renk   '' (varsayılan) | hazır palet adı. Serbest renk YOK: renkler yuzey.css içinde iki temada kontrastı denetlenmiş
  *           sınıflardır (.renk-<ad>); satır içi stil ya da renk metni sayfaya hiç gitmez.
  *  - boyut  'normal' (varsayılan, kayıtta saklanmaz) | 'kucuk' | 'genis' (2 sütun) | 'buyuk' (3 sütun, tam genişlik).
+ *  - Yalnız sensör favorisi: grafikTuru ('otomatik' varsayılan, kayıtta saklanmaz | 'cizgi' | 'gosterge' | 'yok') ile gostergeMin / gostergeMax
+ *    (gösterge aralığı; ikisi birden ve min < max olmalı). Gösterge aralığı sensörün kendi min/max özniteliğinden önce gelir.
  */
 (function (kok, fabrika) {
   const modul = fabrika();
@@ -105,7 +107,36 @@
     return BOYUTLAR.includes(ad) ? ad : null;
   }
 
+  /** Sensör karosunun grafik biçimi. 'otomatik': aralığı biliniyorsa gösterge, geçmişi varsa çizgi (eski davranış). */
+  const GRAFIK_TURLERI = Object.freeze(['otomatik', 'cizgi', 'gosterge', 'yok']);
+  const VARSAYILAN_GRAFIK = 'otomatik';
+  const GOSTERGE_SINIRI = 1e9;
+
+  /** '' ya da 'otomatik' = varsayılan ('otomatik' döner); geçerli tür; aksi null. */
+  function grafikTuruDuzelt(deger) {
+    if (typeof deger !== 'string') return null;
+    const ad = deger.trim();
+    if (ad === '') return VARSAYILAN_GRAFIK;
+    return GRAFIK_TURLERI.includes(ad) ? ad : null;
+  }
+
+  /**
+   * Gösterge aralığı: ikisi de sonlu sayı (mutlak değeri en çok 1e9) ve alt < üst olmalı. Geçersizse null (tek sınır ya da ters aralık saklanmaz).
+   * @returns {{gostergeMin: number, gostergeMax: number}|null}
+   */
+  function gostergeAraligiDuzelt(alt, ust) {
+    const sayi = (d) => (typeof d === 'number' && Number.isFinite(d) && Math.abs(d) <= GOSTERGE_SINIRI ? d : null);
+    const a = sayi(alt);
+    const u = sayi(ust);
+    return a !== null && u !== null && a < u ? { gostergeMin: a, gostergeMax: u } : null;
+  }
+
   return {
+    GRAFIK_TURLERI,
+    VARSAYILAN_GRAFIK,
+    GOSTERGE_SINIRI,
+    grafikTuruDuzelt,
+    gostergeAraligiDuzelt,
     IKONLAR,
     IKON_ADLARI,
     IKON_ONEKI,

@@ -90,6 +90,28 @@ test('Kapı Kuralı: yasak sözcük düğme başlığında ya da eylem kimliğin
   assert.equal(c.dusenDugme, 4);
 });
 
+test('Kapı Kuralı: zil, ziyaretçi, giriş (kamera giriş sözcükleri) ileti, başlık, düğme başlığı ve kimliğinde bildirimi / düğmeyi düşürür (5 dil)', () => {
+  // "Zil çaldı" + "Aç": kapı açan otomasyonun düğmesi hiçbir koşulda gösterilmez
+  assert.deepEqual(bildirimiCoz({ message: 'Zil çaldı', data: { actions: [dugme('AC', 'Aç')] } }), { tur: 'yoksay', neden: 'guvensiz' });
+  assert.deepEqual(bildirimiCoz({ message: 'Kurye geldi', title: 'Ziyaretçi', data: { actions: [dugme('AC', 'Aç')] } }), { tur: 'yoksay', neden: 'guvensiz' });
+  for (const iletisi of ['Giriş kapısında hareket', 'Girişte biri var', 'Visitor at the entrance', 'The bell rang', 'Es klingelt', 'Besucher am Eingang', "Quelqu'un à l'entrée",'Alguien en la entrada', 'Misafir geldi', 'Guest arrived']) {
+    assert.deepEqual(bildirimiCoz({ message: iletisi }), { tur: 'yoksay', neden: 'guvensiz' }, iletisi);
+    assert.deepEqual(bildirimiCoz({ message: 'Merhaba', title: iletisi }), { tur: 'yoksay', neden: 'guvensiz' }, `başlık: ${iletisi}`);
+  }
+  // masum ileti düğmeleriyle gösterilir; giriş sözcüklü düğme başlığı ya da kimliği yalnız o düğmeyi düşürür
+  const c = bildirimiCoz({ message: 'Çamaşır bitti', data: { actions: [dugme('GIRISI_AC', 'Aç'), dugme('KAPAT', 'Girişi aç'), dugme('ZIL_SUSTUR', 'Sustur'), dugme('ENTRANCE_OPEN', 'Tamam'), dugme('TAMAM', 'Tamam')] } });
+  assert.equal(c.tur, 'goster');
+  assert.deepEqual(c.dugmeler, [{ eylem: 'TAMAM', baslik: 'Tamam' }]);
+  assert.equal(c.dusenDugme, 4);
+  // etiket ve eylem kimliği (webhook gövdesinin son kapısı) aynı kuralı uygular
+  assert.equal(eylemKimligiGuvenliMi('GIRISI_AC'), false);
+  assert.equal(eylemKimligiGuvenliMi('doorbell_open'), false);
+  assert.equal(eylemKimligiGuvenliMi('ZIL_AC'), false);
+  assert.equal(eylemKimligiGuvenliMi('TAMAM'), true);
+  assert.equal(etiketDuzelt('zil-bildirimi'), null);
+  assert.equal(etiketDuzelt('camasir'), 'camasir');
+});
+
 test('Kapı Kuralı: etiket yasak sözcük içeriyorsa etiketsiz gösterilir', () => {
   assert.equal(bildirimiCoz({ message: 'Merhaba', data: { tag: 'door_open' } }).etiket, null);
   assert.equal(bildirimiCoz({ message: 'Merhaba', data: { tag: 'kapi' } }).etiket, null);

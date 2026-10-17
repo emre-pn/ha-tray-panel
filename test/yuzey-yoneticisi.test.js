@@ -1132,6 +1132,51 @@ test('1.4.0 yuzey:geciktir (o-15): yalnız açık panel/paletten; yük biçimce 
   }
 });
 
+test('1.4.0 yuzey:sayfa-sec (o-24): yalnız PALETTEN ve gönderen denetimiyle; kimlik modeldeki sayfa ya da "tumu" olmalı; panel o sayfayla bir kez açılır, servis çağrısı yapılmaz', async () => {
+  const model = { gruplar: [], sonlar: [], ust: {}, sayfalar: [{ id: 'aksam', ad: 'Akşam', kimlikler: [] }, { id: 'bos01', ad: 'Boş', kimlikler: [] }] };
+  const o = kur({ model });
+  try {
+    const isle = o.ipcIsleyicileri.get('yuzey:sayfa-sec');
+    assert.equal(typeof isle, 'function');
+    const yabanci = { sender: {}, senderFrame: { parent: null, url: 'https://kotu.example/' } };
+    assert.equal((await isle(yabanci, 'aksam')).ok, false);
+
+    // pencere gizliyken ve panelden kabul edilmez
+    const p = await panelAc(o);
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'aksam'), { ok: false, tur: 'gecersiz' }, 'panelden gelen istek reddedilir');
+    o.yonetici.gizle('test');
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'aksam'), { ok: false, tur: 'gecersiz' }, 'pencere gizliyken reddedilir');
+
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    const gosterSayisi = o.mesajlar(p, 'yuzey:goster').length;
+    for (const kotu of [undefined, null, 5, [], {}, 'yok', 'AKSAM', 'a'.repeat(41), '']) {
+      const yanit = await isle(o.yuzeyOlayi(p), kotu);
+      assert.equal(yanit.ok, false, JSON.stringify(kotu));
+    }
+    assert.equal(o.mesajlar(p, 'yuzey:goster').length, gosterSayisi, 'bozuk istek paneli açmaz');
+
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'aksam'), { ok: true });
+    const acilis = o.mesajlar(p, 'yuzey:goster').at(-1);
+    assert.equal(acilis.mod, 'panel');
+    assert.equal(acilis.sayfa, 'aksam');
+    // istek bir kez kullanılır: sonraki gösterim sayfa taşımaz
+    o.yonetici.gizle('test');
+    assert.equal(o.yonetici.panelAcKapat('tepsi'), 'acildi');
+    await akit();
+    assert.equal(Object.hasOwn(o.mesajlar(p, 'yuzey:goster').at(-1), 'sayfa'), false);
+    // "tumu" da geçerlidir; palet gösterimi sayfa taşımaz
+    o.yonetici.gizle('test');
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    assert.equal(Object.hasOwn(o.mesajlar(p, 'yuzey:goster').at(-1), 'sayfa'), false);
+    assert.deepEqual(await isle(o.yuzeyOlayi(p), 'tumu'), { ok: true });
+    assert.equal(o.mesajlar(p, 'yuzey:goster').at(-1).sayfa, 'tumu');
+  } finally {
+    o.temizle();
+  }
+});
+
 test('1.4.0 yuzey:gecikmeli-iptal (o-15): yalnız opak kimlik (g<n>) kabul edilir; varlık kimliği ya da bozuk kimlik bağlayıcıya ulaşmaz', async () => {
   const cagrilar = [];
   const eylemEk = {

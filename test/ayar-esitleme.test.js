@@ -392,3 +392,30 @@ test('şifreleyici: parametreler dosyada yazılı ve yalnız bu değerler kabul 
   await assert.rejects(() => s.coz(zarf, 'kisa'), (hata) => hata.neden === 'parola-gecersiz');
   await assert.rejects(() => s.sifrele('x', 'kisa'), (hata) => hata.neden === 'parola-gecersiz');
 });
+
+test('onayGevsetmesiniEngelle: uzak onay:false yerelde de onay:false değilse atılır; onay:true ve diğer alanlar aynen; girdi değişmez; uzakBolumTemizle yalnız parolasızda uygular', () => {
+  const uzak = [
+    { entity_id: 'script.a', ad: 'A', onay: false },
+    { entity_id: 'script.b', ad: 'B', onay: false },
+    { entity_id: 'light.c', ad: 'C', onay: true, kisayol: 'Control+Alt+1' },
+    { entity_id: 'light.d', ad: 'D' },
+  ];
+  const yerel = [{ entity_id: 'script.b', ad: 'B', onay: false }, { entity_id: 'script.a', ad: 'A' }];
+  const once = JSON.stringify(uzak);
+  const s = E.onayGevsetmesiniEngelle(uzak, yerel);
+  assert.equal(s.atilan, 1);
+  assert.equal(JSON.stringify(uzak), once, 'girdi değişmez');
+  assert.deepEqual(s.favoriler.map((f) => [f.entity_id, f.onay]), [['script.a', undefined], ['script.b', false], ['light.c', true], ['light.d', undefined]]);
+  assert.equal(s.favoriler[2].kisayol, 'Control+Alt+1');
+  assert.deepEqual(E.onayGevsetmesiniEngelle('x', []), { favoriler: 'x', atilan: 0 });
+  assert.equal(E.onayGevsetmesiniEngelle(uzak, null).atilan, 2);
+
+  const ham = { favoriler: [{ entity_id: 'script.a', ad: 'A', onay: false }], panolar: [] };
+  const parolasiz = E.uzakBolumTemizle('favoriler', ham, { varsayilan: VARSAYILAN, parolasiz: true, yerelFavoriler: [] });
+  assert.equal(parolasiz.cozum.ayarlar.favoriler[0].onay, undefined);
+  assert.equal(parolasiz.onayAtilan, 1);
+  const parolali = E.uzakBolumTemizle('favoriler', ham, { varsayilan: VARSAYILAN, parolasiz: false, yerelFavoriler: [] });
+  assert.equal(parolali.cozum.ayarlar.favoriler[0].onay, false);
+  assert.equal(parolali.onayAtilan, 0);
+});
+

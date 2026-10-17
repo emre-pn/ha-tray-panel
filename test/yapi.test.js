@@ -153,6 +153,7 @@ const EV_PANELI_KOPRUSU = [
   'adresSina',
   'acikSayfa',
   'ayarlariDisaAktar',
+  'ayarlariIceAktarOnizle',
   'ayarlariIceAktar',
   'yedekleriGetir',
   'yedektenDon',
@@ -228,7 +229,7 @@ const EV_PANELI_KOPRUSU = [
 // 1.4.0 dis grubu (o-54): 'disOnayAl', 'disOnayYanitla', 'onDisOnay' (evpaneli:// bağlantı izni; soru yalnız açık panelde okunur,
 // karar yalnız sorunun biletiyle kabul edilir, src/yuzey-yoneticisi.js) bilinçli eklendi.
 // eylem grubu: 'geriAl' (o-12), 'geciktir' / 'gecikmeliIptal' (o-15), 'odaKapat' (o-14), 'digerCihazlar' / 'digerCalistir' / 'digerFavoriEkle' (o-46) bilinçli eklendi.
-const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onEtkilesim', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'kamera', 'basiliBasla', 'basiliBirak', 'kapat', 'sabitle', 'boyut', 'haAc', 'ayarlarAc', 'sagTik', 'disOnayAl', 'disOnayYanitla', 'onDisOnay', 'geriAl', 'geciktir', 'gecikmeliIptal', 'odaKapat', 'digerCihazlar', 'digerCalistir', 'digerFavoriEkle'];
+const EV_YUZEY_KOPRUSU = ['durumAl', 'onDurum', 'onGoster', 'onEtkilesim', 'onDilDegisti', 'calistir', 'oku', 'bildirimKapat', 'kamera', 'basiliBasla', 'basiliBirak', 'kapat', 'sabitle', 'boyut', 'haAc', 'ayarlarAc', 'sagTik', 'disOnayAl', 'disOnayYanitla', 'onDisOnay', 'geriAl', 'geciktir', 'gecikmeliIptal', 'odaKapat', 'digerCihazlar', 'digerCalistir', 'digerFavoriEkle', 'sayfaSec'];
 // preload-karo.js'in window.evKaro altında açtığı tam liste (masaüstü karosu, 1.4.0 o-33): yalnız kendi karosunun durumu, tıkla/ön ayar ve kaldır.
 const EV_KARO_KOPRUSU = ['durumAl', 'onDurum', 'onDilDegisti', 'calistir', 'kaldir'];
 // preload-itme.js'in window.evItme altında açtığı tam liste (düğmeli itme bildirimi kartı, o-61): yalnız kendi kartı için.

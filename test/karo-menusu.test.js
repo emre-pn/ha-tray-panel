@@ -8,6 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { karoMenuPlani, karoMenuIslemi } = require('../src/lib/karo-menusu');
+const { EN_COK_KARO } = require('../src/lib/masaustu-karo');
 const { EN } = { EN: require('../src/lib/ceviri/ana').en };
 const { Dil } = { Dil: require('../src/lib/dil') };
 
@@ -86,4 +87,69 @@ test('işlem: tanınmayan işlem, favori olmayan kimlik, olmayan sayfa ve deği�
   assert.deepEqual(karoMenuIslemi({ islem: 'sayfa:zzz', kimlik: 'light.a', favoriler, sayfalar }), { tur: 'yok' }, 'sayfa yok');
   assert.deepEqual(karoMenuIslemi({ islem: 'tepsi', kimlik: 5, favoriler, sayfalar }), { tur: 'yok' });
   assert.deepEqual(karoMenuIslemi({ islem: 'tepsi', kimlik: 'light.a', favoriler: null, sayfalar }), { tur: 'yok' });
+});
+
+// --- masaüstüne sabitle (1.4.0) -------------------------------------------------------------------------------------------
+
+test('plan: sabitleme öğesi yalnız çağıran sabitli listeyi verirse, sabitlenebilir alanda ve zararsız karoda çıkar; tepsiden sonra gelir', () => {
+  const isik = { id: 'light.a', sinif: 'zararsiz', varsayilanEylem: true };
+  assert.deepEqual(kimlikler(karoMenuPlani({ karo: isik, favori: fav('light.a'), sayfalar: [] })), ['duzenle', 'tepsi', 'kaldir'], 'liste verilmezse öğe yok');
+  const plan = karoMenuPlani({ karo: isik, favori: fav('light.a'), sayfalar: [sayfa('aaa', 'A', [])], masaustu: [] });
+  assert.deepEqual(kimlikler(plan), ['duzenle', 'tepsi', 'masaustu', 'sayfalar', 'sayfa:aaa', 'kaldir']);
+  assert.equal(plan.find((o) => o.id === 'masaustu').label, 'Masaüstüne sabitle');
+  const sabit = karoMenuPlani({ karo: isik, favori: fav('light.a'), masaustu: ['light.a'] });
+  assert.equal(sabit.find((o) => o.id === 'masaustu').label, 'Sabitlemeyi kaldır');
+  // sensör: tek tıklama eylemi yok (tepsi öğesi yok) ama masaüstüne sabitlenebilir
+  const sensor = karoMenuPlani({ karo: { id: 'sensor.sicaklik', sinif: 'zararsiz', varsayilanEylem: false }, favori: fav('sensor.sicaklik'), masaustu: [] });
+  assert.deepEqual(kimlikler(sensor), ['duzenle', 'masaustu', 'kaldir']);
+});
+
+test('plan: sabitlenemeyen alan (klima, perde, kamera), yıkıcı karo ve kapı sözcüklü kimlik için sabitleme öğesi yok; liste doluyken yalnız sabitli karoda "kaldır" kalır', () => {
+  const ogeVarMi = (karo) => karoMenuPlani({ karo, favori: fav(karo.id), masaustu: [] }).some((o) => o.id === 'masaustu');
+  assert.equal(ogeVarMi({ id: 'light.a', sinif: 'zararsiz' }), true);
+  assert.equal(ogeVarMi({ id: 'climate.salon', sinif: 'zararsiz', varsayilanEylem: false }), false);
+  assert.equal(ogeVarMi({ id: 'cover.perde', sinif: 'zararsiz' }), false);
+  assert.equal(ogeVarMi({ id: 'camera.bahce', sinif: 'zararsiz' }), false);
+  assert.equal(ogeVarMi({ id: 'light.garaj_kapisi', sinif: 'zararsiz' }), false, 'Kapı Kuralı');
+  assert.equal(ogeVarMi({ id: 'light.a', sinif: 'yikici' }), false);
+  assert.equal(ogeVarMi({ id: 'light.a' }), false, 'sınıfı bilinmeyen karo sabitlenmez');
+  const dolu = Array.from({ length: EN_COK_KARO }, (_, i) => `light.k${i}`);
+  const baska = karoMenuPlani({ karo: { id: 'light.a', sinif: 'zararsiz' }, favori: fav('light.a'), masaustu: dolu });
+  assert.equal(baska.some((o) => o.id === 'masaustu'), false, 'liste dolu: yeni sabitleme önerilmez');
+  const kendisi = karoMenuPlani({ karo: { id: 'light.k0', sinif: 'zararsiz' }, favori: fav('light.k0'), masaustu: dolu });
+  assert.equal(kendisi.find((o) => o.id === 'masaustu').label, 'Sabitlemeyi kaldır');
+});
+
+test('plan: sabitleme etiketleri İngilizce çevrilir ve Türkçe karakter içermez', () => {
+  const t = Dil.cevirmen('en', { en: EN });
+  const sabitle = karoMenuPlani({ karo: { id: 'light.a', sinif: 'zararsiz' }, favori: fav('light.a'), masaustu: [], t }).find((o) => o.id === 'masaustu');
+  const kaldir = karoMenuPlani({ karo: { id: 'light.a', sinif: 'zararsiz' }, favori: fav('light.a'), masaustu: ['light.a'], t }).find((o) => o.id === 'masaustu');
+  assert.equal(sabitle.label, 'Pin to desktop');
+  assert.equal(kaldir.label, 'Unpin from desktop');
+});
+
+test('işlem masaustu: sabitli listeyi tersine çevirir, girdiyi bozmaz, favori / sayfa döndürmez', () => {
+  const favoriler = [fav('light.a'), fav('light.b')];
+  const sayfalar = [sayfa('aaa', 'A', ['light.a'])];
+  const liste = ['light.b'];
+  const ekle = karoMenuIslemi({ islem: 'masaustu', kimlik: 'light.a', favoriler, sayfalar, masaustu: liste });
+  assert.deepEqual(ekle, { tur: 'masaustu', sabit: true, liste: ['light.b', 'light.a'] });
+  assert.deepEqual(liste, ['light.b'], 'girdi dizi değişmez');
+  const cikar = karoMenuIslemi({ islem: 'masaustu', kimlik: 'light.b', favoriler, sayfalar, masaustu: liste });
+  assert.deepEqual(cikar, { tur: 'masaustu', sabit: false, liste: [] });
+  assert.equal('favoriler' in ekle || 'sayfalar' in ekle, false);
+  // listedeki metin olmayan girdi yazılmaz
+  assert.deepEqual(karoMenuIslemi({ islem: 'masaustu', kimlik: 'light.a', favoriler, sayfalar, masaustu: [5, null, 'light.b'] }).liste, ['light.b', 'light.a']);
+});
+
+test('işlem masaustu: liste verilmemiş, dolu, kimlik sabitlenemez ya da favori değil ise "yok" (bozuk istek hiçbir şey sabitlemez)', () => {
+  const favoriler = [fav('light.a'), fav('climate.salon'), fav('lock.on_kapi'), fav('light.garaj_kapisi')];
+  const dene = (kimlik, masaustu) => karoMenuIslemi({ islem: 'masaustu', kimlik, favoriler, sayfalar: [], masaustu });
+  assert.deepEqual(dene('light.a', undefined), { tur: 'yok' });
+  assert.deepEqual(dene('light.a', 'light.a'), { tur: 'yok' });
+  assert.deepEqual(dene('light.a', Array.from({ length: EN_COK_KARO }, (_, i) => `light.k${i}`)), { tur: 'yok' }, 'liste dolu');
+  for (const kimlik of ['climate.salon', 'lock.on_kapi', 'light.garaj_kapisi', 'light.baska', 5, null]) assert.deepEqual(dene(kimlik, []), { tur: 'yok' }, String(kimlik));
+  const dolu = Array.from({ length: EN_COK_KARO }, (_, i) => `light.k${i}`);
+  assert.equal(karoMenuIslemi({ islem: 'masaustu', kimlik: 'light.a', favoriler: [...favoriler, fav('light.k0')], sayfalar: [], masaustu: dolu }).tur, 'yok');
+  assert.deepEqual(karoMenuIslemi({ islem: 'masaustu', kimlik: 'light.k0', favoriler: [...favoriler, fav('light.k0')], sayfalar: [], masaustu: dolu }).sabit, false, 'dolu listeden çıkarma serbest');
 });

@@ -90,9 +90,6 @@ function eylemEkleriOlustur({ eylem, ayarlarAl, dosyalar, fs, gunluk = () => {},
   // o-12: geri al (yığın, sahne ön okuması, süre dolumu)
   const geriAl = geriAlBaglayiciOlustur({ eylem, ayarlarAl, bildir, t, degisti, simdi, ...(zaman ? { zaman } : {}), gunluk });
 
-  // o-15: gecikmeli eylem (bekleyen liste, zamanlayıcı, iptal)
-  const gecikmeli = gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir, t, degisti, simdi, ...(zaman ? { zaman } : {}), gunluk, ...(saatMetni ? { saatMetni } : {}), kaydet: (k) => etkinlik.ekle(k) });
-
   // o-18: son değişenler (palet "@"): izlenen varlıkların aç/kapat geçişleri, yalnız bellekte
   const sonDegisenler = depo ? sonDegisenlerOlustur({ depo, ayarlarAl, simdi, ...(adAl ? { adAl } : {}) }) : null;
 
@@ -101,6 +98,9 @@ function eylemEkleriOlustur({ eylem, ayarlarAl, dosyalar, fs, gunluk = () => {},
 
   // o-46: palette "*" ile favori olmayan güvenli cihazlar (varsayılan KAPALI; liste tek okuma isteğiyle, 2 dk bellekte)
   const diger = typeof haIstek === 'function' ? digerCihazlarOlustur({ eylem, ayarlarAl, haIstek, favoriEkle, ...(alanlarAl ? { alanlarAl } : {}), simdi, gunluk }) : null;
+
+  // o-15: gecikmeli eylem (bekleyen liste, zamanlayıcı, iptal); favori dışı kimlik yalnız "diğer cihazlar" listesindeyse kabul edilir
+  const gecikmeli = gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir, t, degisti, simdi, ...(zaman ? { zaman } : {}), gunluk, ...(saatMetni ? { saatMetni } : {}), kaydet: (k) => etkinlik.ekle(k), digerMi: (kimlik) => (diger ? diger.listedeMi(kimlik) : false) });
 
   return {
     etkinlik,

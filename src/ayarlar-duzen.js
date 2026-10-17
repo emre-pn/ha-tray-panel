@@ -25,8 +25,63 @@
   const SAYFA_AD_SINIRI = Islem ? Islem.SAYFA_AD_SINIRI : 24;
   const EMOJI_SECIMI = 'emoji';
   const SURUKLEME_TURU = 'application/x-ev-paneli-sira';
-  const GORUNUM_ALANLARI = ['simge', 'renk', 'boyut', 'tepsi'];
-  const VARSAYILAN_GORUNUM = Object.freeze({ simge: '', renk: '', boyut: 'normal', tepsi: false });
+  const GORUNUM_ALANLARI = ['simge', 'renk', 'boyut', 'tepsi', 'grafikTuru'];
+  const VARSAYILAN_GORUNUM = Object.freeze({ simge: '', renk: '', boyut: 'normal', tepsi: false, grafikTuru: 'otomatik', gostergeMin: null, gostergeMax: null });
+
+  // Emoji seçici önerileri (1.4.0): küçük, ev temalı bir liste; adlar arayüz dilindedir (sözlük). Kapı / kilit / anahtar / siren / bariyer / pencere temalı
+  // emojiler listede YOKTUR; seçilen değer yine de karo-gorunum.js simgeDuzelt doğrulamasından geçer (Kapı Kuralı sözlükte değil orada).
+  const EMOJI_ONERILERI = Object.freeze([
+    ['💡', 'ayar.emoji.ampul'],
+    ['🕯️', 'ayar.emoji.mum'],
+    ['🛋️', 'ayar.emoji.salon'],
+    ['🛏️', 'ayar.emoji.yatakOdasi'],
+    ['🚿', 'ayar.emoji.dus'],
+    ['🛁', 'ayar.emoji.banyo'],
+    ['🚽', 'ayar.emoji.tuvalet'],
+    ['🍳', 'ayar.emoji.mutfak'],
+    ['☕', 'ayar.emoji.kahve'],
+    ['🧺', 'ayar.emoji.camasir'],
+    ['🧹', 'ayar.emoji.temizlik'],
+    ['🤖', 'ayar.emoji.supurge'],
+    ['📺', 'ayar.emoji.televizyon'],
+    ['🎵', 'ayar.emoji.muzik'],
+    ['🔊', 'ayar.emoji.hoparlor'],
+    ['🎮', 'ayar.emoji.oyun'],
+    ['💻', 'ayar.emoji.dizustu'],
+    ['🖥️', 'ayar.emoji.masaustu'],
+    ['📱', 'ayar.emoji.telefon'],
+    ['🔌', 'ayar.emoji.priz'],
+    ['🔋', 'ayar.emoji.pil'],
+    ['⚡', 'ayar.emoji.elektrik'],
+    ['🌡️', 'ayar.emoji.sicaklik'],
+    ['❄️', 'ayar.emoji.soguk'],
+    ['🔥', 'ayar.emoji.isitma'],
+    ['☀️', 'ayar.emoji.gunes'],
+    ['🌙', 'ayar.emoji.gece'],
+    ['⭐', 'ayar.emoji.yildiz'],
+    ['🌧️', 'ayar.emoji.yagmur'],
+    ['💧', 'ayar.emoji.su'],
+    ['🌀', 'ayar.emoji.vantilator'],
+    ['🪴', 'ayar.emoji.bitki'],
+    ['🌳', 'ayar.emoji.bahce'],
+    ['🐶', 'ayar.emoji.kopek'],
+    ['🐱', 'ayar.emoji.kedi'],
+    ['🚗', 'ayar.emoji.araba'],
+    ['🧸', 'ayar.emoji.cocukOdasi'],
+    ['🏠', 'ayar.emoji.ev'],
+    ['🛒', 'ayar.emoji.alisveris'],
+    ['📅', 'ayar.emoji.takvim'],
+    ['⏰', 'ayar.emoji.calarSaat'],
+    ['🎬', 'ayar.emoji.sinema'],
+    ['🍿', 'ayar.emoji.filmGecesi'],
+    ['🎉', 'ayar.emoji.parti'],
+    ['😴', 'ayar.emoji.uyku'],
+    ['🌅', 'ayar.emoji.gunDogumu'],
+    ['🌆', 'ayar.emoji.aksam'],
+    ['🚰', 'ayar.emoji.musluk'],
+    ['🎄', 'ayar.emoji.yilbasi'],
+    ['🧊', 'ayar.emoji.buz'],
+  ]);
 
   // Sözlük anahtarları (düz tablolar: kullanılmayan / eksik anahtar testlerle yakalanır)
   const RENK_ANAHTARLARI = {
@@ -45,6 +100,12 @@
     normal: 'ayar.gorunum.boyut.normal',
     genis: 'ayar.gorunum.boyut.genis',
     buyuk: 'ayar.gorunum.boyut.buyuk',
+  };
+  const GRAFIK_ANAHTARLARI = {
+    otomatik: 'ayar.gorunum.grafik.otomatik',
+    cizgi: 'ayar.gorunum.grafik.cizgi',
+    gosterge: 'ayar.gorunum.grafik.gosterge',
+    yok: 'ayar.gorunum.grafik.yok',
   };
   const IKON_ANAHTARLARI = {
     isik: 'ayar.gorunum.ikon.isik',
@@ -195,6 +256,9 @@
           renk: typeof f.renk === 'string' ? f.renk : '',
           boyut: typeof f.boyut === 'string' && f.boyut !== '' ? f.boyut : 'normal',
           tepsi: f.tepsi === true,
+          grafikTuru: typeof f.grafikTuru === 'string' && f.grafikTuru !== '' ? f.grafikTuru : 'otomatik',
+          gostergeMin: typeof f.gostergeMin === 'number' && isFinite(f.gostergeMin) ? f.gostergeMin : null,
+          gostergeMax: typeof f.gostergeMax === 'number' && isFinite(f.gostergeMax) ? f.gostergeMax : null,
         });
       });
       if (!birlestir) {
@@ -223,6 +287,12 @@
       GORUNUM_ALANLARI.forEach(function (alan) {
         if (Object.prototype.hasOwnProperty.call(d, alan)) girdi[alan] = d[alan];
       });
+      // Sensör gösterge aralığı ÇİFT olarak gider (biri değiştiyse ikisi de; null aralığı temizler)
+      if (Object.prototype.hasOwnProperty.call(d, 'gostergeMin') || Object.prototype.hasOwnProperty.call(d, 'gostergeMax')) {
+        const g = etkinGorunum(kimlik);
+        girdi.gostergeMin = g.gostergeMin;
+        girdi.gostergeMax = g.gostergeMax;
+      }
     }
 
     function secimOlustur(secenekler, deger, etiket) {
@@ -306,6 +376,14 @@
       emojiHata.style.display = 'none';
       emoji.style.display = secim === EMOJI_SECIMI ? '' : 'none';
       kap.appendChild(emoji);
+      const emojiSec = belge.createElement('button');
+      emojiSec.type = 'button';
+      emojiSec.className = 'gorunum-emoji-sec';
+      emojiSec.textContent = t('ayar.gorunum.emojiSec');
+      emojiSec.setAttribute('aria-label', t('ayar.gorunum.emojiSecEtiket', { ad: ad }));
+      emojiSec.setAttribute('aria-expanded', 'false');
+      emojiSec.style.display = secim === EMOJI_SECIMI ? '' : 'none';
+      kap.appendChild(emojiSec);
       kap.appendChild(emojiHata);
 
       function emojiHatasiniAyarla(hatali) {
@@ -335,28 +413,203 @@
         alanAyarla(kimlik, 'simge', duzgun);
       }
 
+      // Emoji seçici: ilk açılışta kurulur (her satırda 50 düğme önceden çizilmesin); seçilen emoji yazılan emoji gibi AYNI doğrulamadan geçer
+      let secici = null;
+
+      function seciciKapat() {
+        emojiSec.setAttribute('aria-expanded', 'false');
+        if (secici) secici.kutu.style.display = 'none';
+      }
+
+      function emojiSeciliyor(deger) {
+        emoji.value = deger;
+        emojiUygula();
+        seciciKapat();
+        emojiSec.focus();
+      }
+
+      function seciciKur() {
+        const kutu = el('div', 'emoji-secici');
+        const ara = belge.createElement('input');
+        ara.type = 'search';
+        ara.className = 'emoji-ara';
+        ara.spellcheck = false;
+        ara.placeholder = t('ayar.gorunum.emojiAra');
+        ara.setAttribute('aria-label', t('ayar.gorunum.emojiAraEtiket', { ad: ad }));
+        const izgara = el('div', 'emoji-izgara');
+        const bos = el('div', 'cihaz-not', t('ayar.gorunum.emojiBulunamadi'));
+        bos.style.display = 'none';
+        kutu.appendChild(ara);
+        kutu.appendChild(izgara);
+        kutu.appendChild(bos);
+
+        function ciz() {
+          const sonuc = emojiAra(ara.value);
+          izgara.replaceChildren.apply(
+            izgara,
+            sonuc.map(function (o) {
+              const dugme = belge.createElement('button');
+              dugme.type = 'button';
+              dugme.className = 'emoji-oge';
+              dugme.textContent = o.emoji;
+              dugme.title = o.ad;
+              dugme.setAttribute('aria-label', o.ad);
+              dugme.addEventListener('click', function () {
+                emojiSeciliyor(o.emoji);
+              });
+              return dugme;
+            }),
+          );
+          bos.style.display = sonuc.length === 0 ? 'block' : 'none';
+        }
+        ara.addEventListener('input', ciz);
+        ara.addEventListener('keydown', function (olay) {
+          if (olay.key === 'Escape') {
+            olay.preventDefault();
+            olay.stopPropagation();
+            seciciKapat();
+            emojiSec.focus();
+          } else if (olay.key === 'Enter') {
+            olay.preventDefault();
+            const ilk = emojiAra(ara.value)[0];
+            if (ilk) emojiSeciliyor(ilk.emoji);
+          }
+        });
+        ciz();
+        return { kutu: kutu, ara: ara, ciz: ciz };
+      }
+
+      emojiSec.addEventListener('click', function () {
+        if (secici && secici.kutu.style.display !== 'none') {
+          seciciKapat();
+          return;
+        }
+        if (!secici) {
+          secici = seciciKur();
+          kap.appendChild(secici.kutu);
+        }
+        secici.kutu.style.display = '';
+        secici.ara.value = '';
+        secici.ciz();
+        emojiSec.setAttribute('aria-expanded', 'true');
+        ortak.odakla(secici.ara);
+      });
+
       simge.addEventListener('change', function () {
         if (simge.value === EMOJI_SECIMI) {
           emoji.style.display = '';
+          emojiSec.style.display = '';
           emojiUygula();
           ortak.odakla(emoji);
           return;
         }
         emoji.style.display = 'none';
+        emojiSec.style.display = 'none';
+        seciciKapat();
         emojiHatasiniAyarla(false);
         alanAyarla(kimlik, 'simge', simge.value);
       });
       emoji.addEventListener('input', emojiUygula);
 
-      const kontroller = tepsiYok ? [renk, boyut, simge, emoji] : [tepsi, renk, boyut, simge, emoji];
+      const kontroller = tepsiYok ? [renk, boyut, simge, emoji, emojiSec] : [tepsi, renk, boyut, simge, emoji, emojiSec];
+      if (secenek && secenek.sensor === true) sensorKontrolleriniKur(kap, kimlik, ad, g, kontroller);
       function etkinlestir(acik) {
         kontroller.forEach(function (k) {
           k.disabled = !acik;
         });
+        if (!acik) seciciKapat(); // seçilmeyen satırın seçicisi açık kalmaz
       }
       etkinlestir(secili);
       ek.appendChild(kap);
       return { etkinlestir: etkinlestir };
+    }
+
+    /** Arama için katlama: küçük harf, aksan ve Türkçe noktasız ı sadeleşir ("isitma", "Isıtma" ve "ısıtma" aynı sözcüğü bulur). */
+    function aramaKatla(metin) {
+      return String(metin)
+        .toLowerCase()
+        .replace(/\u0131/g, 'i')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    }
+
+    /**
+     * Emoji seçici araması: önerilerde ARAYÜZ DİLİNDEKİ ada göre süzer (boş sorgu = hepsi, liste sırasıyla). Aksan / büyük-küçük harf farkı yoktur.
+     * @returns {{emoji: string, ad: string}[]}
+     */
+    function emojiAra(sorgu) {
+      const aranan = aramaKatla(String(sorgu || '').trim());
+      const sonuc = [];
+      EMOJI_ONERILERI.forEach(function (o) {
+        const ad = t(o[1]);
+        if (aranan === '' || aramaKatla(ad).indexOf(aranan) >= 0 || o[0] === String(sorgu || '').trim()) sonuc.push({ emoji: o[0], ad: ad });
+      });
+      return sonuc;
+    }
+
+    /** Sensör favorisine özel: grafik biçimi ve gösterge alt / üst değeri (ikisi birden; geçersiz çift kayda alınmaz, önceki değer korunur). */
+    function sensorKontrolleriniKur(kap, kimlik, ad, g, kontroller) {
+      const grafikler = Gorunum.GRAFIK_TURLERI.map(function (b) {
+        return [b, t(GRAFIK_ANAHTARLARI[b] || 'ayar.gorunum.grafik.otomatik')];
+      });
+      const grafik = secimOlustur(grafikler, g.grafikTuru, t('ayar.gorunum.grafikEtiket', { ad: ad }));
+      grafik.addEventListener('change', function () {
+        alanAyarla(kimlik, 'grafikTuru', grafik.value);
+      });
+      kap.appendChild(etiketli(t('ayar.gorunum.grafik'), grafik));
+
+      function sayiKutusu(etiket, deger) {
+        const kutu = belge.createElement('input');
+        kutu.type = 'number';
+        kutu.step = 'any';
+        kutu.className = 'gorunum-sayi';
+        kutu.title = t('ayar.gorunum.gostergeIpucu');
+        kutu.setAttribute('aria-label', etiket);
+        kutu.value = typeof deger === 'number' ? String(deger) : '';
+        return kutu;
+      }
+      const alt = sayiKutusu(t('ayar.gorunum.gostergeAltEtiket', { ad: ad }), g.gostergeMin);
+      const ust = sayiKutusu(t('ayar.gorunum.gostergeUstEtiket', { ad: ad }), g.gostergeMax);
+      kap.appendChild(etiketli(t('ayar.gorunum.gostergeAlt'), alt));
+      kap.appendChild(etiketli(t('ayar.gorunum.gostergeUst'), ust));
+      const hata = el('div', 'cihaz-not', t('ayar.gorunum.gostergeGecersiz'));
+      hata.style.display = 'none';
+      kap.appendChild(hata);
+
+      function hataAyarla(hatali) {
+        hata.style.display = hatali ? 'block' : 'none';
+        [alt, ust].forEach(function (k) {
+          if (hatali) {
+            k.classList.add('gecersiz');
+            k.setAttribute('aria-invalid', 'true');
+          } else {
+            k.classList.remove('gecersiz');
+            k.removeAttribute('aria-invalid');
+          }
+        });
+      }
+
+      function aralikUygula() {
+        const a = alt.value.trim();
+        const u = ust.value.trim();
+        if (a === '' && u === '') {
+          hataAyarla(false);
+          alanAyarla(kimlik, 'gostergeMin', null);
+          alanAyarla(kimlik, 'gostergeMax', null);
+          return;
+        }
+        const aralik = a !== '' && u !== '' ? Gorunum.gostergeAraligiDuzelt(Number(a), Number(u)) : null;
+        if (!aralik) {
+          hataAyarla(true); // eksik / ters / geçersiz çift: değişiklik kayda alınmaz, önceki değer korunur
+          return;
+        }
+        hataAyarla(false);
+        alanAyarla(kimlik, 'gostergeMin', aralik.gostergeMin);
+        alanAyarla(kimlik, 'gostergeMax', aralik.gostergeMax);
+      }
+      alt.addEventListener('input', aralikUygula);
+      ust.addEventListener('input', aralikUygula);
+      kontroller.push(grafik, alt, ust);
     }
 
     function etiketli(metin, kontrol) {
@@ -972,6 +1225,7 @@
 
   kok.EvAyarlarDuzen = {
     EMOJI_SECIMI: EMOJI_SECIMI,
+    EMOJI_ONERILERI: EMOJI_ONERILERI,
     sayfalariNormallestir: sayfalariNormallestir,
     suruklemeHedefi: suruklemeHedefi,
     zamanMetni: zamanMetni,

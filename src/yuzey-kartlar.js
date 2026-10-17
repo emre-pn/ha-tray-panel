@@ -35,6 +35,14 @@
   const UYGULA_OMRU_MS = 15000; // onay bekleyen yerel değer (basılı tutup uygulanmazsa geri alınır)
   const SAYAC_MS = 1000;
   const SES_ADIMI = 5;
+  const DESTEK_ATLA = 2; // media_player supported_features: konum atlama (SEEK)
+  const ATLAMA_SANIYE = 10;
+  // vacuum supported_features bitleri (cihaz bit alanını bildirmiyorsa eski üç düğme görünür; durdur yalnız AÇIKÇA desteklenirse)
+  const SUPURGE_ACIK = 1;
+  const SUPURGE_DURAKLAT = 4;
+  const SUPURGE_DURDUR = 8;
+  const SUPURGE_SARJ = 16;
+  const SUPURGE_BASLAT = 8192;
   const BEYAZ_SIRASI = ['sicak', 'dogal', 'soguk'];
   const RENK_SIRASI = ['kirmizi', 'turuncu', 'sari', 'yesil', 'turkuaz', 'mavi', 'mor', 'pembe'];
   const ISIK_RENK_MODLARI = ['hs', 'rgb', 'rgbw', 'rgbww', 'xy'];
@@ -53,7 +61,7 @@
   const OZELLIK_TURLERI = Object.freeze({
     renkSicakligi: 'n', enAzKelvin: 'n', enCokKelvin: 'n', rgb: 'r', renkModlari: 'l',
     yuzde: 'n', adimYuzde: 'n', salinim: 'b', onAyar: 's', onAyarlar: 'l',
-    mevcutSicaklik: 'n', hedefSicaklik: 'n', hedefAlt: 'n', hedefUst: 'n', enAz: 'n', enCok: 'n', adim: 'n', mod: 's', modlar: 'l', hvacEylemi: 's', mevcutNem: 'n',
+    mevcutSicaklik: 'n', hedefSicaklik: 'n', hedefAlt: 'n', hedefUst: 'n', enAz: 'n', enCok: 'n', adim: 'n', mod: 's', modlar: 'l', hvacEylemi: 's', mevcutNem: 'n', fanModu: 's', fanModlari: 'l',
     durum: 's', baslik: 's', sanatci: 's', album: 's', ses: 'n', sessiz: 'b', kaynak: 's', kaynaklar: 'l', sure: 'x', konum: 'n', konumZamani: 's', kapak: 'b', kapakAnahtari: 's',
     hedefNem: 'n', pil: 'n', secenek: 's', secenekler: 'l', deger: 'x', birim: 's', kip: 's', kalan: 's', bitis: 's',
     acikSayisi: 'n', sayi: 'n', sinif: 's', durumSinifi: 's', hassasiyet: 'n', acik: 'b',
@@ -338,13 +346,18 @@
       if (typeof s.basili === 'boolean') dugme.setAttribute('aria-pressed', s.basili ? 'true' : 'false');
       dugme.disabled = s.pasif === true || !karo.kullanilabilir;
       b.odakKaydet('c:' + karo.id + ':' + ad, dugme);
-      const yuk = { kimlik: karo.id, servis: s.servis };
-      if (s.veri !== undefined) yuk.veri = s.veri;
+      // s.veriYap verilmişse veri tıklama (ya da basılı tutma) anında hesaplanır (ör. canlı konuma göre atlama)
+      const yukAl = function () {
+        const yuk = { kimlik: karo.id, servis: s.servis };
+        const veri = typeof s.veriYap === 'function' ? s.veriYap() : s.veri;
+        if (veri !== undefined) yuk.veri = veri;
+        return yuk;
+      };
       if (onayli) {
-        basiliBagla(dugme, b.basiliTutmaOlustur(karo, dugme, null, yuk));
+        basiliBagla(dugme, b.basiliTutmaOlustur(karo, dugme, null, typeof s.veriYap === 'function' ? yukAl : yukAl()));
       } else {
         dugme.addEventListener('click', function () {
-          b.tekIstek(karo, dugme, yuk, ad);
+          b.tekIstek(karo, dugme, yukAl(), ad);
         });
       }
       return dugme;
@@ -682,7 +695,10 @@
       kutu.appendChild(baslikSatiri(karo, karo.ulasilamiyor ? t('yuzey.durum.ulasilamiyor') : parcalar.join(' · '), guc).satir);
 
       const hedefVar = sayiMi(oz.hedefSicaklik);
-      const denetim = sayisalDenetim(karo, 'hedef', {
+      // Isıt/soğut aralığı (cihaz TARGET_TEMPERATURE_RANGE bildiriyor, tek hedef yok): iki ± denetimi; her gönderim ikisini birlikte yollar.
+      const aralikVar = !hedefVar && sayiMi(oz.hedefAlt) && sayiMi(oz.hedefUst) && sayiMi(oz.enAz) && sayiMi(oz.enCok) && destekVar(oz, 2);
+      const aralik = aralikVar ? klimaAraligi(karo, oz) : null;
+      const denetim = aralik || sayisalDenetim(karo, 'hedef', {
         servis: 'set_temperature',
         veriYap: function (d) {
           return { temperature: d };
@@ -699,7 +715,7 @@
         artirAria: t('yuzey.klima.artir', { etiket: karo.etiket }),
         gostergeSinifi: 'buyuk',
       });
-      if (!hedefVar && sayiMi(oz.hedefAlt) && sayiMi(oz.hedefUst)) {
+      if (!aralik && !hedefVar && sayiMi(oz.hedefAlt) && sayiMi(oz.hedefUst)) {
         denetim.gosterge.textContent = t('yuzey.klima.aralik', { alt: sayiYaz(oz.hedefAlt, dilAl()), ust: sayiYaz(oz.hedefUst, dilAl()) });
       }
       kutu.appendChild(denetim.kok);
@@ -731,7 +747,64 @@
         kutu.appendChild(sira.satir);
         b.satirEkle(sira.dugmeler);
       }
+      // Fan modu ve ön ayar: cihazın kendi listesi (ana süreçte kapı süzgecinden geçmiş); onay istemeyen serviste seçince gider.
+      [
+        ['fanmodu', oz.fanModlari, oz.fanModu, 8, 'set_fan_mode', 'fan_mode', 'yuzey.klima.fanModu'],
+        ['onayar', oz.onAyarlar, oz.onAyar, 16, 'set_preset_mode', 'preset_mode', 'yuzey.klima.onAyar'],
+      ].forEach(function (d) {
+        const secenekler = listeAl(d[1]);
+        if (secenekler.length === 0 || !destekVar(oz, d[3])) return;
+        const liste = secici(karo, d[0], {
+          secenekler: secenekler,
+          secili: typeof d[2] === 'string' && d[2] !== '' ? d[2] : null,
+          aria: t(d[6], { etiket: karo.etiket }),
+          servis: d[4],
+          veriYap: function (deger) {
+            const veri = {};
+            veri[d[5]] = deger;
+            return veri;
+          },
+        });
+        kutu.appendChild(liste.kok);
+        if (liste.dugmeler.length > 0) b.satirEkle(liste.dugmeler);
+      });
       return kutu;
+    }
+
+    /**
+     * Isıt/soğut aralığı denetimi: "Isıt 20°" ve "Soğut 24°" için iki ± satırı. Her gönderim iki sınırı BİRLİKTE yollar (HA tek sınır kabul etmez);
+     * alt sınır üst sınırın bir adım altına, üst sınır alt sınırın bir adım üstüne çıkamaz (ana süreç de alt < üst kuralını ayrıca uygular).
+     * @returns {{kok: HTMLElement, dugmeler: HTMLElement[], gosterge: HTMLElement}}
+     */
+    function klimaAraligi(karo, oz) {
+      const adim = sayiMi(oz.adim) ? oz.adim : 1;
+      const simdiki = { alt: oz.hedefAlt, ust: oz.hedefUst };
+      const satir = function (ad, anahtar, etiketAnahtar, azaltAnahtar, artirAnahtar, enAz, enCok) {
+        return sayisalDenetim(karo, ad, {
+          servis: 'set_temperature',
+          veriYap: function (d) {
+            simdiki[anahtar] = d;
+            return { target_temp_low: simdiki.alt, target_temp_high: simdiki.ust };
+          },
+          deger: simdiki[anahtar],
+          min: enAz,
+          max: enCok,
+          adim: adim,
+          hizaAdimi: sayiMi(oz.adim) ? oz.adim : 0,
+          goster: function (d) {
+            simdiki[anahtar] = d;
+            return t(etiketAnahtar, { n: sayiYaz(d, dilAl()) });
+          },
+          azaltAria: t(azaltAnahtar, { etiket: karo.etiket }),
+          artirAria: t(artirAnahtar, { etiket: karo.etiket }),
+        });
+      };
+      const alt = satir('hedef-alt', 'alt', 'yuzey.klima.altDeger', 'yuzey.klima.altAzalt', 'yuzey.klima.altArtir', oz.enAz, Math.min(oz.enCok, oz.hedefUst - adim));
+      const ust = satir('hedef-ust', 'ust', 'yuzey.klima.ustDeger', 'yuzey.klima.ustAzalt', 'yuzey.klima.ustArtir', Math.max(oz.enAz, oz.hedefAlt + adim), oz.enCok);
+      const kok = olustur('div', 'kart-aralik');
+      kok.appendChild(alt.kok);
+      kok.appendChild(ust.kok);
+      return { kok: kok, dugmeler: alt.dugmeler.concat(ust.dugmeler), gosterge: alt.gosterge };
     }
 
     function ilerlemeKur(karo, oz) {
@@ -831,6 +904,21 @@
       }
       const cubuk = ilerlemeKur(karo, oz);
       if (cubuk) kutu.appendChild(cubuk);
+      // Konum atlama: cihaz SEEK bitini AÇIKÇA bildirmeli (bilinmiyorsa düğme çizilmez); hedef canlı konumdan hesaplanır, 0..süre aralığına kırpılır.
+      if (cubuk && Number.isInteger(oz.destek) && (oz.destek & DESTEK_ATLA) !== 0) {
+        const atla = function (fark) {
+          return function () {
+            return { seek_position: sinirla(Math.round(Number(cubuk.value) + fark), 0, oz.sure) };
+          };
+        };
+        const atlama = satirKutusu('kart-tasima');
+        const geri = eylemDugmesi(karo, 'geri10', { metin: '⏪ 10', aria: t('yuzey.medya.geriAtla', { etiket: karo.etiket }), servis: 'media_seek', veriYap: atla(-ATLAMA_SANIYE) });
+        const ileri = eylemDugmesi(karo, 'ileri10', { metin: '10 ⏩', aria: t('yuzey.medya.ileriAtla', { etiket: karo.etiket }), servis: 'media_seek', veriYap: atla(ATLAMA_SANIYE) });
+        atlama.appendChild(geri);
+        atlama.appendChild(ileri);
+        kutu.appendChild(atlama);
+        b.satirEkle([geri, ileri]);
+      }
 
       const sessizVar = typeof oz.sessiz === 'boolean';
       const tasima = [
@@ -905,13 +993,22 @@
       if (SUPURGE_DURUMLARI.indexOf(oz.durum) >= 0) parcalar.push(t('yuzey.supurge.durum.' + oz.durum));
       if (sayiMi(oz.pil)) parcalar.push(t('yuzey.supurge.pil', { n: Math.round(oz.pil) }));
       kutu.appendChild(baslikSatiri(karo, karo.ulasilamiyor ? t('yuzey.durum.ulasilamiyor') : parcalar.join(' · ')).satir);
-      const sira = secenekSatiri(karo, 'islem', t('yuzey.supurge.islemler', { etiket: karo.etiket }), [
-        { metin: t('yuzey.supurge.basla'), aria: t('yuzey.supurge.baslaAra', { etiket: karo.etiket }), servis: 'start', vurgu: oz.durum === 'cleaning' },
-        { metin: t('yuzey.supurge.duraklat'), aria: t('yuzey.supurge.duraklatAra', { etiket: karo.etiket }), servis: 'pause', vurgu: oz.durum === 'paused' },
-        { metin: t('yuzey.supurge.sarj'), aria: t('yuzey.supurge.sarjAra', { etiket: karo.etiket }), servis: 'return_to_base', vurgu: oz.durum === 'returning' },
-      ]);
-      kutu.appendChild(sira.satir);
-      b.satirEkle(sira.dugmeler);
+      // Yalnız cihazın desteklediği işlemler çizilir (supported_features); bit alanı bilinmiyorsa eski üç düğme kalır.
+      const bilinen = Number.isInteger(oz.destek);
+      const destekli = function (bit) {
+        return bilinen && (oz.destek & bit) !== 0;
+      };
+      const islemler = [];
+      if (!bilinen || destekli(SUPURGE_BASLAT)) islemler.push({ metin: t('yuzey.supurge.basla'), aria: t('yuzey.supurge.baslaAra', { etiket: karo.etiket }), servis: 'start', vurgu: oz.durum === 'cleaning' });
+      else if (destekli(SUPURGE_ACIK)) islemler.push({ metin: t('yuzey.supurge.basla'), aria: t('yuzey.supurge.baslaAra', { etiket: karo.etiket }), servis: 'turn_on', vurgu: oz.durum === 'cleaning' });
+      if (!bilinen || destekli(SUPURGE_DURAKLAT)) islemler.push({ metin: t('yuzey.supurge.duraklat'), aria: t('yuzey.supurge.duraklatAra', { etiket: karo.etiket }), servis: 'pause', vurgu: oz.durum === 'paused' });
+      if (destekli(SUPURGE_DURDUR)) islemler.push({ metin: t('yuzey.supurge.durdur'), aria: t('yuzey.supurge.durdurAra', { etiket: karo.etiket }), servis: 'stop' });
+      if (!bilinen || destekli(SUPURGE_SARJ)) islemler.push({ metin: t('yuzey.supurge.sarj'), aria: t('yuzey.supurge.sarjAra', { etiket: karo.etiket }), servis: 'return_to_base', vurgu: oz.durum === 'returning' });
+      if (islemler.length > 0) {
+        const sira = secenekSatiri(karo, 'islem', t('yuzey.supurge.islemler', { etiket: karo.etiket }), islemler);
+        kutu.appendChild(sira.satir);
+        b.satirEkle(sira.dugmeler);
+      }
       return kutu;
     }
 

@@ -105,6 +105,56 @@ test('bulgu: 1.3.0 gidiş-dönüşünde düşen favoriler yedekten ÖZGÜN SIRAY
   assert.deepEqual(sonuc.ayarlar.engellenenFavoriler, [{ entity_id: 'light.kapi_lambasi', neden: 'guvenlik' }]);
 });
 
+test('bulgu (üst düzey alanlar): 1.3.0 gidiş-dönüşünde varsayılana dönen 1.4.0 ayarları yedekten geri alınır; cover/otomasyon favorileri de gelir; dışarıya açan seçenekler ve kamera izinleri GERİ AÇILMAZ', () => {
+  const yedek = {
+    ...dortSifirDosyasi(),
+    geriAl: false,
+    geriAlSureDk: 30,
+    panelGruplama: 'oda',
+    saatBicimi: '24',
+    sensorSeridi: ['sensor.sicaklik'],
+    paletDigerCihazlar: true,
+    pencereKonumu: 'hatirla',
+    pencereKonumlari: { hizli: { x: 10, y: 20 } },
+    // dışarıya açan seçenekler
+    tetikYerelApi: true,
+    tetikJumpList: true,
+    tetikProtokol: true,
+    surumDenetimi: true,
+    uygulamaGuncelleme: true,
+    mobilBildirimler: true,
+    klasorEsitleme: true,
+    kameraIzinleri: [{ entity_id: 'camera.salon', ad: 'Salon' }],
+    favoriler: [...dortSifirDosyasi().favoriler, { entity_id: 'cover.salon_perde', ad: 'Perde' }, { entity_id: 'automation.sabah', ad: 'Sabah' }],
+  };
+  const mevcut = yukle(uconSifirSonrasi()); // 1.3.0 yeni alanları bilmez: hepsi varsayılan
+  assert.equal(mevcut.geriAl, true);
+  assert.equal(mevcut.tetikYerelApi, false);
+  const sonuc = eskiSurumKaybiniTamamla(mevcut, yedek, { varsayilan });
+  assert.equal(sonuc.degisti, true);
+  assert.deepEqual(sonuc.geriAlinanAyarlar.sort(), ['geriAl', 'geriAlSureDk', 'paletDigerCihazlar', 'panelGruplama', 'pencereKonumlari', 'pencereKonumu', 'saatBicimi', 'sensorSeridi'].sort());
+  assert.equal(sonuc.ayarlar.geriAl, false);
+  assert.equal(sonuc.ayarlar.geriAlSureDk, 30);
+  assert.equal(sonuc.ayarlar.panelGruplama, 'oda');
+  assert.deepEqual(sonuc.ayarlar.sensorSeridi, ['sensor.sicaklik']);
+  assert.deepEqual(sonuc.ayarlar.pencereKonumlari, { hizli: { x: 10, y: 20 } });
+  for (const kapali of ['tetikYerelApi', 'tetikJumpList', 'tetikProtokol', 'surumDenetimi', 'uygulamaGuncelleme', 'mobilBildirimler', 'klasorEsitleme']) assert.equal(sonuc.ayarlar[kapali], false, `${kapali} kendiliğinden açılmaz`);
+  assert.deepEqual(sonuc.ayarlar.kameraIzinleri, [], 'kamera izni kendiliğinden geri gelmez');
+  assert.ok(kimlikler(sonuc.ayarlar).includes('cover.salon_perde'), 'perde favorisi geri geldi');
+  assert.ok(kimlikler(sonuc.ayarlar).includes('automation.sabah'), 'otomasyon favorisi geri geldi');
+});
+
+test('üst düzey alan geri alma: şimdiki değer varsayılandan farklıysa (kullanıcı yeni sürümde ayarlamış) yedekle ezilmez; ikinci çağrı değişiklik yapmaz', () => {
+  const yedek = { ...dortSifirDosyasi(), panelGruplama: 'oda', saatBicimi: '24' };
+  const mevcut = { ...yukle(uconSifirSonrasi()), saatBicimi: '12' };
+  const bir = eskiSurumKaybiniTamamla(mevcut, yedek, { varsayilan });
+  assert.equal(bir.ayarlar.saatBicimi, '12', 'varsayılandan farklı değer ezilmez');
+  assert.equal(bir.ayarlar.panelGruplama, 'oda', 'varsayılandaki alan yedekten gelir');
+  assert.deepEqual(bir.geriAlinanAyarlar, ['panelGruplama']);
+  const iki = eskiSurumKaybiniTamamla(bir.ayarlar, yedek, { varsayilan });
+  assert.deepEqual(iki.geriAlinanAyarlar, []);
+});
+
 test('kullanıcı eski sürümde BİLEREK sildiği favori geri gelmez: eski sürümün tanıdığı alandaki (switch.priz) eksik favori yedekte olsa da alınmaz', () => {
   const mevcut = yukle(uconSifirSonrasi());
   assert.ok(!kimlikler(mevcut).includes('switch.priz'));

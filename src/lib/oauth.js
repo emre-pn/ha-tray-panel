@@ -136,9 +136,31 @@ function kaliciRedMi(durum, govde) {
 
 // ---- Oturum kaydı (safeStorage ile şifreli dosyada) --------------------------------------------------------------------------------
 
-/** Diske yazılan metin: yalnız HA kökeni, client_id ve yenileme anahtarı. Erişim anahtarı ASLA yazılmaz (bellekte tutulur). */
-function oturumuYaz({ taban, istemci, yenileme }) {
-  return JSON.stringify({ surum: OTURUM_SURUMU, taban, istemci, yenileme });
+const EN_COK_KOKEN = 4;
+
+/** Köken listesini normalleştirir (yalnız http/https, tekrarsız, en çok 4); geçersiz öğe sessizce düşer. */
+function kokenleriDuzelt(liste) {
+  const sonuc = [];
+  for (const ham of Array.isArray(liste) ? liste : []) {
+    if (sonuc.length >= EN_COK_KOKEN || typeof ham !== 'string' || !ham) continue;
+    try {
+      const url = new URL(ham);
+      if ((url.protocol === 'http:' || url.protocol === 'https:') && !sonuc.includes(url.origin)) sonuc.push(url.origin);
+    } catch {
+      /* geçersiz adres */
+    }
+  }
+  return sonuc;
+}
+
+/**
+ * Diske yazılan metin: HA kökeni, client_id, yenileme anahtarı ve (varsa) girişin yapıldığı anda ayarlı HA kökenleri. Erişim anahtarı ASLA
+ * yazılmaz (bellekte tutulur). `kokenler`: yenileme ve iptal isteği YALNIZ bu kökenlerden birine gider (adres başka bir sunucuya çevrilse bile
+ * yenileme anahtarı oraya gönderilmez).
+ */
+function oturumuYaz({ taban, istemci, yenileme, kokenler }) {
+  const koken = kokenleriDuzelt([taban, ...(Array.isArray(kokenler) ? kokenler : [])]);
+  return JSON.stringify({ surum: OTURUM_SURUMU, taban, istemci, yenileme, ...(Array.isArray(kokenler) ? { kokenler: koken } : {}) });
 }
 
 /** Kayıt metnini doğrular; bozuk ya da tanınmayan biçim null (oturum yok sayılır). */
@@ -162,7 +184,7 @@ function oturumuCoz(metin) {
   } catch {
     return null;
   }
-  return { taban, istemci: kayit.istemci, yenileme: kayit.yenileme };
+  return { taban, istemci: kayit.istemci, yenileme: kayit.yenileme, ...(Array.isArray(kayit.kokenler) ? { kokenler: kokenleriDuzelt([taban, ...kayit.kokenler]) } : {}) };
 }
 
 module.exports = {
@@ -183,6 +205,7 @@ module.exports = {
   iptalFormu,
   jetonYaniti,
   kaliciRedMi,
+  kokenleriDuzelt,
   oturumuYaz,
   oturumuCoz,
 };

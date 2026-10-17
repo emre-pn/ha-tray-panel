@@ -710,3 +710,51 @@ test('test ortamı kendi kendini sınar: geçici klasör silinir, iki bilgisayar
   assert.equal(fs.existsSync(g.klasor), false);
   assert.equal(typeof ayarlarYap().klasorEsitleme, 'boolean');
 });
+
+// --- onay gevşetmesi (parolasız dosya) -----------------------------------------------------------------------------------------
+
+const BETIK = { entity_id: 'script.sulama', ad: 'Sulama' };
+
+test(
+  'parolasız eşitleme: klasördeki favoride onay:false (basılı tutma şartını kapatma) YOK SAYILIR; yerelde zaten onay:false ise korunur; onay:true gelir; dosya yazan bilgisayarın değeri ezilmez',
+  ortam(async (klasor) => {
+    // klasöre yazabilen biri (ya da başka bilgisayar) betik favorisine onay:false koydu
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { favoriler: [{ ...BETIK, onay: false }, { ...SALON, onay: true }] } });
+    assert.equal(a.ayarlar.favoriler[0].onay, false, 'bilgisayar A: betikte onay kapalı (kendi kararı)');
+    await a.esitle();
+    assert.equal(dosyaBelgesi(a).bolumler.favoriler.ayarlar.favoriler[0].onay, false);
+
+    const b = bilgisayarKur({ klasor, aygit: AYGIT_B, ayarEk: { favoriler: [] } });
+    const r = await b.esitle();
+    assert.equal(r.ok, true);
+    assert.deepEqual(b.ayarlar.favoriler.map((f) => f.entity_id), ['script.sulama', 'light.salon'], 'favoriler alındı');
+    assert.equal(b.ayarlar.favoriler[0].onay, undefined, 'onay:false atıldı: betik yine onay ister');
+    assert.equal(b.ayarlar.favoriler[1].onay, true, 'sıkılaştırma (onay:true) gelir');
+    assert.ok(b.durum.gunluk.some((m) => /onay gevşetmeleri yok sayıldı/.test(m)));
+    // kararlı: sonraki turlarda B değişikliği geri yazmaz ve dosyadaki A değeri ezilmez
+    const metin = a.dosyaOku();
+    await b.esitle();
+    await b.esitle();
+    assert.equal(b.dosyaOku(), metin);
+    assert.equal(b.ayarlar.favoriler[0].onay, undefined);
+
+    // yerelde zaten onay:false olan kullanıcının kendi kararı korunur
+    const c = bilgisayarKur({ klasor, aygit: 'cccccccccccccccc', ayarEk: { favoriler: [{ ...BETIK, onay: false }, { ...SALON, onay: true }] } });
+    await c.esitle();
+    assert.equal(c.ayarlar.favoriler[0].onay, false);
+  }),
+);
+
+test(
+  'parolalı eşitleme güvenilir sayılır: parolayı bilen bilgisayardan gelen onay:false aynen uygulanır',
+  ortam(async (klasor) => {
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { favoriler: [{ ...BETIK, onay: false }] } });
+    await a.esitle();
+    assert.equal((await a.yonetici.parolaKoy('ortak-parola-123')).ok, true);
+    const b = bilgisayarKur({ klasor, aygit: AYGIT_B, ayarEk: { favoriler: [] } });
+    await b.parolaDeposu.yaz('ortak-parola-123');
+    assert.equal((await b.esitle()).ok, true);
+    assert.equal(b.ayarlar.favoriler[0].onay, false);
+  }),
+);
+

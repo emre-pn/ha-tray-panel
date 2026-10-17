@@ -30,10 +30,11 @@ function sahteFs() {
   };
 }
 
-function kur({ favoriler = [fav('light.salon'), fav('scene.film'), fav('button.pc_bilgisayari_kapat', { onay: true })], sayfalar = [], onay = true, yazmaBasarili = true, cihazlar = null, karolar = null } = {}) {
+function kur({ favoriler = [fav('light.salon'), fav('scene.film'), fav('button.pc_bilgisayari_kapat', { onay: true })], sayfalar = [], onay = true, yazmaBasarili = true, cihazlar = null, karolar = null, masaustu = undefined } = {}) {
   let saat = 10_000;
   const ayarlar = { favoriler: structuredClone(favoriler), sayfalar: structuredClone(sayfalar) };
-  const olaylar = { yaz: 0, degisti: [], menu: [], onaySorulari: [], duzenleAc: [], hata: [], gunluk: [] };
+  const olaylar = { yaz: 0, degisti: [], menu: [], onaySorulari: [], duzenleAc: [], hata: [], gunluk: [], masaustuYazimlari: [] };
+  const masaustuListesi = { liste: masaustu === undefined ? [] : [...masaustu] };
   const gecmis = duzenGecmisiOlustur({ dosyaYolu: 'C:\\x\\duzen-gecmisi.json', fs: sahteFs(), simdi: () => saat });
   const sahte = {
     secilecek: null, // menü kapanırken "seçilen" öğenin kimliği
@@ -62,12 +63,22 @@ function kur({ favoriler = [fav('light.salon'), fav('scene.film'), fav('button.p
     duzenleAc: (k) => olaylar.duzenleAc.push(k),
     degisti: (s) => olaylar.degisti.push(s ?? {}),
     cihazAl: () => cihazlar,
+    ...(masaustu === undefined
+      ? {}
+      : {
+          masaustuAl: () => [...masaustuListesi.liste],
+          masaustuKaydet: (liste) => {
+            olaylar.masaustuYazimlari.push(liste);
+            masaustuListesi.liste = [...liste];
+            return yazmaBasarili;
+          },
+        }),
     t: TR,
     gunluk: (m) => olaylar.gunluk.push(m),
     hataBildir: (m) => olaylar.hata.push(m),
     sonraki: async () => {},
   });
-  return { y, ayarlar, olaylar, gecmis, sahte, saatIlerle: (ms) => (saat += ms) };
+  return { y, ayarlar, olaylar, gecmis, sahte, masaustuListesi, saatIlerle: (ms) => (saat += ms) };
 }
 
 const etiketler = (sablon) => sablon.flatMap((o) => [o.label ?? o.type, ...(o.submenu ?? []).map((a) => a.label)]);
@@ -274,4 +285,57 @@ test('onar: reddedilen durumlar — cihaz listesi yok, eski varlık HA\'da var, 
   assert.deepEqual([yazilamadi.ok, yazilamadi.neden], [false, 'yazilamadi']);
   // her hata iletisi metin olarak döner
   for (const n of ['cihazlar', 'gecersiz', 'bulunuyor', 'guvenlik', 'alan', 'kayitsiz', 'zaten-var', 'noktaYok']) assert.notEqual(TR(`duzen.hata.${n}`), `duzen.hata.${n}`, `duzen.hata.${n} Türkçe metni var`);
+});
+
+// --- masaüstüne sabitle (1.4.0) -------------------------------------------------------------------------------------------
+
+test('Masaüstüne sabitle: menüde tepsiden sonra görünür; seçilince yalnız sabitli liste yazılır (favori / sayfa / geçmiş değişmez), model tazelenir', async () => {
+  const { y, ayarlar, olaylar, sahte, gecmis, masaustuListesi } = kur({ masaustu: ['scene.film'] });
+  await y.karoMenusuAc('light.salon', {});
+  assert.deepEqual(etiketler(olaylar.menu[0]), ['Düzenle…', 'Tepsiye ekle', 'Masaüstüne sabitle', 'separator', 'Favorilerden kaldır…']);
+  const once = JSON.stringify(ayarlar);
+  sahte.secilecek = 'Masaüstüne sabitle';
+  await y.karoMenusuAc('light.salon', {});
+  assert.deepEqual(masaustuListesi.liste, ['scene.film', 'light.salon']);
+  assert.deepEqual(olaylar.masaustuYazimlari, [['scene.film', 'light.salon']]);
+  assert.equal(JSON.stringify(ayarlar), once, 'favoriler ve sayfalar değişmez');
+  assert.equal(gecmis.sayi(), 0, 'masaüstü sabitlemesi düzen geçmişine girmez');
+  assert.equal(olaylar.yaz, 0, 'favori / sayfa yazımı yok; sabitli listeyi yazmak masaustuKaydet\'in işi');
+  assert.deepEqual(olaylar.degisti, [{ yalnizModel: true }]);
+  assert.equal(olaylar.hata.length, 0);
+});
+
+test('Sabitlemeyi kaldır: sabitli karoda etiket değişir ve seçilince liste kısalır; ikinci seçim yeniden sabitler', async () => {
+  const { y, olaylar, sahte, masaustuListesi } = kur({ masaustu: ['light.salon'] });
+  await y.karoMenusuAc('light.salon', {});
+  assert.ok(etiketler(olaylar.menu[0]).includes('Sabitlemeyi kaldır'));
+  sahte.secilecek = 'Sabitlemeyi kaldır';
+  await y.karoMenusuAc('light.salon', {});
+  assert.deepEqual(masaustuListesi.liste, []);
+  sahte.secilecek = 'Masaüstüne sabitle';
+  await y.karoMenusuAc('light.salon', {});
+  assert.deepEqual(masaustuListesi.liste, ['light.salon']);
+});
+
+test('Masaüstüne sabitle: yıkıcı favori, sabitlenemeyen alan ve dolu liste için menüde öğe yok; liste desteği verilmeyen yöneticide hiç çıkmaz', async () => {
+  const dolu = ['light.k0', 'light.k1', 'light.k2', 'light.k3', 'light.k4', 'light.k5'];
+  const a = kur({ masaustu: [] });
+  await a.y.karoMenusuAc('button.pc_bilgisayari_kapat', {});
+  assert.ok(!etiketler(a.olaylar.menu[0]).includes('Masaüstüne sabitle'), 'yıkıcı karo');
+  const b = kur({ masaustu: dolu });
+  await b.y.karoMenusuAc('light.salon', {});
+  assert.ok(!etiketler(b.olaylar.menu[0]).includes('Masaüstüne sabitle'), 'liste dolu');
+  const c = kur({ favoriler: [fav('climate.salon')], karolar: { 'climate.salon': { id: 'climate.salon', sinif: 'zararsiz', varsayilanEylem: false } }, masaustu: [] });
+  await c.y.karoMenusuAc('climate.salon', {});
+  assert.ok(!etiketler(c.olaylar.menu[0]).includes('Masaüstüne sabitle'), 'klima sabitlenemez');
+  const d = kur();
+  await d.y.karoMenusuAc('light.salon', {});
+  assert.ok(!etiketler(d.olaylar.menu[0]).includes('Masaüstüne sabitle'), 'masaustuAl verilmemiş');
+});
+
+test('Masaüstüne sabitle: yazma başarısızsa kullanıcıya bildirilir ve panel çökmez', async () => {
+  const { y, olaylar, sahte } = kur({ masaustu: [], yazmaBasarili: false });
+  sahte.secilecek = 'Masaüstüne sabitle';
+  assert.deepEqual(await y.karoMenusuAc('light.salon', {}), { ok: true });
+  assert.equal(olaylar.hata.length, 1);
 });

@@ -113,12 +113,14 @@ test('1.4.0 cihaz grubu: cover (perde) tek tıklama eylemi yok; valve ve automat
   assert.equal(K.onayVarsayilanMi('automation'), true);
 });
 
-test('dış tetik yasağı (dis grubu için tek kaynak): valve, automation, camera dış tetiklenemez; perde ve diğer alanlar yasaklı değil', () => {
-  assert.deepEqual([...K.DIS_TETIK_YASAK_ALANLAR].sort(), ['automation', 'camera', 'valve']);
-  for (const a of ['valve', 'automation', 'camera']) assert.equal(K.disTetikYasakAlanMi(a), true, a);
-  for (const a of ['cover', 'light', 'switch', 'climate', 'script', 'scene']) assert.equal(K.disTetikYasakAlanMi(a), false, a);
-  for (const kotu of [undefined, null, '', 42, {}, 'VALVE', '__proto__']) assert.equal(K.disTetikYasakAlanMi(kotu), false);
-  assert.ok(Object.isFrozen(K.DIS_TETIK_YASAK_ALANLAR));
+test('dış tetik yasağı tek kaynakta (eylem-sinifi.js): alan kaydında ikinci liste yok; valve, automation, camera dış tetiklenemez', () => {
+  assert.equal(K.DIS_TETIK_YASAK_ALANLAR, undefined);
+  assert.equal(K.disTetikYasakAlanMi, undefined);
+  const { DIS_YASAK_ALANLAR, disKaynakIzni } = require('../src/lib/eylem-sinifi');
+  for (const a of ['valve', 'automation', 'camera']) assert.ok(DIS_YASAK_ALANLAR.includes(a), a);
+  for (const a of ['light', 'switch', 'climate', 'script', 'scene']) assert.equal(DIS_YASAK_ALANLAR.includes(a), false, a);
+  assert.ok(Object.isFrozen(DIS_YASAK_ALANLAR));
+  for (const kotu of [undefined, null, '', 42, {}]) assert.equal(disKaynakIzni(kotu, 'turn_on'), false);
 });
 
 test('karo olmayanlar: todo ve calendar (yalnız kendi özelliğinin ayarıyla)', () => {

@@ -116,6 +116,23 @@ test('oauthIstegi: zaman aşımı "bağlantı" hatasıdır (belirsiz sayılmaz);
   await assert.rejects(ikinci, (h) => h.tur === 'baglanti', 'kapı bırakıldı: ikinci istek de ağa çıktı');
 });
 
+test('oauthIstegi: izinliKokenler verildiyse seçilen kök listede olmalı; adres başka bir sunucuya çevrilmişse yenileme formu (refresh_token) ORAYA GİTMEZ', async () => {
+  // oturum YEREL ev sunucusundan alınmıştı; kullanıcı adresleri başka bir sunucuya çevirdi (yeni yerel + yeni dış)
+  const baska = { ...AYAR, yerelAdres: 'http://192.168.1.99:8123', disAdres: 'https://baska.example.org' };
+  const o = kur({ jeton: tamam, ayar: baska });
+  await assert.rejects(o.istemci.oauthIstegi({ form: FORM, izinliKokenler: [YEREL, DIS] }), (h) => h instanceof HaHatasi && h.tur === 'kaynak-izinsiz');
+  assert.equal(o.tokenIstekleri().length, 0, 'jeton ucuna hiç istek gitmedi');
+  assert.equal(o.gunlukler.some((m) => m.includes('YENILEME_TEST_DEGERI')), false);
+
+  // listedeki köken seçilirse normal gider
+  const iyi = kur({ jeton: tamam });
+  assert.equal((await iyi.istemci.oauthIstegi({ form: FORM, izinliKokenler: [YEREL, DIS] })).durum, 200);
+  assert.equal(iyi.tokenIstekleri().length, 1);
+  // liste verilmezse eski davranış (kod değişimi gibi çağrılar)
+  const listesiz = kur({ jeton: tamam, ayar: baska });
+  assert.equal((await listesiz.istemci.oauthIstegi({ form: FORM })).durum, 200);
+});
+
 test('oauthIstegi: adres ayardaki köken olmalı ve anahtar/jeton için güvenli olmalı; aksi halde ağa HİÇ çıkılmaz', async () => {
   const o = kur({ jeton: tamam });
   await assert.rejects(o.istemci.oauthIstegi({ form: FORM, taban: 'https://evil.example.com' }), (h) => h.tur === 'kaynak-izinsiz');

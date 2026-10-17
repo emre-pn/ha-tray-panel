@@ -7,6 +7,8 @@
  * Güvenlik ve sınırlar:
  *  - Yalnız ışık, priz (switch), vantilatör, input_boolean ve nem alıcı ertelenebilir; yalnız aç / kapat. Kapı, kilit, alarm, garaj, kepenk,
  *    sahne, düğme, script, otomasyon, vana ve kamera bu yoldan ASLA ertelenmez.
+ *  - Kimlik ayardaki FAVORİLERDEN biri olmalıdır; favori değilse yalnız `paletDigerCihazlar` açıkken ve kimlik "diğer cihazlar" listesindeyse
+ *    (src/lib/diger-cihazlar.js) kabul edilir. Serbest kimlikle eylem kurulamaz ('bilinmeyen-favori'); zamanı gelince aynı koşul yeniden denetlenir.
  *  - Planlanırken varlığın GÜNCEL durumu okunur ve Kapı Kuralı + eylem sınıfı denetlenir (yıkıcı sınıf reddedilir). Zamanı gelince eylem
  *    yine tek güvenli hattan geçer (eylem.kayitliCalistir, kaynak 'gecikmeli'): Kapı Kuralı, eylem sınıfı + yüzey izni (gecikmeli onay
  *    SUNAMAZ, yıkıcı çalışmaz), servis izin listesi, hız sınırı, tek POST. Hat kuralları o an yeniden uygulanır.
@@ -61,8 +63,9 @@ const varsayilanSaat = (ms) => {
  * @param {(m: string) => void} [bag.gunluk]
  * @param {(ms: number) => string} [bag.saatMetni] kullanıcının saat biçimiyle saat metni
  * @param {(kayit: object) => void} [bag.kaydet] etkinlik geçmişine satır yazar (etkinlik.ekle)
+ * @param {(kimlik: string) => Promise<boolean>|boolean} [bag.digerMi] kimlik palet "diğer cihazlar" listesinde mi (ayar kapalıysa false); verilmezse favori dışı reddedilir
  */
-function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, degisti = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), gunluk = () => {}, saatMetni = varsayilanSaat, kaydet = () => {} }) {
+function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, degisti = () => {}, simdi = () => Date.now(), zaman = varsayilanZaman(), gunluk = () => {}, saatMetni = varsayilanSaat, kaydet = () => {}, digerMi = () => false }) {
   const acikMi = () => ayarlarAl()?.gecikmeliEylem !== false;
   const bekleyenler = new Map(); // id -> { id, kimlik, ad, servis, yon, bitis, zamanlayici }
   let sayac = 0;
@@ -72,10 +75,11 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     return kisalt(typeof ad === 'string' && ad.trim() ? ad.trim() : kimlik, AD_SINIRI);
   };
 
-  /** Favori ise ayardaki kayıt (kendi ayarlarıyla), değilse tek seferlik kayıt. Kapı Kuralı hatta yine uygulanır. */
+  const favoriBul = (kimlik) => (ayarlarAl()?.favoriler ?? []).find((f) => f?.entity_id === kimlik);
+
+  /** Favori ise ayardaki kayıt (kendi ayarlarıyla), değilse tek seferlik kayıt (yalnız "diğer cihazlar" yolundan gelmiş kimlik için). Kapı Kuralı hatta yine uygulanır. */
   function kayitBul(kimlik, ad) {
-    const favori = (ayarlarAl()?.favoriler ?? []).find((f) => f.entity_id === kimlik);
-    return favori ?? { entity_id: kimlik, ad };
+    return favoriBul(kimlik) ?? { entity_id: kimlik, ad };
   }
 
   function zamanlayiciKur(o) {
@@ -103,6 +107,11 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     kaldir(id);
     degisti();
     if (!acikMi()) return;
+    // Planlandıktan sonra favoriden çıkarılmış ve "diğer cihazlar" yolu da kapalıysa serbest kimlikle eylem çalışmasın.
+    if (!favoriBul(o.kimlik) && ayarlarAl()?.paletDigerCihazlar !== true) {
+      kaydet({ kaynak: ETIKET, kimlik: o.kimlik, ad: o.ad, islem: o.servis, sonuc: 'atlandi', neden: 'favori-degil' });
+      return;
+    }
     if (gecen > GEC_KALMA_TOLERANSI_MS) {
       // Bilgisayar uyudu ya da saat ilerledi: eski bir komut sürpriz biçimde çalışmasın.
       kaydet({ kaynak: ETIKET, kimlik: o.kimlik, ad: o.ad, islem: o.servis, sonuc: 'atlandi', neden: 'kacirildi' });
@@ -130,6 +139,17 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     if (yon !== 'ac' && yon !== 'kapat' && yon !== 'sureli') return { ok: false, tur: 'gecersiz' };
     if (!Number.isInteger(dakika) || dakika < EN_AZ_GECIKME_DK || dakika > EN_COK_GECIKME_DK) return { ok: false, tur: 'gecersiz', neden: 'sinir' };
     const servis = yon === 'ac' ? YONLER.ac : YONLER.kapat; // sureli de sonunda kapatır
+
+    // Kimlik favori olmalı; değilse yalnız ayar açıkken ve ana sürecin "diğer cihazlar" listesinde varsa kabul edilir (serbest kimlik reddedilir).
+    if (!favoriBul(kimlik)) {
+      let listede = false;
+      try {
+        listede = (await digerMi(kimlik)) === true;
+      } catch {
+        listede = false;
+      }
+      if (!listede || ayarlarAl()?.paletDigerCihazlar !== true) return { ok: false, tur: 'bilinmeyen-favori' };
+    }
 
     let varlik;
     try {

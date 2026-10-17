@@ -477,6 +477,24 @@ test('diğer cihazlar: kilit, favori ve uydurma kimlikle çalıştırma POST ür
   assert.equal(o.postlar().length, 0);
 });
 
+test('diğer cihazlar + gecikmeli: favori dışı kimlik yalnız listede ve ayar açıkken ertelenebilir; liste dışı ya da ayar kapalıyken "bilinmeyen-favori"', async () => {
+  const o = kurDiger();
+  const bilinmeyen = await o.ek.gecikmeliPlanla('palet', { kimlik: 'light.mutfak', yon: 'kapat', dakika: 5 });
+  assert.equal(bilinmeyen.ok, true, 'light.mutfak güvenli ve listede');
+  for (const kimlik of ['light.yok', 'light.kapi_lambasi']) {
+    assert.deepEqual((await o.ek.gecikmeliPlanla('palet', { kimlik, yon: 'kapat', dakika: 5 })).tur, 'bilinmeyen-favori', kimlik);
+  }
+  for (const kimlik of ['lock.on_kapi', 'script.bilgisayari_kapat', 'button.yeniden_baslat']) {
+    assert.deepEqual((await o.ek.gecikmeliPlanla('palet', { kimlik, yon: 'kapat', dakika: 5 })).tur, 'gecersiz', kimlik);
+  }
+  await o.saat.ileri(5 * 60_000 + 100);
+  assert.deepEqual(o.postlar().map((p) => p.yol), ['/api/services/light/turn_off']);
+
+  const kapali = kurDiger(false);
+  assert.deepEqual((await kapali.ek.gecikmeliPlanla('palet', { kimlik: 'light.mutfak', yon: 'kapat', dakika: 5 })).tur, 'bilinmeyen-favori');
+  assert.equal(kapali.ha.istekler.length, 0, 'ayar kapalıyken HA isteği hiç atılmaz');
+});
+
 test('diğer cihazlar: favoriye ekle ana süreç işlevine {kimlik, ad, alan} verir; yalnız palet; digerAyarDegisti kapanınca liste silinir', async () => {
   const o = kurDiger();
   assert.deepEqual(await o.ek.digerFavoriEkle('panel', 'light.mutfak'), { ok: false, tur: 'gecersiz' });

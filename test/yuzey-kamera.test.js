@@ -369,3 +369,101 @@ test('yaş metni: yeni kare "az önce", eski kare saniye sayısı (önbellekten 
   modul.parcalar();
   assert.match(o.yas.textContent, /^yuzey\.kamera\.yas\|\{"sn":7\}$/);
 });
+
+// --- Büyüt ve Şimdi yenile (1.4.0) -----------------------------------------------------------------------------------------
+
+test('Büyüt: görüntü yokken kapalı; görüntü gelince açılır, kartı tam genişliğe açar ve tekrar basınca küçültür; bulanıklık büyütmeyle kalkmaz', async () => {
+  const { modul, kartlar } = kur();
+  modul.ayarla(model());
+  assert.equal(bulSinif(kartlar()[0], 'kamera-buyut')[0].disabled, true, 'görüntü yok: büyütülecek bir şey yok');
+  modul.gosterildi();
+  await akit();
+  const kart = kartlar()[0];
+  const resim = kartDurumu(kart).resim;
+  const buyut = bulSinif(kart, 'kamera-buyut')[0];
+  assert.equal(buyut.disabled, false);
+  assert.equal(buyut.textContent, 'yuzey.kamera.buyut');
+  assert.equal(buyut.getAttribute('aria-pressed'), 'false');
+  assert.match(buyut.getAttribute('aria-label'), /^yuzey\.kamera\.buyutAd\|/);
+  assert.equal(kart.className, 'kamera-karo');
+  buyut.gonder('click');
+  assert.ok(kart.sinifVar('kamera-karo') && kart.sinifVar('kamera-buyuk'));
+  assert.equal(buyut.textContent, 'yuzey.kamera.kucult');
+  assert.equal(buyut.getAttribute('aria-pressed'), 'true');
+  assert.match(buyut.getAttribute('aria-label'), /^yuzey\.kamera\.kucultAd\|/);
+  assert.ok(resim.sinifVar('kamera-bulanik'), 'büyütmek görüntüyü açmaz: gizlilik için bulanık kalır');
+  buyut.gonder('click');
+  assert.ok(!kart.sinifVar('kamera-buyuk'));
+  assert.equal(buyut.textContent, 'yuzey.kamera.buyut');
+});
+
+test('Büyüt: gizlenme, yeniden gösterim ve hata büyütmeyi sıfırlar; her görüntü normal boyutta başlar', async () => {
+  const yanitlar = {};
+  const { modul, kartlar } = kur({ yanitlar });
+  modul.ayarla(model());
+  modul.gosterildi();
+  await akit();
+  const kart = kartlar()[0];
+  const buyut = bulSinif(kart, 'kamera-buyut')[0];
+  buyut.gonder('click');
+  assert.ok(kart.sinifVar('kamera-buyuk'));
+  modul.gosterildi();
+  assert.ok(!kart.sinifVar('kamera-buyuk'), 'yeni gösterimde sıfırlanır');
+  await akit();
+  buyut.gonder('click');
+  modul.gizlendi();
+  assert.ok(!kart.sinifVar('kamera-buyuk'), 'gizlenince sıfırlanır');
+  assert.equal(buyut.disabled, true);
+  modul.gosterildi();
+  await akit();
+  buyut.gonder('click');
+  assert.ok(kart.sinifVar('kamera-buyuk'));
+  yanitlar['camera.salon'] = { ok: false, tur: 'ha-hatasi' };
+  bulSinif(kart, 'kamera-yenile')[0].gonder('click');
+  await akit();
+  assert.ok(!kart.sinifVar('kamera-buyuk'), 'hata: eski kare gibi büyütme de kalkar');
+  assert.equal(buyut.disabled, true);
+  buyut.gonder('click');
+  assert.ok(!kart.sinifVar('kamera-buyuk'), 'görüntü yokken tıklama etkisizdir');
+});
+
+test('Büyüt: klavye satırına ve odak kaydına yalnız görüntü varken girer; yeni bir ağ isteği oluşturmaz', async () => {
+  const { modul, durum } = kur();
+  modul.ayarla(model());
+  modul.parcalar();
+  assert.equal(durum.satirlar.at(-1).length, 2, 'görüntü yokken yalnız yenile düğmeleri');
+  assert.ok(!durum.odaklar.has('kamera-buyut:camera.salon'));
+  modul.gosterildi();
+  await akit();
+  const istek = durum.istekler.length;
+  modul.parcalar();
+  assert.ok(durum.odaklar.has('kamera-buyut:camera.salon') && durum.odaklar.has('kamera-buyut:camera.balkon'));
+  assert.equal(durum.satirlar.at(-1).length, 6, 'iki kamera x (yenile, görüntü, büyüt)');
+  bulSinif(modul.parcalar()[0], 'kamera-buyut')[0].gonder('click');
+  await akit();
+  assert.equal(durum.istekler.length, istek, 'büyütmek HA’ya ya da ana sürece istek göndermez');
+});
+
+test('Şimdi yenile: yalnız o kameranın görüntüsünü ister; yükleniyorken kapalıdır ve ikinci tık ikinci istek üretmez', async () => {
+  let coz;
+  const bekle = new Promise((c) => (coz = c));
+  const yanitlar = {};
+  const { modul, durum, kartlar } = kur({ yanitlar });
+  modul.ayarla(model());
+  modul.gosterildi();
+  await akit();
+  const sayi = durum.istekler.length;
+  const [salon, balkon] = kartlar().map(kartDurumu);
+  assert.equal(salon.yenile.textContent, 'yuzey.kamera.yenile');
+  yanitlar['camera.balkon'] = () => bekle;
+  balkon.yenile.gonder('click');
+  assert.deepEqual(durum.istekler.slice(sayi), ['camera.balkon'], 'yalnız tıklanan kamera');
+  assert.equal(balkon.yenile.disabled, true, 'yükleniyor');
+  balkon.yenile.gonder('click');
+  assert.equal(durum.istekler.length, sayi + 1, 'süren istek varken ikinci istek yok');
+  coz({ ok: true, veri: JPEG_URL, yas: 0 });
+  await akit();
+  assert.equal(balkon.yenile.disabled, false);
+  assert.equal(balkon.resim.getAttribute('src'), JPEG_URL);
+  assert.equal(salon.resim.getAttribute('src'), PNG_URL, 'diğer kamera etkilenmez');
+});

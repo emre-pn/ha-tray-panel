@@ -32,6 +32,7 @@
   const CIZIM_GECIKME_MS = 40;
   const GIRDI_SINIRI = 100; // bozuk / şişirilmiş dizi işlenmeden önce kesilir; geçerli kalemler asıl sınıra göre ayrıca kırpılır
   const EN_COK_SERIT = 6;
+  const GRAFIK_TURLERI = ['otomatik', 'cizgi', 'gosterge', 'yok']; // sensör favorisinin grafik biçimi (src/lib/karo-gorunum.js ile aynı küme)
   const EN_COK_SENSOR = 40;
   const EN_COK_TAKVIM = 4;
   const EN_COK_LISTE = 4;
@@ -130,6 +131,7 @@
       kullanilabilir: k.kullanilabilir === true,
       ulasilamiyor: k.ulasilamiyor === true,
       ozellik: ozellikDuzelt(alan, k.ozellik),
+      grafikTuru: GRAFIK_TURLERI.indexOf(k.grafikTuru) >= 0 ? k.grafikTuru : 'otomatik', // sensör grafik biçimi (favori ayarı)
     };
   }
 
@@ -302,10 +304,20 @@
         .then(function (y) { return gecmisYaniti(y, kimlikler); }, function () { return gecmisYaniti(null, kimlikler); });
     }
 
+    /** Sensör favorisinin grafik biçimi çizgi (geçmiş grafiği) gösterir mi? */
+    function cizgiIstenir(karo) {
+      return karo.grafikTuru === 'otomatik' || karo.grafikTuru === 'cizgi' || karo.grafikTuru === undefined;
+    }
+
+    /** Sensör favorisinin grafik biçimi gösterge (gauge) çizer mi? */
+    function gostergeIstenir(karo) {
+      return karo.grafikTuru === 'otomatik' || karo.grafikTuru === 'gosterge' || karo.grafikTuru === undefined;
+    }
+
     function grafikliKimlikler() {
       if (!bilgi || !bilgi.ayar.sensorGrafik) return [];
       return bilgi.sensorler
-        .filter(function (k) { return k.alan === 'sensor' && !k.ulasilamiyor && k.ozellik && sonluMu(k.ozellik.sayi); })
+        .filter(function (k) { return k.alan === 'sensor' && !k.ulasilamiyor && k.ozellik && sonluMu(k.ozellik.sayi) && cizgiIstenir(k); })
         .map(function (k) { return k.id; })
         .slice(0, EN_COK_GRAFIKLI);
     }
@@ -700,8 +712,8 @@
       const satir = el('span', 'sensor-satir');
       satir.appendChild(el('span', 'sensor-deger', s.deger));
       const o = karo.ozellik;
-      const grafikAcik = bilgi.ayar.sensorGrafik && karo.alan === 'sensor' && o && sonluMu(o.sayi) && !karo.ulasilamiyor;
-      if (grafikAcik) {
+      const grafikAcik = bilgi.ayar.sensorGrafik && karo.alan === 'sensor' && o && sonluMu(o.sayi) && !karo.ulasilamiyor && karo.grafikTuru !== 'yok';
+      if (grafikAcik && gostergeIstenir(karo)) {
         const aralik = Bicim.gostergeAraligi(o);
         const gosterge = aralik ? Grafik.gosterge(o.sayi, aralik.enAz, aralik.enCok, { boyut: 44, kalinlik: 5, durum: s.neden ? 'kritik' : 'normal', etiket: '' }) : null;
         if (gosterge) {
@@ -712,7 +724,7 @@
       }
       d.appendChild(satir);
       if (s.neden) d.appendChild(el('span', 'karo-ipucu sensor-uyari', '! ' + dikkatMetni(s.neden)));
-      if (grafikAcik) {
+      if (grafikAcik && cizgiIstenir(karo)) {
         const kayit = gecmis.get(karo.id);
         if (kayit && kayit.durum === 'tamam') {
           const simdiMs = simdi();

@@ -13,18 +13,19 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 - Home Assistant WebSocket API'siyle canlı durum; bağlantı yoksa REST yoklaması.
 - Ev içi ve dış adres: uygulama önce ev adresini dener, ulaşamazsa dış adrese geçer.
 - Stream Deck, Görev Zamanlayıcı ve betikler için komut satırı: `"Ev Paneli.exe" --eylem="masa 40"`.
-- İklimlendirme, medya oynatıcı, süpürge, vantilatör, nem alma, seçim, sayı ve zamanlayıcı kartları; ışıklar için renk ve beyaz ton ayarı.
+- İklimlendirme, medya oynatıcı, süpürge, vantilatör, nem alma, seçim, sayı ve zamanlayıcı kartları; ışıklar için renk ve beyaz ton ayarı. İklim kartında ısıtma/soğutma aralığı, fan modu ve hazır ayar; medya kartında 10 sn ileri/geri sarma; sensör karolarında gösterge aralığı ve grafik biçimi vardır.
 - Perde ve jaluzi kartları (aç, durdur, kapat, konum), vana ve otomasyon kartları. Vana ve otomasyon için her zaman basılı tutmak gerekir; kısayoldan ve komut satırından hiç çalışmazlar.
-- İstersen açılan kamera anlık görüntüsü (durağan bir kare, canlı yayın yok): varsayılan olarak kapalıdır, kameraları Ayarlar'da tek tek onaylarsın, görüntü bulanık başlar, yalnız bellekte durur ve bir kameraya izin verilmişken panel ekran görüntüsünden gizlenir.
+- İstersen açılan kamera anlık görüntüsü (durağan bir kare, canlı yayın yok): varsayılan olarak kapalıdır, kameraları Ayarlar'da tek tek onaylarsın, görüntü bulanık başlar, yalnız bellekte durur ve bir kameraya izin verilmişken panel ekran görüntüsünden gizlenir. Kamera kartı büyütülebilir ve istenince yenilenebilir.
 - İstersen açılan bilgi kartları: grafikli sensör şeridi, saat, hava durumu ve tahmin, salt okunur takvim ve yapılacaklar listeleri. Medya kartlarında albüm kapağı görünür.
-- Sağ tık menüsü, sayfalar (sekmeler), odaya göre gruplama, karo simgesi, rengi ve boyutu, geri alınabilir sıralama ve masaüstüne sabitlenen karolar.
+- Sağ tık menüsü, sayfalar (sekmeler), odaya göre gruplama, karo simgesi, rengi ve boyutu, geri alınabilir sıralama ve masaüstüne sabitlenen karolar. Karo menüsünden bir favori masaüstüne sabitlenir, karo simgeleri aranabilir emoji seçiciden gelir, palet paneli seçtiğin sayfada açabilir.
+- İstersen tepsi simgesinde rozet: açık ışık sayısı ya da 5 saniyede bir sırayla gösterilen en çok üç sensör.
 - Geri al (`Ctrl+Alt+Z`), gecikmeli eylemler (`masa 10 dk sonra kapat`) ve hangi eylemin nereden çalıştığını gösteren yerel etkinlik geçmişi.
 - Home Assistant iletileri, düşük pil ve güncellemeler için panelde bildirimler; uyarı kuralları ve sessiz saatler. Masaüstü bildirimi isteğe bağlıdır.
 - İstersen açılan dış tetikler (hepsi varsayılan olarak kapalı): Jump List görevleri, masaüstü kısayolları, `evpaneli://` bağlantıları, 127.0.0.1 üzerinde yerel API, bilgisayar olayları (kilit, uyku) ve toplantı ışığı. Yalnız adıyla seçtiğin zararsız favorileri çalıştırırlar.
 - İstersen Home Assistant mobil uygulaması olarak kayıt: `notify.mobile_app_*` bildirimleri düğmeleriyle bilgisayarına gelir.
 - Zor kurulumlar için bağlantı seçenekleri: özel HTTP üstbilgileri (örneğin Cloudflare Access), özel kök sertifika ya da sabitlenmiş sertifika, tarayıcıyla giriş ve seçtiğin bir klasör üzerinden ayar eşitleme.
 - Açık, koyu ve yüksek karşıtlıklı tema; hazır ya da özel renkler, metin boyutu, Windows 11 mika/akrilik görünüm; Türkçe, İngilizce, Almanca, Fransızca ve İspanyolca arayüz.
-- Ayar araması, ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu; sürüm denetimi ve uygulama içi güncelleme varsayılan olarak kapalıdır.
+- Ayar araması, ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu; sürüm denetimi ve uygulama içi güncelleme varsayılan olarak kapalıdır. İçe aktarma, uygulanmadan önce bir önizleme gösterir.
 - Kurulum gerektirmeyen taşınabilir sürüm.
 
 ## Güvenlik

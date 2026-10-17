@@ -839,9 +839,11 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
    * yönlendirme reddi. HA bu uçta hatalı jetonu IP sayacına yazmaz; bu yüzden belirsiz/ban sayaçları işletilmez, 403 yine adresi 15 dk duraklatır.
    * Gövde sınırlıdır; ağ, 403 ve 5xx HaHatasi fırlatır, 200/400/401 yanıtı { durum, govde } olarak döner (yorum çağıranındır).
    * `taban` verilmezse adres, REST isteğiyle aynı yoldan (anahtarsız yoklama) seçilir. Form gövdesi sır içerir: hiçbir yere yazılmaz.
+   * `izinliKokenler` (yenileme / iptal): verilirse seçilen kök bu listede olmalıdır; değilse ('kaynak-izinsiz') ağa çıkılmaz. Oturumu veren HA'nın
+   * kökenleri verilir: adres başka bir sunucuya çevrilse bile yenileme anahtarı oraya gönderilmez.
    * @returns {Promise<{durum: number, govde: object|null, taban: string}>}
    */
-  async function oauthIstegi({ form, taban: istenen = null }) {
+  async function oauthIstegi({ form, taban: istenen = null, izinliKokenler = null }) {
     if (typeof form !== 'string' || form.length === 0 || form.length > 16_384) throw new HaHatasi('baglanti');
     let taban = istenen;
     if (!taban) {
@@ -849,6 +851,10 @@ function haIstemcisiOlustur({ fetch, ayarlarAl, anahtarAl, aktifAdresAl, yeniden
       if (!taban && !secimBeklemesindeMi()) taban = await apiTabaniBul(true);
     }
     if (!taban) throw new HaHatasi('baglanti');
+    if (Array.isArray(izinliKokenler) && !izinliKokenler.includes(taban)) {
+      gunluk('Tarayıcı oturumu isteği, oturumu veren sunucunun dışındaki bir adrese gönderilmedi.');
+      throw new HaHatasi('kaynak-izinsiz');
+    }
     if (!izinliKokenMi(taban)) throw new HaHatasi('kaynak-izinsiz');
     if (!anahtarIcinGuvenliAdresMi(taban)) {
       gunluk('Tarayıcı girişi isteği ev ağı dışındaki http adresine gönderilmedi.');

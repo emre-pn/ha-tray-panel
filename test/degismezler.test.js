@@ -283,7 +283,8 @@ test('yüzey IPC kanallarının hepsi gönderen denetimli; panel/palet penceresi
   const kanallar = [...yuzey.matchAll(/ipcMain\.(?:handle|on)\('(yuzey:[\w-]+)'/g)].map((m) => m[1]);
   // 1.4.0 dis grubu (o-54): yuzey:dis-onay-al / yuzey:dis-onay-yanit (evpaneli:// bağlantı izni) bilinçli eklendi
   // eylem grubu (o-12, o-14, o-15, o-46): yuzey:geri-al, yuzey:geciktir, yuzey:gecikmeli-iptal, yuzey:oda-kapat, yuzey:diger-* bilinçli eklendi
-  assert.deepEqual(kanallar.sort(), ['yuzey:ayarlar-ac', 'yuzey:basili-basla', 'yuzey:basili-birak', 'yuzey:bildirim-kapat', 'yuzey:boyut', 'yuzey:calistir', 'yuzey:diger-calistir', 'yuzey:diger-cihazlar', 'yuzey:diger-favori-ekle', 'yuzey:dis-onay-al', 'yuzey:dis-onay-yanit', 'yuzey:durum-al', 'yuzey:gecikmeli-iptal', 'yuzey:geciktir', 'yuzey:geri-al', 'yuzey:ha-ac', 'yuzey:kamera', 'yuzey:kapat', 'yuzey:oda-kapat', 'yuzey:oku', 'yuzey:sabitle', 'yuzey:sag-tik']);
+  // düzen grubu (o-24): yuzey:sayfa-sec (palet sayfa satırı; yalnız paletten, kimlik modele karşı doğrulanır) bilinçli eklendi
+  assert.deepEqual(kanallar.sort(), ['yuzey:ayarlar-ac', 'yuzey:basili-basla', 'yuzey:basili-birak', 'yuzey:bildirim-kapat', 'yuzey:boyut', 'yuzey:calistir', 'yuzey:diger-calistir', 'yuzey:diger-cihazlar', 'yuzey:diger-favori-ekle', 'yuzey:dis-onay-al', 'yuzey:dis-onay-yanit', 'yuzey:durum-al', 'yuzey:gecikmeli-iptal', 'yuzey:geciktir', 'yuzey:geri-al', 'yuzey:ha-ac', 'yuzey:kamera', 'yuzey:kapat', 'yuzey:oda-kapat', 'yuzey:oku', 'yuzey:sabitle', 'yuzey:sag-tik', 'yuzey:sayfa-sec']);
   for (const kanal of kanallar) {
     const yer = yuzey.indexOf(`'${kanal}'`);
     const sonraki = yuzey.indexOf('ipcMain.', yer + 10);

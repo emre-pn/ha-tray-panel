@@ -9,12 +9,14 @@
  *  - onayiDuzelt: zorunlu onaylı eylemlerde "onay:false" kaydını atar (sunucu tarafı doğrulama, hata-04).
  *  - HAZIR_LISTE / hazirListeUygula: hazır ilk karolar (hiz-07); GRUP_TABLOSU: panel grupları (gorunum-12).
  *
- * Favori kaydı: { entity_id, ad, onay?, etiket?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi?, kisayolEylemi? }
+ * Favori kaydı: { entity_id, ad, onay?, etiket?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi?, kisayolEylemi?, gostergeMin?, gostergeMax?, grafikTuru? }
  *   etiket   yalnız görünen kısa ad (güvenlik her zaman HA'daki GÜNCEL friendly_name'e bakar; etiket de süzgeçten geçer)
  *   kisayol  eylem kısayolu (hiz-05; yalnız zararsız eylemlerde)
  *   parlaklik yalnız ışıkta: panelde hazır seviyeler ve kaydırıcı (hiz-09)
  *   simge, renk, boyut  karo görünümü (1.4.0, o-31): src/lib/karo-gorunum.js (çizgi ikon ya da emoji; hazır palet adı; kucuk/genis/buyuk)
  *   tepsi    true ise tepsi menüsünün üst düzeyinde (zararsız favoriler arasında) önce gelir (1.4.0, o-16 "tepsiye ekle")
+ *   gostergeMin, gostergeMax, grafikTuru (yalnız sensör; 1.4.0): sensör karosunun gösterge aralığı (ikisi birden, min < max) ve grafik biçimi
+ *             ('cizgi' | 'gosterge' | 'yok'; 'otomatik' varsayılandır ve saklanmaz). Doğrulama src/lib/karo-gorunum.js'te
  *   kisayolEylemi (1.4.0, o-13) kısayola basınca yapılacak KESİN yön, kapalı liste: 'ac', 'kapat', 'parlak+5|10|20', 'parlak-5|10|20'
  *             (yalnız parlaklık kontrollü ışık), 'hiz+10|20', 'hiz-10|20' (yalnız vantilatör). Yok = varlığın kendi aç-kapa eylemi.
  *             Yalnız geçerli kısayolu olan favoride saklanır (src/lib/yonlu-eylem.js)
@@ -32,7 +34,7 @@ const { SINIF, eylemSinifi } = require('./eylem-sinifi');
 const { EN_COK_FAVORI_KISAYOLU, kisayolDogrula, kisayolNormallestir } = require('./kisayol');
 const { kisayolEylemiGecerliMi } = require('./yonlu-eylem');
 const { kisalt } = require('./metin');
-const { simgeDuzelt, renkDuzelt, boyutDuzelt, VARSAYILAN_BOYUT } = require('./karo-gorunum');
+const { simgeDuzelt, renkDuzelt, boyutDuzelt, VARSAYILAN_BOYUT, grafikTuruDuzelt, gostergeAraligiDuzelt, VARSAYILAN_GRAFIK } = require('./karo-gorunum');
 
 const EN_COK_FAVORI = 200;
 const EN_COK_KISAYOLLU_FAVORI = EN_COK_FAVORI_KISAYOLU;
@@ -164,7 +166,18 @@ function gorunumAlanlari(ek) {
   return sonuc;
 }
 
-/** ek: { onay?, etiket?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi?, kisayolEylemi? } — geçersiz alanlar sessizce atılır (çağıran gerekiyorsa bildirir). */
+/** Yalnız sensör favorisinde: gösterge aralığı (ikisi birden, min < max) ve grafik biçimi ('otomatik' kayda yazılmaz). */
+function sensorAlanlari(kimlik, ek) {
+  const sonuc = {};
+  if (alanAl(kimlik) !== 'sensor') return sonuc;
+  const aralik = gostergeAraligiDuzelt(ek.gostergeMin, ek.gostergeMax);
+  if (aralik) Object.assign(sonuc, aralik);
+  const grafik = grafikTuruDuzelt(ek.grafikTuru);
+  if (grafik && grafik !== VARSAYILAN_GRAFIK) sonuc.grafikTuru = grafik;
+  return sonuc;
+}
+
+/** ek: { onay?, etiket?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi?, kisayolEylemi?, gostergeMin?, gostergeMax?, grafikTuru? } — geçersiz alanlar sessizce atılır (çağıran gerekiyorsa bildirir). */
 function favoriOlustur(kimlik, ad, ek = {}) {
   const f = { entity_id: kimlik, ad };
   if (typeof ek.onay === 'boolean') f.onay = ek.onay;
@@ -174,6 +187,7 @@ function favoriOlustur(kimlik, ad, ek = {}) {
   if (kisayol) f.kisayol = kisayol;
   if (ek.parlaklik === true && alanAl(kimlik) === 'light') f.parlaklik = true;
   Object.assign(f, gorunumAlanlari(ek));
+  Object.assign(f, sensorAlanlari(kimlik, ek));
   if (ek.tepsi === true) f.tepsi = true;
   if (f.kisayol && typeof ek.kisayolEylemi === 'string' && kisayolEylemiGecerliMi(alanAl(kimlik), ek.kisayolEylemi, f)) f.kisayolEylemi = ek.kisayolEylemi;
   return f;
@@ -238,6 +252,11 @@ function ekAlanlariBirlestir(kimlik, oge, kayit) {
     boyut: typeof gelen.boyut === 'string' ? gelen.boyut : kayit?.boyut,
     tepsi: typeof gelen.tepsi === 'boolean' ? gelen.tepsi : kayit?.tepsi,
     kisayolEylemi: typeof gelen.kisayolEylemi === 'string' ? gelen.kisayolEylemi : kayit?.kisayolEylemi,
+    // Sensör gösterge aralığı ÇİFT olarak güncellenir (yükte biri varsa ikisi de gelen değerdir; null / eksik = temizle); yükte hiçbiri yoksa kayıttan korunur.
+    ...('gostergeMin' in gelen || 'gostergeMax' in gelen
+      ? { gostergeMin: gelen.gostergeMin, gostergeMax: gelen.gostergeMax }
+      : { gostergeMin: kayit?.gostergeMin, gostergeMax: kayit?.gostergeMax }),
+    grafikTuru: typeof gelen.grafikTuru === 'string' ? gelen.grafikTuru : kayit?.grafikTuru,
   };
 }
 

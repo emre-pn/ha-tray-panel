@@ -176,7 +176,7 @@ test('giriş: geçerli geri çağrı kodu jetona çevirir; oturum şifreli depoy
   assert.equal(form.get('code'), 'KOD-123456789');
   assert.equal(form.get('client_id'), g.istemci);
   assert.equal(o.kayit.istekler[0].taban, TABAN, 'kod, girişin başladığı adrese gönderilir');
-  assert.deepEqual(oauth.oturumuCoz(o.veri.metin), { taban: TABAN, istemci: g.istemci, yenileme: YENILEME });
+  assert.deepEqual(oauth.oturumuCoz(o.veri.metin), { taban: TABAN, istemci: g.istemci, yenileme: YENILEME, kokenler: [TABAN] });
   assert.equal(o.veri.metin.includes(erisim(1)), false, 'erişim anahtarı dosyaya yazılmaz');
   assert.deepEqual(o.kayit.kabul, [[TABAN, erisim(1)]]);
   assert.deepEqual(o.kayit.degisimler, [{ eski: null, yeni: parmak(erisim(1)) }]);
@@ -607,6 +607,49 @@ test('birleşik anahtar deposu: elle anahtar varsa o; yoksa tarayıcı oturumunu
   assert.equal(depo.varMi(), false);
   assert.equal(depo.karantinayaAl(), true);
   assert.equal(depo.karantinadaMi(), false);
+});
+
+const DIS_TABAN = 'https://ha.example.com';
+
+test('yenileme ve iptal: giriş anındaki HA kökenleriyle sınırlanır (izinliKokenler); oturum kaydı kökenleri taşır', async () => {
+  const o = kur({ yonetici: { ayarlarAl: () => ({ yerelAdres: TABAN, disAdres: DIS_TABAN }) } });
+  const g = await girisBaslat(o);
+  await cagir(g.kapi, `/callback?code=KOD-123456789&state=${g.state}`);
+  await bekle(() => o.kayit.acildi === 1);
+  assert.deepEqual(oauth.oturumuCoz(o.veri.metin).kokenler, [TABAN, DIS_TABAN]);
+  o.saat.t += dk(29);
+  assert.equal(await o.yonetici.erisimAnahtariAl(), erisim(2));
+  const yenileme = o.kayit.istekler.at(-1);
+  assert.equal(new URLSearchParams(yenileme.form).get('grant_type'), 'refresh_token');
+  assert.deepEqual(yenileme.izinliKokenler, [TABAN, DIS_TABAN]);
+  await o.yonetici.cikis({ iptal: true, bekle: true });
+  const iptal = o.kayit.istekler.at(-1);
+  assert.equal(new URLSearchParams(iptal.form).get('action'), 'revoke');
+  assert.deepEqual(iptal.izinliKokenler, [TABAN, DIS_TABAN]);
+
+  // eski kayıtta (kökenler yok) yalnız giriş kökeni geçerlidir
+  const eski = kur();
+  eski.oturumKur();
+  assert.equal(oauth.oturumuCoz(eski.veri.metin).kokenler, undefined);
+  await eski.yonetici.erisimAnahtariAl();
+  assert.deepEqual(eski.kayit.istekler[0].izinliKokenler, [TABAN]);
+});
+
+test('yenileme: adres oturumu veren sunucunun dışına çevrilmişse (kaynak-izinsiz) yenileme anahtarı GİTMEZ, oturum yerelde düşer ve yeniden giriş istenir', async () => {
+  const o = kur({
+    jeton: (_form, _n, girdi) => {
+      if (!girdi.izinliKokenler.includes('https://baska.example.org')) return { durum: 200, govde: { access_token: erisim(9), token_type: 'Bearer', expires_in: 1800 }, taban: TABAN };
+      throw new HaHatasi('kaynak-izinsiz');
+    },
+  });
+  o.oturumKur({ kokenler: [TABAN, 'https://baska.example.org'] }); // izin listesi sahte hat tarafından reddedilir
+  assert.equal(await o.yonetici.erisimAnahtariAl(), null, 'erişim anahtarı verilmez');
+  assert.equal(o.veri.metin, null, 'yerel oturum silindi (yenileme anahtarı artık yok)');
+  assert.deepEqual(o.kayit.sonlandi, ['adres-degisti']);
+  assert.equal(o.kayit.istekler.length, 1, 'yeniden deneme yok');
+  assert.equal(await o.yonetici.erisimAnahtariAl(), null);
+  assert.equal(o.kayit.istekler.length, 1);
+  assert.equal(o.yonetici.oturumVarMi(), false);
 });
 
 test('IPC işleyicileri: dört kanal; durum yanıtı jeton içermez; giriş-iptal ve çıkış çalışır', async () => {

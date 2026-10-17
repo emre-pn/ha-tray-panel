@@ -32,8 +32,16 @@ The features below are all off by default. Each line says what turning it on ope
 - **Camera snapshots:** one picture at a time, fetched by the main process, kept in memory only and hidden from screen capture while allowed. Door, doorbell, intercom and entrance cameras are never offered.
 - **Update check and in-app updates:** the only requests that leave for a server other than your Home Assistant, and only to GitHub Releases. Your address and token are never sent. The installer's sha512 is checked before it is installed.
 
+## Trust boundary
+
+- **Release channel:** the installer is not code-signed. What protects an in-app update is the GitHub account that publishes the release and the sha512 check; if that account were taken over, a malicious release would pass those checks. This is why in-app updates are off by default and install only after a second confirmation. Verify the SHA-256 listed in each release if that matters to you.
+- **Local API:** a program that runs as your Windows user and knows the token can use it, and five wrong tokens within a minute lock the API for a minute for everyone, so a local program can also keep the real client out for a moment. That is an accepted risk; it grants nothing.
+- **Mobile notification buttons:** a button press only sends the standard notification-action event to Home Assistant. The app cannot know which automation listens to it, so never bind an automation that opens a door, lock, garage or alarm to that event.
+
 ## Türkçe
 
 Güvenlik sorunlarını herkese açık issue olarak açma; deponun **Security** sekmesindeki **Report a vulnerability** seçeneğiyle gizli olarak bildir. Bildirimine gerçek erişim anahtarı, adres ya da kişisel veri koyma.
 
 Seçenekli özellikler (yerel API, `evpaneli://` bağlantıları, dış tetikler, mobil bildirim kaydı, klasörle eşitleme, kamera, güncelleme) varsayılan olarak kapalıdır. Yerel API yalnız 127.0.0.1'de dinler ve jetonla çalışır; `evpaneli://` açıkken her favori için panelde izin sorulur; mobil kayıtta Home Assistant'a yalnız bildirim düğmesi olayı gider, sensör ya da konum gitmez. Vana, otomasyon, kamera ve onay isteyen eylemler uygulamanın dışından hiçbir yolla başlatılamaz. Ayrıntı için yukarıdaki "What the optional features open" bölümüne bak.
+
+Güven sınırı: kurucu imzasızdır; uygulama içi güncellemeyi yalnız sürümü yayımlayan GitHub hesabı ve sha512 denetimi korur. Yerel API'de art arda yanlış jeton geçici ve genel bir kilit getirir (aynı bilgisayardaki bir program gerçek istemciyi kısa süre dışarıda bırakabilir; yetki vermez). Bildirim düğmesine basınca Home Assistant'ta hangi otomasyonun çalışacağı bilinemez; kapı, kilit, garaj ya da alarm açan bir otomasyonu bu olaya bağlama.

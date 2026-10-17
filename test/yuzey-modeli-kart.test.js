@@ -128,7 +128,7 @@ test('onayliServisler: klima modu, TV kapatma, seçici / sayı / zamanlayıcı s
   assert.equal(s.get('input_select.ev_modu').sinif, 'zararsiz');
 
   const zorunlu = yuzeyModeliOlustur({ favoriler: [favori('climate.salon', { onay: true })], durumAl });
-  assert.deepEqual(harita(zorunlu).get('climate.salon').onayliServisler.sort(), ['set_hvac_mode', 'set_temperature', 'turn_off', 'turn_on'].sort(), 'kullanıcı "onay iste" dediyse bütün servisler onaylı');
+  assert.deepEqual(harita(zorunlu).get('climate.salon').onayliServisler.sort(), ['set_fan_mode', 'set_hvac_mode', 'set_preset_mode', 'set_temperature', 'turn_off', 'turn_on'].sort(), 'kullanıcı "onay iste" dediyse bütün servisler onaylı');
 });
 
 test('eylemSinifi: klima modu ve TV kapatma onaylı servistir (yalın karo zararsız); seçici varsayılan onaylı ama onay kapatılabilir', () => {

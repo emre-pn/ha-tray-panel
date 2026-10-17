@@ -1566,9 +1566,77 @@
     });
     // "liste süt" (o-07): ayarda hızlı liste seçiliyse ilk satır, metni o yapılacaklar listesine ekleyen satırdır. Metin YALNIZ
     // todo.add_item'a gider (başka hiçbir eyleme ya da konuşma API'sine değil); sınırlı serbest metin istisnası budur.
+    sayfaSatirlariniKat(satirlar, s.sonuclar.slice(0, PALET_SATIR_SINIRI));
     const hizli = bilgi ? bilgi.hizliEkleSatiri(sorgu) : null;
     if (hizli) satirlar.unshift(hizliEkleSatiri(hizli));
     return { baslik: null, satirlar: satirlar };
+  }
+
+  /**
+   * Palet sayfa satırları (o-24): sorgu bir panel sayfasının adına ("Akşam") ya da "sayfa" sözcüğüne uyuyorsa o sayfa bir satır olur; Enter paneli o
+   * sayfayla açar ve HİÇBİR servis çağrısı yapmaz (yalnız `sayfaSec`). Satır, cihaz sonuçlarının arasına puanına göre girer (eşitte cihaz önde).
+   * @param {object[]} satirlar cihaz satırları (yerinde değiştirilir)
+   * @param {{puan:number}[]} sonuclar satirlar ile aynı sırada, aramanın puanları
+   */
+  function sayfaSatirlariniKat(satirlar, sonuclar) {
+    const sayfalar = Array.isArray(model.sayfalar) ? model.sayfalar : [];
+    if (sayfalar.length === 0 || typeof kopru.sayfaSec !== 'function' || sorgu.trim() === '') return;
+    const grup = t('yuzey.palet.sayfa');
+    const adaylar = [{ id: 'tumu', etiket: t('yuzey.sekme.tumu'), grupEtiketi: grup }].concat(
+      sayfalar.map(function (sayfa) {
+        return { id: sayfa.id, etiket: sayfa.ad, grupEtiketi: grup };
+      }),
+    );
+    Arama.ara(sorgu, adaylar).forEach(function (r) {
+      const satir = { karo: sayfaKarosu(r.oge), sayfa: { id: r.oge.id }, konumlar: r.konumlar, parlaklik: null, kapat: false, desteklenmiyor: false, eylem: null, komutHatasi: null, gecikme: null };
+      let yer = satirlar.length;
+      for (let i = 0; i < sonuclar.length && i < satirlar.length; i += 1) {
+        if (sonuclar[i].puan < r.puan) {
+          yer = i;
+          break;
+        }
+      }
+      satirlar.splice(yer, 0, satir);
+      sonuclar.splice(yer, 0, { puan: r.puan });
+    });
+  }
+
+  /** Sayfa satırının sahte karosu: eylemi yoktur (varsayilanEylem true ama satir.sayfa paletCalistir'da önce ele alınır), onay istemez. */
+  function sayfaKarosu(aday) {
+    return {
+      id: 'sayfa:' + aday.id,
+      etiket: aday.etiket,
+      grup: 'sayfa',
+      grupEtiketi: aday.grupEtiketi,
+      altGrup: null,
+      alan: 'sayfa',
+      durum: 'yok',
+      yuzde: null,
+      kullanilabilir: true,
+      ulasilamiyor: false,
+      yikici: false,
+      parlaklikKontrol: false,
+      tekrar: false,
+      ozellik: null,
+      varsayilanEylem: true,
+      onayliServisler: [],
+    };
+  }
+
+  /** Palet sayfa satırı: paneli o sayfayla açtırır (ana süreç doğrular); başarıda pencere panel kipine geçer, olmazsa nedeni ipucunda söylenir. */
+  function paletSayfayaGec(satir) {
+    const etiket = satir.karo.etiket;
+    const no = gosterimNo;
+    if (typeof kopru.sayfaSec !== 'function') return;
+    Promise.resolve(kopru.sayfaSec(satir.sayfa.id)).then(
+      function (sonuc) {
+        if (no !== gosterimNo || mod !== 'palet') return;
+        if (!sonuc || sonuc.ok !== true) ipucuGoster(t('yuzey.ipucu.sayfaOlmadi', { etiket: etiket }));
+      },
+      function () {
+        if (no === gosterimNo && mod === 'palet') ipucuGoster(t('yuzey.ipucu.sayfaOlmadi', { etiket: etiket }));
+      },
+    );
   }
 
   /** Palet "liste <metin>" satırı: sahte bir karo (kimlik = yapılacaklar listesi) ve eklenecek metin; Enter / tıklama add_item çalıştırır. */
@@ -1667,6 +1735,7 @@
   function paletCalistir(satir, seviye) {
     if (satir.hizli !== undefined) return paletHizliEkle(satir);
     if (satir.diger) return paletDigerIslem(satir, satir.diger.alan === 'scene' ? 'ac' : 'degistir'); // "*" (o-46): Enter / tıklama = aç-kapa (sahne: çalıştır)
+    if (satir.sayfa) return paletSayfayaGec(satir); // panel sayfası (o-24): servis çağrısı yok
     const karo = satir.karo;
     if (satir.salt === true) {
       // "@" listesinde favori olmayan varlık: yalnız bilgi (eylem yolu yok)
@@ -1749,7 +1818,7 @@
       }
       if (onayli) kutu.appendChild(olustur('span', 'rozet uyari', t('yuzey.rozet.basiliTut')));
       kutu.appendChild(olustur('span', 'palet-grup', karo.grupEtiketi));
-      kutu.appendChild(olustur('span', 'palet-durum', durumMetni(karo)));
+      kutu.appendChild(olustur('span', 'palet-durum', satir.sayfa ? t('yuzey.palet.sayfayaGec') : durumMetni(karo)));
       kutu.addEventListener('mousemove', function () {
         if (donuk > 0) return; // basılı tutma / basılı fare sürerken satır yeniden çizilmez (basılı öğe yok edilirse bırakma kaybolurdu)
         if (secili !== i) {
@@ -2177,6 +2246,8 @@
     if (duzen) duzen.sifirla(); // ayrıntı bölmesi kapanır; seçili sayfa korunur
     malzemeAyarla(yuk && yuk.malzeme);
     kipAyarla(yuk && yuk.mod);
+    // Palet "sayfa" satırı (o-24): ana süreç paneli istenen sayfayla açtı; sekme çubuğu panel kipinde yeniden kurulur
+    if (duzen && mod === 'panel' && yuk && typeof yuk.sayfa === 'string') duzen.sayfayiAyarla(yuk.sayfa.slice(0, 40));
     etkilesimAyarla(yuk && yuk.etkilesim);
     tekerlek.sifirla();
     bilgiCizimiBekliyor = false;

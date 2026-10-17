@@ -47,7 +47,9 @@ if (location.protocol === 'file:') {
     acikSayfa: () => ipcRenderer.invoke('ayarlar:aciksayfa'),
     // Dışa/içe aktarma ve yedekten dönme (k-13): dosya yolunu ana süreç seçtirir; anahtar hiçbir yönde taşınmaz.
     ayarlariDisaAktar: () => ipcRenderer.invoke('ayarlar:disa-aktar'),
-    ayarlariIceAktar: () => ipcRenderer.invoke('ayarlar:ice-aktar'),
+    // İçe aktarma (1.4.0): önce önizleme (dosyayı ana süreç seçtirir; yol/değer gelmez, yalnız bölüm adları ve sayılar), sonra onaylanınca önizleme numarasıyla uygulama
+    ayarlariIceAktarOnizle: () => ipcRenderer.invoke('ayarlar:ice-aktar-onizle'),
+    ayarlariIceAktar: (onizlemeNo) => ipcRenderer.invoke('ayarlar:ice-aktar', onizlemeNo),
     yedekleriGetir: () => ipcRenderer.invoke('ayarlar:yedekler'),
     yedektenDon: (ad) => ipcRenderer.invoke('ayarlar:yedekten-don', ad),
     // Arayüz dili değişti (Ayarlar'dan ya da ana süreçte): yük { dil: 'tr' | 'en' | 'de' | 'fr' | 'es' }. Sayfa kendini yeniden çevirir (EvDil.sayfayiCevir).

@@ -343,6 +343,16 @@ function sayfayiKur({
         if (tepsi === true) f.tepsi = true;
         const kisayolEylemi = 'kisayolEylemi' in g ? g.kisayolEylemi : eski?.kisayolEylemi;
         if (kisayolEylemi && f.kisayol) f.kisayolEylemi = kisayolEylemi;
+        // Sensör gösterge aralığı (ana süreçteki gibi çift güncellenir; null temizler) ve grafik biçimi ('otomatik' kayda yazılmaz)
+        const aralikGeldi = 'gostergeMin' in g || 'gostergeMax' in g;
+        const gMin = aralikGeldi ? g.gostergeMin : eski?.gostergeMin;
+        const gMax = aralikGeldi ? g.gostergeMax : eski?.gostergeMax;
+        if (g.entity_id.startsWith('sensor.') && typeof gMin === 'number' && typeof gMax === 'number' && gMin < gMax) {
+          f.gostergeMin = gMin;
+          f.gostergeMax = gMax;
+        }
+        const grafik = 'grafikTuru' in g ? g.grafikTuru : eski?.grafikTuru;
+        if (g.entity_id.startsWith('sensor.') && grafik && grafik !== 'otomatik') f.grafikTuru = grafik;
         return f;
       });
   }
@@ -410,8 +420,16 @@ function sayfayiKur({
       cagrilar.push(['ayarlariDisaAktar']);
       return aktarimYaniti?.disa ?? { ok: true, ad: 'ev-paneli-ayarlar-2026-10-15.json', favoriSayisi: 4 };
     },
-    ayarlariIceAktar: async () => {
-      cagrilar.push(['ayarlariIceAktar']);
+    // İçe aktarma önizlemesi (1.4.0): aktarimYaniti.onizle verilmezse, başarısız bir `ice` yanıtı (iptal / hata) önizlemede de aynen döner
+    ayarlariIceAktarOnizle: async () => {
+      cagrilar.push(['ayarlariIceAktarOnizle']);
+      if (aktarimYaniti?.onizle) return aktarimYaniti.onizle;
+      const ice = aktarimYaniti?.ice;
+      if (ice && !ice.ok) return ice;
+      return { ok: true, ad: ice?.ad ?? 'yedek.json', onizlemeNo: 'onizleme-1', bolumler: ['kisayollar', 'gorunum'], alanSayisi: 12, favoriSayisi: 3, eksikFavoriSayisi: null, atilanSayisi: 0 };
+    },
+    ayarlariIceAktar: async (onizlemeNo) => {
+      cagrilar.push(['ayarlariIceAktar', onizlemeNo]);
       const yanit = aktarimYaniti?.ice ?? { ok: true, ad: 'yedek.json', alanSayisi: 12, favoriSayisi: 3, atilanSayisi: 0, notlar: [], uyarilar: [] };
       if (yanit.ok && aktarimYaniti?.icesonrasi) aktarimYaniti.icesonrasi(sunucu);
       return yanit;

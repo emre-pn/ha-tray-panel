@@ -66,6 +66,9 @@ test('medya: metinler süzgeçten geçer; kapı adı taşıyan başlık/kaynak d
   assert.deepEqual(o.kaynaklar, ['HDMI 1', 'Spotify']);
   assert.equal(o.ses, 0.4);
   assert.equal(o.konumZamani, '2026-10-16T10:00:00+00:00');
+  assert.equal(o.destek, null, 'supported_features yoksa destek bilinmiyor');
+  assert.equal(guvenliOzellikler(v('media_player.tv', 'on', { supported_features: 152463 })).destek, null, 'bit alanı üst sınırın üstünde');
+  assert.equal(guvenliOzellikler(v('media_player.tv', 'on', { supported_features: 6 })).destek, 6);
   assert.equal(Object.hasOwn(o, 'extra'), false);
   assert.equal(guvenliOzellikler(v('media_player.tv', 'hacked', { volume_level: 5 })).durum, null);
   assert.equal(guvenliOzellikler(v('media_player.tv', 'on', { volume_level: 5 })).ses, null, 'aralık dışı ses');
@@ -73,14 +76,24 @@ test('medya: metinler süzgeçten geçer; kapı adı taşıyan başlık/kaynak d
 
 test('iklim: sayılar aralıkta, mod ve modlar sabit kümeden', () => {
   const o = guvenliOzellikler(v('climate.salon', 'heat', { current_temperature: 21.5, temperature: '22', min_temp: 7, max_temp: 35, target_temp_step: 0.5, hvac_modes: ['off', 'heat', 'evil'], hvac_action: 'heating', current_humidity: 300 }));
-  assert.deepEqual(o, { mevcutSicaklik: 21.5, hedefSicaklik: 22, hedefAlt: null, hedefUst: null, enAz: 7, enCok: 35, adim: 0.5, mod: 'heat', modlar: ['off', 'heat'], hvacEylemi: 'heating', mevcutNem: null });
+  assert.deepEqual(o, { mevcutSicaklik: 21.5, hedefSicaklik: 22, hedefAlt: null, hedefUst: null, enAz: 7, enCok: 35, adim: 0.5, mod: 'heat', modlar: ['off', 'heat'], hvacEylemi: 'heating', mevcutNem: null, fanModu: null, fanModlari: [], onAyar: null, onAyarlar: [], destek: null });
+});
+
+test('iklim: fan modu, ön ayar ve destek bit alanı; kapı metni taşıyan seçenek düşer, ham öznitelik sızmaz', () => {
+  const o = guvenliOzellikler(
+    v('climate.salon', 'heat_cool', { fan_mode: 'auto', fan_modes: ['auto', 'low', 'Garaj kapısı', 7], preset_mode: 'Kapı kilidi', preset_modes: ['eco', 'away', 'Kapı kilidi'], supported_features: 427, target_temp_low: 20, target_temp_high: '24.5', secret_token: 'x' }),
+  );
+  assert.deepEqual([o.fanModu, o.fanModlari, o.onAyar, o.onAyarlar, o.destek, o.hedefAlt, o.hedefUst], ['auto', ['auto', 'low'], null, ['eco', 'away'], 427, 20, 24.5]);
+  assert.equal(Object.hasOwn(o, 'secret_token'), false);
+  assert.equal(guvenliOzellikler(v('climate.a', 'heat', { supported_features: 'x' })).destek, null);
 });
 
 test('seçici, sayı, zamanlayıcı, süpürge, ışık, fan', () => {
   assert.deepEqual(guvenliOzellikler(v('input_select.mod', 'Ev', { options: ['Ev', 'Tatil'] })), { secenek: 'Ev', secenekler: ['Ev', 'Tatil'] });
   assert.deepEqual(guvenliOzellikler(v('number.hedef', '12.5', { min: 0, max: 100, step: 0.5, unit_of_measurement: '%', mode: 'slider' })), { deger: 12.5, enAz: 0, enCok: 100, adim: 0.5, birim: '%', kip: 'slider' });
   assert.deepEqual(guvenliOzellikler(v('timer.firin', 'active', { duration: '0:10:00', remaining: '0:05:00', finishes_at: 'yarın' })), { durum: 'active', sure: '0:10:00', kalan: '0:05:00', bitis: null });
-  assert.deepEqual(guvenliOzellikler(v('vacuum.robot', 'docked', { battery_level: 80 })), { durum: 'docked', pil: 80 });
+  assert.deepEqual(guvenliOzellikler(v('vacuum.robot', 'docked', { battery_level: 80 })), { durum: 'docked', pil: 80, destek: null });
+  assert.equal(guvenliOzellikler(v('vacuum.robot', 'docked', { supported_features: 12316 })).destek, 12316);
   const isik = guvenliOzellikler(v('light.a', 'on', { color_temp_kelvin: 3000, min_color_temp_kelvin: 2000, max_color_temp_kelvin: 6500, rgb_color: [1, 2, 300], supported_color_modes: ['color_temp', 'bogus'] }));
   assert.deepEqual(isik, { renkSicakligi: 3000, enAzKelvin: 2000, enCokKelvin: 6500, rgb: null, renkModlari: ['color_temp'] });
   const fan = guvenliOzellikler(v('fan.a', 'on', { percentage: 33, oscillating: 'yes', preset_mode: 'Door mode', preset_modes: ['auto', 'Door mode'] }));

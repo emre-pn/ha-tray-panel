@@ -201,7 +201,7 @@ const SAYFALI = (ek = {}) => ({
   ...ek,
 });
 
-function sayfayiKur({ model = MODEL(), mod = 'panel', dil, sagTik = true, duzenYok = false, sagTikYaniti = { ok: true } } = {}) {
+function sayfayiKur({ model = MODEL(), mod = 'panel', dil, sagTik = true, duzenYok = false, sagTikYaniti = { ok: true }, sayfaSec = true, sayfaSecYaniti = { ok: true } } = {}) {
   const odak = { aktif: null };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
@@ -251,6 +251,15 @@ function sayfayiKur({ model = MODEL(), mod = 'panel', dil, sagTik = true, duzenY
     boyut: (h) => cagrilar.push(['boyut', h]),
     haAc: async () => cagrilar.push(['haAc']),
     ayarlarAc: async () => cagrilar.push(['ayarlarAc']),
+    // palet "sayfa" satırı (o-24): ana süreç yanıtı; sayfaSec: false köprüde bu işlev yok demektir
+    ...(sayfaSec
+      ? {
+          sayfaSec: async (kimlik) => {
+            cagrilar.push(['sayfaSec', kimlik]);
+            return typeof sayfaSecYaniti === 'function' ? sayfaSecYaniti(kimlik) : sayfaSecYaniti;
+          },
+        }
+      : {}),
     ...(sagTik
       ? {
           sagTik: async (...arglar) => {
@@ -311,7 +320,7 @@ function sayfayiKur({ model = MODEL(), mod = 'panel', dil, sagTik = true, duzenY
     zaman,
     odakta: () => odak.aktif,
     odakVer: (oge) => oge.focus(),
-    goster: (kip) => gosterDinleyici({ mod: kip }),
+    goster: (kip, ek = {}) => gosterDinleyici({ mod: kip, ...ek }),
     durum: (yeniModel) => durumDinleyici(yeniModel),
     dilDegisti: (yuk) => dilDinleyici(yuk),
     belgeOlayi: (tip, ek) => {
@@ -333,6 +342,15 @@ async function panelAc(secenek) {
   sayfa.goster(secenek?.mod ?? 'panel');
   return sayfa;
 }
+
+/** Palete sorgu yazar ve satırları döner. */
+const paletSorgula = (sayfa, metin) => {
+  const arama = sayfa.oge('arama');
+  arama.value = metin;
+  arama.gonder('input');
+  return sayfa.oge('icerik').bul((o) => sinifli(o, 'palet-satir'));
+};
+const paletEnter = (sayfa) => sayfa.oge('arama').gonder('keydown', { key: 'Enter', repeat: false });
 
 const duz = (x) => JSON.parse(JSON.stringify(x)); // vm bağlamından gelen nesneler Node'un deepEqual'ında farklı prototipli sayılır
 const siniflar = (oge) => oge.className.split(' ').filter(Boolean);
@@ -487,6 +505,87 @@ test('sekmeler: sayfa seçilince yalnız sayfanın karoları SAYFANIN sırasıyl
   assert.equal(palet.oge('sekmeler').hidden, true);
   assert.equal(palet.oge('sekmeler').children.length, 0);
   assert.equal(icerik(palet).getAttribute('role'), 'listbox', 'palet listbox kalır');
+});
+
+test('palet: sayfa adı yazınca "sayfa" satırı çıkar; Enter servis çağırmaz, yalnız ana sürece sayfa kimliğini yollar; satırda "Sayfa" grubu ve "Sayfaya geç" yazar', async () => {
+  const palet = await panelAc({ model: SAYFALI(), mod: 'palet' });
+  const satirlar = paletSorgula(palet, 'aksam');
+  assert.equal(satirlar.length, 1);
+  assert.match(satirlar[0].textContent, /Akşam/);
+  assert.match(satirlar[0].textContent, /Sayfa/);
+  assert.match(satirlar[0].textContent, /Sayfaya geç/);
+  assert.equal(satirlar[0].getAttribute('aria-selected'), 'true');
+  paletEnter(palet);
+  await akit();
+  assert.deepEqual(palet.cagrilar.filter((c) => c[0] === 'sayfaSec'), [['sayfaSec', 'aksam']]);
+  assert.deepEqual(palet.calistirmalar(), [], 'hiçbir servis çağrısı yok');
+  assert.equal(palet.cagrilar.some((c) => c[0] === 'basiliBasla'), false);
+  assert.equal(kapatSayisi(palet), 0, 'pencereyi ana süreç panele çevirir; sayfa kendiliğinden kapatmaz');
+});
+
+test('palet: "sayfa" yazınca Tümü ve bütün sayfalar listelenir; fare tıklaması da aynı yolu izler; cihaz satırları sayfa satırının önünde kalır', async () => {
+  const palet = await panelAc({ model: SAYFALI(), mod: 'palet' });
+  const hepsi = paletSorgula(palet, 'sayfa');
+  assert.equal(hepsi.length, 3);
+  for (const ad of ['Tümü', 'Akşam', 'Boş']) assert.equal(hepsi.filter((s) => s.textContent.includes(ad)).length, 1, ad);
+  const bos = hepsi.find((s) => s.textContent.includes('Boş'));
+  bos.gonder('click');
+  await akit();
+  assert.deepEqual(palet.cagrilar.filter((c) => c[0] === 'sayfaSec'), [['sayfaSec', 'bos01']]);
+
+  const karisik = paletSorgula(palet, 'ampul');
+  assert.match(karisik[0].textContent, /Ampul/);
+  assert.equal(karisik.some((s) => /Sayfaya geç/.test(s.textContent)), false, 'ilgisiz sayfa satırı çıkmaz');
+  assert.deepEqual(paletSorgula(palet, 'xyzxyz'), []);
+});
+
+test('palet: Shift+Enter sayfa satırında seviye menüsü açmaz; sayfa yoksa, boş sorguda ya da köprüde sayfaSec yoksa sayfa satırı çıkmaz', async () => {
+  const palet = await panelAc({ model: SAYFALI(), mod: 'palet' });
+  paletSorgula(palet, 'aksam');
+  palet.oge('arama').gonder('keydown', { key: 'Enter', shiftKey: true, repeat: false });
+  assert.equal(palet.oge('icerik').bul((o) => sinifli(o, 'seviye')).length, 0);
+  assert.equal(palet.cagrilar.filter((c) => c[0] === 'sayfaSec').length, 0);
+  assert.equal(paletSorgula(palet, '').filter((s) => /Sayfaya geç/.test(s.textContent)).length, 0, 'boş sorguda sayfa satırı yok');
+
+  const sayfasiz = await panelAc({ model: MODEL(), mod: 'palet' });
+  assert.equal(paletSorgula(sayfasiz, 'sayfa').length, 0);
+  const koprusuz = await panelAc({ model: SAYFALI(), mod: 'palet', sayfaSec: false });
+  assert.equal(paletSorgula(koprusuz, 'aksam').length, 0);
+});
+
+test('palet: ana süreç sayfayı reddederse nedeni ipucunda söylenir ve palet açık kalır; hata sayfa kapatmaz', async () => {
+  const palet = await panelAc({ model: SAYFALI(), mod: 'palet', sayfaSecYaniti: { ok: false, tur: 'bilinmiyor' } });
+  paletSorgula(palet, 'aksam');
+  paletEnter(palet);
+  await akit();
+  assert.match(palet.oge('ipucu').textContent, /Akşam sayfası açılamadı/);
+  assert.equal(kapatSayisi(palet), 0);
+  const kopuk = await panelAc({ model: SAYFALI(), mod: 'palet', sayfaSecYaniti: () => Promise.reject(new Error('x')) });
+  paletSorgula(kopuk, 'aksam');
+  paletEnter(kopuk);
+  await akit();
+  assert.match(kopuk.oge('ipucu').textContent, /açılamadı/);
+});
+
+test('panel gösterimi sayfa isteği taşırsa o sekme seçili açılır ve sekme çubuğu görünür kalır; palet kipinde istek yok sayılır; bilinmeyen sayfa Tümü sekmesine döner', async () => {
+  const palet = await panelAc({ model: SAYFALI(), mod: 'palet' });
+  assert.equal(palet.oge('sekmeler').hidden, true);
+  palet.goster('panel', { sayfa: 'aksam' }); // ana süreç palet satırından sonra paneli bu sayfayla açar
+  assert.equal(palet.oge('sekmeler').hidden, false, 'palet kipinden çıkınca sekme çubuğu görünür');
+  assert.equal(seciliSekme(palet).textContent, 'Akşam');
+  assert.deepEqual(karoEtiketleri(palet), ['Priz', 'Ampul', 'Film']);
+  palet.goster('palet', { sayfa: 'aksam' });
+  assert.equal(palet.oge('sekmeler').hidden, true);
+  assert.equal(palet.oge('sekmeler').children.length, 0);
+  palet.goster('panel');
+  assert.equal(palet.oge('sekmeler').hidden, false);
+  assert.equal(seciliSekme(palet).textContent, 'Akşam', 'istek olmadan yeniden açınca seçili sayfa korunur');
+  palet.goster('panel', { sayfa: 'tumu' });
+  assert.equal(seciliSekme(palet).textContent, 'Tümü');
+  palet.goster('panel', { sayfa: 'silinmis' });
+  assert.equal(seciliSekme(palet).textContent, 'Tümü');
+  palet.goster('panel', { sayfa: 42 });
+  assert.equal(seciliSekme(palet).textContent, 'Tümü', 'metin olmayan istek yok sayılır');
 });
 
 test('sekmeler: karosuz sayfa kısa bir açıklama gösterir; seçili sayfa model güncellenince korunur, silinirse Tümü\'ne dönülür', async () => {

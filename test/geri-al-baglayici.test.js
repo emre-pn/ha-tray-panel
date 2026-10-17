@@ -110,6 +110,27 @@ test('sahne: çalışmadan önce üyelerin durumu okunur; geri alma üyeleri (pa
   assert.equal(o.bildirimler.length, 1, 'toplam tek bildirim (geri alma özeti)');
 });
 
+test('sahne üyesi onay:true favori ise geri alma onu ONAYSIZ açamaz (kısayol: "kaynak-izinsiz", tepsi: "onay-gerekli"); favori olmayan üye yine geri yüklenir', async () => {
+  const varliklar = structuredClone(TEMEL_VARLIKLAR);
+  varliklar['scene.film'].attributes.entity_id = ['switch.priz'];
+  const favoriler = TEMEL_FAVORILER.map((f) => (f.entity_id === 'switch.priz' ? { ...f, onay: true } : f));
+  for (const [kaynak, beklenen] of [['kisayol', 'kaynak-izinsiz'], ['tepsi-menu', 'onay-gerekli']]) {
+    const o = kur({ varliklar, favoriler, sahneEtkileri: { 'scene.film': { 'switch.priz': { state: 'off' } } } });
+    assert.deepEqual(await o.panel({ kimlik: 'scene.film' }), { ok: true, ad: 'Film' });
+    assert.equal(o.ha.durum.get('switch.priz').state, 'off');
+    const once = o.postlar().length;
+    const s = await o.b.geriAl(kaynak);
+    assert.deepEqual([s.ok, s.tur], [false, beklenen], kaynak);
+    assert.equal(o.postlar().length, once, `${kaynak}: ek POST yok`);
+    assert.equal(o.ha.durum.get('switch.priz').state, 'off', 'onaylı priz onaysız açılmadı');
+  }
+  // favori olmayan üye hâlâ tek seferlik kayıtla (onaysız) geri yüklenir
+  const serbest = kur({ varliklar, favoriler: TEMEL_FAVORILER.filter((f) => f.entity_id !== 'switch.priz'), sahneEtkileri: { 'scene.film': { 'switch.priz': { state: 'off' } } } });
+  await serbest.panel({ kimlik: 'scene.film' });
+  assert.equal((await serbest.b.geriAl('kisayol')).ok, true);
+  assert.equal(serbest.ha.durum.get('switch.priz').state, 'on');
+});
+
 test('sahne üyelerinden kapı/kilit adlı olan geri yüklenmez; sahne kapı içeriyorsa hat zaten reddeder ve girdi oluşmaz', async () => {
   const varliklar = structuredClone(TEMEL_VARLIKLAR);
   varliklar['scene.film'].attributes.entity_id = ['light.salon', 'light.kapi_lambasi'];

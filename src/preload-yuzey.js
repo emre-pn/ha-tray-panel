@@ -64,5 +64,7 @@ if (location.protocol === 'file:') {
     digerCihazlar: () => ipcRenderer.invoke('yuzey:diger-cihazlar'),
     digerCalistir: (yuk) => ipcRenderer.invoke('yuzey:diger-calistir', yuk),
     digerFavoriEkle: (kimlik) => ipcRenderer.invoke('yuzey:diger-favori-ekle', kimlik),
+    // 1.4.0 düzen (o-24): palet "sayfa" satırı. Yük yalnız sayfa kimliğidir ('tumu' ya da modeldeki sayfa); ana süreç doğrular ve paneli o sayfayla açar. HA'ya bir şey gitmez.
+    sayfaSec: (kimlik) => ipcRenderer.invoke('yuzey:sayfa-sec', kimlik),
   });
 }

@@ -18,6 +18,9 @@
  *   sinif         'zararsiz' (varsayılan) | 'onayli' (varsayılan onay ister; favoride onay:false kapatır) |
  *                 'yikici' (onay her zaman, kapatılamaz) — eylem-sinifi.js eylemSinifi(varlik, favori, servis) bunu uygular
  *   birlikteOlmaz [['a', 'b']]  aynı çağrıda ikisi birden verilemez
+ *   enAzBiri      [['a', 'b']]  gruptaki parametrelerden en az biri verilmeli (yoksa 'eksik')
+ *   birlikteGerekli [['a', 'b']]  gruptan biri verilirse hepsi verilmeli (klima aralığı: alt ve üst birlikte)
+ *   kucukOlmali   [['a', 'b']]  a değeri b'den KESİN küçük olmalı (yoksa 'sinir')
  *
  * parametreSemasi:
  *   { tur: 'sayi', gerekli?, tamsayi?, min?, max?, minOznitelik?, maxOznitelik?, adim?, adimOznitelik?, kirp?, renkModu? }
@@ -30,6 +33,8 @@
  *       suz: liste öğeleri kapı süzgecinden geçer (geçmeyen seçenek seçilemez).
  *   { tur: 'metin', gerekli?, enUzun } kapı süzgecinden geçmeli, boş olamaz, enUzun kod noktası
  *   { tur: 'rgb', gerekli?, renkModu? } [r, g, b], her biri 0..255 tamsayı
+ *   destekBiti: (sayi) öznitelik supported_features bu biti taşımalı (ör. klima aralığı için 2); taşımıyorsa 'desteklenmiyor'
+ *   oznitelikZorunlu: (sayi) bildirilen minOznitelik / maxOznitelik cihazda yoksa 'desteklenmiyor' (yalnız üst sınır bildirilmişse yalnız o aranır)
  *   renkModu: (sayi/rgb) öznitelik supported_color_modes bu modlardan birini içermeli (ışık rengi desteklemiyorsa ret)
  *
  * Yeni servis eklemek (ajanlar için kalıp): ilgili alana satır ekle, yıkıcıysa sinif:'yikici', belirsizse 'onayli';
@@ -38,7 +43,6 @@
 
 const { metinGuvenliMi, metinListesiSuz } = require('./suzgec');
 const { kisalt } = require('./metin');
-const { disTetikYasakAlanMi } = require('./alan-kaydi');
 
 const HVAC_MODLARI = Object.freeze(['off', 'heat', 'cool', 'heat_cool', 'auto', 'dry', 'fan_only']);
 const RENK_MODLARI = Object.freeze(['hs', 'rgb', 'rgbw', 'rgbww', 'xy']);
@@ -86,11 +90,20 @@ const SERVIS_IZINLERI = Object.freeze({
   climate: Object.freeze({
     turn_on: parametresiz,
     turn_off: parametresiz,
+    // Tek hedef (temperature) YA DA ısıt/soğut aralığı (target_temp_low + target_temp_high: cihaz TARGET_TEMPERATURE_RANGE bildirmeli).
     set_temperature: Object.freeze({
       parametreler: Object.freeze({
-        temperature: Object.freeze({ tur: 'sayi', gerekli: true, min: -50, max: 100, minOznitelik: 'min_temp', maxOznitelik: 'max_temp', adim: 0.1, adimOznitelik: 'target_temp_step' }),
+        temperature: Object.freeze({ tur: 'sayi', min: -50, max: 100, minOznitelik: 'min_temp', maxOznitelik: 'max_temp', adim: 0.1, adimOznitelik: 'target_temp_step' }),
+        target_temp_low: Object.freeze({ tur: 'sayi', min: -50, max: 100, minOznitelik: 'min_temp', maxOznitelik: 'max_temp', oznitelikZorunlu: true, adim: 0.1, adimOznitelik: 'target_temp_step', destekBiti: 2 }),
+        target_temp_high: Object.freeze({ tur: 'sayi', min: -50, max: 100, minOznitelik: 'min_temp', maxOznitelik: 'max_temp', oznitelikZorunlu: true, adim: 0.1, adimOznitelik: 'target_temp_step', destekBiti: 2 }),
       }),
+      birlikteOlmaz: Object.freeze([Object.freeze(['temperature', 'target_temp_low']), Object.freeze(['temperature', 'target_temp_high'])]),
+      enAzBiri: Object.freeze([Object.freeze(['temperature', 'target_temp_low'])]),
+      birlikteGerekli: Object.freeze([Object.freeze(['target_temp_low', 'target_temp_high'])]),
+      kucukOlmali: Object.freeze([Object.freeze(['target_temp_low', 'target_temp_high'])]),
     }),
+    set_fan_mode: Object.freeze({ parametreler: Object.freeze({ fan_mode: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'fan_modes', suz: true }) }) }),
+    set_preset_mode: Object.freeze({ parametreler: Object.freeze({ preset_mode: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'preset_modes', suz: true }) }) }),
     // Mod değişimi (ısıt <-> soğut <-> kapalı) yeni favoride varsayılan olarak onay ister.
     set_hvac_mode: Object.freeze({
       sinif: 'onayli',
@@ -107,6 +120,10 @@ const SERVIS_IZINLERI = Object.freeze({
     volume_set: Object.freeze({ parametreler: Object.freeze({ volume_level: Object.freeze({ tur: 'sayi', gerekli: true, min: 0, max: 1 }) }) }),
     volume_mute: Object.freeze({ parametreler: Object.freeze({ is_volume_muted: Object.freeze({ tur: 'mantiksal', gerekli: true }) }) }),
     select_source: Object.freeze({ parametreler: Object.freeze({ source: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'source_list', suz: true }) }) }),
+    // Konum atlama (saniye): cihaz SEEK özelliğini (supported_features bit 2) ve parça süresini (media_duration) bildirmeli; konum 0..süre.
+    media_seek: Object.freeze({
+      parametreler: Object.freeze({ seek_position: Object.freeze({ tur: 'sayi', gerekli: true, min: 0, max: 1e7, maxOznitelik: 'media_duration', oznitelikZorunlu: true, destekBiti: 2 }) }),
+    }),
   }),
   humidifier: Object.freeze({
     ...acKapa,
@@ -114,7 +131,7 @@ const SERVIS_IZINLERI = Object.freeze({
       parametreler: Object.freeze({ humidity: Object.freeze({ tur: 'sayi', gerekli: true, tamsayi: true, min: 0, max: 100, minOznitelik: 'min_humidity', maxOznitelik: 'max_humidity' }) }),
     }),
   }),
-  vacuum: Object.freeze({ start: parametresiz, pause: parametresiz, return_to_base: parametresiz, locate: parametresiz }),
+  vacuum: Object.freeze({ start: parametresiz, pause: parametresiz, stop: parametresiz, turn_on: parametresiz, turn_off: parametresiz, return_to_base: parametresiz, locate: parametresiz }),
   input_select: Object.freeze({
     select_option: Object.freeze({ parametreler: Object.freeze({ option: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'options', suz: true }) }) }),
   }),
@@ -207,16 +224,24 @@ function renkModuVarMi(sema, nitelikler) {
   return sema.renkModu.some((m) => modlar.includes(m));
 }
 
+/** destekBiti: öznitelik supported_features bu biti taşımalı (cihaz özelliği bildirmiyorsa parametre kabul edilmez). */
+function destekBitiVarMi(sema, nitelikler) {
+  if (!sema.destekBiti) return true;
+  const bitler = nitelikler.supported_features;
+  return Number.isInteger(bitler) && bitler >= 0 && (bitler & sema.destekBiti) !== 0;
+}
+
 /** Sayı doğrulama; geçerse (kırpılmış/yuvarlanmış) değer, geçmezse hata nedeni. */
 function sayiDogrula(deger, sema, nitelikler) {
   if (typeof deger !== 'number' || !Number.isFinite(deger)) return { hata: 'parametre' };
   if (sema.tamsayi && !Number.isInteger(deger)) return { hata: 'parametre' };
   if (!renkModuVarMi(sema, nitelikler)) return { hata: 'desteklenmiyor' };
+  if (!destekBitiVarMi(sema, nitelikler)) return { hata: 'desteklenmiyor' };
   const mutlakAlt = sema.min ?? -SAYI_TAVANI;
   const mutlakUst = sema.max ?? SAYI_TAVANI;
   const oAlt = sema.minOznitelik ? sonluSayi(nitelikler[sema.minOznitelik]) : null;
   const oUst = sema.maxOznitelik ? sonluSayi(nitelikler[sema.maxOznitelik]) : null;
-  if (sema.oznitelikZorunlu && (oAlt === null || oUst === null)) return { hata: 'desteklenmiyor' }; // sınırı bilinmeyen sayı ayarlanmaz
+  if (sema.oznitelikZorunlu && ((sema.minOznitelik && oAlt === null) || (sema.maxOznitelik && oUst === null))) return { hata: 'desteklenmiyor' }; // sınırı bilinmeyen sayı ayarlanmaz
   const alt = oAlt === null ? mutlakAlt : Math.max(mutlakAlt, oAlt); // cihaz sınırı yalnız DARALTIR
   const ust = oUst === null ? mutlakUst : Math.min(mutlakUst, oUst);
   if (alt > ust) return { hata: 'sinir' };
@@ -311,15 +336,23 @@ function servisDogrula(alan, servis, veri, varlik) {
   const nitelikler = varlik.attributes && typeof varlik.attributes === 'object' && !Array.isArray(varlik.attributes) ? varlik.attributes : {};
   for (const ad of anahtarlar) if (!Object.hasOwn(parametreler, ad)) return { ok: false, neden: 'parametre', parametre: kisalt(ad, 40) };
   for (const [a, b] of sema.birlikteOlmaz ?? []) if (Object.hasOwn(girdi, a) && Object.hasOwn(girdi, b)) return { ok: false, neden: 'parametre', parametre: b };
+  const verildi = (ad) => Object.hasOwn(girdi, ad) && girdi[ad] !== undefined;
+  for (const grup of sema.enAzBiri ?? []) if (!grup.some(verildi)) return { ok: false, neden: 'eksik', parametre: grup[0] };
+  for (const grup of sema.birlikteGerekli ?? []) {
+    if (grup.some(verildi)) for (const ad of grup) if (!verildi(ad)) return { ok: false, neden: 'eksik', parametre: ad };
+  }
   const govde = { entity_id: varlik.entity_id };
   for (const [ad, pSema] of Object.entries(parametreler)) {
-    if (!Object.hasOwn(girdi, ad) || girdi[ad] === undefined) {
+    if (!verildi(ad)) {
       if (pSema.gerekli) return { ok: false, neden: 'eksik', parametre: ad };
       continue;
     }
     const sonuc = parametreDogrula(girdi[ad], pSema, nitelikler);
     if (sonuc.hata) return { ok: false, neden: sonuc.hata, parametre: ad };
     govde[ad] = sonuc.deger;
+  }
+  for (const [kucuk, buyuk] of sema.kucukOlmali ?? []) {
+    if (govde[kucuk] !== undefined && govde[buyuk] !== undefined && !(govde[kucuk] < govde[buyuk])) return { ok: false, neden: 'sinir', parametre: buyuk };
   }
   return { ok: true, govde, sinif: servisSinifi(alan, servis) };
 }
@@ -351,18 +384,6 @@ function varliksizServisDogrula(alan, servis, veri) {
 }
 
 /**
- * Dış tetikleyiciler (Jump List, masaüstü kısayolu, yerel API, evpaneli:// bağlantısı, PC olayları, toplantı ışığı) bu servisi
- * çalıştırabilir mi? Yalnız "zararsız" sınıf VE alan dış tetik yasaklı değil (vana, otomasyon) VE klima mod değişimi değil.
- * Dış tetik kapısı bu işlevi eylem sınıfından BAĞIMSIZ ek bir denetim olarak da uygular: favoride onay:false yazılmış olsa bile
- * vana, otomasyon ve klima modu dışarıdan çalışmaz.
- */
-function disTetigeUygunServisMi(alan, servis) {
-  if (disTetikYasakAlanMi(alan)) return false;
-  if (alan === 'climate' && servis === 'set_hvac_mode') return false;
-  return servisSinifi(alan, servis) === 'zararsiz';
-}
-
-/**
  * Renderer'a güvenle verilebilecek seçenek listesi (karo modelinde açılır liste için): cihazın listesi süzgeçten geçer.
  * @returns {string[]}
  */
@@ -384,7 +405,6 @@ module.exports = {
   izinliServisler,
   servisSemasi,
   servisSinifi,
-  disTetigeUygunServisMi,
   servisDogrula,
   varliksizServisDogrula,
   secilebilirListe,

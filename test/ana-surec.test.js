@@ -1676,6 +1676,51 @@ ortamda('ayarlar:ice-aktar: dosyadaki ayarlar kaydetmedeki doğrulamayla uygulan
   assert.deepEqual(await ice(), { ok: false, iptal: true });
 });
 
+ortamda('ayarlar:ice-aktar-onizle: dosyayı ana süreç seçtirir, hiçbir ayarı değiştirmez; yanıt yalnız bölüm adları ve sayılardır; uygulama önizleme numarasıyla yapılır (1.4.0)', AYAR_EKRANI, async (ortam) => {
+  haKur(ortam.durum, AYAR_VARLIKLARI);
+  const olay = ayarlarOlayi(ortam);
+  const onizle = () => ortam.durum.ipc.get('ayarlar:ice-aktar-onizle')(olay);
+  const ice = (no) => ortam.durum.ipc.get('ayarlar:ice-aktar')(olay, no);
+  const dosya = path.join(ortam.durum.appData, 'onizle.json');
+  fs.writeFileSync(dosya, AKTARIM_DOSYASI({
+    koseBildirimi: false,
+    favoriler: [{ entity_id: 'light.salon_lambasi', ad: 'Salon' }, { entity_id: 'light.eski_lamba', ad: 'Eski' }, { entity_id: 'lock.on_kapi', ad: 'Ön Kapı' }],
+    anahtar: 'SAHTE_ANAHTAR_000000',
+  }), 'utf8');
+  ortam.durum.dosyaSecimi = { canceled: false, filePaths: [dosya] };
+  const once = ortam.ayarOku();
+
+  const ilk = await onizle();
+  assert.equal(ilk.ok, true);
+  assert.equal(ilk.ad, 'onizle.json');
+  assert.ok(ilk.bolumler.includes('bildirim') && ilk.bolumler.includes('favoriler'));
+  assert.equal(ilk.favoriSayisi, 2, 'kilit favorisi süzgeçte düşer');
+  assert.equal(ilk.eksikFavoriSayisi, null, 'cihaz listesi hiç alınmadıysa sayı verilmez');
+  assert.deepEqual(ortam.ayarOku(), once, 'önizleme hiçbir ayarı değiştirmez');
+  const metin = JSON.stringify(ilk);
+  for (const sizmamali of ['SAHTE_ANAHTAR', 'salon_lambasi', 'eski_lamba', 'on_kapi', ortam.durum.appData]) assert.ok(!metin.includes(sizmamali), `${sizmamali} renderer'a gitmez`);
+
+  await ortam.durum.ipc.get('cihazlar:getir')(olay); // cihaz listesi alınınca HA'da bulunamayan favori sayılabilir
+  const ikinci = await onizle();
+  assert.equal(ikinci.eksikFavoriSayisi, 1, 'light.eski_lamba HA\'da yok');
+  assert.equal((await ice(ilk.onizlemeNo)).ok, false, 'eski önizleme numarası yeni önizlemeyle geçersizdir');
+  assert.equal(ortam.ayarOku().koseBildirimi, true, 'geçersiz numara hiçbir şey uygulamaz');
+
+  const ucuncu = await onizle();
+  const sonuc = await ice(ucuncu.onizlemeNo);
+  assert.equal(sonuc.ok, true);
+  assert.equal(ortam.ayarOku().koseBildirimi, false);
+  assert.deepEqual(ortam.ayarOku().favoriler.map((f) => f.entity_id), ['light.salon_lambasi', 'light.eski_lamba'], 'GÜVENLİK KURALI: kilit favoriye girmez');
+  assert.equal(JSON.stringify(ortam.ayarOku()).includes('SAHTE_ANAHTAR'), false);
+  assert.equal((await ice(ucuncu.onizlemeNo)).ok, false, 'numara tek kullanımlıktır');
+
+  ortam.durum.dosyaSecimi = { canceled: true, filePaths: [] };
+  assert.deepEqual(await onizle(), { ok: false, iptal: true });
+  fs.writeFileSync(dosya, '{ bozuk', 'utf8');
+  ortam.durum.dosyaSecimi = { canceled: false, filePaths: [dosya] };
+  assert.match((await onizle()).hata, /geçerli bir JSON değil/);
+});
+
 ortamda('ayarlar:yedekler ve yedekten-don: yalnız ayar klasöründeki beklenen adlı yedekler listelenir ve geri dönülür; yol gezintisi ve olmayan yedek reddedilir (k-13)', {
   ekDosyalar: {
     'ayarlar.v1-yedek.json': JSON.stringify({ semaSurumu: 1, yerelAdres: 'http://192.168.1.77:8123', favoriler: [] }),
@@ -1706,7 +1751,7 @@ ortamda('ayarlar IPC (1.2.0): yeni kanallar da yalnız yerel Ayarlar sayfasında
   const uzak = { sender: olay.sender, senderFrame: { url: 'http://192.168.1.10:8123/lovelace', parent: null } };
   const baskaPencere = { sender: ortam.pencere.webContents, senderFrame: olay.senderFrame };
   const altCerceve = { sender: olay.sender, senderFrame: { ...olay.senderFrame, parent: {} } };
-  for (const kanal of ['ayarlar:disa-aktar', 'ayarlar:ice-aktar', 'ayarlar:yedekler', 'ayarlar:yedekten-don', 'ayarlar:adres-sina', 'ayarlar:aciksayfa']) {
+  for (const kanal of ['ayarlar:disa-aktar', 'ayarlar:ice-aktar-onizle', 'ayarlar:ice-aktar', 'ayarlar:yedekler', 'ayarlar:yedekten-don', 'ayarlar:adres-sina', 'ayarlar:aciksayfa']) {
     for (const kotu of [uzak, baskaPencere, altCerceve]) {
       assert.deepEqual(await ortam.durum.ipc.get(kanal)(kotu, 'ayarlar.v1-yedek.json'), { ok: false, hata: 'İzin yok.' }, `${kanal} reddedilmeli`);
     }
@@ -6388,9 +6433,9 @@ ortamda('karo bağlam menüsü (o-16): panelden gelen sağ tık menüyü ana sü
   }
   assert.equal(acilanlar.length, 0);
 
-  // ışık: Düzenle…, Tepsiye ekle, Sayfaya ekle, Favorilerden kaldır…
+  // ışık: Düzenle…, Tepsiye ekle, Masaüstüne sabitle, Sayfaya ekle, Favorilerden kaldır…
   await menudenSec('light.salon_lambasi', (sablon) => {
-    assert.deepEqual(etiketler(sablon), ['Düzenle…', 'Tepsiye ekle', 'Sayfaya ekle', 'Favorilerden kaldır…']);
+    assert.deepEqual(etiketler(sablon), ['Düzenle…', 'Tepsiye ekle', 'Masaüstüne sabitle', 'Sayfaya ekle', 'Favorilerden kaldır…']);
     return bul(sablon, 'Tepsiye ekle');
   });
   assert.equal(ayar().favoriler.find((f) => f.entity_id === 'light.salon_lambasi').tepsi, true, 'tepsiye sabitlendi');
@@ -6400,10 +6445,25 @@ ortamda('karo bağlam menüsü (o-16): panelden gelen sağ tık menüyü ana sü
   });
   assert.equal('tepsi' in ayar().favoriler.find((f) => f.entity_id === 'light.salon_lambasi'), false, 'sabitleme kalktı');
 
-  // yıkıcı eylem (PC kapat): tepsiye sabitleme önerilmez (zaten onaylı eylemler altında)
+  // masaüstüne sabitle: Ayarlar'daki aynı liste değişir; favori / sayfa düzeni ve HA etkilenmez
+  const duzenOnce = JSON.stringify([ayar().favoriler, ayar().sayfalar]);
+  const postOnce = postlar(ortam).length;
+  await menudenSec('light.salon_lambasi', (sablon) => bul(sablon, 'Masaüstüne sabitle'));
+  assert.deepEqual(ayar().masaustuKarolari, ['light.salon_lambasi'], 'masaüstüne sabitlendi');
+  assert.equal(JSON.stringify([ayar().favoriler, ayar().sayfalar]), duzenOnce, 'favoriler ve sayfalar değişmedi');
+  await menudenSec('light.salon_lambasi', (sablon) => {
+    assert.ok(etiketler(sablon).includes('Sabitlemeyi kaldır'));
+    assert.equal(etiketler(sablon).includes('Masaüstüne sabitle'), false);
+    return bul(sablon, 'Sabitlemeyi kaldır');
+  });
+  assert.deepEqual(ayar().masaustuKarolari, [], 'sabitleme kalktı');
+  assert.equal(postlar(ortam).length, postOnce, 'sabitleme HA’ya hiçbir servis çağrısı göndermez');
+
+  // yıkıcı eylem (PC kapat): tepsiye ve masaüstüne sabitleme önerilmez (zaten onaylı eylemler altında)
   await menudenSec('button.pc_bilgisayari_kapat', (sablon) => {
     assert.equal(etiketler(sablon).includes('Tepsiye ekle'), false);
     assert.equal(etiketler(sablon).includes('Tepsiden kaldır'), false);
+    assert.equal(etiketler(sablon).includes('Masaüstüne sabitle'), false);
     return null;
   });
 
@@ -6664,6 +6724,23 @@ ortamda('o-27: Ayarlar\'dan rozet açılıp kapatılır; kapı/kilit sensörü y
   await ayarlarKaydet(ortam, { tepsiRozeti: 'kapali' });
   ortam.ilerle(2000);
   assert.equal(typeof ortam.tepsi.simgeler.at(-1), 'string', 'kapatınca dosya simgesine dönüldü');
+});
+
+ortamda('o-27 (çoklu): ek rozet sensörleri kaydedilir; en çok 2, tekrarsız, kapı/kilit/sensör olmayan elenir; dizi değilse mevcut değer korunur', dalga4(D4_FAVORILERI, { canliBaglanti: false }, { ha: [...ISIK_ACIK_VARLIKLARI, SENSOR_SICAKLIK] }), async (ortam) => {
+  await ortam.akit();
+  const sonuc = await ayarlarKaydet(ortam, {
+    tepsiRozeti: 'sensor',
+    tepsiRozetSensoru: 'sensor.salon_sicaklik',
+    tepsiRozetSensorleri: ['sensor.pil', 'lock.on_kapi', 'sensor.pil', 'light.salon_lambasi', 'sensor.giris_kapisi', 'sensor.nem', 'sensor.fazla'],
+  });
+  assert.equal(sonuc.ok, true);
+  assert.deepEqual(ortam.ayarOku().tepsiRozetSensorleri, ['sensor.pil', 'sensor.nem'], 'geçersizler elenir, sınır 2');
+  const ozet = await ortam.durum.ipc.get('ayarlar:getir')(ayarlarOlayi(ortam));
+  assert.deepEqual(ozet.tepsiRozetSensorleri, ['sensor.pil', 'sensor.nem'], 'Ayarlar sayfasına özetle gider');
+  await ayarlarKaydet(ortam, { tepsiRozetSensorleri: 'sensor.pil' });
+  assert.deepEqual(ortam.ayarOku().tepsiRozetSensorleri, ['sensor.pil', 'sensor.nem'], 'geçersiz tür: mevcut değer korunur');
+  await ayarlarKaydet(ortam, { tepsiRozetSensorleri: [] });
+  assert.deepEqual(ortam.ayarOku().tepsiRozetSensorleri, [], 'boş liste ek sensörleri temizler');
 });
 
 // --- o-33: masaüstü karoları ---
@@ -8917,7 +8994,7 @@ ortamda('gecikmeli eylem (o-15): ayar kapatılınca bekleyenler iptal olur, yeni
   assert.deepEqual(postlar(ortam), []);
 });
 
-ortamda('gecikmeli eylem (o-15): Kapı Kuralı — kapı adlı ışık, kilit, kepenk, garaj, alarm ve onay isteyen eylem planlanamaz; hiçbir istek gitmez', dalga3([SALON]), async (ortam) => {
+ortamda('gecikmeli eylem (o-15): Kapı Kuralı — kapı adlı ışık, kilit, kepenk, garaj, alarm ve onay isteyen eylem planlanamaz; hiçbir istek gitmez', dalga3([SALON, { entity_id: 'light.on_lamba', ad: 'Lamba' }, { entity_id: 'switch.oyun_bilgisayari', ad: 'Oyun bilgisayarı' }, { entity_id: 'light.yok', ad: 'Yok' }]), async (ortam) => {
   haKur(ortam.durum, [
     ...HA_VARLIKLARI,
     durumNesnesi('light.on_lamba', 'Kapı Lambası', 'on'),
@@ -8958,6 +9035,19 @@ ortamda('gecikmeli eylem (o-15): zamanı gelince ad kapıya dönüşmüşse eyle
   ortam.ilerle(11 * DAKIKA);
   await ortam.akit();
   assert.deepEqual(postlar(ortam), []);
+});
+
+ortamda('gecikmeli eylem (o-15): favori olmayan kimlikle plan kurulamaz (paletDigerCihazlar kapalıyken serbest kimlikle eylem yok); hiçbir HA isteği gitmez', dalga3([SALON]), async (ortam) => {
+  haKur(ortam.durum, [...HA_VARLIKLARI, durumNesnesi('switch.isitici', 'Isıtıcı', 'off')]);
+  await ortam.akit();
+  const panel = await paneliAc(ortam);
+  assert.deepEqual(await geciktir(ortam, panel, { kimlik: 'switch.isitici', yon: 'sureli', dakika: 600 }), { ok: false, tur: 'bilinmeyen-favori' });
+  assert.deepEqual(await geciktir(ortam, panel, { kimlik: 'switch.isitici', yon: 'kapat', dakika: 10 }), { ok: false, tur: 'bilinmeyen-favori' });
+  assert.deepEqual(postlar(ortam), []);
+  assert.deepEqual(await gecikmeliOzeti(ortam), []);
+  ortam.ilerle(11 * DAKIKA);
+  await ortam.akit();
+  assert.deepEqual(postlar(ortam), [], 'süre dolsa da hiçbir şey gitmez');
 });
 
 ortamda('gecikmeli eylem (o-15): yüzey olmayan gönderen (Ayarlar, uzak sayfa) plan kuramaz ve iptal edemez', dalga3([SALON]), async (ortam) => {

@@ -49,11 +49,12 @@ const AYAR_P = {
   panelOpaklik: 100,
   tepsiRozeti: 'kapali',
   tepsiRozetSensoru: '',
+  tepsiRozetSensorleri: [],
   masaustuKarolari: [],
   masaustuKaroUstte: false,
 };
 
-const PENCERE_ALANLARI = ['panelHerZamanUstte', 'pencereKonumu', 'tercihEkran', 'panelOpaklik', 'tepsiRozeti', 'tepsiRozetSensoru', 'masaustuKarolari', 'masaustuKaroUstte'];
+const PENCERE_ALANLARI = ['panelHerZamanUstte', 'pencereKonumu', 'tercihEkran', 'panelOpaklik', 'tepsiRozeti', 'tepsiRozetSensoru', 'tepsiRozetSensorleri', 'masaustuKarolari', 'masaustuKaroUstte'];
 /** Ana süreç gibi: kaydedilen pencere alanları sunucu özetine yazılır (sahte köprü bu alanları kendiliğinden tanımaz). */
 const kalici = (yuk, sunucu) => {
   for (const alan of PENCERE_ALANLARI) if (alan in yuk) sunucu[alan] = yuk[alan];
@@ -309,4 +310,47 @@ test('dil değişince ekran/sensör seçenekleri ve opaklık yazısı yeni dilde
   assert.equal(sayfa.oge('tepsiRozetSensoru').value, 'sensor.pil');
   assert.equal(secenekler(sayfa, 'tepsiRozetSensoru')[0][1], 'Choose a sensor…');
   assert.equal(sayfa.oge('panelOpaklikDegeri').textContent, '60%');
+});
+
+test('ek rozet sensörleri: ana sensörle aynı kurallarla etkinleşir, aynı sensör listesini kullanır ve kayıt yükünde tekrarsız, ana sensörden farklı gider', async () => {
+  const sayfa = await ac();
+  for (const kimlik of ['tepsiRozetSensoru2', 'tepsiRozetSensoru3']) assert.equal(sayfa.oge(kimlik).disabled, true, `${kimlik}: rozet kapalıyken seçilemez`);
+  degistir(sayfa, 'tepsiRozeti', 'sensor');
+  for (const kimlik of ['tepsiRozetSensoru2', 'tepsiRozetSensoru3']) {
+    assert.equal(sayfa.oge(kimlik).disabled, false);
+    assert.deepEqual(secenekler(sayfa, kimlik), secenekler(sayfa, 'tepsiRozetSensoru'), `${kimlik}: yalnız sensör alanları`);
+  }
+  degistir(sayfa, 'tepsiRozetSensoru', 'sensor.salon_sicaklik');
+  degistir(sayfa, 'tepsiRozetSensoru2', 'sensor.pil');
+  degistir(sayfa, 'tepsiRozetSensoru3', 'sensor.salon_sicaklik'); // ana sensörle aynı: yükte yer almaz
+  await kaydet(sayfa);
+  const yuk = sonYuk(sayfa);
+  assert.equal(yuk.tepsiRozetSensoru, 'sensor.salon_sicaklik');
+  assert.deepEqual(yuk.tepsiRozetSensorleri, ['sensor.pil']);
+  const ikisi = await ac({ tepsiRozeti: 'sensor' });
+  degistir(ikisi, 'tepsiRozetSensoru2', 'sensor.pil');
+  degistir(ikisi, 'tepsiRozetSensoru3', 'sensor.pil'); // tekrar
+  await kaydet(ikisi);
+  assert.deepEqual(sonYuk(ikisi).tepsiRozetSensorleri, ['sensor.pil']);
+});
+
+test('ek rozet sensörleri: ayardaki seçim cihaz listesi olmasa da seçenek olarak durur, dokunulmadan korunur ve kirli sayılmaz; eski kayıtta (alan yok) boş gelir', async () => {
+  const sayfa = await acilmisSayfa({
+    ayar: { ...AYAR_P, anahtarVar: false, tepsiRozeti: 'sensor', tepsiRozetSensoru: 'sensor.salon_sicaklik', tepsiRozetSensorleri: ['sensor.pil', 'sensor.nem'] },
+    cihazlar: CIHAZLAR_P,
+    ayarKaydetYaniti: kalici,
+  });
+  assert.equal(sayfa.oge('tepsiRozetSensoru2').value, 'sensor.pil');
+  assert.equal(sayfa.oge('tepsiRozetSensoru3').value, 'sensor.nem');
+  assert.equal(kirliMi(sayfa), false);
+  await kaydet(sayfa);
+  assert.deepEqual(sonYuk(sayfa).tepsiRozetSensorleri, ['sensor.pil', 'sensor.nem']);
+
+  const eski = { ...AYAR_P };
+  delete eski.tepsiRozetSensorleri;
+  const eskiSayfa = await acilmisSayfa({ ayar: eski, cihazlar: CIHAZLAR_P, ayarKaydetYaniti: kalici });
+  assert.equal(eskiSayfa.oge('tepsiRozetSensoru2').value, '');
+  await kaydet(eskiSayfa);
+  assert.deepEqual(sonYuk(eskiSayfa).tepsiRozetSensorleri, []);
+  assert.equal(kirliMi(eskiSayfa), false);
 });

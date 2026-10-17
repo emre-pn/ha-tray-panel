@@ -239,6 +239,12 @@
       if (degisti || odakVer) ortak.yenidenCiz();
     }
 
+    /** Pencere gösterilirken (palet "sayfa" satırından gelen istek): seçili sayfa çizim istemeden ayarlanır; geçersizse çizimde "Tümü"ne döner. */
+    function sayfayiAyarla(id) {
+      seciliSayfa = typeof id === 'string' ? id : TUMU;
+      ayrintiKimligi = null;
+    }
+
     function odakSekmeye() {
       const id = sekmeOdagi;
       sekmeOdagi = null;
@@ -533,6 +539,7 @@
     return {
       seciliSayfa: secilenSayfa,
       sayfaSec: sayfaSec,
+      sayfayiAyarla: sayfayiAyarla,
       sekmeleriCiz: sekmeleriCiz,
       sekmeTusu: sekmeTusu,
       sutunSayisi: sutunSayisi,

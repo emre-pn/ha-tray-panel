@@ -13,18 +13,19 @@ English | [Türkçe](README.tr.md)
 - Live state over the Home Assistant WebSocket API, with REST polling as a fallback.
 - Home and external addresses: the app tries the home address first and falls back to the external one.
 - Command line actions for Stream Deck, Task Scheduler and scripts: `"Ev Paneli.exe" --eylem="desk 40"`.
-- Cards for climate, media players, vacuums, fans, dehumidifiers, selects, numbers and timers, and colour and white-tone controls for lights.
+- Cards for climate, media players, vacuums, fans, dehumidifiers, selects, numbers and timers, and colour and white-tone controls for lights. The climate card has a heat/cool range, fan mode and preset; media cards seek 10 seconds; sensor tiles can have a gauge range and a chart style.
 - Curtain and blind cards (open, stop, close, position), valve and automation cards. Valves and automations always need a press-and-hold, and they never run from a hotkey or the command line.
-- Optional camera snapshots (a still picture, no live video): off by default, you approve each camera in Settings, the picture starts blurred, stays in memory only, and the panel is hidden from screen capture while a camera is allowed.
+- Optional camera snapshots (a still picture, no live video): off by default, you approve each camera in Settings, the picture starts blurred, stays in memory only, and the panel is hidden from screen capture while a camera is allowed. A camera card can be enlarged or refreshed on demand.
 - Optional info cards: a sensor strip with charts, a clock with weather and a forecast, a read-only calendar and to-do lists. Media cards show the album cover.
-- Right-click menu, pages (tabs), grouping by room, tile icon, colour and size, reordering with an undo history, and tiles pinned to the desktop.
+- Right-click menu, pages (tabs), grouping by room, tile icon, colour and size, reordering with an undo history, and tiles pinned to the desktop. The tile menu can pin a favorite to the desktop, tile symbols come from a searchable emoji picker, and the palette can open the panel on a chosen page.
+- An optional badge on the tray icon: the number of lights that are on, or up to three sensors shown in turn every 5 seconds.
 - Undo (`Ctrl+Alt+Z`), delayed actions (`desk off in 10 min`) and a local activity history that shows which action ran from where.
 - Notifications in the panel for Home Assistant messages, low batteries and updates, with alert rules and quiet hours. Desktop notifications are optional.
 - Optional external triggers, all off by default: Jump List tasks, desktop shortcuts, `evpaneli://` links, a local API on 127.0.0.1, PC events (lock, sleep) and a meeting light. They run only harmless favorites that you pick by name.
 - Optional Home Assistant mobile app registration, so notifications from `notify.mobile_app_*` arrive on the PC with action buttons.
 - Connection options for harder setups: custom HTTP headers (for example Cloudflare Access), a private root CA or a pinned certificate, browser sign-in, and settings sync through a folder you choose.
 - Light, dark and high-contrast themes with preset or custom colours, text size, Windows 11 mica/acrylic, and an interface in English, Turkish, German, French and Spanish.
-- Settings search, settings export/import with automatic backups, a diagnostics report without secrets, and an update check and in-app updates that are both off by default.
+- Settings search, settings export/import with automatic backups, a diagnostics report without secrets, and an update check and in-app updates that are both off by default. An import shows a preview before anything is applied.
 - A portable build that needs no installation. It shares its settings folder with the installed app, so avoid running 1.3.0 or older next to this version: they rewrite the settings file without the newer fields (favorites, tile fields, language). The app restores them from the saved older-version backup on its next start.
 
 ## Safety

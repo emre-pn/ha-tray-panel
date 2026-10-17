@@ -96,6 +96,16 @@
   const TEPSI_UST_SAYISI = 8; // lib/tepsi-menu.js UST_SAYISI ile aynı: tepsinin üst düzeyindeki zararsız favori sayısı
   const YENIDEN_DENE_YOKLAMA_SAYISI = 6;
   const YENIDEN_DENE_ARALIK_MS = 1500;
+  // İçe aktarma önizlemesindeki bölüm adları (lib/ayar-aktar.js ONIZLEME_BOLUMLERI ile aynı KAPALI LİSTE); başka ad çevrilmez ve yazılmaz
+  const ICE_AKTAR_BOLUM_ANAHTARLARI = {
+    favoriler: 'ayar.aktar.bolum.favoriler',
+    kisayollar: 'ayar.aktar.bolum.kisayollar',
+    gorunum: 'ayar.aktar.bolum.gorunum',
+    bilgi: 'ayar.aktar.bolum.bilgi',
+    bildirim: 'ayar.aktar.bolum.bildirim',
+    baglanti: 'ayar.aktar.bolum.baglanti',
+    diger: 'ayar.aktar.bolum.diger',
+  };
   const YAKINLASTIRMA_ADIMLARI = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
   const YAKINLASTIRMA_ANAHTARI = 'evPaneli.ayarlar.yakinlastirma';
   let yakinlastirmaSirasi = 2;
@@ -377,6 +387,7 @@
   const panelOpaklikDegeri = $('panelOpaklikDegeri');
   const tepsiRozeti = $('tepsiRozeti');
   const tepsiRozetSensoru = $('tepsiRozetSensoru');
+  const tepsiRozetEkSensorleri = [$('tepsiRozetSensoru2'), $('tepsiRozetSensoru3')]; // 1.4.0: rozette sırayla gösterilen en çok 2 ek sensör
   const masaustuKaroListesi = $('masaustuKaroListesi');
   const masaustuKaroUstte = $('masaustuKaroUstte');
   // Etkileşim grubu (1.4.0: o-20 tekerlek ve orta tık, o-23 sabitleme, o-60 basılı tut, o-38 bağlantı bildirimi, o-43 yönetici anahtarı uyarısı)
@@ -1028,15 +1039,15 @@
     return ekran ? tercihEkranKaydiDuzelt(ekran) : tercihEkranKaydi;
   }
 
-  /** Rozet sensörü seçicisi: cihaz listesi yüklüyse sensörler, ayardaki seçim her zaman (liste yoksa kimliğiyle) yer alır. */
-  function rozetSensorSecenekleriniKur(secilecek) {
-    tepsiRozetSensoru.replaceChildren();
+  /** Bir rozet sensörü seçicisi: cihaz listesi yüklüyse sensörler, ayardaki seçim her zaman (liste yoksa kimliğiyle) yer alır. */
+  function rozetSeciciyiKur(secici, secilecek) {
+    secici.replaceChildren();
     const goruldu = new Set(['']);
     const ekle = function (deger, metin) {
       const secenek = document.createElement('option');
       secenek.value = deger;
       secenek.textContent = metin;
-      tepsiRozetSensoru.appendChild(secenek);
+      secici.appendChild(secenek);
     };
     ekle('', t('ayar.rozet.sensorSec'));
     yuklenenCihazlar.forEach(function (c) {
@@ -1045,12 +1056,32 @@
       ekle(c.entity_id, c.ad || c.entity_id);
     });
     if (secilecek && !goruldu.has(secilecek)) ekle(secilecek, adHaritasi.get(secilecek) || secilecek);
-    tepsiRozetSensoru.value = secilecek;
-    if (tepsiRozetSensoru.value !== secilecek) tepsiRozetSensoru.value = '';
+    secici.value = secilecek;
+    if (secici.value !== secilecek) secici.value = '';
+  }
+
+  /** Ana ve ek rozet sensörü seçicileri. `ekler` verilmezse ek seçicilerin şu anki seçimi korunur. */
+  function rozetSensorSecenekleriniKur(secilecek, ekler) {
+    const ekDegerleri = Array.isArray(ekler) ? ekler : tepsiRozetEkSensorleri.map(function (s) { return s.value; });
+    rozetSeciciyiKur(tepsiRozetSensoru, secilecek);
+    tepsiRozetEkSensorleri.forEach(function (s, i) {
+      rozetSeciciyiKur(s, typeof ekDegerleri[i] === 'string' ? ekDegerleri[i] : '');
+    });
+  }
+
+  /** Kayıt yükündeki ek rozet sensörleri: boş olmayan, ana sensörden farklı, tekrarsız. */
+  function rozetEkSensorDegerleri() {
+    const sonuc = [];
+    tepsiRozetEkSensorleri.forEach(function (s) {
+      if (s.value !== '' && s.value !== tepsiRozetSensoru.value && sonuc.indexOf(s.value) < 0) sonuc.push(s.value);
+    });
+    return sonuc;
   }
 
   function rozetSensorDurumunuGuncelle() {
-    tepsiRozetSensoru.disabled = tepsiRozeti.value !== 'sensor';
+    const kapali = tepsiRozeti.value !== 'sensor';
+    tepsiRozetSensoru.disabled = kapali;
+    tepsiRozetEkSensorleri.forEach(function (s) { s.disabled = kapali; });
   }
 
   /** Orta tık adayı mı: seçili favori, onay istemeyen, tek tıklama eylemi olan ve orta tık alanlarından birinde (ana süreç yine denetler). */
@@ -1240,6 +1271,7 @@
       panelOpaklik: Number(panelOpaklik.value),
       tepsiRozeti: tepsiRozeti.value,
       tepsiRozetSensoru: tepsiRozetSensoru.value,
+      tepsiRozetSensorleri: rozetEkSensorDegerleri(),
       masaustuKarolari: masaustuSecili.slice(),
       masaustuKaroUstte: masaustuKaroUstte.checked,
       // Etkileşim grubu (1.4.0)
@@ -1306,6 +1338,7 @@
       panelOpaklik: opaklikDegeri(sonuc.panelOpaklik),
       tepsiRozeti: sonuc.tepsiRozeti === 'isik' || sonuc.tepsiRozeti === 'sensor' ? sonuc.tepsiRozeti : 'kapali',
       tepsiRozetSensoru: typeof sonuc.tepsiRozetSensoru === 'string' ? sonuc.tepsiRozetSensoru : '',
+      tepsiRozetSensorleri: (Array.isArray(sonuc.tepsiRozetSensorleri) ? sonuc.tepsiRozetSensorleri : []).filter(function (k) { return typeof k === 'string'; }),
       masaustuKarolari: (Array.isArray(sonuc.masaustuKarolari) ? sonuc.masaustuKarolari : []).filter(function (k) { return typeof k === 'string'; }),
       masaustuKaroUstte: sonuc.masaustuKaroUstte === true,
       // Etkileşim grubu (1.4.0)
@@ -1610,7 +1643,7 @@
     panelOpaklik.value = String(d.panelOpaklik);
     opaklikYazisiniGuncelle();
     tepsiRozeti.value = d.tepsiRozeti;
-    rozetSensorSecenekleriniKur(d.tepsiRozetSensoru);
+    rozetSensorSecenekleriniKur(d.tepsiRozetSensoru, d.tepsiRozetSensorleri);
     rozetSensorDurumunuGuncelle();
     masaustuKaroUstte.checked = d.masaustuKaroUstte;
     masaustuSecili = d.masaustuKarolari.slice();
@@ -2477,7 +2510,7 @@
         ileti.appendChild(el('div', '', t('ayar.cihaz.karoAdiEngelli')));
       }
       ek.appendChild(ileti);
-      if (duzen) gorunumDenetimi = duzen.gorunumKur(ek, s.kimlik, s.ad, cb.checked, { tepsiYok: s.cihaz.tekTiklama === false }); // karo görünümü (o-31) ve tepsiye sabitle (o-16); tek tıklama eylemi olmayan karo tepside olmaz
+      if (duzen) gorunumDenetimi = duzen.gorunumKur(ek, s.kimlik, s.ad, cb.checked, { tepsiYok: s.cihaz.tekTiklama === false, sensor: s.cihaz.alan === 'sensor' }); // karo görünümü (o-31) ve tepsiye sabitle (o-16); tek tıklama eylemi olmayan karo tepside olmaz
       if (eylemSeciciniGuncelle) eylemSeciciniGuncelle();
       if (ek.children.length > 0) {
         ek.addEventListener('click', function (e) {
@@ -3257,6 +3290,7 @@
       panelOpaklik: a.panelOpaklik,
       tepsiRozeti: a.tepsiRozeti,
       tepsiRozetSensoru: a.tepsiRozetSensoru,
+      tepsiRozetSensorleri: a.tepsiRozetSensorleri,
       masaustuKarolari: masaustuKaroSecimi(),
       masaustuKaroUstte: a.masaustuKaroUstte,
       // Etkileşim grubu (1.4.0): doğrulama ana süreçte (src/lib/ayar-alanlari.js)
@@ -3582,11 +3616,39 @@
     }
   }
 
+  /** İçe aktarma onay kutusunun metni: dosya adı, değişecek bölümler, bulunamayan favori sayısı, atlanacak değerler. */
+  function iceAktarOnizlemeMetni(onizleme) {
+    const adlar = onizleme.bolumler
+      .filter(function (b) { return typeof b === 'string' && Object.prototype.hasOwnProperty.call(ICE_AKTAR_BOLUM_ANAHTARLARI, b); })
+      .map(function (b) { return t(ICE_AKTAR_BOLUM_ANAHTARLARI[b]); });
+    const satirlar = [
+      t('ayar.aktar.onizle.giris', { ad: String(onizleme.ad || '') }),
+      t('ayar.aktar.onizle.bolumler', { liste: adlar.join(', ') }),
+    ];
+    if (Number.isInteger(onizleme.eksikFavoriSayisi) && onizleme.eksikFavoriSayisi > 0) satirlar.push(cogul('ayar.aktar.onizle.eksikFavori', onizleme.eksikFavoriSayisi));
+    if (Number.isInteger(onizleme.atilanSayisi) && onizleme.atilanSayisi > 0) satirlar.push(cogul('ayar.aktar.atilan', onizleme.atilanSayisi));
+    satirlar.push('', t('ayar.aktar.onizle.devam'));
+    return satirlar.join('\n');
+  }
+
   async function iceAktar() {
     if (kirliMi() && !confirm(t('ayar.aktar.kirliOnayi'))) return;
     btnIceAktar.disabled = true;
     try {
-      const sonuc = await window.evPaneli.ayarlariIceAktar();
+      // 1. adım: dosyayı ana süreç seçtirir ve doğrular; hiçbir ayar uygulanmaz. Yanıt yalnız dosya adı, bölüm adları ve sayılardır.
+      const onizleme = await window.evPaneli.ayarlariIceAktarOnizle();
+      if (!onizleme || onizleme.iptal) return;
+      if (!onizleme.ok) {
+        bildirimGoster(onizleme.hata || t('ayar.aktar.islemYapilamadi'), 'hata');
+        return;
+      }
+      if (!Array.isArray(onizleme.bolumler) || onizleme.bolumler.length === 0) {
+        bildirimGoster(t('ayar.aktar.onizle.degisiklikYok'));
+        return;
+      }
+      if (!confirm(iceAktarOnizlemeMetni(onizleme))) return;
+      // 2. adım: onaylanan dosya önizleme numarasıyla uygulanır (aynı doğrulama, kapı süzgeci ve adres onayı hattından)
+      const sonuc = await window.evPaneli.ayarlariIceAktar(onizleme.onizlemeNo);
       await aktarimSonucunuGoster(sonuc, 'ayar.aktar.iceAktarildi');
     } catch (err) {
       bildirimGoster(t('ayar.aktar.iceAktarirkenHata'), 'hata');
@@ -4271,7 +4333,7 @@
   });
 
   // Pencere grubu (1.4.0) denetimleri
-  [panelHerZamanUstte, pencereKonumu, tercihEkran, panelOpaklik, tepsiRozeti, tepsiRozetSensoru, masaustuKaroUstte].forEach(function (girdi) {
+  [panelHerZamanUstte, pencereKonumu, tercihEkran, panelOpaklik, tepsiRozeti, tepsiRozetSensoru, tepsiRozetEkSensorleri[0], tepsiRozetEkSensorleri[1], masaustuKaroUstte].forEach(function (girdi) {
     girdi.addEventListener('input', kirliGuncelle);
     girdi.addEventListener('change', kirliGuncelle);
   });

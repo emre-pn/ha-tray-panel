@@ -368,6 +368,28 @@ test('sensör karosu: değer, pil göstergesi (birim %), uyarı metni; aralığ�
   assert.equal(gosterge(karolar[2])[0].bul((o) => sinifli(o, 'kritik')).length, 0);
 });
 
+test('sensör karosu: favoride seçilen grafik biçimi gösterge / çizgi / yok; "yok"ta geçmiş de istenmez; bilinmeyen değer "otomatik" sayılır', async () => {
+  const gec = { gecmis: () => ({ ok: true, veri: { 'sensor.a': [nokta(3, 20), nokta(2, 22), nokta(1, 21)] } }) };
+  const dene = async (grafikTuru, ozellik = { deger: '40', sayi: 40, birim: 'W', sinif: null, hassasiyet: null, enAz: 0, enCok: 100 }) => {
+    const { modul, kayit, zaman } = ortamKur({ okuma: gec });
+    modul.ayarla(modelOlustur({ sensorler: [karo('sensor.a', 'A', 'sensor', ozellik, { grafikTuru })] }));
+    await akit();
+    zaman.ilerle(50);
+    const k = bulSinif(modul.altParcalar()[0], 'sensor-karo')[0];
+    return {
+      gosterge: k.bul((o) => o.etiket === 'svg' && sinifli(o, 'gosterge')).length,
+      cizgi: k.bul((o) => o.etiket === 'svg' && sinifli(o, 'sparkline')).length,
+      gecmisIstekleri: kayit.okumalar.filter((o) => o.tur === 'gecmis').length,
+    };
+  };
+  assert.deepEqual(await dene('otomatik'), { gosterge: 1, cizgi: 1, gecmisIstekleri: 1 });
+  assert.deepEqual(await dene('gosterge'), { gosterge: 1, cizgi: 0, gecmisIstekleri: 0 }, 'yalnız gösterge: geçmiş de okunmaz');
+  assert.deepEqual(await dene('cizgi'), { gosterge: 0, cizgi: 1, gecmisIstekleri: 1 });
+  assert.deepEqual(await dene('yok'), { gosterge: 0, cizgi: 0, gecmisIstekleri: 0 });
+  assert.deepEqual(await dene('dev'), { gosterge: 1, cizgi: 1, gecmisIstekleri: 1 }, 'bilinmeyen biçim otomatik sayılır');
+  assert.deepEqual(await dene(undefined), { gosterge: 1, cizgi: 1, gecmisIstekleri: 1 }, 'eski model: otomatik');
+});
+
 test('sensör grafiği kapalıyken ne geçmiş okunur ne gösterge çizilir', async () => {
   const { modul, kayit } = ortamKur();
   modul.ayarla(modelOlustur({ ayar: { ...AYAR, sensorGrafik: false } }));

@@ -16,10 +16,12 @@
  *   acKapa       null (aç/kapa karosu için ek öznitelik yok)
  *   tetik        null (sahne, script, düğme)
  *   fan          { yuzde, adimYuzde, salinim, onAyar, onAyarlar }
- *   iklim        { mevcutSicaklik, hedefSicaklik, hedefAlt, hedefUst, enAz, enCok, adim, mod, modlar, hvacEylemi, mevcutNem }
- *   medya        { durum, baslik, sanatci, album, ses, sessiz, kaynak, kaynaklar, sure, konum, konumZamani, kapak, kapakAnahtari }
+ *   iklim        { mevcutSicaklik, hedefSicaklik, hedefAlt, hedefUst, enAz, enCok, adim, mod, modlar, hvacEylemi, mevcutNem,
+ *                fanModu, fanModlari, onAyar, onAyarlar, destek }  (destek supported_features: 1 tek hedef, 2 ısıt/soğut aralığı, 4 hedef nem, 8 fan modu, 16 ön ayar)
+ *   medya        { durum, baslik, sanatci, album, ses, sessiz, kaynak, kaynaklar, sure, konum, konumZamani, kapak, kapakAnahtari, destek }
+ *                (destek supported_features bit alanı; 2 = konum atlama)
  *   nem          { hedefNem, mevcutNem, enAz, enCok, mod }
- *   supurge      { durum, pil }
+ *   supurge      { durum, pil, destek }  (destek supported_features bit alanı: 1 aç, 2 kapat, 4 duraklat, 8 durdur, 16 şarja dön, 512 yerini bildir, 8192 başlat)
  *   secim        { secenek, secenekler }
  *   sayi         { deger, enAz, enCok, adim, birim, kip }
  *   zamanlayici  { durum, sure, kalan, bitis }
@@ -128,6 +130,11 @@ const MODELLER = Object.freeze({
       modlar: kumedenListe(n.hvac_modes, HVAC_MODLARI),
       hvacEylemi: secenekAl(n.hvac_action, HVAC_EYLEMLERI),
       mevcutNem: sayiAl(n.current_humidity, { min: 0, max: 100 }),
+      fanModu: metinAl(n.fan_mode, 40),
+      fanModlari: listeAl(n.fan_modes, 20, 40),
+      onAyar: metinAl(n.preset_mode, 40),
+      onAyarlar: listeAl(n.preset_modes, 20, 40),
+      destek: destekAl(n.supported_features),
     };
   },
   medya(v, n) {
@@ -145,6 +152,7 @@ const MODELLER = Object.freeze({
       konumZamani: isoAl(n.media_position_updated_at),
       kapak: kapakYolu(v) !== null,
       kapakAnahtari: kapakAnahtari(kapakYolu(v)),
+      destek: destekAl(n.supported_features),
     };
   },
   nem(v, n) {
@@ -157,7 +165,7 @@ const MODELLER = Object.freeze({
     };
   },
   supurge(v, n) {
-    return { durum: secenekAl(v.state, SUPURGE_DURUMLARI), pil: sayiAl(n.battery_level, { min: 0, max: 100 }) };
+    return { durum: secenekAl(v.state, SUPURGE_DURUMLARI), pil: sayiAl(n.battery_level, { min: 0, max: 100 }), destek: destekAl(n.supported_features) };
   },
   secim(v, n) {
     // Seçenek listesinin TAMAMI süzgeçten geçmiş olmalıdır (suzgec.js seceneklerGuvenliMi); burada yalnız kısaltılır.

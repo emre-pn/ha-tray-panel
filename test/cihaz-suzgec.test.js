@@ -84,6 +84,12 @@ test('kamera: giriş, kapı, zil, diafon ve ziyaretçi adlı kameralar elenir', 
     ['camera.x6', 'Garaj'],
     ['camera.x7', 'Lobby'],
     ['camera.x8', 'Visitor cam'],
+    ['camera.x9', 'Misafir'],
+    ['camera.x10', 'Misafir odası kamerası'],
+    ['camera.x11', 'Apartman holü'],
+    ['camera.x12', 'Hol'],
+    ['camera.x13', 'Antre'],
+    ['camera.x14', 'Antrede kamera'],
   ];
   for (const [kimlik, ad] of yasak) assert.equal(S.kameraGuvenliMi(kamera(kimlik, ad)), false, `${kimlik} ${ad}`);
 });
@@ -97,6 +103,8 @@ test('kamera: bebek odası, balkon, bahçe, salon ve "spring/string" gibi masum 
     ['camera.arka', 'Back garden'],
     ['camera.spring', 'Spring garden'],
     ['camera.string', 'String lights'],
+    ['camera.antrenman', 'Antrenman odası'],
+    ['camera.holding', 'Holding ofisi'],
   ]) {
     assert.equal(S.kameraGuvenliMi(kamera(kimlik, ad)), true, `${kimlik} ${ad}`);
   }

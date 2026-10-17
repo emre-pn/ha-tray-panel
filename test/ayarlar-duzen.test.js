@@ -170,6 +170,93 @@ test('karo görünümü kaydı: yük YALNIZ değişen alanları taşır; sunucu 
   assert.deepEqual(Object.keys(temiz).sort(), ['ad', 'entity_id']);
 });
 
+const SENSOR_CIHAZI = { entity_id: 'sensor.guc', ad: 'Güç', alan: 'sensor', alanEtiketi: 'Sensörler', durum: '350', onayZorunlu: false, varsayilanOnay: false, kisayolUygun: false, tekTiklama: false, gizli: false };
+const sensorSayfasi = (favori = {}) =>
+  acilmisSayfa({
+    ayar: { ...AYAR_DUZEN, favoriler: [...AYAR_DUZEN.favoriler, { entity_id: 'sensor.guc', ad: 'Güç', ...favori }] },
+    cihazlar: { ...CIHAZLAR_D3, cihazlar: [...CIHAZLAR_D3.cihazlar, SENSOR_CIHAZI] },
+  });
+const sayiKutulari = (satir) => girdiler(satir).filter((g) => g.type === 'number');
+
+test('sensör favorisi: grafik biçimi seçici ve gösterge alt / üst kutuları yalnız sensör satırında; kayıttaki değerler gösterilir, açılışta kirli sayılmaz', async () => {
+  const sayfa = await sensorSayfasi({ gostergeMin: 0, gostergeMax: 500, grafikTuru: 'gosterge' });
+  const satir = satirBul(sayfa, 'sensor.guc');
+  const [renk, boyut, simge, grafik] = secimler(satir);
+  assert.deepEqual(grafik.children.map((o) => o.value), ['otomatik', 'cizgi', 'gosterge', 'yok']);
+  assert.deepEqual(grafik.children.map((o) => o.textContent), ['Otomatik', 'Çizgi', 'Gösterge', 'Yok']);
+  assert.equal(grafik.value, 'gosterge');
+  assert.equal(grafik.attributes['aria-label'], 'Güç grafik biçimi');
+  assert.deepEqual(sayiKutulari(satir).map((k) => k.value), ['0', '500']);
+  assert.deepEqual(sayiKutulari(satir).map((k) => k.attributes['aria-label']), ['Güç gösterge alt değeri', 'Güç gösterge üst değeri']);
+  assert.equal(kirliMi(sayfa), false);
+  // sensör olmayan satırda bu kontroller yok
+  const isik = satirBul(sayfa, 'light.salon_lambasi');
+  assert.equal(secimler(isik).length, 3);
+  assert.equal(sayiKutulari(isik).length, 0);
+  assert.ok([renk, boyut, simge].every((s) => !s.disabled));
+  await kaydet(sayfa);
+  assert.equal(cagriSayisi(sayfa, 'favorileriKaydet'), 0);
+});
+
+test('sensör favorisi kaydı: grafik biçimi ve aralık yüke girer (aralık ÇİFT), temizlemek null gönderir; geçersiz çift kayda alınmaz', async () => {
+  const sayfa = await sensorSayfasi();
+  const satir = satirBul(sayfa, 'sensor.guc');
+  const [alt, ust] = sayiKutulari(satir);
+  const hata = satir.bul((o) => o.className === 'cihaz-not' && o.textContent === metin('ayar.gorunum.gostergeGecersiz'))[0];
+  assert.equal(hata.style.display, 'none');
+
+  yaz(alt, '10'); // tek sınır: geçersiz çift
+  assert.equal(hata.style.display, 'block');
+  assert.equal(alt.attributes['aria-invalid'], 'true');
+  assert.equal(kirliMi(sayfa), false, 'geçersiz çift kayda alınmaz');
+  yaz(ust, '5'); // ters aralık
+  assert.equal(hata.style.display, 'block');
+  assert.equal(kirliMi(sayfa), false);
+  yaz(ust, '90');
+  assert.equal(hata.style.display, 'none');
+  assert.equal(alt.attributes['aria-invalid'], undefined);
+  assert.equal(kirliMi(sayfa), true);
+  degistir(secimler(satir)[3], 'cizgi');
+  await kaydet(sayfa);
+  assert.deepEqual(new Map(sonYuk(sayfa, 'favorileriKaydet').map((g) => [g.entity_id, g])).get('sensor.guc'), {
+    entity_id: 'sensor.guc',
+    grafikTuru: 'cizgi',
+    gostergeMin: 10,
+    gostergeMax: 90,
+  });
+  const kayitli = sayfa.sunucu.favoriler.find((f) => f.entity_id === 'sensor.guc');
+  assert.deepEqual([kayitli.gostergeMin, kayitli.gostergeMax, kayitli.grafikTuru], [10, 90, 'cizgi']);
+
+  // yalnız alt sınır değişir: yük ikisini birlikte taşır
+  const yeni = satirBul(sayfa, 'sensor.guc');
+  const [alt2, ust2] = sayiKutulari(yeni);
+  assert.deepEqual([alt2.value, ust2.value], ['10', '90']);
+  yaz(alt2, '20');
+  await kaydet(sayfa);
+  assert.deepEqual(new Map(sonYuk(sayfa, 'favorileriKaydet').map((g) => [g.entity_id, g])).get('sensor.guc'), { entity_id: 'sensor.guc', gostergeMin: 20, gostergeMax: 90 });
+
+  // ikisini de boşaltmak aralığı temizler (null), "otomatik" biçim kayda yazılmaz
+  const son = satirBul(sayfa, 'sensor.guc');
+  const [alt3, ust3] = sayiKutulari(son);
+  yaz(alt3, '');
+  yaz(ust3, '');
+  degistir(secimler(son)[3], 'otomatik');
+  await kaydet(sayfa);
+  assert.deepEqual(new Map(sonYuk(sayfa, 'favorileriKaydet').map((g) => [g.entity_id, g])).get('sensor.guc'), { entity_id: 'sensor.guc', grafikTuru: 'otomatik', gostergeMin: null, gostergeMax: null });
+  const temiz = sayfa.sunucu.favoriler.find((f) => f.entity_id === 'sensor.guc');
+  assert.deepEqual(Object.keys(temiz).sort(), ['ad', 'entity_id']);
+});
+
+test('sensör favorisi: seçili değilken kontroller pasif, seçilince açılır', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR_DUZEN, cihazlar: { ...CIHAZLAR_D3, cihazlar: [...CIHAZLAR_D3.cihazlar, SENSOR_CIHAZI] } });
+  const satir = satirBul(sayfa, 'sensor.guc');
+  assert.ok(secimler(satir).every((s) => s.disabled));
+  assert.ok(sayiKutulari(satir).every((k) => k.disabled));
+  girdiler(satir)[0].tikla();
+  assert.ok(secimler(satir).every((s) => !s.disabled));
+  assert.ok(sayiKutulari(satir).every((k) => !k.disabled));
+});
+
 test('karo görünümü: ayardaki değerler satırda gösterilir (emoji dahil) ve açılışta kirli sayılmaz', async () => {
   const ayar = { ...AYAR_DUZEN, favoriler: [{ entity_id: 'light.salon_lambasi', ad: 'Salon Lambası', simge: '🌙', renk: 'mor', boyut: 'buyuk', tepsi: true }, ...AYAR_DUZEN.favoriler.slice(1)] };
   const sayfa = await acilmisSayfa({ ayar, cihazlar: CIHAZLAR_D3 });
@@ -815,4 +902,137 @@ test('düzen betiği yoksa Ayarlar eskisi gibi çalışır (EvAyarlarDuzen tanı
   const ayarlarBetigi = fs.readFileSync(path.join(__dirname, '..', 'src', 'ayarlar.js'), 'utf8');
   assert.match(ayarlarBetigi, /const DuzenModulu = window\.EvAyarlarDuzen \|\| null;/);
   assert.match(ayarlarBetigi, /if \(!DuzenModulu\) return null;/);
+});
+
+// --- Emoji seçici (1.4.0) --------------------------------------------------------------------------------------------------
+
+const emojiSecDugmesi = (satir) => satir.bul((o) => o.className === 'gorunum-emoji-sec')[0];
+const seciciKutusu = (satir) => satir.bul((o) => o.className === 'emoji-secici')[0];
+const seciciOgeleri = (satir) => satir.bul((o) => o.className === 'emoji-oge');
+const seciciArama = (satir) => satir.bul((o) => o.className === 'emoji-ara')[0];
+const KAPI_EMOJILERI = ['🚪', '🔒', '🔓', '🔐', '🔏', '🔑', '🗝', '🚨', '🚧', '🪟', '⛩'];
+
+test('emoji önerileri: her biri karo-gorunum doğrulamasından aynen geçer, tekrar yok, kapı / kilit / anahtar / siren temalı emoji yok; her önerinin beş dilde adı var', () => {
+  const sandbox = { window: null };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'lib', 'karo-gorunum.js'), 'utf8'), sandbox);
+  const Gorunum = sandbox.EvKaroGorunum;
+  const D = yardimcilar();
+  const oneriler = D.EMOJI_ONERILERI.map((o) => [...o]);
+  assert.ok(oneriler.length >= 40 && oneriler.length <= 60, `liste küçük ve sınırlı (${oneriler.length})`);
+  assert.equal(new Set(oneriler.map((o) => o[0])).size, oneriler.length, 'emoji tekrarı yok');
+  assert.equal(new Set(oneriler.map((o) => o[1])).size, oneriler.length, 'ad anahtarı tekrarı yok');
+  for (const [emoji, anahtar] of oneriler) {
+    assert.equal(Gorunum.simgeDuzelt(emoji), emoji, `${emoji} doğrulamadan geçmeli`);
+    assert.ok(Gorunum.simgeCoz(emoji)?.tur === 'emoji', emoji);
+    for (const kapi of KAPI_EMOJILERI) assert.ok(!emoji.includes(kapi), `${emoji}: kapı kuralı`);
+    for (const dil of ['tr', 'en', 'de', 'fr', 'es']) assert.ok((AYARLAR[dil][anahtar] ?? '').trim() !== '', `${anahtar} ${dil}`);
+  }
+  // kapı emojileri doğrulamada zaten reddedilir (seçici ek bir yetki vermez)
+  for (const kapi of KAPI_EMOJILERI) assert.equal(Gorunum.simgeDuzelt(kapi), null, kapi);
+});
+
+test('emoji seçici: yalnız "Listeden seç" ile açılır, ad aksan / büyük-küçük harf farkı olmadan aranır, seçilen emoji kayda gider ve seçici kapanır', async () => {
+  const sayfa = await duzenSayfasi();
+  const isik = satirBul(sayfa, 'light.salon_lambasi');
+  const dugme = emojiSecDugmesi(isik);
+  assert.equal(dugme.style.display, 'none', 'emoji modu açılmadan seçici düğmesi yok');
+  assert.equal(seciciKutusu(isik), undefined, 'seçici ilk açılışa dek kurulmaz');
+  degistir(secimler(isik)[2], 'emoji');
+  assert.equal(dugme.style.display, '');
+  assert.equal(dugme.attributes['aria-expanded'], 'false');
+  assert.equal(dugme.textContent, metin('ayar.gorunum.emojiSec'));
+
+  dugme.dispatchEvent({ type: 'click' });
+  assert.equal(dugme.attributes['aria-expanded'], 'true');
+  assert.equal(seciciKutusu(isik).style.display, '');
+  const ogeler = seciciOgeleri(isik);
+  assert.equal(ogeler.length, 50);
+  assert.deepEqual(ogeler.slice(0, 2).map((o) => o.attributes['aria-label']), [metin('ayar.emoji.ampul'), metin('ayar.emoji.mum')]);
+  assert.ok(ogeler.every((o) => o.title === o.attributes['aria-label'] && o.title !== ''));
+  for (const kapi of KAPI_EMOJILERI) assert.ok(!ogeler.some((o) => o.textContent.includes(kapi)), `${kapi} listede yok`);
+  assert.equal(kirliMi(sayfa), false, 'seçici açmak değişiklik sayılmaz');
+
+  const ara = seciciArama(isik);
+  const sorgula = (sorgu) => {
+    yaz(ara, sorgu);
+    return seciciOgeleri(isik).map((o) => o.textContent);
+  };
+  assert.deepEqual(sorgula('ISITMA'), ['🔥'], 'büyük harf');
+  assert.deepEqual(sorgula('ısıtma'), ['🔥'], 'noktasız ı, noktalı i ile bulunur');
+  assert.deepEqual(sorgula('isitma'), ['🔥']);
+  assert.deepEqual(sorgula('  su '), sorgula('su'), 'baştaki / sondaki boşluk kırpılır');
+  assert.ok(sorgula('su').includes('💧'));
+  assert.deepEqual(sorgula('muzik'), ['🎵'], 'Türkçe karaktersiz yazım');
+  const bosNot = isik.bul((o) => o.className === 'cihaz-not' && o.textContent === metin('ayar.gorunum.emojiBulunamadi'))[0];
+  assert.equal(sorgula('xyzqq').length, 0);
+  assert.equal(bosNot.style.display, 'block', 'eşleşme yoksa söylenir');
+  assert.equal(sorgula('').length, 50);
+  assert.equal(bosNot.style.display, 'none');
+
+  sorgula('isitma');
+  seciciOgeleri(isik)[0].dispatchEvent({ type: 'click' });
+  assert.equal(emojiKutusu(isik).value, '🔥');
+  assert.equal(seciciKutusu(isik).style.display, 'none', 'seçimden sonra kapanır');
+  assert.equal(dugme.attributes['aria-expanded'], 'false');
+  assert.equal(dugme.odaklanma > 0, true, 'odak düğmeye döner');
+  assert.equal(kirliMi(sayfa), true);
+  await kaydet(sayfa);
+  assert.equal(new Map(sonYuk(sayfa, 'favorileriKaydet').map((g) => [g.entity_id, g])).get('light.salon_lambasi').simge, '🔥');
+
+  // yeniden açılınca arama sıfırlanır; Escape kapatır, Enter ilk sonucu seçer
+  dugme.dispatchEvent({ type: 'click' });
+  assert.equal(seciciArama(isik).value, '');
+  assert.equal(seciciOgeleri(isik).length, 50);
+  seciciArama(isik).dispatchEvent(tusOlayi({ key: 'Escape' }));
+  assert.equal(seciciKutusu(isik).style.display, 'none');
+  dugme.dispatchEvent({ type: 'click' });
+  yaz(seciciArama(isik), 'gece');
+  seciciArama(isik).dispatchEvent(tusOlayi({ key: 'Enter' }));
+  assert.equal(emojiKutusu(isik).value, '🌙');
+  assert.equal(seciciKutusu(isik).style.display, 'none');
+});
+
+test('emoji seçici: ad arayüz dilinde aranır (Almanca), simge listeden çizgi ikona dönülünce düğme ve seçici gizlenir, satır seçili değilken düğme kapalıdır', async () => {
+  const sayfa = await duzenSayfasi({ ayar: { ...AYAR_DUZEN, dil: 'de', dilAyari: 'de', sistemDili: 'de' } });
+  const isik = satirBul(sayfa, 'light.salon_lambasi');
+  degistir(secimler(isik)[2], 'emoji');
+  const dugme = emojiSecDugmesi(isik);
+  assert.equal(dugme.textContent, metin('ayar.gorunum.emojiSec', {}, 'de'));
+  dugme.dispatchEvent({ type: 'click' });
+  const ara = seciciArama(isik);
+  assert.equal(ara.placeholder, metin('ayar.gorunum.emojiAra', {}, 'de'));
+  yaz(ara, 'KUCHE');
+  assert.deepEqual(seciciOgeleri(isik).map((o) => o.textContent), ['🍳'], 'Küche, ü / u farkı olmadan');
+  assert.equal(seciciOgeleri(isik)[0].title, metin('ayar.emoji.mutfak', {}, 'de'));
+  yaz(ara, 'mutfak');
+  assert.equal(seciciOgeleri(isik).length, 0, 'Türkçe ad Almanca arayüzde aranmaz');
+
+  degistir(secimler(isik)[2], 'ikon:ev');
+  assert.equal(dugme.style.display, 'none');
+  assert.equal(seciciKutusu(isik).style.display, 'none');
+
+  const gizli = satirBul(sayfa, 'light.gizli_ama_secili');
+  degistir(secimler(gizli)[2], 'emoji');
+  const secici = emojiSecDugmesi(gizli);
+  secici.dispatchEvent({ type: 'click' });
+  assert.equal(seciciKutusu(gizli).style.display, '');
+  // satırın seçimi kaldırılınca kontroller kapanır ve açık seçici kapanır
+  const secimKutusu = girdiler(gizli).find((g) => g.type === 'checkbox');
+  secimKutusu.checked = false;
+  secimKutusu.dispatchEvent({ type: 'change' });
+  assert.equal(secici.disabled, true);
+  assert.equal(seciciKutusu(gizli).style.display, 'none');
+});
+
+test('emoji seçici: Almanca dışındaki üç dilde de öneri adları çevrilmiş ve Türkçeye özgü harf içermez', () => {
+  const D = yardimcilar();
+  for (const dil of ['en', 'de', 'fr', 'es']) {
+    for (const [, anahtar] of D.EMOJI_ONERILERI) {
+      const ad = AYARLAR[dil][anahtar];
+      assert.doesNotMatch(ad, /[ğĞıİşŞ]/, `${dil} ${anahtar}`);
+      if (dil === 'en') assert.doesNotMatch(ad, TURKCE_HARF, `${dil} ${anahtar}`);
+    }
+  }
 });

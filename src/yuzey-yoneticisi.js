@@ -99,6 +99,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   let pencere = null;
   let yuklendi = false;
   let mod = null; // açıkken 'panel' | 'palet'
+  let bekleyenSayfa = null; // palet "sayfa" satırı: panel bu sayfayla açılır (bir kez; yük 'yuzey:goster' içinde gider)
   let bekleyenMod = null; // sayfa yüklenirken istenen kip
   let odakKaybiZamanlayicisi = null;
   let odakYedekZamanlayicisi = null;
@@ -432,7 +433,9 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       if (yakinlastirma !== uygulananOlcek) yakinlastirmayiUygula(pencere.webContents); // ayarlar pencere oluştuktan sonra yüklendiyse
       yerlestir(kip);
       modelGonder();
-      pencere.webContents.send('yuzey:goster', { mod: kip, malzeme: malzemeAl().malzeme, ...gorunumEki(), ...etkilesimEki() });
+      const istenenSayfa = kip === 'panel' ? bekleyenSayfa : null;
+      bekleyenSayfa = null;
+      pencere.webContents.send('yuzey:goster', { mod: kip, malzeme: malzemeAl().malzeme, ...gorunumEki(), ...etkilesimEki(), ...(istenenSayfa !== null ? { sayfa: istenenSayfa } : {}) });
       opaklikUygula();
       korumaUygula();
       ustSeviyesiniUygula(true);
@@ -539,6 +542,18 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
         return { ok: false, tur: 'yazilamadi' };
       }
       return typeof son === 'boolean' ? { ok: true, sabit: son } : { ok: false, tur: 'yazilamadi' };
+    });
+    // 1.4.0 düzen (o-24): palet "sayfa" satırı. YALNIZ PALETTEN; yük yalnız sayfa kimliğidir ('tumu' ya da modeldeki sayfa). Ana süreç kimliği modele karşı
+    // doğrular, paneli o sayfayla açar (palet kapanır). HA'ya hiçbir şey gitmez; bilinmeyen kimlik reddedilir.
+    ipcMain.handle('yuzey:sayfa-sec', (olay, kimlik) => {
+      if (!yuzeydenMi(olay)) return izinYok();
+      if (kaynakKip() !== 'palet' || typeof kimlik !== 'string' || kimlik.length > 40) return { ok: false, tur: 'gecersiz' };
+      const sayfalar = rendererModeli(modelAl()).sayfalar;
+      if (kimlik !== 'tumu' && !sayfalar.some((s) => s.id === kimlik)) return { ok: false, tur: 'bilinmiyor' };
+      bekleyenSayfa = kimlik;
+      const acildi = goster('panel');
+      bekleyenSayfa = null;
+      return acildi ? { ok: true } : { ok: false, tur: 'acilamadi' };
     });
     ipcMain.on('yuzey:kapat', (olay) => {
       if (yuzeydenMi(olay)) gizle('renderer');

@@ -1000,8 +1000,10 @@ test('k-13: içe aktarma sonrası tüm bölümler yeni ayarlara döner, özet s�
   sayfa.oge('bipSesi').dispatchEvent({ type: 'change' });
   sayfa.oge('btnIceAktar').dispatchEvent({ type: 'click' });
   await akit();
-  assert.deepEqual(sayfa.sorular.length, 1, 'kaydedilmemiş değişiklik varken önce sorulur');
+  assert.deepEqual(sayfa.sorular.length, 2, 'kaydedilmemiş değişiklik varken önce sorulur, sonra önizleme onayı');
   assert.match(sayfa.sorular[0], /Kaydedilmemiş değişiklikler var/);
+  assert.match(sayfa.sorular[1], /yedek\.json/, 'önizleme onayı dosya adını söyler');
+  assert.deepEqual(sayfa.cagrilar.filter((c) => c[0].startsWith('ayarlariIceAktar')), [['ayarlariIceAktarOnizle'], ['ayarlariIceAktar', 'onizleme-1']], 'önce önizleme, sonra onun numarasıyla uygulama');
   assert.equal(sayfa.oge('koseBildirimi').checked, false);
   assert.equal(sayfa.oge('pencereBoyutu').value, 'genis');
   assert.equal(sayfa.oge('bipSesi').checked, false, 'dosyadaki değer geçerli olur');
@@ -1027,6 +1029,66 @@ test('k-13: içe aktarma sonrası tüm bölümler yeni ayarlara döner, özet s�
   await akit();
   assert.equal(iptal.sorular.length, 0, 'temizken soru yok');
   assert.equal(iptal.oge('genelBildirim').textContent, '');
+});
+
+test('içe aktarma önizlemesi: onay kutusu bölüm adlarını, bulunamayan favori sayısını ve atlanacak değerleri söyler (adres/anahtar/değer yok); vazgeçilirse uygulama istenmez', async () => {
+  const onizle = { ok: true, ad: 'ev.json', onizlemeNo: 'n-7', bolumler: ['favoriler', 'baglanti', 'diger'], alanSayisi: 5, favoriSayisi: 4, eksikFavoriSayisi: 2, atilanSayisi: 1 };
+  const ice = { ok: true, ad: 'ev.json', alanSayisi: 5, favoriSayisi: 4, atilanSayisi: 1, notlar: [], uyarilar: [] };
+  const vazgecen = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR, onayYaniti: false, aktarimYaniti: { onizle, ice } });
+  vazgecen.oge('btnIceAktar').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(vazgecen.sorular.length, 1);
+  const soru = vazgecen.sorular[0];
+  assert.ok(soru.includes('ev.json'), 'dosya adı');
+  assert.ok(soru.includes('Favoriler, panolar ve sayfalar, Bağlantı adresleri, Diğer ayarlar'), 'bölüm adları sırayla');
+  assert.ok(soru.includes('2 favori şu an Home Assistant'), 'bulunamayan favori sayısı');
+  assert.ok(soru.includes('1 değer geçersiz olduğu için atlandı'), 'atlanacak değer sayısı');
+  assert.ok(soru.includes('Erişim anahtarın değişmez'), 'anahtar değişmez');
+  assert.deepEqual(vazgecen.cagrilar.filter((c) => c[0].startsWith('ayarlariIceAktar')), [['ayarlariIceAktarOnizle']], 'vazgeçilince uygulama hiç istenmez');
+  assert.equal(vazgecen.oge('genelBildirim').textContent, '');
+
+  const onaylayan = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR, aktarimYaniti: { onizle, ice } });
+  onaylayan.oge('btnIceAktar').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.deepEqual(onaylayan.cagrilar.filter((c) => c[0].startsWith('ayarlariIceAktar')), [['ayarlariIceAktarOnizle'], ['ayarlariIceAktar', 'n-7']], 'uygulama önizleme numarasıyla istenir');
+  assert.match(onaylayan.oge('genelBildirim').textContent, /içe aktarıldı \(ev\.json\)/);
+
+  // bulunamayan favori yoksa ya da bilinmiyorsa (null) o satır hiç yazılmaz; tek favori tekil metni kullanır
+  for (const eksik of [0, null]) {
+    const sayfa = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR, onayYaniti: false, aktarimYaniti: { onizle: { ...onizle, eksikFavoriSayisi: eksik, atilanSayisi: 0 }, ice } });
+    sayfa.oge('btnIceAktar').dispatchEvent({ type: 'click' });
+    await akit();
+    assert.ok(!sayfa.sorular[0].includes('Home Assistant’ta bulunamıyor'), String(eksik));
+    assert.ok(!sayfa.sorular[0].includes('atlandı'), String(eksik));
+  }
+  const tek = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR, onayYaniti: false, aktarimYaniti: { onizle: { ...onizle, eksikFavoriSayisi: 1 }, ice } });
+  tek.oge('btnIceAktar').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.ok(tek.sorular[0].includes('1 favori şu an Home Assistant’ta bulunamıyor; karosu kullanılamaz görünür.'));
+});
+
+test('içe aktarma önizlemesi: bilinmeyen bölüm adı yazılmaz; değişiklik yoksa soru da uygulama da yok; önizleme hatası kalıcı hata olarak gösterilir', async () => {
+  const ice = { ok: true, ad: 'ev.json', alanSayisi: 5, favoriSayisi: 4, atilanSayisi: 0, notlar: [], uyarilar: [] };
+  const kotuAd = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR, onayYaniti: false, aktarimYaniti: { ice, onizle: { ok: true, ad: 'ev.json', onizlemeNo: 'n-1', bolumler: ['gorunum', '<img src=x>', 'ayar.aktar.bolum.diger'], eksikFavoriSayisi: null, atilanSayisi: 0 } } });
+  kotuAd.oge('btnIceAktar').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.ok(kotuAd.sorular[0].includes('Değişecek bölümler: Görünüm.'), 'yalnız kapalı listedeki bölüm adları çevrilir');
+  assert.ok(!kotuAd.sorular[0].includes('<img'));
+
+  const ayni = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR, aktarimYaniti: { ice, onizle: { ok: true, ad: 'ev.json', onizlemeNo: 'n-2', bolumler: [], alanSayisi: 5, favoriSayisi: 4, eksikFavoriSayisi: 0, atilanSayisi: 0 } } });
+  ayni.oge('btnIceAktar').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(ayni.sorular.length, 0, 'fark yoksa onay sorulmaz');
+  assert.deepEqual(ayni.cagrilar.filter((c) => c[0].startsWith('ayarlariIceAktar')), [['ayarlariIceAktarOnizle']]);
+  assert.equal(ayni.oge('genelBildirim').textContent, 'Dosyadaki ayarlar şu anki ayarlarınla aynı; içe aktarılacak bir değişiklik yok.');
+
+  const hata = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR, aktarimYaniti: { ice, onizle: { ok: false, hata: 'Dosya geçerli bir JSON değil.' } } });
+  hata.oge('btnIceAktar').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(hata.sorular.length, 0);
+  assert.equal(hata.oge('genelBildirim').textContent, 'Dosya geçerli bir JSON değil.');
+  assert.match(hata.oge('genelBildirim').className, /bildirim-hata/);
+  assert.deepEqual(hata.cagrilar.filter((c) => c[0].startsWith('ayarlariIceAktar')), [['ayarlariIceAktarOnizle']]);
 });
 
 test('k-13: geçersiz dosya kalıcı hata olarak gösterilir ve ayarlar değişmez', async () => {

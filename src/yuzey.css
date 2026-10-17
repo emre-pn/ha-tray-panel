@@ -966,6 +966,18 @@ input:focus-visible,
   flex-wrap: nowrap;
 }
 
+.kart-aralik {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kart-aralik .kart-deger {
+  min-width: 88px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .kart-deger {
   min-width: 56px;
   font-size: 12px;
@@ -2733,12 +2745,13 @@ button.bilgi-kart:hover {
 
 .kamera-alt {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
 }
 
-.kamera-yenile {
+.kamera-yenile,
+.kamera-buyut {
   padding: 3px 10px;
   font-size: 11px;
   background: var(--karo-uzerinde);
@@ -2746,16 +2759,28 @@ button.bilgi-kart:hover {
   border-radius: 6px;
 }
 
-.kamera-yenile:hover:not(:disabled) {
+.kamera-yenile:hover:not(:disabled),
+.kamera-buyut:hover:not(:disabled) {
   background: var(--kenar);
 }
 
-.kamera-yenile:disabled {
+.kamera-yenile:disabled,
+.kamera-buyut:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
 .kamera-yas {
+  margin-left: auto;
   font-size: 10px;
   color: var(--soluk);
+}
+
+/* "Büyüt": kart ızgarada tam genişliğe açılır, görüntü daha yüksek gösterilir (bulanıklık değişmez) */
+.kamera-karo.kamera-buyuk {
+  grid-column: 1 / -1;
+}
+
+.kamera-karo.kamera-buyuk .kamera-goruntu {
+  max-height: 340px;
 }

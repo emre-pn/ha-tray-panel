@@ -37,6 +37,8 @@ const kopya = (d) => structuredClone(d);
  *   yalnizModel: kimlikler değişmedi, yalnız panel modeli tazelensin (izlenenler / kısayollar yeniden kurulmaz); ayarlardan: değişikliği
  *   Ayarlar penceresi kendisi yaptı, o pencereye "liste değişti" bildirimi gitmesin
  * @param {() => ({guvenli: Map<string, string>, tumKimlikler: Set<string>}|null)} [bag.cihazAl] son cihaz listesi önbelleği (onarım için)
+ * @param {() => string[]} [bag.masaustuAl] masaüstüne sabitli karo kimlikleri (verilmezse menüde sabitleme öğesi yoktur)
+ * @param {(liste: string[]) => boolean} [bag.masaustuKaydet] sabitli kimlik listesini yazar ve masaüstü karolarını eşitler; başarıda true
  * @param {(metin: string) => string} [bag.menuMetni] menü etiketi kaçışı (Windows "&")
  * @param {Function} bag.t çevirmen
  * @param {(m: string) => void} [bag.gunluk]
@@ -53,6 +55,8 @@ function duzenYoneticisiOlustur({
   duzenleAc,
   degisti,
   cihazAl = () => null,
+  masaustuAl = undefined,
+  masaustuKaydet = () => false,
   menuMetni = (s) => s,
   t,
   gunluk = () => {},
@@ -107,13 +111,21 @@ function duzenYoneticisiOlustur({
 
   const sayfaBilgisi = () => (ayarlarAl().sayfalar ?? []).map((s) => ({ id: s.id, ad: s.ad, varliklar: s.varliklar }));
 
+  const masaustuListesi = () => (typeof masaustuAl === 'function' ? masaustuAl() : undefined);
+
   /** Menü işlemini uygular (kaldırmada önce onay istenir). */
   async function islemUygula(islem, kimlik) {
     const a = ayarlarAl();
-    const ilk = karoMenuIslemi({ islem, kimlik, favoriler: a.favoriler, sayfalar: a.sayfalar ?? [] });
+    const ilk = karoMenuIslemi({ islem, kimlik, favoriler: a.favoriler, sayfalar: a.sayfalar ?? [], masaustu: masaustuListesi() });
     if (ilk.tur === 'yok') return false;
     if (ilk.tur === 'duzenle') {
       duzenleAc(kimlik);
+      return true;
+    }
+    if (ilk.tur === 'masaustu') {
+      // Masaüstüne sabitleme favori / sayfa düzenini değiştirmez: düzen geçmişine girmez, yalnız `masaustuKarolari` ayarı yazılır.
+      if (!masaustuKaydet(ilk.liste)) hataBildir(t('bildirim.ayarYazilamadi'));
+      degisti({ yalnizModel: true }); // açık Ayarlar eski listeyle kaydedip sabitlemeyi geri almasın
       return true;
     }
     if (ilk.neden === 'menu-kaldir') {
@@ -141,7 +153,7 @@ function duzenYoneticisiOlustur({
     const favori = typeof kimlik === 'string' ? a.favoriler.find((f) => f.entity_id === kimlik) : undefined;
     const karo = favori ? karoAl(kimlik) : undefined;
     if (!favori || !karo) return { ok: false };
-    const plan = karoMenuPlani({ karo, favori, sayfalar: sayfaBilgisi(), t });
+    const plan = karoMenuPlani({ karo, favori, sayfalar: sayfaBilgisi(), masaustu: masaustuListesi(), t });
     let secilen = null;
     const sec = (islem) => () => {
       secilen = islem;

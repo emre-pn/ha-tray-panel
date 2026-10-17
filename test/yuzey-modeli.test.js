@@ -72,7 +72,7 @@ test('karoOlustur: etiket yoksa canlı ad, o da yoksa kayıtlı ad; uzun etiket 
 
 test('karoOlustur: renderer modelinde yalnız izinli alanlar (anahtar/adres/ham durum yok)', () => {
   const karo = karoOlustur({ entity_id: 'light.a', ad: 'A', kisayol: 'Control+Alt+1' }, { entity_id: 'light.a', state: 'on', attributes: { token: 'gizli', friendly_name: 'A' }, context: { id: 'x' } });
-  assert.deepEqual(Object.keys(karo).sort(), ['ad', 'alan', 'altGrup', 'boyut', 'durum', 'etiket', 'grup', 'grupEtiketi', 'id', 'kullanilabilir', 'onayliServisler', 'ozellik', 'parlaklikKontrol', 'renk', 'simge', 'sinif', 'tekrar', 'tepsi', 'ulasilamiyor', 'varsayilanEylem', 'yuzde']);
+  assert.deepEqual(Object.keys(karo).sort(), ['ad', 'alan', 'altGrup', 'boyut', 'durum', 'etiket', 'grafikTuru', 'grup', 'grupEtiketi', 'id', 'kullanilabilir', 'onayliServisler', 'ozellik', 'parlaklikKontrol', 'renk', 'simge', 'sinif', 'tekrar', 'tepsi', 'ulasilamiyor', 'varsayilanEylem', 'yuzde']);
   assert.ok(!JSON.stringify(karo).includes('gizli'));
   assert.ok(!JSON.stringify(karo).toLowerCase().includes('control+alt'));
 });

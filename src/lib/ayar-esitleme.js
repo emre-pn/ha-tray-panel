@@ -69,16 +69,43 @@ function bolumAnlik(ayarlar, ad) {
 const yeniMi = (a, b) => a.zaman > b.zaman || (a.zaman === b.zaman && a.aygit > b.aygit);
 
 /**
+ * Parolasız eşitlemede klasöre yazabilen herkes dosyayı değiştirebilir; onay gevşetmesi (favoride `onay:false`: düğme/script/otomasyon gibi
+ * eylemlerin "basılı tutarak onay" şartını kapatmak) bu yoldan KABUL EDİLMEZ. Uzak favoride `onay:false` yalnız yerelde zaten aynı favoride
+ * `onay:false` ise (kullanıcının kendi kararı) korunur; aksi halde alan atılır (varsayılan sınıf geçerli kalır). `onay:true` (sıkılaştırma) olduğu gibi gelir.
+ * Parolalı (şifreli zarf) dosya parolayı bilen bilgisayarlardan geldiği için güvenilir sayılır ve bu işlem yapılmaz.
+ * @returns {{favoriler: object[], atilan: number}} atilan: yok sayılan gevşetme sayısı
+ */
+function onayGevsetmesiniEngelle(uzakFavoriler, yerelFavoriler) {
+  if (!Array.isArray(uzakFavoriler)) return { favoriler: uzakFavoriler, atilan: 0 };
+  const yerel = new Map((Array.isArray(yerelFavoriler) ? yerelFavoriler : []).filter((f) => duzNesne(f) && typeof f.entity_id === 'string').map((f) => [f.entity_id, f]));
+  let atilan = 0;
+  const favoriler = uzakFavoriler.map((f) => {
+    if (!duzNesne(f) || f.onay !== false || yerel.get(f.entity_id)?.onay === false) return f;
+    atilan += 1;
+    const { onay: _onay, ...digerleri } = f;
+    return digerleri;
+  });
+  return { favoriler, atilan };
+}
+
+/**
  * Uzak bölümü uygulanabilir hale getirir: yalnız bölümün alanları alınır ve içe aktarma hattından (şema doğrulaması, kapı/kilit süzgeci) geçer.
+ * `parolasiz` ve `yerelFavoriler` verilirse parolasız dosyadaki onay gevşetmeleri atılır (onayGevsetmesiniEngelle).
  * @returns {{ok: true, cozum: object, anlik: object, ozet: string} | {ok: false, neden: 'bolum-gecersiz'}}
  *   cozum: ayarAktariciOlustur'un `uygula`sına verilen biçim; anlik/ozet: temizlenmiş içeriğin yerel biçimi ve özeti (karşılaştırma bununla yapılır)
  */
-function uzakBolumTemizle(ad, ayarlarHam, { varsayilan = {}, t = TR } = {}) {
+function uzakBolumTemizle(ad, ayarlarHam, { varsayilan = {}, t = TR, parolasiz = false, yerelFavoriler = null } = {}) {
   const gecersiz = { ok: false, neden: 'bolum-gecersiz' };
   if (!BOLUMLER[ad] || !duzNesne(ayarlarHam)) return gecersiz;
   const secilen = {};
   for (const alan of BOLUMLER[ad]) if (Object.hasOwn(ayarlarHam, alan)) secilen[alan] = ayarlarHam[alan];
   if (Object.keys(secilen).length === 0) return gecersiz;
+  let onayAtilan = 0;
+  if (parolasiz && Object.hasOwn(secilen, 'favoriler')) {
+    const engel = onayGevsetmesiniEngelle(secilen.favoriler, yerelFavoriler);
+    secilen.favoriler = engel.favoriler;
+    onayAtilan = engel.atilan;
+  }
   let cozum;
   try {
     cozum = ayarYedeginiCoz({ bicim: AKTARIM_BICIMI, aktarimSurumu: AKTARIM_SURUMU, semaSurumu: SEMA_SURUMU, ayarlar: secilen }, { varsayilan, t });
@@ -91,7 +118,7 @@ function uzakBolumTemizle(ad, ayarlarHam, { varsayilan = {}, t = TR } = {}) {
   for (const alan of BOLUMLER[ad]) if (cozum.ayarlar[alan] !== undefined) ayarlar[alan] = cozum.ayarlar[alan];
   if (Object.keys(ayarlar).length === 0) return gecersiz;
   const anlik = bolumAnlik(ayarlar, ad);
-  return { ok: true, cozum: { ...cozum, ayarlar }, anlik, ozet: ozetle(anlik) };
+  return { ok: true, cozum: { ...cozum, ayarlar }, anlik, ozet: ozetle(anlik), onayAtilan };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -273,6 +300,7 @@ module.exports = {
   aygitUret,
   bolumAnlik,
   yeniMi,
+  onayGevsetmesiniEngelle,
   uzakBolumTemizle,
   dosyayiCoz,
   dosyaMetni,

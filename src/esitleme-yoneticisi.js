@@ -383,7 +383,8 @@ function esitlemeYoneticisiOlustur({
       const anlik = bolumAnlik(a, ad);
       const ozetL = ozetle(anlik);
       const uzak = birlesik.bolumler[ad] ?? null;
-      const temiz = uzak ? uzakBolumTemizle(ad, uzak.ayarlar, { varsayilan, t }) : null;
+      const temiz = uzak ? uzakBolumTemizle(ad, uzak.ayarlar, { varsayilan, t, parolasiz: !parola, yerelFavoriler: a.favoriler }) : null;
+      if (temiz?.ok && temiz.onayAtilan > 0) gunlugeYaz('Klasör eşitleme: parolasız dosyadaki onay gevşetmeleri yok sayıldı.');
       const ozetU = temiz?.ok ? temiz.ozet : null;
       let karar = bolumKarari({ durum: kayit.bolumler[ad], ozetL, uzak, ozetU, simdi: an, aygit: kayit.aygit });
       if (karar.eylem === 'uygula') {

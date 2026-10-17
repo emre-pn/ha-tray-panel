@@ -101,7 +101,7 @@ test('dış kaynaklar eylem sınıfı kaynaklarındadır; disKaynakIzni valf, ot
   assert.deepEqual([...DIS_KAYNAKLAR], ['jumplist', 'kisayol-dosyasi', 'yerel-api', 'protokol', 'pc-olayi', 'toplanti']);
   for (const k of DIS_KAYNAKLAR) assert.ok(KAYNAKLAR.includes(k));
   for (const alan of ['valve', 'automation', 'camera', 'cover', 'lock', 'alarm_control_panel', 'siren', 'todo', '', undefined]) assert.equal(disKaynakIzni(alan, 'turn_on'), false, String(alan));
-  for (const servis of ['set_hvac_mode', 'turn_on', 'turn_off', 'toggle']) assert.equal(disKaynakIzni('climate', servis), false, servis);
+  for (const servis of ['set_hvac_mode', 'set_fan_mode', 'set_preset_mode', 'turn_on', 'turn_off', 'toggle']) assert.equal(disKaynakIzni('climate', servis), false, servis);
   assert.equal(disKaynakIzni('climate', 'set_temperature'), true);
   assert.equal(disKaynakIzni('light', 'toggle'), true);
   assert.equal(disKaynakIzni('scene', 'turn_on'), true);
@@ -120,6 +120,10 @@ test('hat 4b: dış kaynaktan klima modu değişimi onaysız favoride bile çal�
   });
   const eylem = { servis: 'set_hvac_mode', veri: { hvac_mode: 'cool' } };
   for (const kaynak of DIS_KAYNAKLAR) assert.equal((await hat({ kimlik: 'climate.salon', kaynak, eylem })).tur, 'kaynak-izinsiz', kaynak);
+  // fan modu ve ön ayar da modu değiştirdiği için dış kaynaklardan çalışmaz
+  for (const diger of [{ servis: 'set_fan_mode', veri: { fan_mode: 'low' } }, { servis: 'set_preset_mode', veri: { preset_mode: 'away' } }]) {
+    for (const kaynak of DIS_KAYNAKLAR) assert.equal((await hat({ kimlik: 'climate.salon', kaynak, eylem: diger })).tur, 'kaynak-izinsiz', kaynak + ' ' + diger.servis);
+  }
   assert.equal(cagrilar.length, 0);
   assert.equal((await hat({ kimlik: 'climate.salon', kaynak: 'komut-satiri', eylem })).ok, true);
   assert.equal((await hat({ kimlik: 'climate.salon', kaynak: 'yerel-api', eylem: { servis: 'set_temperature', veri: { temperature: 21 } } })).ok, true);
@@ -384,3 +388,21 @@ test('PC olayı ve toplantı: distenCalistir aynı tikte çağrılır (uykuya ge
   kapi.calistir({ kaynak: 'pc-olayi', kimlik: 'light.a', islem: 'kapat' });
   assert.deepEqual(cagrilar, [{ kimlik: 'light.a', kaynak: 'pc-olayi', bildirim: 'hata', yon: { tur: 'kapat' } }]);
 });
+
+test('dış tetik izin listesi TEK yerde tanımlıdır: src içinde eylem-sinifi.js dışında DIS_*YASAK_ALANLAR / disTetigeUygunServisMi tanımı yoktur', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const kok = path.join(__dirname, '..', 'src');
+  const dosyalar = [];
+  const gez = (dizin) => {
+    for (const girdi of fs.readdirSync(dizin, { withFileTypes: true })) {
+      const yol = path.join(dizin, girdi.name);
+      if (girdi.isDirectory()) gez(yol);
+      else if (girdi.name.endsWith('.js')) dosyalar.push(yol);
+    }
+  };
+  gez(kok);
+  const tanimlayanlar = dosyalar.filter((yol) => /\b(?:const|let|var)\s+DIS_(?:TETIK_)?YASAK_ALANLAR\b|function\s+disTetigeUygunServisMi\b/.test(fs.readFileSync(yol, 'utf8'))).map((yol) => path.basename(yol));
+  assert.deepEqual(tanimlayanlar, ['eylem-sinifi.js']);
+});
+

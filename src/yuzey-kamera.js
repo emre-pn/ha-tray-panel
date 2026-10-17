@@ -8,6 +8,8 @@
  *    Her gösterimde yeniden bulanık başlar.
  *  - Görüntü yalnız bellekte (data: URL) tutulur, DİSKE YAZILMAZ; pencere gizlenince (gizlendi) ve yeni gösterimde silinir.
  *  - Hata durumunda sahte görüntü ya da eski kare gösterilmez; kısa bir hata metni yazılır.
+ *  - "Şimdi yenile" düğmesi o kameranın görüntüsünü hemen ister (hız sınırı yine ana süreçte: 5 sn içinde aynı kare döner); "Büyüt" yalnız kartı
+ *    ızgarada tam genişliğe açar (CSS sınıfı kamera-buyuk). İkisi de yeni bir yetki, kanal ya da akış getirmez; bulanıklık büyütmeyle KALKMAZ.
  *  - Tüm metin textContent ile yazılır; bulanıklık CSS sınıfıyla (kamera-bulanik) yapılır (satır içi stil yok, CSP).
  *
  * ctx (yuzey-sayfa.js verir): t(anahtar, degisken), olustur(etiket, sinif, metin), odakKaydet(anahtar, oge), satirEkle(ogeler),
@@ -79,6 +81,12 @@
       const etiket = k.etiket;
       kart.ad.textContent = etiket;
       const goruntuVar = k.adim === 'tamam' && typeof k.veri === 'string';
+      if (!goruntuVar) k.buyuk = false; // görüntü yokken büyütülecek bir şey yok; yeni görüntü her zaman normal boyutta başlar
+      kart.kok.className = 'kamera-karo' + (k.buyuk ? ' kamera-buyuk' : '');
+      kart.buyut.disabled = !goruntuVar;
+      kart.buyut.setAttribute('aria-pressed', k.buyuk ? 'true' : 'false');
+      kart.buyut.setAttribute('aria-label', k.buyuk ? t('yuzey.kamera.kucultAd', { ad: etiket }) : t('yuzey.kamera.buyutAd', { ad: etiket }));
+      kart.buyut.textContent = k.buyuk ? t('yuzey.kamera.kucult') : t('yuzey.kamera.buyut');
       kart.cerceve.hidden = !goruntuVar;
       kart.durum.hidden = goruntuVar;
       if (goruntuVar) {
@@ -132,20 +140,29 @@
       yenile.addEventListener('click', function () {
         yukleSirala(k.id);
       });
+      const buyut = yap('button', 'kamera-buyut');
+      buyut.type = 'button';
+      buyut.addEventListener('click', function () {
+        const sim = kayit(k.id);
+        if (!sim || sim.adim !== 'tamam') return;
+        sim.buyuk = !sim.buyuk;
+        gorunumuGuncelle(sim);
+      });
       const yas = yap('span', 'kamera-yas');
       alt.appendChild(yenile);
+      alt.appendChild(buyut);
       alt.appendChild(yas);
       kok.appendChild(ad);
       kok.appendChild(cerceve);
       kok.appendChild(durum);
       kok.appendChild(alt);
-      k.kart = { kok, ad, cerceve, img, durum, yenile, yas };
+      k.kart = { kok, ad, cerceve, img, durum, yenile, buyut, yas };
     }
 
     function kameraKaydi(girdi) {
       let k = kayit(girdi.id);
       if (!k) {
-        k = { id: girdi.id, etiket: girdi.etiket, kullanilabilir: girdi.kullanilabilir, adim: 'bos', veri: null, zaman: null, hata: null, bulanik: !model || model.bulanik, kart: null };
+        k = { id: girdi.id, etiket: girdi.etiket, kullanilabilir: girdi.kullanilabilir, adim: 'bos', veri: null, zaman: null, hata: null, bulanik: !model || model.bulanik, buyuk: false, kart: null };
         kameralar.set(k.id, k);
         kartKur(k);
       } else {
@@ -268,6 +285,7 @@
         k.zaman = null;
         k.hata = null;
         k.bulanik = !model || model.bulanik;
+        k.buyuk = false;
         gorunumuGuncelle(k);
       });
       gorunurBekliyor = true;
@@ -315,6 +333,8 @@
         if (k.adim === 'tamam') {
           ctx.odakKaydet('kamera-goruntu:' + k.id, k.kart.cerceve);
           satir.push(k.kart.cerceve);
+          ctx.odakKaydet('kamera-buyut:' + k.id, k.kart.buyut);
+          satir.push(k.kart.buyut);
         }
       });
       ctx.satirEkle(satir);

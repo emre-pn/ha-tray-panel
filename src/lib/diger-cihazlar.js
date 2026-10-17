@@ -187,6 +187,19 @@ function digerCihazlarOlustur({ eylem, ayarlarAl, haIstek, favoriEkle = null, al
       return { ok: false, tur: temizTur(sonuc?.tur) };
     },
 
+    /**
+     * Kimlik şu an "diğer cihazlar" listesinde mi (ayar açık, favori değil, süzgeçten geçmiş)? Gecikmeli eylem favori dışı kimliği yalnız böyle kabul eder.
+     * @returns {Promise<boolean>}
+     */
+    async listedeMi(kimlik) {
+      if (!acik() || !gecerliKimlik(kimlik)) return false;
+      try {
+        return (await girisBul(kimlik)) !== undefined;
+      } catch {
+        return false;
+      }
+    },
+
     /** Listedeki bir cihazı favorilere ekler. @returns {Promise<{ok: boolean, tur?: string}>} */
     async favoriyeEkle({ kaynak, kimlik } = {}) {
       if (!KAYNAKLAR.includes(kaynak) || !gecerliKimlik(kimlik)) return { ok: false, tur: 'gecersiz' };

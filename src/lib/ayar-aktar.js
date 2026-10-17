@@ -14,13 +14,32 @@
  *    (ana bilgisayar adı) değiştiriyorsa, ayarlar uygulanmadan ÖNCE ana süreçte yerel bir onay iletişim kutusu çıkar (varsayılan: Vazgeç);
  *    onaylanmazsa hiçbir ayar uygulanmaz. Yalnız yol/kapı numarası/https-http değişimi onay istemez.
  *  - Renderer'a yalnız dosya ADI (klasörsüz) ve sayılar döner; günlüğe yalnız sabit metin yazılır.
+ *  - İçe aktarma önizlemesi (1.4.0): dosyayı yine ANA SÜREÇ seçtirir ve okur; renderer'a yalnız dosya adı, kapalı listeden bölüm adları ve sayılar gider
+ *    (anahtar, adres, değer YOK). Uygulama, önizlemenin verdiği tek kullanımlık numarayla ve kısa süre içinde istenir; numara tutmazsa hiçbir şey uygulanmaz.
+ *    Numarasız eski çağrı (doğrudan içe aktar) aynı hattan geçer.
  */
 
 const path = require('node:path');
+const { randomBytes } = require('node:crypto');
 const { ayarlariDisaAktar, ayarYedeginiCoz, yedekAdiGecerliMi, jsonDosyasiniOku, yedekleriListele } = require('./ayar-yedegi');
+const { BOLUMLER, BOLUM_ADLARI } = require('./esitleme-bolumleri');
 const { TR } = require('./ceviri-varsayilan');
 
 const ADRES_ALANLARI = Object.freeze(['yerelAdres', 'disAdres']);
+/** Önizlemede gösterilen bölümler: eşitleme bölümleri + bağlantı adresleri + kalanlar. KAPALI LİSTE: renderer yalnız bu adları çevirir. */
+const ONIZLEME_BOLUMLERI = Object.freeze([...BOLUM_ADLARI, 'baglanti', 'diger']);
+const ONIZLEME_OMRU_MS = 10 * 60 * 1000;
+
+/** Ayar alanının önizleme bölümü. */
+function bolumAdi(alan) {
+  if (ADRES_ALANLARI.includes(alan)) return 'baglanti';
+  return BOLUM_ADLARI.find((ad) => BOLUMLER[ad].includes(alan)) ?? 'diger';
+}
+
+/** Anahtar sırasından bağımsız karşılaştırma metni (yalnız fark denetimi için; dışarı verilmez). */
+function kararliMetin(deger) {
+  return JSON.stringify(deger, (_anahtar, d) => (d && typeof d === 'object' && !Array.isArray(d) ? Object.fromEntries(Object.keys(d).sort().map((k) => [k, d[k]])) : d));
+}
 
 /** Adresin ana makine adı (küçük harf); ayrıştırılamazsa null. */
 function anaMakine(adres) {
@@ -64,8 +83,9 @@ const hata = (metin) => ({ ok: false, hata: metin });
  * @param {() => Date} [bag.simdi]
  * @param {Function} [bag.t] çevirmen (src/lib/dil.js; ana süreçte dil değişince kendiliğinden yeni dili izler). Verilmezse Türkçe.
  * @param {() => (boolean|Promise<boolean>)} [bag.anahtarVarMi] kayıtlı erişim anahtarı var mı (yoksa ya da verilmezse adres onayı sorulmaz)
+ * @param {() => (Set<string>|null)} [bag.bilinenKimlikler] Home Assistant'ta o an bilinen varlık kimlikleri (önizleme "bulunamayan favori" sayısı için; null = bilinmiyor, sayı verilmez)
  */
-function ayarAktariciOlustur({ dialog, fs = require('node:fs'), ayarDizini, varsayilanKlasor, ayarlarAl, varsayilanAl, uygula, gunluk = () => {}, simdi = () => new Date(), t = TR, anahtarVarMi = () => false }) {
+function ayarAktariciOlustur({ dialog, fs = require('node:fs'), ayarDizini, varsayilanKlasor, ayarlarAl, varsayilanAl, uygula, gunluk = () => {}, simdi = () => new Date(), t = TR, anahtarVarMi = () => false, bilinenKimlikler = () => null }) {
   const jsonSuzgeci = () => [{ name: t('aktar.suzgecAdi'), extensions: ['json'] }];
   const gunlugeYaz = (mesaj) => {
     try {
@@ -108,6 +128,50 @@ function ayarAktariciOlustur({ dialog, fs = require('node:fs'), ayarDizini, vars
     } catch {
       return false;
     }
+  }
+
+  /** Önizlemeden sonra uygulanmayı bekleyen dosya: { no, ham, ad, bitis }. Tek kullanımlık; yeni önizleme ya da uygulama denemesi onu tüketir. */
+  let bekleyen = null;
+
+  /**
+   * Doğrulanmış içeriğin ÖNİZLEMESİ: hangi bölümlerin şu anki ayardan farklı olduğu (kapalı liste adları) ve sayılar. Adres, anahtar ya da değer içermez.
+   * @returns {{bolumler: string[], alanSayisi: number, favoriSayisi: number|null, eksikFavoriSayisi: number|null, atilanSayisi: number}}
+   */
+  function onizlemeOlustur(cozum) {
+    const mevcut = ayarlarAl() ?? {};
+    const degisen = new Set();
+    for (const alan of cozum.alanlar) {
+      if (kararliMetin(cozum.ayarlar[alan]) !== kararliMetin(mevcut[alan])) degisen.add(bolumAdi(alan));
+    }
+    const favoriler = Array.isArray(cozum.ayarlar.favoriler) ? cozum.ayarlar.favoriler : null;
+    let bilinen = null;
+    try {
+      bilinen = bilinenKimlikler();
+    } catch {
+      bilinen = null; // bilinmiyor: sayı verilmez
+    }
+    return {
+      bolumler: ONIZLEME_BOLUMLERI.filter((ad) => degisen.has(ad)),
+      alanSayisi: cozum.alanlar.length,
+      favoriSayisi: favoriler ? favoriler.length : null,
+      eksikFavoriSayisi: favoriler && bilinen instanceof Set ? favoriler.filter((f) => !bilinen.has(f?.entity_id)).length : null,
+      atilanSayisi: cozum.atilanlar.length,
+    };
+  }
+
+  /** Kullanıcıya dosyayı SEÇTİRİR ve okur. @returns {{ok: true, ham: unknown, ad: string} | {ok: false, sonuc: object}} */
+  async function dosyaSecVeOku(pencere) {
+    let secim;
+    try {
+      secim = await dialog.showOpenDialog(pencere, { title: t('aktar.iceBaslik'), defaultPath: varsayilanKlasor, properties: ['openFile'], filters: jsonSuzgeci() });
+    } catch {
+      return { ok: false, sonuc: hata(t('aktar.diyalogAcilamadi')) };
+    }
+    if (!secim || secim.canceled || !Array.isArray(secim.filePaths) || typeof secim.filePaths[0] !== 'string') return { ok: false, sonuc: iptal() };
+    const dosya = secim.filePaths[0];
+    const okunan = jsonDosyasiniOku(dosya, fs, t);
+    if (!okunan.ok) return { ok: false, sonuc: hata(okunan.hata) };
+    return { ok: true, ham: okunan.ham, ad: path.basename(dosya) };
   }
 
   /** Doğrulanmış içeriği uygular; sonuç Ayarlar sayfasına gösterilecek özettir. */
@@ -174,19 +238,40 @@ function ayarAktariciOlustur({ dialog, fs = require('node:fs'), ayarDizini, vars
       return { ok: true, ad: path.basename(hedef), favoriSayisi: aktarim.favoriSayisi };
     },
 
-    /** Kullanıcının seçtiği dosyadaki ayarları doğrulayıp uygular. */
-    async iceAktar(pencere) {
-      let secim;
+    /**
+     * Önizleme adımı: dosyayı seçtirir, doğrular ve ne değişeceğini söyler; HİÇBİR ayar uygulanmaz. Dosya (ham içerik) bellekte tek kullanımlık
+     * bir numarayla bekler; uygulama `iceAktar(pencere, onizlemeNo)` ile istenir.
+     */
+    async iceAktarOnizle(pencere) {
+      bekleyen = null;
+      const secilen = await dosyaSecVeOku(pencere);
+      if (!secilen.ok) return secilen.sonuc;
+      let cozum;
       try {
-        secim = await dialog.showOpenDialog(pencere, { title: t('aktar.iceBaslik'), defaultPath: varsayilanKlasor, properties: ['openFile'], filters: jsonSuzgeci() });
+        cozum = ayarYedeginiCoz(secilen.ham, { varsayilan: varsayilanAl(), t });
       } catch {
-        return hata(t('aktar.diyalogAcilamadi'));
+        return hata(t('aktar.dosyaIslenemedi'));
       }
-      if (!secim || secim.canceled || !Array.isArray(secim.filePaths) || typeof secim.filePaths[0] !== 'string') return iptal();
-      const dosya = secim.filePaths[0];
-      const okunan = jsonDosyasiniOku(dosya, fs, t);
-      if (!okunan.ok) return hata(okunan.hata);
-      return cozumuUygula(okunan.ham, path.basename(dosya), pencere);
+      if (!cozum.ok) return hata(cozum.hata);
+      const no = randomBytes(8).toString('hex');
+      bekleyen = { no, ham: secilen.ham, ad: secilen.ad, bitis: simdi().getTime() + ONIZLEME_OMRU_MS };
+      return { ok: true, ad: secilen.ad, onizlemeNo: no, ...onizlemeOlustur(cozum) };
+    },
+
+    /**
+     * Ayarları doğrulayıp uygular. `onizlemeNo` verilmişse ÖNİZLENEN dosya uygulanır (numara tutmuyor ya da süre dolmuşsa hiçbir şey olmaz);
+     * verilmezse kullanıcının seçtiği dosya doğrudan doğrulanıp uygulanır.
+     */
+    async iceAktar(pencere, onizlemeNo) {
+      if (onizlemeNo !== undefined && onizlemeNo !== null) {
+        const b = bekleyen;
+        bekleyen = null; // tek kullanım
+        if (!b || typeof onizlemeNo !== 'string' || b.no !== onizlemeNo || simdi().getTime() > b.bitis) return hata(t('aktar.onizlemeGecersiz'));
+        return cozumuUygula(b.ham, b.ad, pencere);
+      }
+      const secilen = await dosyaSecVeOku(pencere);
+      if (!secilen.ok) return secilen.sonuc;
+      return cozumuUygula(secilen.ham, secilen.ad, pencere);
     },
 
     /** Ayar klasöründeki geri dönülebilir yedekler (renderer'a yol gitmez: ad, tür, zaman, boyut). */
@@ -205,4 +290,4 @@ function ayarAktariciOlustur({ dialog, fs = require('node:fs'), ayarDizini, vars
   };
 }
 
-module.exports = { ayarAktariciOlustur, anaMakineDegisenler };
+module.exports = { ayarAktariciOlustur, anaMakineDegisenler, ONIZLEME_BOLUMLERI };

@@ -875,7 +875,7 @@ const duzenGecmisi = duzenGecmisiOlustur({ dosyaYolu: path.join(app.getPath('use
 
 /**
  * Tepsi simgesi rozeti (o-27, 1.4.0; src/tepsi-rozeti.js): ayar `tepsiRozeti` 'isik' ise açık ışık sayısı, 'sensor' ise seçilen sensörün
- * kısa değeri simgeye çizilir. Varsayılan 'kapali' iken simge eskisi gibi dosya simgesidir. Bağlantı yokken (soluk) rozet çizilmez.
+ * kısa değeri (birden çok sensör seçiliyse sırayla) simgeye çizilir. Varsayılan 'kapali' iken simge eskisi gibi dosya simgesidir. Bağlantı yokken (soluk) rozet çizilmez.
  */
 const tepsiRozeti = tepsiRozetiOlustur({
   nativeImage,
@@ -897,8 +897,7 @@ function kameraIzinleri() {
 
 /** İzlenen varlıklar: favoriler + salt-okunur yardımcı varlıklar (medya çalıyor, ses çıkışı) + bilgi kartlarının varlıkları (sensör şeridi, hava, takvim, yapılacaklar) + (rozet 'sensor' modunda) seçili sensör + uyarı kurallarının varlıkları + onaylı kameralar (1.4.0). */
 function izlenenKimlikler() {
-  const rozetSensoru = tepsiRozeti.izlenenKimlik();
-  return new Set([...(ayarlar?.favoriler ?? []).map((f) => f.entity_id), ...YARDIMCI_VARLIKLAR, ...bilgiKimlikleri(ayarlar), ...(rozetSensoru ? [rozetSensoru] : []), ...bildirimAkisi.izlenenKimlikler(), ...kameraIzinleri()]);
+  return new Set([...(ayarlar?.favoriler ?? []).map((f) => f.entity_id), ...YARDIMCI_VARLIKLAR, ...bilgiKimlikleri(ayarlar), ...tepsiRozeti.izlenenKimlikler(), ...bildirimAkisi.izlenenKimlikler(), ...kameraIzinleri()]);
 }
 
 /**
@@ -1461,6 +1460,14 @@ const duzen = duzenYoneticisiOlustur({
     if (!ayarlardan) ayarlaraFavoriDegistiBildir(); // açık Ayarlar eski listeyle kaydetmesin
   },
   cihazAl: () => cihazOnbellegi,
+  // Karo menüsü "Masaüstüne sabitle" (1.4.0): Ayarlar'daki aynı `masaustuKarolari` listesi; yazılınca karo pencereleri eşitlenir
+  masaustuAl: () => [...(ayarlar?.masaustuKarolari ?? [])],
+  masaustuKaydet: (liste) => {
+    ayarlar.masaustuKarolari = liste;
+    const yazildi = ayarlariYaz();
+    masaustuKarolari.esitle();
+    return yazildi;
+  },
   menuMetni,
   t,
   gunluk,
@@ -3543,7 +3550,7 @@ function gunlukKlasoruAc() {
 async function durumlariYenile({ zorla = false } = {}) {
   // Favori yoksa ama bilgi kartları (sensör şeridi, hava, takvim, yapılacaklar), tepsi rozeti sensörü ya da uyarı kuralı varlıkları seçiliyse yine okunur
   // (kural varlıkları REST yedeğinde de okunur; 1.4.0).
-  if (!anahtarDeposu.varMi() || !ayarlar || (ayarlar.favoriler.length === 0 && bilgiKimlikleri(ayarlar).size === 0 && !tepsiRozeti.izlenenKimlik() && bildirimAkisi.izlenenKimlikler().size === 0 && kameraIzinleri().length === 0)) {
+  if (!anahtarDeposu.varMi() || !ayarlar || (ayarlar.favoriler.length === 0 && bilgiKimlikleri(ayarlar).size === 0 && tepsiRozeti.izlenenKimlikler().length === 0 && bildirimAkisi.izlenenKimlikler().size === 0 && kameraIzinleri().length === 0)) {
     depo.sifirla();
     return undefined;
   }
@@ -3899,7 +3906,7 @@ async function ayarOzeti() {
     anahtarYonetici, // o-43: true = anahtar yönetici kullanıcıya ait (uyarı), false = yönetici değil (önerilen), null = bilinmiyor
     ortaTikAlanlari: [...ORTA_TIK_ALANLARI], // o-20: tepsi orta tıkına seçilebilen alanlar (Ayarlar seçici listesi)
     sifrelemeVar: await anahtarDeposu.kullanilabilirMi(),
-    favoriler: ayarlar.favoriler.map(({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, tepsi, kisayolEylemi }) => ({ entity_id, ad, onay, etiket, kisayol, parlaklik, kisayolEylemi, simge, renk, boyut, ...(tepsi === true ? { tepsi: true } : {}) })),
+    favoriler: ayarlar.favoriler.map(({ entity_id, ad, onay, etiket, kisayol, parlaklik, simge, renk, boyut, tepsi, kisayolEylemi, gostergeMin, gostergeMax, grafikTuru }) => ({ entity_id, ad, onay, etiket, kisayol, parlaklik, kisayolEylemi, simge, renk, boyut, ...(tepsi === true ? { tepsi: true } : {}), ...(gostergeMin !== undefined && gostergeMax !== undefined ? { gostergeMin, gostergeMax } : {}), ...(grafikTuru !== undefined ? { grafikTuru } : {}) })),
     odakFavori: odakFavoriyiAl(), // panel menüsünden "Düzenle…" ile açıldıysa odaklanılacak favori (bir kez)
     ayarDosyasi: ayarDosyasiYolu(),
     // o-32: bağlı ekranlar (tercih edilen ekran seçici): kimlik, o dilde etiket ve sınırlar; yalnız sayılar ve kısa metin
@@ -3979,6 +3986,7 @@ ekAyarDinle('panelOpaklik', () => {
 ekAyarDinle('tercihEkran', () => anaPencereyiTercihEkranaTasi());
 ekAyarDinle('tepsiRozeti', tepsiRozetiAyariDegisti);
 ekAyarDinle('tepsiRozetSensoru', tepsiRozetiAyariDegisti);
+ekAyarDinle('tepsiRozetSensorleri', tepsiRozetiAyariDegisti);
 ekAyarDinle('masaustuKarolari', () => masaustuKarolari.esitle());
 ekAyarDinle('masaustuKaroUstte', () => masaustuKarolari.ustteDegisti());
 // Grup "tema" (o-25, o-29, o-34): görünüm ayarları değişince açık pencereler güncellenir. Sayfaların kendi görünümü (renkler, animasyon)
@@ -4171,10 +4179,13 @@ function ipcKaydet() {
     uygula: ayarlariIceAktarUygula,
     t,
     anahtarVarMi: () => anahtarDeposu.varMi(), // kayıtlı anahtar varken ana makine değişikliği onay ister (ayar-aktar.js)
+    bilinenKimlikler: () => cihazOnbellegi?.tumKimlikler ?? null, // içe aktarma önizlemesi: HA'da bulunamayan favori sayısı (cihaz listesi hiç alınmadıysa sayı verilmez)
     gunluk,
   });
   ipcMain.handle('ayarlar:disa-aktar', (olay) => (ayarlardan(olay) ? ayarAktarici.disaAktar(ayarlarPenceresi) : izinYok()));
-  ipcMain.handle('ayarlar:ice-aktar', (olay) => (ayarlardan(olay) ? ayarAktarici.iceAktar(ayarlarPenceresi) : izinYok()));
+  // İçe aktarma iki adımlıdır (1.4.0): önizleme dosyayı seçtirir ve ne değişeceğini söyler (hiçbir ayar uygulanmaz); uygulama önizlemenin numarasıyla istenir.
+  ipcMain.handle('ayarlar:ice-aktar-onizle', (olay) => (ayarlardan(olay) ? ayarAktarici.iceAktarOnizle(ayarlarPenceresi) : izinYok()));
+  ipcMain.handle('ayarlar:ice-aktar', (olay, onizlemeNo) => (ayarlardan(olay) ? ayarAktarici.iceAktar(ayarlarPenceresi, onizlemeNo) : izinYok()));
   ipcMain.handle('ayarlar:yedekler', (olay) => (ayarlardan(olay) ? ayarAktarici.yedekler() : izinYok()));
   ipcMain.handle('ayarlar:yedekten-don', (olay, ad) => (ayarlardan(olay) ? ayarAktarici.yedektenDon(ad, ayarlarPenceresi) : izinYok()));
 

@@ -270,9 +270,10 @@ function guvenliVarlikMi(varlik) {
 // Aşırı engelleme bilerek kabul edilir: bir kamera yanlışlıkla elenirse kullanıcı Home Assistant'ta adını değiştirir; bir kapı kamerası
 // sızarsa iş işten geçmiş olur.
 const KAMERA_YASAK_BELIRTEC_BASLARI = Object.freeze([
-  'giris', 'entrance', 'entry', 'entree', 'entrada', 'eingang', 'foyer', 'lobby', 'vestibul', 'zil', 'ziyaretci', 'visitor', 'peephole', 'spion', 'klingel', 'sonnette', 'timbre',
+  'giris', 'entrance', 'entry', 'entree', 'entrada', 'eingang', 'foyer', 'lobby', 'vestibul', 'zil', 'ziyaretci', 'misafir', 'visitor', 'peephole', 'spion', 'klingel', 'sonnette', 'timbre',
 ]);
-const KAMERA_YASAK_TAM_BELIRTECLER = new Set(['ring', 'rings', 'bell', 'bells', 'chime', 'buzz', 'guest']);
+// "hol" / "antre" (apartman holü, antre): "holding", "antrenman" gibi sözcükleri engellememek için yalnız TAM belirteç ve yaygın ek biçimleri.
+const KAMERA_YASAK_TAM_BELIRTECLER = new Set(['ring', 'rings', 'bell', 'bells', 'chime', 'buzz', 'guest', 'hol', 'holu', 'holde', 'holun', 'antre', 'antrede', 'antreyi', 'antresi', 'antrenin']);
 
 function kameraBelirteciYasakliMi(belirtec) {
   return KAMERA_YASAK_TAM_BELIRTECLER.has(belirtec) || KAMERA_YASAK_BELIRTEC_BASLARI.some((bas) => belirtec.startsWith(bas));
@@ -309,6 +310,22 @@ function kameraGuvenliMi(varlik) {
 /** 1.4.0: serbest metin (medya başlığı, takvim/yapılacaklar başlığı, bildirim metni, birim...) kapı kuralından geçer mi? */
 function metinGuvenliMi(metin) {
   return typeof metin === 'string' && adGuvenliMi('', metin);
+}
+
+/**
+ * 1.4.0 sonrası (yalnız sıkılaştırma): kapıya/girişe bağlanabilen DIŞARIDAN gelen metin (mobile_app bildirim başlığı, iletisi, düğme başlığı ve
+ * düğme/etiket kimliği). Genel Kapı Kuralı'na EK olarak kamera giriş sözcüklerinden de geçmelidir: Türkçe "zil / ziyaretçi / giriş",
+ * "visitor / entrance / bell / guest" ve çeviri karşılıkları. Bir "Zil çaldı" bildirimine eklenmiş "Aç" düğmesi HA'da çoğunlukla kapı açan
+ * bir otomasyonu tetikler; bu yüzden bu sözcükleri taşıyan bildirim hiç gösterilmez. Aşırı engelleme bilerek kabul edilir.
+ */
+function girisMetniGuvenliMi(metin) {
+  return typeof metin === 'string' && kameraAdiGuvenliMi('', metin);
+}
+
+/** guvenliMetin gibi kısaltır ve süzer; ek olarak kamera giriş sözcüklerini de denetler. Geçmezse null. */
+function guvenliGirisMetni(metin, enFazla = 100) {
+  const kisa = guvenliMetin(metin, enFazla);
+  return kisa !== null && girisMetniGuvenliMi(kisa) && girisMetniGuvenliMi(metin) ? kisa : null;
 }
 
 /**
@@ -372,5 +389,7 @@ module.exports = {
   kameraGuvenliMi,
   metinGuvenliMi,
   guvenliMetin,
+  girisMetniGuvenliMi,
+  guvenliGirisMetni,
   metinListesiSuz,
 };

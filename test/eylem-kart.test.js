@@ -111,6 +111,33 @@ test('klima: aralık dışı ya da adıma uymayan sıcaklık HA\'ya GİTMEZ; hat
   assert.deepEqual([tur.ok, tur.tur], [false, 'gecersiz']);
 });
 
+test('klima: ısıt/soğut aralığı, fan modu ve ön ayar tek güvenli hattan geçer; geçersiz aralık ya da listede olmayan seçenek HA yoluna GİTMEZ', async () => {
+  const aralikli = varlik('climate.aralik', 'heat_cool', { friendly_name: 'Aralıklı', hvac_modes: ['off', 'heat_cool'], min_temp: 16, max_temp: 30, target_temp_step: 0.5, supported_features: 427, target_temp_low: 20, target_temp_high: 24, fan_modes: ['auto', 'low'], preset_modes: ['eco', 'away'] });
+  const o = ortam({ sunucu: { ...SUNUCU, 'climate.aralik': aralikli }, favoriler: [...FAVORILER, { entity_id: 'climate.aralik', ad: 'Aralıklı' }] });
+  const calis = (servis, veri) => o.katman.yuzeydenCalistir('panel', { kimlik: 'climate.aralik', servis, veri, sonDeger: true });
+  assert.equal((await calis('set_temperature', { target_temp_low: 21, target_temp_high: 25.5 })).ok, true);
+  assert.equal((await calis('set_fan_mode', { fan_mode: 'low' })).ok, true);
+  assert.equal((await calis('set_preset_mode', { preset_mode: 'away' })).ok, true);
+  assert.deepEqual(o.postlar().map((p) => [p.yol, p.govde]), [
+    ['/api/services/climate/set_temperature', { entity_id: 'climate.aralik', target_temp_low: 21, target_temp_high: 25.5 }],
+    ['/api/services/climate/set_fan_mode', { entity_id: 'climate.aralik', fan_mode: 'low' }],
+    ['/api/services/climate/set_preset_mode', { entity_id: 'climate.aralik', preset_mode: 'away' }],
+  ]);
+  const once = o.postlar().length;
+  for (const [servis, veri] of [
+    ['set_temperature', { target_temp_low: 25, target_temp_high: 22 }],
+    ['set_temperature', { target_temp_low: 22, target_temp_high: 22 }],
+    ['set_temperature', { target_temp_low: 22 }],
+    ['set_temperature', { temperature: 22, target_temp_low: 20, target_temp_high: 24 }],
+    ['set_temperature', { target_temp_low: 10, target_temp_high: 24 }],
+    ['set_fan_mode', { fan_mode: 'turbo' }],
+    ['set_preset_mode', { preset_mode: 'Garaj kapısı' }],
+  ]) assert.equal((await calis(servis, veri)).ok, false, servis + ' ' + JSON.stringify(veri));
+  // aralık bildirmeyen cihaz (supported_features bit 2 yok): alt/üst gönderilemez
+  assert.equal((await o.katman.yuzeydenCalistir('panel', { kimlik: 'climate.salon', servis: 'set_temperature', veri: { target_temp_low: 20, target_temp_high: 24 } })).ok, false);
+  assert.equal(o.postlar().length, once);
+});
+
 test('klima: mod değişimi (onaylı servis) basılı tutma olmadan çalışmaz; ana sürecin saati dolmadan basılı tutma da yetmez', async () => {
   const o = basiliOrtam();
   const yok = await o.katman.yuzeydenCalistir('panel', { kimlik: 'climate.salon', servis: 'set_hvac_mode', veri: { hvac_mode: 'heat' } });
@@ -220,7 +247,7 @@ test('vantilatör / nem alıcı / süpürge: izinli servisler cihazın sınırla
   assert.equal((await dene('humidifier.nem', 'set_humidity', { humidity: 65 })).ok, true);
   assert.equal((await dene('humidifier.nem', 'set_humidity', { humidity: 20 })).ok, false, 'cihazın alt sınırının altı');
   assert.equal((await dene('humidifier.nem', 'set_humidity', { humidity: 90 })).ok, false);
-  for (const servis of ['start', 'pause', 'return_to_base']) assert.equal((await dene('vacuum.supurge', servis)).ok, true, servis);
+  for (const servis of ['start', 'pause', 'return_to_base', 'stop']) assert.equal((await dene('vacuum.supurge', servis)).ok, true, servis);
   assert.equal((await dene('vacuum.supurge', 'clean_spot')).ok, false);
   assert.equal((await dene('vacuum.supurge', 'send_command', { command: 'x' })).ok, false);
   assert.deepEqual(o.postlar().map((p) => p.yol.replace('/api/services/', '')), [
@@ -231,6 +258,7 @@ test('vantilatör / nem alıcı / süpürge: izinli servisler cihazın sınırla
     'vacuum/start',
     'vacuum/pause',
     'vacuum/return_to_base',
+    'vacuum/stop',
   ]);
 });
 

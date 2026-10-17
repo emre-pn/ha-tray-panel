@@ -192,10 +192,11 @@ test('yedek adı doğrulaması: yol dizisi, ayar/anahtar dosyası ve rastgele ad
   }
 });
 
-function aktaricKur({ klasor, ayarlar = ayarlarKur(), diyalog = {}, uygulanan = [], uygulaSonucu = { ok: true, uyarilar: [], favoriSayisi: 2 } } = {}) {
+function aktaricKur({ klasor, ayarlar = ayarlarKur(), diyalog = {}, uygulanan = [], uygulaSonucu = { ok: true, uyarilar: [], favoriSayisi: 2 }, ek = {}, simdi = () => new Date('2026-10-15T10:00:00Z') } = {}) {
   const dialog = {
     showSaveDialog: async (_pencere, secenek) => diyalog.kaydet?.(secenek) ?? { canceled: true },
     showOpenDialog: async (_pencere, secenek) => diyalog.ac?.(secenek) ?? { canceled: true },
+    showMessageBox: async (...arg) => ({ response: diyalog.mesajCevabi?.(arg.at(-1)) ?? 1 }),
   };
   const gunlukler = [];
   const aktarici = ayarAktariciOlustur({
@@ -209,7 +210,8 @@ function aktaricKur({ klasor, ayarlar = ayarlarKur(), diyalog = {}, uygulanan = 
       return typeof uygulaSonucu === 'function' ? uygulaSonucu(cozum) : uygulaSonucu;
     },
     gunluk: (m) => gunlukler.push(m),
-    simdi: () => new Date('2026-10-15T10:00:00Z'),
+    simdi,
+    ...ek,
   });
   return { aktarici, uygulanan, gunlukler };
 }
@@ -454,4 +456,181 @@ test('anaMakineDegisenler: boş/silinen adres ve aynı ana makine sayılmaz; ayr
   assert.deepEqual(anaMakineDegisenler({ yerelAdres: 'http://10.0.0.1' }, mevcut).map((d) => d.alan), ['yerelAdres']);
   assert.equal(anaMakineDegisenler({ disAdres: 'bozuk adres' }, mevcut).length, 1);
   assert.equal(anaMakineDegisenler({ disAdres: 'https://yeni.example.org' }, {}).length, 1, 'mevcut adres yoksa da yeni ana makine sorulur');
+});
+
+// --- içe aktarma önizlemesi (1.4.0) --------------------------------------------------------------------------------------
+
+const { ONIZLEME_BOLUMLERI } = require('../src/lib/ayar-aktar');
+
+function onizlemeDosyasi(klasor, ek = {}, ad = 'onizle.json') {
+  const dosya = path.join(klasor, ad);
+  fs.writeFileSync(dosya, ayarlariDisaAktar(ayarlarKur(ek)).metin);
+  return dosya;
+}
+
+test('önizleme: yalnız dosya adı, kapalı listeden değişen bölüm adları ve sayılar döner; hiçbir ayar uygulanmaz; adres/anahtar/değer sızmaz', async () => {
+  const { klasor, temizle } = gecici();
+  try {
+    const dosya = onizlemeDosyasi(klasor, {
+      yerelAdres: 'http://192.168.77.9:8123',
+      koseBildirimi: false,
+      kisayol: 'Control+Alt+K',
+      favoriler: [{ entity_id: 'light.salon', ad: 'Salon' }, { entity_id: 'lock.on_kapi', ad: 'Ön kapı' }, { entity_id: 'light.masa', ad: 'Masa lambası', etiket: 'Masa', kisayol: 'Control+Alt+M', parlaklik: true }],
+    });
+    const k = aktaricKur({ klasor, diyalog: { ac: () => ({ canceled: false, filePaths: [dosya] }) } });
+    const sonuc = await k.aktarici.iceAktarOnizle(null);
+    assert.equal(sonuc.ok, true);
+    assert.equal(sonuc.ad, 'onizle.json');
+    assert.deepEqual(sonuc.bolumler, ['favoriler', 'kisayollar', 'bildirim', 'baglanti'], 'değişen bölümler sabit sırada; değişmeyenler (görünüm, panolar...) yok');
+    assert.ok(sonuc.bolumler.every((b) => ONIZLEME_BOLUMLERI.includes(b)), 'adlar kapalı listeden');
+    assert.equal(sonuc.favoriSayisi, 2, 'kapı/kilit favorisi süzgeçte düşer, sayıya girmez');
+    assert.equal(sonuc.atilanSayisi, 1);
+    assert.equal(sonuc.eksikFavoriSayisi, null, 'cihaz listesi bilinmiyorsa sayı verilmez');
+    assert.match(sonuc.onizlemeNo, /^[0-9a-f]{16}$/);
+    assert.equal(k.uygulanan.length, 0, 'önizleme hiçbir ayarı uygulamaz');
+    const metin = JSON.stringify(sonuc);
+    for (const sizmamali of ['192.168', 'example.org', 'Control+Alt', 'Salon', 'light.', 'lock.', klasor]) assert.ok(!metin.includes(sizmamali), `önizleme ${sizmamali} içermemeli`);
+  } finally {
+    temizle();
+  }
+});
+
+test('önizleme: dosya şu anki ayarlarla aynıysa değişen bölüm yoktur; anahtar sırası fark sayılmaz, tek alan farkı doğru bölüme düşer', async () => {
+  const { klasor, temizle } = gecici();
+  try {
+    const mevcut = ayarlarKur();
+    const ayni = onizlemeDosyasi(klasor, {}, 'ayni.json');
+    const k = aktaricKur({ klasor, ayarlar: mevcut, diyalog: { ac: () => ({ canceled: false, filePaths: [ayni] }) } });
+    const sonuc = await k.aktarici.iceAktarOnizle(null);
+    assert.equal(sonuc.ok, true);
+    assert.deepEqual(sonuc.bolumler, [], 'aynı içerik: değişiklik yok');
+    assert.ok(sonuc.alanSayisi > 0);
+
+    // mevcut ayardaki favori nesnesinin anahtar sırası farklı olsa da fark sayılmaz
+    const tersSirali = ayarlarKur({ favoriler: ayarlarKur().favoriler.map((f) => Object.fromEntries(Object.entries(f).reverse())) });
+    const k2 = aktaricKur({ klasor, ayarlar: tersSirali, diyalog: { ac: () => ({ canceled: false, filePaths: [ayni] }) } });
+    assert.deepEqual((await k2.aktarici.iceAktarOnizle(null)).bolumler, []);
+
+    const biri = onizlemeDosyasi(klasor, { bipSesi: !mevcut.bipSesi }, 'biri.json');
+    const k3 = aktaricKur({ klasor, ayarlar: mevcut, diyalog: { ac: () => ({ canceled: false, filePaths: [biri] }) } });
+    assert.deepEqual((await k3.aktarici.iceAktarOnizle(null)).bolumler, ['bildirim']);
+  } finally {
+    temizle();
+  }
+});
+
+test('önizleme: bulunamayan favori sayısı bilinen kimliklerden hesaplanır; liste yoksa ya da okuma hata verirse sayı verilmez', async () => {
+  const { klasor, temizle } = gecici();
+  try {
+    const dosya = onizlemeDosyasi(klasor);
+    const diyalog = { ac: () => ({ canceled: false, filePaths: [dosya] }) };
+    const sayi = async (bilinenKimlikler) => (await aktaricKur({ klasor, diyalog, ek: { bilinenKimlikler } }).aktarici.iceAktarOnizle(null)).eksikFavoriSayisi;
+    assert.equal(await sayi(() => new Set(['light.masa', 'button.pc_bilgisayari_kapat'])), 0);
+    assert.equal(await sayi(() => new Set(['light.masa'])), 1);
+    assert.equal(await sayi(() => new Set()), 2);
+    assert.equal(await sayi(() => null), null);
+    assert.equal(await sayi(() => ['light.masa']), null, 'Set olmayan değer bilinmiyor sayılır');
+    assert.equal(await sayi(() => { throw new Error('okunamadı'); }), null);
+  } finally {
+    temizle();
+  }
+});
+
+test('önizleme: iptal, bozuk ve yabancı dosya hata/iptal döner; bekleyen kalmaz (eski numara da işe yaramaz)', async () => {
+  const { klasor, temizle } = gecici();
+  try {
+    const iyi = onizlemeDosyasi(klasor, {}, 'iyi.json');
+    const bozuk = path.join(klasor, 'bozuk.json');
+    fs.writeFileSync(bozuk, '{ bozuk');
+    const yabanci = path.join(klasor, 'yabanci.json');
+    fs.writeFileSync(yabanci, '{"a":1}');
+    let secilen = iyi;
+    const k = aktaricKur({ klasor, diyalog: { ac: () => (secilen === null ? { canceled: true } : { canceled: false, filePaths: [secilen] }) } });
+    const ilk = await k.aktarici.iceAktarOnizle(null);
+    assert.equal(ilk.ok, true);
+    secilen = bozuk;
+    const b = await k.aktarici.iceAktarOnizle(null);
+    assert.equal(b.ok, false);
+    assert.match(b.hata, /geçerli bir JSON değil/);
+    secilen = yabanci;
+    assert.equal((await k.aktarici.iceAktarOnizle(null)).ok, false);
+    secilen = null;
+    assert.deepEqual(await k.aktarici.iceAktarOnizle(null), { ok: false, iptal: true });
+    const gec = await k.aktarici.iceAktar(null, ilk.onizlemeNo);
+    assert.equal(gec.ok, false, 'yeni önizleme denemesi eskisini geçersiz kılar');
+    assert.equal(k.uygulanan.length, 0);
+  } finally {
+    temizle();
+  }
+});
+
+test('önizlemeden sonra uygulama: numarayla ÖNİZLENEN içerik uygulanır (dosya sonradan değişse de), numara tek kullanımlıktır; yanlış, eski ve süresi dolmuş numara hiçbir şey uygulamaz', async () => {
+  const { klasor, temizle } = gecici();
+  try {
+    const dosya = onizlemeDosyasi(klasor, { koseBildirimi: false });
+    const baslangic = new Date('2026-10-15T10:00:00Z').getTime();
+    let an = baslangic;
+    let diyalogSayisi = 0;
+    const k = aktaricKur({ klasor, simdi: () => new Date(an), diyalog: { ac: () => (diyalogSayisi++, { canceled: false, filePaths: [dosya] }) } });
+    const on = await k.aktarici.iceAktarOnizle(null);
+    assert.equal(on.ok, true);
+    assert.equal(diyalogSayisi, 1);
+    // önizlemeden sonra dosya kurcalanırsa uygulanan, kullanıcının gördüğü içeriktir
+    fs.writeFileSync(dosya, ayarlariDisaAktar(ayarlarKur({ koseBildirimi: true, bipSesi: true })).metin);
+    const sonuc = await k.aktarici.iceAktar(null, on.onizlemeNo);
+    assert.equal(sonuc.ok, true);
+    assert.equal(sonuc.ad, 'onizle.json');
+    assert.equal(diyalogSayisi, 1, 'uygulama adımı ikinci kez dosya sormaz');
+    assert.equal(k.uygulanan.length, 1);
+    assert.equal(k.uygulanan[0].ayarlar.koseBildirimi, false, 'önizlenen içerik');
+    // tek kullanım
+    const yine = await k.aktarici.iceAktar(null, on.onizlemeNo);
+    assert.equal(yine.ok, false);
+    assert.match(yine.hata, /Önizleme süresi doldu ya da geçersiz/);
+    assert.equal(k.uygulanan.length, 1);
+
+    // yanlış numara, sayı, nesne, boş metin: uygulanmaz ve bekleyen de tüketilir
+    for (const kotu of ['0000000000000000', 42, {}, '', [], true]) {
+      const taze = await k.aktarici.iceAktarOnizle(null);
+      assert.equal((await k.aktarici.iceAktar(null, kotu)).ok, false, JSON.stringify(kotu));
+      assert.equal((await k.aktarici.iceAktar(null, taze.onizlemeNo)).ok, false, 'yanlış denemeden sonra bekleyen tüketilmiştir');
+    }
+    assert.equal(k.uygulanan.length, 1);
+
+    // süre dolması: 10 dakikayı aşınca geçersiz, sınırda hâlâ geçerli
+    const gecikecek = await k.aktarici.iceAktarOnizle(null);
+    an = baslangic + 10 * 60 * 1000 + 1;
+    assert.equal((await k.aktarici.iceAktar(null, gecikecek.onizlemeNo)).ok, false);
+    assert.equal(k.uygulanan.length, 1);
+    an = baslangic;
+    const sinirda = await k.aktarici.iceAktarOnizle(null);
+    an = baslangic + 10 * 60 * 1000;
+    assert.equal((await k.aktarici.iceAktar(null, sinirda.onizlemeNo)).ok, true, 'süre sınırında hâlâ geçerli');
+    assert.equal(k.uygulanan.length, 2);
+  } finally {
+    temizle();
+  }
+});
+
+test('önizlemeden sonra uygulama da ana makine onayına tabidir; numarasız eski çağrı hâlâ dosyayı kendisi seçtirir', async () => {
+  const { klasor, temizle } = gecici();
+  try {
+    const dosya = onizlemeDosyasi(klasor, { yerelAdres: 'http://192.168.1.99:8123' });
+    const diyalog = (cevap) => ({ ac: () => ({ canceled: false, filePaths: [dosya] }), mesajCevabi: () => cevap });
+    for (const [cevap, uygulanmali] of [[0, true], [1, false]]) {
+      const k = aktaricKur({ klasor, diyalog: diyalog(cevap), ek: { anahtarVarMi: () => true } });
+      const on = await k.aktarici.iceAktarOnizle(null);
+      assert.ok(on.bolumler.includes('baglanti'));
+      assert.equal(k.uygulanan.length, 0, 'önizleme sırasında uygulama yok');
+      const s = await k.aktarici.iceAktar(null, on.onizlemeNo);
+      assert.equal(s.ok, uygulanmali);
+      assert.equal(k.uygulanan.length, uygulanmali ? 1 : 0);
+    }
+    const eski = aktaricKur({ klasor, diyalog: diyalog(1) });
+    assert.equal((await eski.aktarici.iceAktar(null)).ok, true, 'numarasız çağrı: dosya seçtirilir ve uygulanır');
+    assert.equal((await eski.aktarici.iceAktar(null, null)).ok, true, 'null numara da numarasız sayılır');
+    assert.equal(eski.uygulanan.length, 2);
+  } finally {
+    temizle();
+  }
 });

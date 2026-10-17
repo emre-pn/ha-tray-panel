@@ -61,6 +61,7 @@ const BOLUMLER = Object.freeze({
     'hizliListe',
     'tepsiRozeti',
     'tepsiRozetSensoru',
+    'tepsiRozetSensorleri',
   ]),
   // Köşe bildirimi, bip sesi, bildirim merkezi seçenekleri ve varlık uyarı kuralları
   bildirim: Object.freeze([

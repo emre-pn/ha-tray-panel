@@ -8,7 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { gecikmeliEylemOlustur, EN_COK_BEKLEYEN, GEC_KALMA_TOLERANSI_MS } = require('../src/lib/gecikmeli-eylem');
-const { eylemOrtami, TEMEL_VARLIKLAR } = require('./eylem-sahte');
+const { eylemOrtami, TEMEL_VARLIKLAR, TEMEL_FAVORILER } = require('./eylem-sahte');
 
 const DK = 60_000;
 
@@ -179,14 +179,18 @@ test('Kapı Kuralı: HA\'daki adı kapıya benzeyen ışık planlanamaz; adı so
 
 test('onay isteyen (yıkıcı) eylem ertelenemez: PC prizi gibi açık listedeki varlık reddedilir', async () => {
   const varliklar = { ...TEMEL_VARLIKLAR, 'switch.oyun_bilgisayari': { entity_id: 'switch.oyun_bilgisayari', state: 'on', attributes: { friendly_name: 'Oyun bilgisayarı' } } };
-  const o = kur({ varliklar });
+  const o = kur({ varliklar, favoriler: [...TEMEL_FAVORILER, { entity_id: 'switch.oyun_bilgisayari', ad: 'Oyun bilgisayarı' }] });
   const s = await o.g.planla({ kaynak: 'palet', kimlik: 'switch.oyun_bilgisayari', yon: 'kapat', dakika: 10 });
   assert.deepEqual([s.ok, s.tur], [false, 'kaynak-izinsiz']);
   assert.equal(o.g.sayi(), 0);
+  // "diğer cihazlar" yolundan gelen favori dışı kimlik de aynı sınıf denetiminden geçer
+  const d = kur({ varliklar, favoriler: [], ayarlar: { paletDigerCihazlar: true } }, { digerMi: async () => true });
+  const r = await d.g.planla({ kaynak: 'palet', kimlik: 'switch.oyun_bilgisayari', yon: 'kapat', dakika: 10 });
+  assert.deepEqual([r.ok, r.tur], [false, 'kaynak-izinsiz']);
 });
 
 test('varlık yok ya da HA\'ya ulaşılamıyor: bulunamadi / ulasilamiyor; hiçbir şey kurulmaz', async () => {
-  const o = kur();
+  const o = kur({ favoriler: [...TEMEL_FAVORILER, { entity_id: 'light.yok', ad: 'Yok' }] });
   assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: 'light.yok', yon: 'kapat', dakika: 10 })).tur, 'bulunamadi');
   const ag = kur({ canli: false, haSarmala: () => async () => Promise.reject(Object.assign(new Error('x'), { tur: 'ag' })) });
   assert.equal((await ag.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 10 })).tur, 'ulasilamiyor');
@@ -208,7 +212,7 @@ test('aynı varlık ve işlem yeniden planlanınca eskisinin yerine geçer; en �
 
   const dolu = {};
   for (let i = 0; i < 12; i += 1) dolu[`light.l${i}`] = { entity_id: `light.l${i}`, state: 'on', attributes: { friendly_name: `Lamba ${i}` } };
-  const p = kur({ varliklar: dolu, favoriler: [] });
+  const p = kur({ varliklar: dolu, favoriler: Object.keys(dolu).map((k) => ({ entity_id: k, ad: k })) });
   for (let i = 0; i < EN_COK_BEKLEYEN; i += 1) assert.equal((await p.g.planla({ kaynak: 'palet', kimlik: `light.l${i}`, yon: 'kapat', dakika: 10 })).ok, true);
   const tasan = await p.g.planla({ kaynak: 'palet', kimlik: 'light.l10', yon: 'kapat', dakika: 10 });
   assert.deepEqual([tasan.ok, tasan.tur], [false, 'dolu']);
@@ -216,11 +220,43 @@ test('aynı varlık ve işlem yeniden planlanınca eskisinin yerine geçer; en �
   assert.equal(p.g.sayi(), EN_COK_BEKLEYEN);
 });
 
-test('favori olmayan güvenli varlık da ertelenebilir (tek seferlik kayıt); favori ise ayardaki kayıt kullanılır', async () => {
+test('favori olmayan varlık ERTELENEMEZ (serbest kimlikle eylem yok): HA isteği hiç gitmez; favori ise ayardaki kayıt kullanılır', async () => {
   const o = kur({ favoriler: [] });
+  const s = await o.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 });
+  assert.deepEqual([s.ok, s.tur], [false, 'bilinmeyen-favori']);
+  assert.equal(o.g.sayi(), 0);
+  assert.equal(o.ha.istekler.length, 0, 'durum okuması bile yapılmaz');
+  assert.equal(o.saat.bekleyen(), 0);
+  const serbest = await o.g.planla({ kaynak: 'palet', kimlik: 'switch.isitici', yon: 'sureli', dakika: 600 });
+  assert.deepEqual([serbest.ok, serbest.tur], [false, 'bilinmeyen-favori']);
+  assert.deepEqual(o.postlar(), []);
+
+  const f = kur();
+  assert.equal((await f.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).ok, true);
+  await f.saat.ileri(5 * DK + 5);
+  assert.deepEqual(govde(f), [['/api/services/light/turn_off', 'light.salon']]);
+});
+
+test('favori dışı kimlik yalnız "diğer cihazlar" listesinde VE paletDigerCihazlar açıkken kabul edilir; süre dolunca ayar kapanmışsa çalışmaz', async () => {
+  const listede = new Set(['light.salon']);
+  const o = kur({ favoriler: [], ayarlar: { paletDigerCihazlar: true } }, { digerMi: async (k) => listede.has(k) });
+  assert.deepEqual((await o.g.planla({ kaynak: 'palet', kimlik: 'switch.priz', yon: 'kapat', dakika: 5 })).tur, 'bilinmeyen-favori', 'listede yok');
   assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).ok, true);
   await o.saat.ileri(5 * DK + 5);
   assert.deepEqual(govde(o), [['/api/services/light/turn_off', 'light.salon']]);
+
+  const kapali = kur({ favoriler: [], ayarlar: { paletDigerCihazlar: false } }, { digerMi: async () => true });
+  assert.equal((await kapali.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).tur, 'bilinmeyen-favori', 'ayar kapalıyken liste dikkate alınmaz');
+
+  const sonra = kur({ favoriler: [], ayarlar: { paletDigerCihazlar: true } }, { digerMi: async () => true });
+  assert.equal((await sonra.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).ok, true);
+  sonra.ayarlar.paletDigerCihazlar = false;
+  await sonra.saat.ileri(5 * DK + 5);
+  assert.deepEqual(sonra.postlar(), [], 'ayar kapandıktan sonra serbest kimlik çalışmaz');
+  assert.deepEqual(sonra.kayitlar.at(-1), { kaynak: 'gecikmeli', kimlik: 'light.salon', ad: 'Salon lambası', islem: 'turn_off', sonuc: 'atlandi', neden: 'favori-degil' });
+
+  const hatali = kur({ favoriler: [], ayarlar: { paletDigerCihazlar: true } }, { digerMi: async () => { throw new Error('x'); } });
+  assert.equal((await hatali.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).tur, 'bilinmeyen-favori', 'listeye bakılamazsa reddedilir');
 });
 
 test('uyku: bilgisayar uyurken süre geçerse eylem ÇALIŞTIRILMAZ, kullanıcıya söylenir ve geçmişe "atlandi" yazılır', async () => {

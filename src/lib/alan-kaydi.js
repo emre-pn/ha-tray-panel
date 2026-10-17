@@ -92,13 +92,8 @@ const varsayilanServis = (alan) => alanBilgisi(alan)?.varsayilanServis ?? null;
 const alanModeli = (alan) => alanBilgisi(alan)?.model ?? null;
 /** Yeni favoride eylemler varsayılan olarak onay ister mi? */
 const onayVarsayilanMi = (alan) => alanBilgisi(alan)?.onayVarsayilan === true;
-/**
- * Dış tetikleyiciler (Jump List, masaüstü kısayolu, yerel API, evpaneli:// bağlantısı, PC olayları, toplantı ışığı) için KESİN YASAK
- * alanlar: bunların hiçbir servisi dışarıdan tetiklenemez (vana ve otomasyon "yıkıcı"dır; kamera zaten eylem alanı değildir).
- * Dış tetik kapısı bunu eylem sınıfından BAĞIMSIZ olarak da uygular (servis-izinleri.js disTetigeUygunServisMi).
- */
-const DIS_TETIK_YASAK_ALANLAR = Object.freeze(['valve', 'automation', 'camera']);
-const disTetikYasakAlanMi = (alan) => typeof alan === 'string' && DIS_TETIK_YASAK_ALANLAR.includes(alan);
+// Dış tetikleyicilerin (Jump List, masaüstü kısayolu, yerel API, evpaneli://, PC olayları, toplantı ışığı) alan / servis yasağının TEK kaynağı
+// src/lib/eylem-sinifi.js disKaynakIzni'dir (DIS_YASAK_ALANLAR, DIS_YASAK_SERVISLER); burada ikinci bir liste tutulmaz.
 
 /** Aday listesinde sıralama için: tablodaki yer (bilinmeyen alan en sona). */
 function alanSirasi(alan) {
@@ -120,6 +115,4 @@ module.exports = {
   alanModeli,
   onayVarsayilanMi,
   alanSirasi,
-  DIS_TETIK_YASAK_ALANLAR,
-  disTetikYasakAlanMi,
 };

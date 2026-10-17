@@ -58,21 +58,15 @@ test('1.4.0 cihaz grubu: cover servisleri zararsız; konum 0-100 tamsayı; valve
   for (const servis of ['set_valve_position', 'toggle', 'stop_valve']) assert.equal(ret(S.servisDogrula('valve', servis, {}, v('valve.x'))), 'servis', servis);
 });
 
-test('1.4.0 dış tetik yardımcısı disTetigeUygunServisMi: yalnız zararsız servisler; valve, automation, camera ve klima modu hiçbir dış yoldan tetiklenemez', () => {
-  assert.equal(S.disTetigeUygunServisMi('light', 'turn_on'), true);
-  assert.equal(S.disTetigeUygunServisMi('switch', 'toggle'), true);
-  assert.equal(S.disTetigeUygunServisMi('cover', 'open_cover'), true, 'perde zararsız');
-  assert.equal(S.disTetigeUygunServisMi('cover', 'set_cover_position'), true);
-  for (const servis of ['open_valve', 'close_valve']) assert.equal(S.disTetigeUygunServisMi('valve', servis), false, servis);
-  for (const servis of ['trigger', 'turn_on', 'turn_off']) assert.equal(S.disTetigeUygunServisMi('automation', servis), false, servis);
-  assert.equal(S.disTetigeUygunServisMi('camera', 'snapshot'), false);
-  assert.equal(S.disTetigeUygunServisMi('climate', 'set_hvac_mode'), false, 'iklim modu dış tetikten çalışmaz');
-  assert.equal(S.disTetigeUygunServisMi('climate', 'set_temperature'), true);
-  // Servis düzeyi denetim: varlığın kendi onay sınıfı (PC kapat betiği gibi) ayrıca eylemSinifi / kaynakIzni ile denetlenir; bu işlev ek bir kapıdır.
-  assert.equal(S.disTetigeUygunServisMi('script', 'turn_on'), true);
-  for (const kotu of [[undefined, 'turn_on'], ['light', undefined], [null, null], [5, {}], ['__proto__', 'x'], ['light', 'yok_boyle_servis'], ['LIGHT', 'turn_on']]) {
-    assert.equal(S.disTetigeUygunServisMi(...kotu), false, JSON.stringify(kotu));
-  }
+test('1.4.0 dış tetik yasağının TEK kaynağı eylem-sinifi.js disKaynakIzni işlevidir: servis-izinleri.js ikinci bir dış tetik işlevi / listesi taşımaz', () => {
+  assert.equal(S.disTetigeUygunServisMi, undefined);
+  const { disKaynakIzni } = require('../src/lib/eylem-sinifi');
+  assert.equal(disKaynakIzni('light', 'turn_on'), true);
+  assert.equal(disKaynakIzni('climate', 'set_hvac_mode'), false);
+  assert.equal(disKaynakIzni('valve', 'open_valve'), false);
+  assert.equal(disKaynakIzni('automation', 'trigger'), false);
+  assert.equal(disKaynakIzni('camera', 'snapshot'), false);
+  assert.equal(disKaynakIzni('cover', 'open_cover'), false, 'perde dış tetikten çalışmaz');
 });
 
 test('izin listesinde olmayan servis, prototip adları ve büyük harf reddedilir', () => {
@@ -89,6 +83,15 @@ test('parametresiz servis: parametre verilirse reddedilir; gövde yalnız entity
   assert.deepEqual(S.servisDogrula('switch', 'toggle', {}, v('switch.a')).govde, { entity_id: 'switch.a' });
   assert.equal(ret(S.servisDogrula('switch', 'toggle', { entity_id: 'lock.on_kapi' }, v('switch.a'))), 'parametre', 'gövdede başka kimlik gönderilemez');
   assert.equal(ret(S.servisDogrula('vacuum', 'start', { x: 1 }, v('vacuum.a'))), 'parametre');
+});
+
+test('vacuum: başlat, duraklat, durdur, aç, kapat, şarja dön, yerini bildir parametresiz ve zararsız; temizlik noktası ve ham komut yok', () => {
+  for (const servis of ['start', 'pause', 'stop', 'turn_on', 'turn_off', 'return_to_base', 'locate']) {
+    const s = S.servisDogrula('vacuum', servis, {}, v('vacuum.robot', {}, 'docked'));
+    assert.deepEqual([s.ok, s.sinif, s.govde], [true, 'zararsiz', { entity_id: 'vacuum.robot' }], servis);
+    assert.equal(ret(S.servisDogrula('vacuum', servis, { x: 1 }, v('vacuum.robot'))), 'parametre', servis);
+  }
+  for (const servis of ['clean_spot', 'send_command', 'set_fan_speed', 'toggle']) assert.equal(ret(S.servisDogrula('vacuum', servis, {}, v('vacuum.robot'))), 'servis', servis);
 });
 
 test('veri biçimi: düz nesne olmalı, en çok 8 anahtar; varlık gerekli', () => {
@@ -115,7 +118,46 @@ test('climate.set_temperature: cihaz aralığı mutlak aralığı yalnız DARALT
   // kayan nokta artığı adıma yuvarlanır
   const ondalik = v('climate.y', { min_temp: 5, max_temp: 35, target_temp_step: 0.1 });
   assert.equal(S.servisDogrula('climate', 'set_temperature', { temperature: 0.1 + 0.2 + 20 }, ondalik).govde.temperature, 20.3);
-  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { temperature: 20, target_temp_low: 18 }, ondalik)), 'parametre', 'bilinmeyen parametre');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { temperature: 20, target_temp_low: 18 }, ondalik)), 'parametre', 'tek hedef ile aralık birlikte verilemez');
+});
+
+test('climate.set_temperature: ısıt/soğut aralığı; alt ve üst BİRLİKTE, alt < üst, cihaz aralığı bildirmeli (supported_features bit 2) ve sınır/adım içinde', () => {
+  const aralikli = v('climate.salon', { min_temp: 16, max_temp: 30, target_temp_step: 0.5, supported_features: 3 }, 'heat_cool');
+  const iyi = S.servisDogrula('climate', 'set_temperature', { target_temp_low: 20, target_temp_high: 24.5 }, aralikli);
+  assert.deepEqual([iyi.ok, iyi.sinif, iyi.govde], [true, 'zararsiz', { entity_id: 'climate.salon', target_temp_low: 20, target_temp_high: 24.5 }]);
+  assert.deepEqual([ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 20 }, aralikli)), S.servisDogrula('climate', 'set_temperature', { target_temp_low: 20 }, aralikli).parametre], ['eksik', 'target_temp_high']);
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_high: 24 }, aralikli)), 'eksik');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', {}, aralikli)), 'eksik', 'hiçbiri verilmedi');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 24, target_temp_high: 24 }, aralikli)), 'sinir', 'eşit olamaz');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 25, target_temp_high: 20 }, aralikli)), 'sinir', 'alt üstten büyük');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 15.5, target_temp_high: 22 }, aralikli)), 'sinir', 'cihaz alt sınırının altı');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 20, target_temp_high: 30.5 }, aralikli)), 'sinir', 'cihaz üst sınırının üstü');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 20.2, target_temp_high: 24 }, aralikli)), 'adim');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { temperature: 21, target_temp_high: 24 }, aralikli)), 'parametre', 'tek hedef ile aralık karışmaz');
+  for (const kotu of ['20', NaN, null, true, [20]]) assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: kotu, target_temp_high: 24 }, aralikli)), 'parametre', String(kotu));
+  // Cihaz aralığı desteklemiyor (bit 2 yok) ya da supported_features / min_temp / max_temp bildirmiyor: aralık gönderilmez.
+  const tekHedef = v('climate.tek', { min_temp: 16, max_temp: 30, supported_features: 1 }, 'heat');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 20, target_temp_high: 24 }, tekHedef)), 'desteklenmiyor');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 20, target_temp_high: 24 }, v('climate.bit_yok', { min_temp: 16, max_temp: 30 }))), 'desteklenmiyor');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { target_temp_low: 20, target_temp_high: 24 }, v('climate.sinirsiz', { supported_features: 2 }))), 'desteklenmiyor', 'sınırı bilinmeyen aralık ayarlanmaz');
+  assert.equal(ret(S.servisDogrula('climate', 'set_temperature', { temperature: 20 }, tekHedef)), 'ok', 'tek hedef bit istemez');
+});
+
+test('climate.set_fan_mode / set_preset_mode: değer cihazın listesinde ve kapı süzgecinden geçmeli; zararsız sınıf', () => {
+  const k = v('climate.salon', { fan_modes: ['auto', 'low', 'high', 'Kapı kilidi'], preset_modes: ['eco', 'away', 'boost', 'Garaj kapısı'] }, 'cool');
+  const fan = S.servisDogrula('climate', 'set_fan_mode', { fan_mode: 'low' }, k);
+  assert.deepEqual([fan.ok, fan.sinif, fan.govde], [true, 'zararsiz', { entity_id: 'climate.salon', fan_mode: 'low' }]);
+  const on = S.servisDogrula('climate', 'set_preset_mode', { preset_mode: 'eco' }, k);
+  assert.deepEqual([on.ok, on.sinif, on.govde], [true, 'zararsiz', { entity_id: 'climate.salon', preset_mode: 'eco' }]);
+  assert.equal(ret(S.servisDogrula('climate', 'set_fan_mode', { fan_mode: 'turbo' }, k)), 'parametre', 'cihazda yok');
+  assert.equal(ret(S.servisDogrula('climate', 'set_fan_mode', { fan_mode: 'Kapı kilidi' }, k)), 'parametre', 'süzgeçten geçmeyen seçenek seçilemez');
+  assert.equal(ret(S.servisDogrula('climate', 'set_preset_mode', { preset_mode: 'Garaj kapısı' }, k)), 'parametre');
+  assert.equal(ret(S.servisDogrula('climate', 'set_fan_mode', {}, k)), 'eksik');
+  assert.equal(ret(S.servisDogrula('climate', 'set_fan_mode', { fan_mode: 'low' }, v('climate.z'))), 'desteklenmiyor', 'fan_modes yok');
+  assert.equal(ret(S.servisDogrula('climate', 'set_preset_mode', { preset_mode: 'eco' }, v('climate.z'))), 'desteklenmiyor', 'preset_modes yok');
+  assert.equal(ret(S.servisDogrula('climate', 'set_fan_mode', { fan_mode: 'low', x: 1 }, k)), 'parametre');
+  assert.deepEqual(S.secilebilirListe('climate', 'set_fan_mode', 'fan_mode', k), ['auto', 'low', 'high']);
+  assert.deepEqual(S.secilebilirListe('climate', 'set_preset_mode', 'preset_mode', k), ['eco', 'away', 'boost']);
 });
 
 test('climate.set_hvac_mode: onaylı sınıf; değer cihazın hvac_modes\'unda VE sabit listede olmalı', () => {
@@ -166,7 +208,23 @@ test('media_player: ses 0..1, sessiz mantıksal, kaynak listeden ve süzgeçten'
   assert.equal(S.servisDogrula('media_player', 'select_source', { source: 'Spotify' }, m).ok, true);
   assert.equal(ret(S.servisDogrula('media_player', 'select_source', { source: 'Garage camera' }, m)), 'parametre');
   for (const s of ['media_play_pause', 'media_next_track', 'media_previous_track', 'turn_on', 'turn_off']) assert.equal(S.servisDogrula('media_player', s, {}, m).ok, true, s);
-  for (const s of ['play_media', 'media_seek', 'shuffle_set', 'join']) assert.equal(ret(S.servisDogrula('media_player', s, {}, m)), 'servis', s);
+  for (const s of ['play_media', 'shuffle_set', 'join']) assert.equal(ret(S.servisDogrula('media_player', s, {}, m)), 'servis', s);
+});
+
+test('media_player.media_seek: konum 0..media_duration; cihaz SEEK bitini (2) ve parça süresini bildirmeli; zararsız sınıf', () => {
+  const m = v('media_player.tv', { supported_features: 2 | 4 | 16, media_duration: 200, media_position: 30 }, 'playing');
+  const iyi = S.servisDogrula('media_player', 'media_seek', { seek_position: 90 }, m);
+  assert.deepEqual([iyi.ok, iyi.sinif, iyi.govde], [true, 'zararsiz', { entity_id: 'media_player.tv', seek_position: 90 }]);
+  assert.equal(S.servisDogrula('media_player', 'media_seek', { seek_position: 0 }, m).ok, true);
+  assert.equal(S.servisDogrula('media_player', 'media_seek', { seek_position: 200 }, m).ok, true);
+  assert.equal(S.servisDogrula('media_player', 'media_seek', { seek_position: 12.5 }, m).govde.seek_position, 12.5);
+  for (const kotu of [-1, 200.5, 1e9]) assert.equal(ret(S.servisDogrula('media_player', 'media_seek', { seek_position: kotu }, m)), 'sinir', String(kotu));
+  for (const kotu of ['10', NaN, Infinity, null, true]) assert.equal(ret(S.servisDogrula('media_player', 'media_seek', { seek_position: kotu }, m)), 'parametre', String(kotu));
+  assert.equal(ret(S.servisDogrula('media_player', 'media_seek', {}, m)), 'eksik');
+  assert.equal(ret(S.servisDogrula('media_player', 'media_seek', { seek_position: 5, x: 1 }, m)), 'parametre');
+  assert.equal(ret(S.servisDogrula('media_player', 'media_seek', { seek_position: 5 }, v('media_player.a', { supported_features: 4, media_duration: 200 }))), 'desteklenmiyor', 'SEEK biti yok');
+  assert.equal(ret(S.servisDogrula('media_player', 'media_seek', { seek_position: 5 }, v('media_player.b', { media_duration: 200 }))), 'desteklenmiyor', 'supported_features yok');
+  assert.equal(ret(S.servisDogrula('media_player', 'media_seek', { seek_position: 5 }, v('media_player.c', { supported_features: 2 }))), 'desteklenmiyor', 'parça süresi bilinmiyor');
 });
 
 test('humidifier: nem cihaz aralığında tamsayı', () => {
@@ -226,6 +284,12 @@ test('her şema tutarlı: bilinen tür ve sınıf; sayı şemalarında min <= ma
       for (const [ad, p] of Object.entries(sema.parametreler ?? {})) {
         assert.ok(['sayi', 'mantiksal', 'secenek', 'metin', 'rgb'].includes(p.tur), `${alan}.${servis}.${ad}`);
         if (p.tur === 'sayi') assert.ok(p.min <= p.max, `${alan}.${servis}.${ad}`);
+      }
+      for (const kural of ['birlikteOlmaz', 'enAzBiri', 'birlikteGerekli', 'kucukOlmali']) {
+        for (const grup of sema[kural] ?? []) {
+          assert.ok(Object.isFrozen(grup), `${alan}.${servis}.${kural}`);
+          for (const ad of grup) assert.ok(Object.hasOwn(sema.parametreler ?? {}, ad), `${alan}.${servis}.${kural}: ${ad} tanımlı parametre olmalı`);
+        }
       }
     }
   }

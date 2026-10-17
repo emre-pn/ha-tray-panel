@@ -118,12 +118,13 @@ function geriAlBaglayiciOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, d
     }
   }
 
-  /** Adımın kaydı: sahne üyesi ya da favori olmayan varlık için tek seferlik kayıt; favori ise ayardaki kaydı. Kapı Kuralı hatta yine uygulanır. */
+  /**
+   * Adımın kaydı: favori ise ayardaki kayıt (onay, kısayol... kendi ayarlarıyla; sahne üyesi adımda yalnız parlaklık geri yüklenebilsin diye
+   * `parlaklik` açılır, `onay` DEĞİŞMEZ: onaylı favori geri almayla onaysız çalıştırılamaz), değilse tek seferlik kayıt. Kapı Kuralı hatta yine uygulanır.
+   */
   function kayitBul(adim) {
-    if (adim.uye !== true) {
-      const favori = (ayarlarAl()?.favoriler ?? []).find((f) => f.entity_id === adim.kimlik);
-      if (favori) return favori;
-    }
+    const favori = (ayarlarAl()?.favoriler ?? []).find((f) => f.entity_id === adim.kimlik);
+    if (favori) return adim.uye === true ? { ...favori, parlaklik: true } : favori;
     return { entity_id: adim.kimlik, ad: adim.ad, parlaklik: true };
   }
 

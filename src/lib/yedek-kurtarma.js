@@ -16,21 +16,31 @@
  *  2) Yedeği "tüketir" (eskiSurumYedeginiKenaraAl): ayarlar.v6-yedek.json, ayarlar.v6-yedek-<zaman>.json olarak yeniden adlandırılır. Böylece
  *     eski sürüm bir sonraki gidişte ayarlar.v6-yedek.json adını boş bulur ve o günkü durumu yeniden yedekler. Hiçbir yedek silinmez
  *     (en yeni EN_COK_ZAMANLI_YEDEK tanesi tutulur); "Yedekten geri dön" listesinde görünür.
+ * 3) 1.4.0'ın yeni ayar alanları (AYAR_ALANLARI: panel, bildirim, düzen, görünüm... ayarları) eski sürümde varsayılana döner. Şimdiki değer
+ *    varsayılana EŞİTSE ve yedekteki doğrulanmış değer farklıysa yedekteki değer geri alınır. Dışarıya açılan ya da dış ağ kullanan
+ *    seçenekler (dış tetikler, yerel API, uygulama içi güncelleme, sürüm denetimi, mobil bildirim, klasör eşitleme, kamera izinleri: tablodaki
+ *    `aktarilir:false` alanlar; makineye özgü pencere/ekran konumları hariç) KENDİLİĞİNDEN geri açılmaz: kullanıcı onları yeniden açıkça açar.
  * Geri alınan favoriler normal yüklemeden geçer (favorileriDuzelt: Kapı Kuralı, alan kaydı, sınırlar); yedekteki kısayol başka bir
  * kısayolla çakışıyorsa ya da kısayollu favori sınırı doluysa atılır, çakışan kısayol kullanıcının mevcut kısayolunu ele geçirmez.
  */
 
 const path = require('node:path');
 const { SEMA_SURUMU, ayarlariDuzelt, oncekiSemaSurumu } = require('./ayar-sema');
+const { AYAR_ALANLARI, alanlariDuzelt } = require('./ayar-alanlari');
 const { FAVORI_ALANLARI, alanAl } = require('./suzgec');
 const { favorileriDuzelt, EN_COK_FAVORI, EN_COK_KISAYOLLU_FAVORI } = require('./favoriler');
 const { kisayolNormallestir } = require('./kisayol');
 const { yedekDosyaAdi, jsonDosyasiniOku, zamanliYedekleriBud, hataKodu, gunlugeYaz } = require('./ayar-yedegi');
 
 // Eski sürümün favori kaydında bulunmayan, bu sürümün eklediği alanlar: eski sürüm kalan favorilerden de bunları siler.
-const YENI_FAVORI_ALANLARI = Object.freeze(['simge', 'renk', 'boyut', 'tepsi', 'kisayolEylemi']);
+const YENI_FAVORI_ALANLARI = Object.freeze(['simge', 'renk', 'boyut', 'tepsi', 'kisayolEylemi', 'gostergeMin', 'gostergeMax', 'grafikTuru']);
 // Eski sürümün tanıdığı dil ayarları: bunların dışındaki bir değer ('de', 'fr', 'es') eski sürümde 'sistem'e dönerdi.
 const ESKI_SURUM_DILLERI = new Set(['sistem', 'tr', 'en']);
+// Makineye özgü ama zararsız (dışarıya açılmayan, yalnız yerleşim) alanlar: dışa aktarılmasalar da geri alınır.
+const GERI_ALINABILIR_YEREL_ALANLAR = new Set(['pencereKonumlari', 'tercihEkran', 'masaustuKaroKonumlari']);
+/** 1.4.0 ayar alanı eski sürümden dönüşte KENDİLİĞİNDEN geri alınabilir mi? (dışarıya açan / dış ağ kullanan seçenekler alınamaz) */
+const alanGeriAlinabilirMi = (alan) => alan.aktarilir || GERI_ALINABILIR_YEREL_ALANLAR.has(alan.ad);
+const degerEsitMi = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * Yedek dosyasını okur: ayarlar.v<şema>-yedek.json (bu sürümün şemasında bir ayar dosyası olmalı). Yoksa, okunamıyorsa, çok büyükse ya da
@@ -59,7 +69,8 @@ const kisayolAnahtari = (k) => {
  * @param {object} ayarlar yüklenmiş (düzeltilmiş) şimdiki ayarlar
  * @param {object} yedekHam yedek dosyasının içeriği (ayarlar.json biçimi)
  * @param {{ varsayilan?: object }} [secenek] varsayilan-ayarlar.json içeriği
- * @returns {{ ayarlar: object, geriAlinanFavoriler: string[], doldurulanFavoriler: string[], dilGeriAlindi: boolean, degisti: boolean }}
+ * @returns {{ ayarlar: object, geriAlinanFavoriler: string[], doldurulanFavoriler: string[], dilGeriAlindi: boolean, geriAlinanAyarlar: string[], degisti: boolean }}
+ *   geriAlinanAyarlar: yedekten geri alınan 1.4.0 ayar alanı adları (değerler yazılmaz)
  */
 function eskiSurumKaybiniTamamla(ayarlar, yedekHam, { varsayilan = {} } = {}) {
   const yedek = ayarlariDuzelt(yedekHam, { varsayilan }).ayarlar; // kapı kuralı ve alan kaydı yedekteki favorilere de uygulanır
@@ -121,16 +132,22 @@ function eskiSurumKaybiniTamamla(ayarlar, yedekHam, { varsayilan = {} } = {}) {
   });
 
   const dilGeriAlindi = ayarlar.dil === 'sistem' && typeof yedek.dil === 'string' && !ESKI_SURUM_DILLERI.has(yedek.dil);
-  const degisti = geriAlinanFavoriler.length > 0 || doldurulanFavoriler.length > 0 || dilGeriAlindi;
-  if (!degisti) return { ayarlar, geriAlinanFavoriler, doldurulanFavoriler, dilGeriAlindi, degisti };
+  // 1.4.0'ın yeni ayar alanları: şimdiki değer varsayılansa ve yedekte (doğrulanmış) farklı bir değer varsa geri alınır.
+  const varsayilanlar = alanlariDuzelt({}, varsayilan); // varsayilan-ayarlar.json öncelikli, yoksa tablodaki varsayılan
+  const geriAlinanAyarlar = AYAR_ALANLARI.filter(
+    (alan) => alanGeriAlinabilirMi(alan) && degerEsitMi(ayarlar[alan.ad], varsayilanlar[alan.ad]) && Object.hasOwn(yedek, alan.ad) && !degerEsitMi(yedek[alan.ad], varsayilanlar[alan.ad]),
+  ).map((alan) => alan.ad);
+  const degisti = geriAlinanFavoriler.length > 0 || doldurulanFavoriler.length > 0 || dilGeriAlindi || geriAlinanAyarlar.length > 0;
+  if (!degisti) return { ayarlar, geriAlinanFavoriler, doldurulanFavoriler, dilGeriAlindi, geriAlinanAyarlar, degisti };
 
   const sonuc = { ...ayarlar, favoriler: geriAlinanFavoriler.length > 0 || doldurulanFavoriler.length > 0 ? favoriler : ayarlar.favoriler };
   if (dilGeriAlindi) sonuc.dil = yedek.dil;
+  for (const ad of geriAlinanAyarlar) sonuc[ad] = structuredClone(yedek[ad]);
   if (geriAlinanFavoriler.length > 0 && Array.isArray(ayarlar.engellenenFavoriler)) {
     // Eski sürümün "alan" nedeniyle düşürdüğü kayıtlar artık engelli değil
     sonuc.engellenenFavoriler = ayarlar.engellenenFavoriler.filter((e) => !geriAlinanFavoriler.includes(e?.entity_id));
   }
-  return { ayarlar: sonuc, geriAlinanFavoriler, doldurulanFavoriler, dilGeriAlindi, degisti };
+  return { ayarlar: sonuc, geriAlinanFavoriler, doldurulanFavoriler, dilGeriAlindi, geriAlinanAyarlar, degisti };
 }
 
 /**
@@ -172,7 +189,7 @@ function eskiSurumYedeginiDevral({ dizin, ayarlar, ham, varsayilan = {}, fs = re
   if (sonuc.degisti) {
     gunlugeYaz(
       gunluk,
-      `Eski sürümün bıraktığı yedekten geri alındı: ${sonuc.geriAlinanFavoriler.length} favori, ${sonuc.doldurulanFavoriler.length} favorinin görünüm alanları${sonuc.dilGeriAlindi ? ', dil seçimi' : ''}.`,
+      `Eski sürümün bıraktığı yedekten geri alındı: ${sonuc.geriAlinanFavoriler.length} favori, ${sonuc.doldurulanFavoriler.length} favorinin görünüm alanları${sonuc.dilGeriAlindi ? ', dil seçimi' : ''}${sonuc.geriAlinanAyarlar.length > 0 ? `, ${sonuc.geriAlinanAyarlar.length} ayar alanı` : ''}.`,
     );
   }
   return {

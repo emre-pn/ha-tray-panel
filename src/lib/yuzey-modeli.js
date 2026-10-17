@@ -25,7 +25,7 @@ const { alanAl, adGuvenliMi, guvenliVarlikMi, guvenliMetin, kameraKimligiGuvenli
 const { karoAlaniMi, varsayilanServis } = require('./alan-kaydi');
 const { izinliServisler } = require('./servis-izinleri');
 const { guvenliOzellikler } = require('./varlik-ozellik');
-const { simgeDuzelt, renkDuzelt, boyutDuzelt, VARSAYILAN_BOYUT } = require('./karo-gorunum');
+const { simgeDuzelt, renkDuzelt, boyutDuzelt, VARSAYILAN_BOYUT, grafikTuruDuzelt, gostergeAraligiDuzelt, VARSAYILAN_GRAFIK } = require('./karo-gorunum');
 const { sayfalariModele } = require('./sayfalar');
 const { SINIF, eylemSinifi } = require('./eylem-sinifi');
 const { GRUPLAR, grupBul, altGrupBul, tekrarliMi } = require('./favoriler');
@@ -75,6 +75,10 @@ function karoOlustur(favori, varlik, t = TR) {
   const hamAd = kisalt(canliAd(canli) || kayitliAd, ETIKET_SINIRI);
   if (!adGuvenliMi(kimlik, hamAd)) return null;
   const grup = grupBul(kimlik);
+  // Sensör favorisinin gösterge aralığı (kayıttan yeniden doğrulanır) sensörün kendi min/max özniteliğinden ÖNCE gelir.
+  const ozellik = canli ? guvenliOzellikler(canli) : null;
+  const gosterge = alan === 'sensor' && ozellik ? gostergeAraligiDuzelt(favori.gostergeMin, favori.gostergeMax) : null;
+  if (gosterge) Object.assign(ozellik, { enAz: gosterge.gostergeMin, enCok: gosterge.gostergeMax });
   return {
     id: kimlik,
     ad: hamAd,
@@ -90,7 +94,7 @@ function karoOlustur(favori, varlik, t = TR) {
     sinif: siniflama.sinif === SINIF.YIKICI ? 'yikici' : 'zararsiz',
     parlaklikKontrol: favori.parlaklik === true && alan === 'light',
     tekrar: tekrarliMi(kimlik),
-    ozellik: canli ? guvenliOzellikler(canli) : null,
+    ozellik,
     varsayilanEylem: varsayilanServis(alan) !== null,
     onayliServisler,
     // 1.4.0 düzen (o-31, o-16): görünüm alanları kayıttan yeniden doğrulanır; geçersiz değer karoda yok sayılır
@@ -98,6 +102,7 @@ function karoOlustur(favori, varlik, t = TR) {
     renk: renkDuzelt(favori.renk) || null,
     boyut: boyutDuzelt(favori.boyut) ?? VARSAYILAN_BOYUT,
     tepsi: favori.tepsi === true,
+    grafikTuru: alan === 'sensor' ? grafikTuruDuzelt(favori.grafikTuru) || VARSAYILAN_GRAFIK : VARSAYILAN_GRAFIK, // 1.4.0 sensör: 'otomatik' | 'cizgi' | 'gosterge' | 'yok'
   };
 }
 
@@ -205,6 +210,7 @@ const RENDERER_KARO_ALANLARI = Object.freeze([
   'renk', // 1.4.0 düzen: hazır palet adı ya da null
   'boyut', // 1.4.0 düzen: 'kucuk' | 'normal' | 'genis' | 'buyuk'
   'tepsi', // 1.4.0 düzen: tepsiye sabitli mi (bağlam menüsü "Tepsiden kaldır" metni için)
+  'grafikTuru', // 1.4.0 sensör: grafik biçimi (gösterge aralığı ayrı alan değil, ozellik.enAz / enCok içine işlenir)
 ]);
 
 /**

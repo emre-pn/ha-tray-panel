@@ -121,15 +121,83 @@ test('klima: süre dolmadan bırakmak mod değişimini iptal eder; kullanıcı o
   assert.doesNotMatch(metin(serbest), /Kesikli kenarlı/);
 });
 
-test('klima: ulaşılamayan klima "ulaşılamıyor" der ve düğmeleri kapalıdır; hedef yoksa (ısıt/soğut aralığı) aralık gösterilir, ± kapalıdır', async () => {
+test('klima: ulaşılamayan klima "ulaşılamıyor" der ve düğmeleri kapalıdır; aralık desteklenmeyen cihazda hedef yoksa aralık yalnız gösterilir, ± kapalıdır', async () => {
   const sayfa = await panelAc({ model: modelYap(varyant(KLIMA, 'climate.u', 'Uzak', { kullanilabilir: false, ulasilamiyor: true })) });
   assert.match(metin(sayfa), /ulaşılamıyor/);
   assert.ok(dugmeAra(sayfa, 'Uzak aç / kapat').disabled);
   assert.ok(dugmeAra(sayfa, 'Uzak hedef sıcaklığını artır').disabled);
 
-  const aralik = await panelAc({ model: modelYap(varyant(KLIMA, 'climate.a', 'Aralık', { ozellik: { ...IKLIM_OZ, hedefSicaklik: null, hedefAlt: 20, hedefUst: 24 } })) });
+  // supported_features aralık bitini (2) taşımıyor: iki sınırlı denetim çizilmez, yalnız bilgi metni
+  const aralik = await panelAc({ model: modelYap(varyant(KLIMA, 'climate.a', 'Aralık', { ozellik: { ...IKLIM_OZ, hedefSicaklik: null, hedefAlt: 20, hedefUst: 24, destek: 1 } })) });
   assert.match(metin(aralik), /20–24°/);
   assert.ok(dugmeAra(aralik, 'Aralık hedef sıcaklığını artır').disabled, 'tek hedef yoksa set_temperature gönderilemez');
+  assert.equal(dugmeler(aralik, (o) => /ısıtma hedefini/.test(o.attributes['aria-label'] ?? '')).length, 0);
+});
+
+const ARALIKLI = varyant(KLIMA, 'climate.a', 'Aralık', {
+  ozellik: { ...IKLIM_OZ, mod: 'heat_cool', modlar: ['off', 'heat_cool'], hedefSicaklik: null, hedefAlt: 20, hedefUst: 24, destek: 427 },
+});
+
+test('klima: ısıt/soğut aralığında iki sınır ayrı satırda; her gönderim iki sınırı BİRLİKTE yollar, sınırlar birbirini geçemez', async () => {
+  const sayfa = await panelAc({ model: modelYap(ARALIKLI) });
+  assert.match(metin(sayfa), /Isıt 20°/);
+  assert.match(metin(sayfa), /Soğut 24°/);
+  dugmeAra(sayfa, 'Aralık ısıtma hedefini artır').gonder('click');
+  assert.match(metin(sayfa), /Isıt 21°/, 'ara değer hemen görünür');
+  sayfa.zaman.ilerle(500);
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'climate.a', servis: 'set_temperature', veri: { target_temp_low: 21, target_temp_high: 24 }, sonDeger: true }]);
+
+  const ust = await panelAc({ model: modelYap(ARALIKLI) });
+  dugmeAra(ust, 'Aralık soğutma hedefini azalt').gonder('click');
+  ust.zaman.ilerle(500);
+  assert.deepEqual(ust.calistirmalar().map((y) => y.veri), [{ target_temp_low: 20, target_temp_high: 23 }]);
+
+  // iki sınır 400 ms içinde değişirse ikincisi birincinin yeni değerini taşır
+  const ikisi = await panelAc({ model: modelYap(ARALIKLI) });
+  dugmeAra(ikisi, 'Aralık ısıtma hedefini azalt').gonder('click');
+  dugmeAra(ikisi, 'Aralık soğutma hedefini artır').gonder('click');
+  ikisi.zaman.ilerle(500);
+  assert.ok(ikisi.calistirmalar().length >= 1);
+  assert.ok(ikisi.calistirmalar().every((y) => y.veri.target_temp_low === 19 && y.veri.target_temp_high === 25), 'her istek iki yeni sınırı da taşır');
+
+  // alt sınır üst sınırın bir adım altında durur
+  const dar = await panelAc({ model: modelYap(varyant(ARALIKLI, 'climate.d', 'Dar', { ozellik: { ...ARALIKLI.ozellik, hedefAlt: 23.5, hedefUst: 24 } })) });
+  dugmeAra(dar, 'Dar ısıtma hedefini artır').gonder('click');
+  dar.zaman.ilerle(500);
+  assert.deepEqual(dar.calistirmalar(), [], 'alt sınır üstün altında kalır, istek yok');
+  assert.equal(dugmeAra(sayfa, 'Aralık ısıtma hedefini artır').disabled, false);
+});
+
+test('klima: ulaşılamayan aralıklı klimada aralık düğmeleri kapalıdır', async () => {
+  const sayfa = await panelAc({ model: modelYap(varyant(ARALIKLI, 'climate.k', 'Kapalı', { kullanilabilir: false, ulasilamiyor: true })) });
+  assert.ok(dugmeAra(sayfa, 'Kapalı ısıtma hedefini artır').disabled);
+  assert.ok(dugmeAra(sayfa, 'Kapalı soğutma hedefini azalt').disabled);
+});
+
+test('klima: fan modu ve ön ayar cihazın listesinden açılır liste olur, seçince gider; liste yoksa ya da cihaz bit bildirmiyorsa çizilmez', async () => {
+  const oz = { ...IKLIM_OZ, fanModlari: ['auto', 'low', 'high'], fanModu: 'auto', onAyarlar: ['eco', 'away'], onAyar: 'eco', destek: 1 + 8 + 16 };
+  const sayfa = await panelAc({ model: modelYap(varyant(KLIMA, 'climate.f', 'Fanlı', { ozellik: oz })) });
+  const listeler = sayfa.bul((o) => o.etiket === 'select');
+  assert.deepEqual(listeler.map((l) => l.attributes['aria-label']), ['Fanlı fan modu', 'Fanlı ön ayarı']);
+  assert.deepEqual(listeler[0].children.map((o) => o.textContent), ['auto', 'low', 'high']);
+  assert.equal(listeler[0].value, 'auto');
+  listeler[0].value = 'auto';
+  listeler[0].gonder('change');
+  assert.deepEqual(sayfa.calistirmalar(), [], 'aynı seçim istek göndermez');
+  listeler[0].value = 'low';
+  listeler[0].gonder('change');
+  listeler[1].value = 'away';
+  listeler[1].gonder('change');
+  assert.deepEqual(sayfa.calistirmalar(), [
+    { kimlik: 'climate.f', servis: 'set_fan_mode', veri: { fan_mode: 'low' }, sonDeger: true },
+    { kimlik: 'climate.f', servis: 'set_preset_mode', veri: { preset_mode: 'away' }, sonDeger: true },
+  ]);
+
+  const bitsiz = await panelAc({ model: modelYap(varyant(KLIMA, 'climate.b', 'Bitsiz', { ozellik: { ...oz, destek: 1 } })) });
+  assert.equal(bitsiz.bul((o) => o.etiket === 'select').length, 0, 'fan ve ön ayar bitleri yok');
+  const listesiz = await panelAc({ model: modelYap(varyant(KLIMA, 'climate.l', 'Listesiz', { ozellik: { ...IKLIM_OZ, fanModlari: [], onAyarlar: [] } })) });
+  assert.equal(listesiz.bul((o) => o.etiket === 'select').length, 0);
+  assert.equal(sayfa.bul((o) => o.etiket === 'select').length, 2);
 });
 
 test('klima: modlar tanıdık değilse (cihaz özel mod bildirirse) düğme çizilmez; metinler yalnız textContent (zararlı ad etiket olmaz)', async () => {
@@ -320,6 +388,36 @@ test('medya: ilerleme çubuğu çalarken saniyede bir ilerler, duraklatılmışs
   assert.equal(sureYok.bul((o) => o.etiket === 'progress').length, 0);
 });
 
+test('medya: ±10 sn atlama yalnız cihaz SEEK bitini bildirirse çizilir; hedef canlı konumdan hesaplanır ve 0..süre aralığına kırpılır', async () => {
+  const bitsiz = await panelAc({ model: modelYap(TV) });
+  assert.equal(dugmeler(bitsiz, (o) => /10 saniye/.test(o.attributes['aria-label'] ?? '')).length, 0, 'destek bilinmiyorsa düğme yok');
+  const sayfa = await panelAc({ model: modelYap(varyant(TV, 'media_player.s', 'Salon TV', { ozellik: { ...MEDYA_OZ, destek: 2 | 4 } })) });
+  sayfa.zaman.ilerle(5_000); // canlı konum 55
+  dugmeAra(sayfa, 'Salon TV: 10 saniye ileri sar').gonder('click', { detail: 1 });
+  dugmeAra(sayfa, 'Salon TV: 10 saniye geri sar').gonder('click', { detail: 1 });
+  assert.deepEqual(sayfa.calistirmalar().map((y) => [y.servis, y.veri]), [['media_seek', { seek_position: 65 }], ['media_seek', { seek_position: 45 }]]);
+  const sinir = await panelAc({ model: modelYap(varyant(TV, 'media_player.k', 'Kısa', { ozellik: { ...MEDYA_OZ, destek: 2, konum: 5, sure: 8 } })) });
+  dugmeAra(sinir, 'Kısa: 10 saniye geri sar').gonder('click', { detail: 1 });
+  dugmeAra(sinir, 'Kısa: 10 saniye ileri sar').gonder('click', { detail: 1 });
+  assert.deepEqual(sinir.calistirmalar().map((y) => y.veri.seek_position), [0, 8]);
+  // süre bilinmiyorsa (çubuk yok) ya da bit başka değerlerle bile 2'yi taşımıyorsa atlama yok
+  const sureYok = await panelAc({ model: modelYap(varyant(TV, 'media_player.y', 'Süresiz', { ozellik: { ...MEDYA_OZ, destek: 2, sure: null } })) });
+  assert.equal(dugmeler(sureYok, (o) => /10 saniye/.test(o.attributes['aria-label'] ?? '')).length, 0);
+  const baskaBit = await panelAc({ model: modelYap(varyant(TV, 'media_player.b', 'Bitsiz', { ozellik: { ...MEDYA_OZ, destek: 1 | 4 | 16 } })) });
+  assert.equal(dugmeler(baskaBit, (o) => /10 saniye/.test(o.attributes['aria-label'] ?? '')).length, 0);
+});
+
+test('medya: konum atlama onaylı sınıfa alınmışsa (favoride onay) basılı tutma ister, tek tıklamayla gitmez', async () => {
+  const sayfa = await panelAc({ model: modelYap(varyant(TV, 'media_player.o', 'Onaylı', { onayliServisler: ['turn_off', 'media_seek'], ozellik: { ...MEDYA_OZ, destek: 2 } })) });
+  const ileri = dugmeAra(sayfa, 'Onaylı: 10 saniye ileri sar');
+  assert.ok(ileri.sinifVar('onayli'));
+  ileri.gonder('click', { detail: 1 });
+  sayfa.zaman.ilerle(100);
+  assert.deepEqual(sayfa.calistirmalar(), []);
+  basiliTut(sayfa, ileri);
+  assert.deepEqual(sayfa.calistirmalar().map((y) => [y.servis, y.veri, y.basili]), [['media_seek', { seek_position: 60 }, true]]);
+});
+
 test('medya: kapak bayrağı yokken görsel öğesi çizilmez (img/picture/canvas; kapak yalnız ana süreçten gelen data adresiyle, bkz. eksik-medya-panel); model dışı anahtarlar (entity_picture) atılır', async () => {
   const sayfa = await panelAc({ model: modelYap(varyant(TV, 'media_player.tv', 'Salon TV', { ozellik: { ...MEDYA_OZ, entity_picture: '/api/media_player_proxy/x?token=gizli', media_image_url: 'http://x/y.jpg' } })) });
   assert.equal(sayfa.bul((o) => ['img', 'picture', 'canvas', 'video', 'audio', 'iframe'].includes(o.etiket)).length, 0);
@@ -395,6 +493,31 @@ test('süpürge: başlat, duraklat, şarja dön düğmeleri ve durum + pil; heps
     assert.deepEqual(sayfa.calistirmalar().at(-1), { kimlik: 'vacuum.s', servis }, aria);
   }
   assert.ok(secili(dugmeAra(sayfa, 'Süpürge: temizliği başlat')), 'temizlerken "Başlat" vurgulu');
+});
+
+test('süpürge: yalnız cihazın desteklediği işlemler çizilir (supported_features); durdur yalnız açıkça desteklenirse; eski aç/kapat süpürge "Başlat" ile turn_on yollar', async () => {
+  const yap = (kimlik, ad, destek) => karo(kimlik, ad, { grup: 'diger', varsayilanEylem: false, ozellik: { durum: 'docked', pil: 90, destek } });
+  const sayfa = await panelAc({ model: modelYap(yap('vacuum.m', 'Modern', 8192 | 4 | 8 | 16)) });
+  const adlar = dugmeler(sayfa, (o) => /^Modern: /.test(o.attributes['aria-label'] ?? '')).map((d) => d.attributes['aria-label']);
+  assert.deepEqual(adlar, ['Modern: temizliği başlat', 'Modern: duraklat', 'Modern: temizliği durdur', 'Modern: şarj istasyonuna dön']);
+  dugmeAra(sayfa, 'Modern: temizliği durdur').gonder('click', { detail: 1 });
+  sayfa.zaman.ilerle(500);
+  assert.deepEqual(sayfa.calistirmalar().at(-1), { kimlik: 'vacuum.m', servis: 'stop' });
+
+  const sade = await panelAc({ model: modelYap(yap('vacuum.s', 'Sade', 8192 | 16)) });
+  assert.deepEqual(dugmeler(sade, (o) => /^Sade: /.test(o.attributes['aria-label'] ?? '')).map((d) => d.attributes['aria-label']), ['Sade: temizliği başlat', 'Sade: şarj istasyonuna dön']);
+
+  const eski = await panelAc({ model: modelYap(yap('vacuum.e', 'Eski', 1 | 2 | 4 | 16)) });
+  dugmeAra(eski, 'Eski: temizliği başlat').gonder('click', { detail: 1 });
+  eski.zaman.ilerle(500);
+  assert.deepEqual(eski.calistirmalar().at(-1), { kimlik: 'vacuum.e', servis: 'turn_on' });
+
+  const bilinmeyen = await panelAc({ model: modelYap(yap('vacuum.b', 'Belirsiz', null)) });
+  assert.equal(dugmeler(bilinmeyen, (o) => /^Belirsiz: /.test(o.attributes['aria-label'] ?? '')).length, 3, 'bit alanı bilinmiyorsa eski üç düğme; durdur yok');
+
+  const hicbiri = await panelAc({ model: modelYap(yap('vacuum.h', 'Hiçbiri', 0)) });
+  assert.equal(dugmeler(hicbiri, (o) => /^Hiçbiri: /.test(o.attributes['aria-label'] ?? '')).length, 0);
+  assert.match(metin(hicbiri), /Şarjda · Pil %90/);
 });
 
 // --- seçici, sayı, zamanlayıcı -------------------------------------------------------------------------------------

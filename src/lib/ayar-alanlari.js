@@ -256,6 +256,8 @@ const AYAR_ALANLARI = Object.freeze([
   // o-27: tepsi simgesi rozeti: 'kapali' | 'isik' (açık ışık sayısı) | 'sensor' (seçilen sensörün kısa değeri). Rozetin sensörü yalnız 'sensor' alanı olabilir (Kapı Kuralı'ndan geçer).
   secenekAlan('tepsiRozeti', ['kapali', 'isik', 'sensor'], 'kapali'),
   kimlikAlan('tepsiRozetSensoru', { alanlar: ['sensor'] }),
+  // Rozet için en çok 2 EK sensör (ana sensörle birlikte en çok 3): geçerli olanlar rozette sırayla gösterilir. Yalnız 'sensor' alanı; Kapı Kuralı çizimde de uygulanır.
+  kimlikListesiAlan('tepsiRozetSensorleri', { enCok: 2, alanlar: ['sensor'] }),
   // o-33: masaüstüne sabitlenen karolar: yalnız FAVORİ olan, sabitlenebilir alandaki kimlikler (çalışma anında ayrıca süzülür); konumları makineye özgüdür.
   kimlikListesiAlan('masaustuKarolari', { enCok: EN_COK_KARO, alanlar: SABITLENEBILIR_ALANLAR }),
   nesneAlan('masaustuKaroKonumlari', { varsayilan: {}, duzelt: karoKonumlariniDuzelt }, { aktarilir: false, ozette: false }),

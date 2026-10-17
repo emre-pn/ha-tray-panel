@@ -45,11 +45,11 @@ const KAYNAKLAR = Object.freeze(['tepsi-menu', 'panel', 'palet', 'kisayol', 'kom
 // Dış kaynaklardan hiç çalışmayan alanlar (sınıfları zararsız sayılsa da): valf ve otomasyon (ne yaptıkları bilinmez / su ve gaz), kamera, perde ve
 // kepenk (cover; dışarıdan görünürlük), Kapı Kuralı alanları ve yapılacaklar listesi. Alan kaydında olmayan alan zaten hiçbir yüzeye giremez.
 const DIS_YASAK_ALANLAR = Object.freeze(['valve', 'automation', 'camera', 'cover', 'lock', 'alarm_control_panel', 'siren', 'todo']);
-// Dış kaynaklardan çalışmayan servisler: klima modu değişimi (ısıt / soğut / kapalı; turn_on ve turn_off da modu değiştirir).
-const DIS_YASAK_SERVISLER = Object.freeze({ climate: Object.freeze(['set_hvac_mode', 'turn_on', 'turn_off', 'toggle']) });
+// Dış kaynaklardan çalışmayan servisler: klima modu değişimi (ısıt / soğut / kapalı; turn_on ve turn_off da modu değiştirir) ile fan modu ve ön ayar (away / eco gibi ön ayarlar çalışma biçimini değiştirir).
+const DIS_YASAK_SERVISLER = Object.freeze({ climate: Object.freeze(['set_hvac_mode', 'set_fan_mode', 'set_preset_mode', 'turn_on', 'turn_off', 'toggle']) });
 
 // 1.4.0 cihaz grubu: bu alanların HİÇBİR eylemi onaysız çalışmaz ve favoride onay kapatılamaz (vana: gaz/su ana vanası olabilir;
-// otomasyon: ne yaptığı uygulamaca bilinemez). Dış tetikleyiciler ayrıca bu alanları kesin reddeder (alan-kaydi.js DIS_TETIK_YASAK_ALANLAR).
+// otomasyon: ne yaptığı uygulamaca bilinemez). Dış tetikleyiciler ayrıca bu alanları kesin reddeder (aşağıdaki DIS_YASAK_ALANLAR / disKaynakIzni: tek kaynak).
 const ZORUNLU_ONAYLI_ALANLAR = new Set(['valve', 'automation']);
 
 // Açık liste: her zaman YIKICI ve onay KAPATILAMAZ (zorunlu).

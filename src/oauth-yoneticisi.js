@@ -144,6 +144,9 @@ function oauthYoneticisiOlustur({
 
   // ---- Erişim anahtarı (yenileme) ----------------------------------------------------------------------------------------------------
 
+  /** Yenileme / iptal isteğinin gidebileceği kökenler: girişin yapıldığı andaki HA adresleri (eski kayıtta yalnız giriş kökeni). */
+  const izinliKokenler = (kayit) => (Array.isArray(kayit?.kokenler) && kayit.kokenler.length > 0 ? kayit.kokenler : [kayit?.taban].filter(Boolean));
+
   const gecerliErisim = () => (erisim && erisim.bitis - simdi() > YENILEME_GUVENLI_KALAN_MS ? erisim.anahtar : null);
 
   function sogumayaAl(hata) {
@@ -172,9 +175,14 @@ function oauthYoneticisiOlustur({
     if (sira !== surum || !kayit) return null; // oturum yok (ya da bu bilgisayarda çözülemiyor): anahtar yok
     let yanit;
     try {
-      yanit = await jetonIstegi({ form: oauth.yenilemeFormu({ yenileme: kayit.yenileme, istemci: kayit.istemci }) });
+      yanit = await jetonIstegi({ form: oauth.yenilemeFormu({ yenileme: kayit.yenileme, istemci: kayit.istemci }), izinliKokenler: izinliKokenler(kayit) });
     } catch (hata) {
       if (sira !== surum) return null;
+      if (hata?.tur === 'kaynak-izinsiz') {
+        // Adres, oturumu veren sunucunun dışına çevrilmiş: yenileme anahtarı oraya gönderilmez, oturum yerelde düşer (yeniden giriş gerekir).
+        await oturumuDusur('adres-degisti');
+        return null;
+      }
       sogumayaAl(hata);
       gunluk('Tarayıcı oturumu yenilenemedi (geçici sorun); yeniden denenecek.');
       if (eldeki) return eldeki;
@@ -273,7 +281,7 @@ function oauthYoneticisiOlustur({
     await yerelSil();
     let iptalEdildi = false;
     if (iptal && kayit) {
-      const is = jetonIstegi({ form: oauth.iptalFormu({ yenileme: kayit.yenileme }) })
+      const is = jetonIstegi({ form: oauth.iptalFormu({ yenileme: kayit.yenileme }), izinliKokenler: izinliKokenler(kayit) })
         .then((yanit) => yanit.durum === 200)
         .catch(() => false);
       if (bekle) iptalEdildi = await is;
@@ -333,6 +341,8 @@ function oauthYoneticisiOlustur({
   async function kodDegistir(g, kod) {
     try {
       const yanit = await jetonIstegi({ form: oauth.kodFormu({ kod, istemci: g.istemci }), taban: g.taban });
+      const ayar = ayarlarAl() ?? {};
+      const kokenler = oauth.kokenleriDuzelt([g.taban, ayar.yerelAdres, ayar.disAdres]); // yenileme / iptal yalnız bu kökenlere gider
       if (yanit.durum !== 200) return bitir(g, 'hata', 'kod-reddedildi');
       const jeton = oauth.jetonYaniti(yanit.govde, { yenilemeGerekli: true, simdi: simdi() });
       if (!jeton.ok) return bitir(g, 'hata', 'yanit-gecersiz');
@@ -343,7 +353,7 @@ function oauthYoneticisiOlustur({
         eski = null;
       }
       try {
-        await depo.yaz(oauth.oturumuYaz({ taban: g.taban, istemci: g.istemci, yenileme: jeton.yenileme }));
+        await depo.yaz(oauth.oturumuYaz({ taban: g.taban, istemci: g.istemci, yenileme: jeton.yenileme, kokenler }));
       } catch {
         // Saklanamayan oturum kullanılamaz: HA'da açık kalmasın diye hemen iptal edilir.
         jetonIstegi({ form: oauth.iptalFormu({ yenileme: jeton.yenileme }), taban: g.taban }).catch(() => {});
@@ -351,7 +361,7 @@ function oauthYoneticisiOlustur({
       }
       surum += 1; // eski oturumun süren yenilemesi yeni oturumu ezmesin
       yenilemeSozu = null;
-      onbellek = { taban: g.taban, istemci: g.istemci, yenileme: jeton.yenileme };
+      onbellek = { taban: g.taban, istemci: g.istemci, yenileme: jeton.yenileme, kokenler };
       soguma = null;
       redler = [];
       const oncekiErisim = erisim;
@@ -363,7 +373,7 @@ function oauthYoneticisiOlustur({
         /* yetki kesici bakımı girişi bozmasın */
       }
       if (eski && eski.yenileme !== jeton.yenileme) {
-        jetonIstegi({ form: oauth.iptalFormu({ yenileme: eski.yenileme }) }).catch(() => {});
+        jetonIstegi({ form: oauth.iptalFormu({ yenileme: eski.yenileme }), izinliKokenler: izinliKokenler(eski) }).catch(() => {});
       }
       gunluk('Tarayıcıyla giriş tamamlandı; oturum şifreli olarak saklandı.');
       bitir(g, 'tamam');
