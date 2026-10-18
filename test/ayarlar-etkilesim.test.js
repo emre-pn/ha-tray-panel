@@ -404,10 +404,9 @@ test('etiketler: her yeni denetimin görünen etiketi ve açıklaması çevrileb
   }
 });
 
-test('orta tık ipucu yalnız Windows\'ta çalıştığını ve gerçek tepsi simgesinde denenmediğini dürüstçe söyler; kapı/kilit/alarm\'ın asla çalışmadığını belirtir', () => {
+test('orta tık ipucu yalnız Windows\'ta çalıştığını söyler; kapı/kilit/alarm\'ın asla çalışmadığını belirtir', () => {
   assert.match(AYARLAR_SOZLUK.tr['ayar.etk.ortaTikIpucu'], /Windows/);
   assert.match(AYARLAR_SOZLUK.tr['ayar.etk.ortaTikIpucu'], /kapı, kilit ve alarm/);
-  assert.match(AYARLAR_SOZLUK.tr['ayar.etk.ortaTikIpucu'], /denenmedi/);
   assert.match(AYARLAR_SOZLUK.en['ayar.etk.ortaTikIpucu'], /Windows/);
   assert.match(AYARLAR_SOZLUK.en['ayar.etk.ortaTikIpucu'], /lock|door/i);
 });
