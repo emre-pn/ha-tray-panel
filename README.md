@@ -4,6 +4,12 @@ Home Panel (*Ev Paneli* in Turkish) is a Windows tray app for [Home Assistant](h
 
 English | [Türkçe](README.tr.md)
 
+<p align="center">
+<img src="docs/screenshots/quick-panel.png" width="280" alt="Quick panel">
+&nbsp;
+<img src="docs/screenshots/palette-search.png" width="480" alt="Command palette">
+</p>
+
 ## Features
 
 - Tray icon with a quick panel: lights (with brightness presets and a slider), scenes, media and PC actions, plus a "recently used" row.
@@ -27,6 +33,52 @@ English | [Türkçe](README.tr.md)
 - Light, dark and high-contrast themes with preset or custom colours, text size, Windows 11 mica/acrylic, and an interface in English, Turkish, German, French and Spanish.
 - Settings search, settings export/import with automatic backups, a diagnostics report without secrets, and an update check and in-app updates that are both off by default. An import shows a preview before anything is applied.
 - A portable build that needs no installation. It shares its settings folder with the installed app, so avoid running 1.3.0 or older next to this version: they rewrite the settings file without the newer fields (favorites, tile fields, language). The app restores them from the saved older-version backup on its next start.
+
+## Screenshots
+
+All screenshots use a made-up demo home, not a real one.
+
+<table>
+<tr>
+<td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Quick panel with weather, a media player and the forecast"><br><sub>Quick panel</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Light cards with brightness presets and white tone"><br><sub>Lights</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/climate-fan-curtains.png" width="240" alt="Climate, fan and curtain cards"><br><sub>Climate, fan and curtains</sub></td>
+</tr>
+<tr>
+<td align="center" valign="top"><img src="docs/screenshots/sensors-forecast.png" width="240" alt="Weather forecast and sensor strip"><br><sub>Forecast and sensors</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/todo-calendar.png" width="240" alt="Vacuum, to-do list and upcoming events"><br><sub>To-do list and calendar</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/notifications.png" width="240" alt="Home Assistant notifications in the panel"><br><sub>Notifications</sub></td>
+</tr>
+<tr>
+<td align="center" valign="top"><img src="docs/screenshots/pages.png" width="240" alt="A custom page for one room"><br><sub>Pages</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/quick-panel-light.png" width="240" alt="Quick panel in the light theme"><br><sub>Light theme</sub></td>
+</tr>
+</table>
+
+### Command palette
+
+<img src="docs/screenshots/palette.png" width="480" alt="Command palette listing favorites">
+
+<details>
+<summary>More palette examples</summary>
+
+<p><img src="docs/screenshots/palette-search.png" width="480" alt="Searching the palette for living"><br><sub>Search across devices, scenes and pages</sub></p>
+<p><img src="docs/screenshots/palette-brightness.png" width="480" alt="desk 40 sets the desk lamp to 40 percent"><br><sub><code>desk 40</code> sets a light to 40%</sub></p>
+<p><img src="docs/screenshots/palette-climate.png" width="480" alt="ac 21 sets the air conditioner to 21 degrees"><br><sub><code>ac 21</code> sets the target temperature</sub></p>
+<p><img src="docs/screenshots/palette-delayed.png" width="480" alt="desk off in 10 min schedules an action"><br><sub><code>desk off in 10 min</code> schedules an action</sub></p>
+<p><img src="docs/screenshots/palette-recent.png" width="480" alt="The at sign lists recent changes"><br><sub><code>@</code> lists what changed recently</sub></p>
+<p><img src="docs/screenshots/palette-light.png" width="480" alt="Command palette in the light theme"><br><sub>Light theme</sub></p>
+
+</details>
+
+<details>
+<summary>Settings</summary>
+
+<p><img src="docs/screenshots/settings-connection.png" width="560" alt="Connection settings"><br><sub>Connection</sub></p>
+<p><img src="docs/screenshots/settings-favorites.png" width="560" alt="Favorites and the safety rule"><br><sub>Favorites and the safety rule</sub></p>
+<p><img src="docs/screenshots/settings-appearance.png" width="560" alt="Appearance and language settings"><br><sub>Appearance and language</sub></p>
+
+</details>
 
 ## Safety
 

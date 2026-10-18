@@ -4,6 +4,12 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 
 [English](README.md) | Türkçe
 
+<p align="center">
+<img src="docs/screenshots/quick-panel.png" width="280" alt="Hızlı panel">
+&nbsp;
+<img src="docs/screenshots/palette-search.png" width="480" alt="Komut paleti">
+</p>
+
 ## Özellikler
 
 - Tepsi simgesinden açılan hızlı panel: ışıklar (hazır parlaklık düğmeleri ve kaydırıcıyla), sahneler, medya ve bilgisayar eylemleri, bir de "son kullanılanlar" satırı.
@@ -27,6 +33,52 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 - Açık, koyu ve yüksek karşıtlıklı tema; hazır ya da özel renkler, metin boyutu, Windows 11 mika/akrilik görünüm; Türkçe, İngilizce, Almanca, Fransızca ve İspanyolca arayüz.
 - Ayar araması, ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu; sürüm denetimi ve uygulama içi güncelleme varsayılan olarak kapalıdır. İçe aktarma, uygulanmadan önce bir önizleme gösterir.
 - Kurulum gerektirmeyen taşınabilir sürüm.
+
+## Ekran görüntüleri
+
+Tüm ekran görüntüleri gerçek bir evle değil, uydurma bir örnek evle çekildi.
+
+<table>
+<tr>
+<td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Hava durumu, medya oynatıcı ve tahminle hızlı panel"><br><sub>Hızlı panel</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Parlaklık ve beyaz tonu seçenekleriyle ışık kartları"><br><sub>Işıklar</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/climate-fan-curtains.png" width="240" alt="Klima, vantilatör ve perde kartları"><br><sub>Klima, vantilatör ve perde</sub></td>
+</tr>
+<tr>
+<td align="center" valign="top"><img src="docs/screenshots/sensors-forecast.png" width="240" alt="Hava tahmini ve sensör şeridi"><br><sub>Tahmin ve sensörler</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/todo-calendar.png" width="240" alt="Süpürge, yapılacaklar listesi ve yaklaşan etkinlikler"><br><sub>Yapılacaklar ve takvim</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/notifications.png" width="240" alt="Paneldeki Home Assistant bildirimleri"><br><sub>Bildirimler</sub></td>
+</tr>
+<tr>
+<td align="center" valign="top"><img src="docs/screenshots/pages.png" width="240" alt="Bir oda için özel sayfa"><br><sub>Sayfalar</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/quick-panel-light.png" width="240" alt="Açık temada hızlı panel"><br><sub>Açık tema</sub></td>
+</tr>
+</table>
+
+### Komut paleti
+
+<img src="docs/screenshots/palette.png" width="480" alt="Favorileri listeleyen komut paleti">
+
+<details>
+<summary>Daha fazla palet örneği</summary>
+
+<p><img src="docs/screenshots/palette-search.png" width="480" alt="Palette living araması"><br><sub>Cihaz, sahne ve sayfalarda arama</sub></p>
+<p><img src="docs/screenshots/palette-brightness.png" width="480" alt="desk 40 masa lambasını yüzde 40 yapar"><br><sub><code>desk 40</code> ışığı %40 yapar</sub></p>
+<p><img src="docs/screenshots/palette-climate.png" width="480" alt="ac 21 klimayı 21 dereceye ayarlar"><br><sub><code>ac 21</code> hedef sıcaklığı ayarlar</sub></p>
+<p><img src="docs/screenshots/palette-delayed.png" width="480" alt="desk off in 10 min bir eylemi zamanlar"><br><sub><code>desk off in 10 min</code> bir eylemi zamanlar</sub></p>
+<p><img src="docs/screenshots/palette-recent.png" width="480" alt="@ işareti son değişenleri listeler"><br><sub><code>@</code> son değişenleri listeler</sub></p>
+<p><img src="docs/screenshots/palette-light.png" width="480" alt="Açık temada komut paleti"><br><sub>Açık tema</sub></p>
+
+</details>
+
+<details>
+<summary>Ayarlar</summary>
+
+<p><img src="docs/screenshots/settings-connection.png" width="560" alt="Bağlantı ayarları"><br><sub>Bağlantı</sub></p>
+<p><img src="docs/screenshots/settings-favorites.png" width="560" alt="Favoriler ve güvenlik kuralı"><br><sub>Favoriler ve güvenlik kuralı</sub></p>
+<p><img src="docs/screenshots/settings-appearance.png" width="560" alt="Görünüm ve dil ayarları"><br><sub>Görünüm ve dil</sub></p>
+
+</details>
 
 ## Güvenlik
 
