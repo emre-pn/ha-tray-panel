@@ -12,7 +12,7 @@ English | [Türkçe](README.tr.md)
 
 ## Features
 
-- Tray icon with a quick panel: lights (with brightness presets and a slider), scenes, media and PC actions, plus a "recently used" row. Each tile shows its icon in a round badge, a light's tile fills to match its brightness, and a ✓ or ! badge shows whether Home Assistant did it.
+- Tray icon with a quick panel: a clock with the weather and a now-playing strip at the top, lights, scenes, media and PC actions, plus a "recently used" row. A light is a compact row that fills to its brightness: drag sideways on it, use Shift + ← / → or the mouse wheel to dim, and open ⋯ for presets, the slider and colours. Each tile shows its icon in a round badge, and a ✓ or ! badge shows whether Home Assistant did it.
 - A small corner notification after each action with the device's icon, its name and what happened, for example "Turned off" or "Brightness 80%".
 - Command palette (`Ctrl+Alt+P`) with fuzzy search. Typing `desk 40` sets a light to 40%, `desk 0` turns it off.
 - Global hotkeys for the main window, the palette, any favorite and any dashboard. The shortcut fields record the keys you press.
@@ -42,7 +42,7 @@ All screenshots use a made-up demo home, not a real one.
 <table>
 <tr>
 <td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Quick panel with weather, a media player and the forecast"><br><sub>Quick panel</sub></td>
-<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Light cards with brightness presets and white tone"><br><sub>Lights</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Light rows and a light's detail view with presets and white tone"><br><sub>Lights</sub></td>
 <td align="center" valign="top"><img src="docs/screenshots/climate-fan.png" width="240" alt="Climate and fan cards"><br><sub>Climate and fan</sub></td>
 </tr>
 <tr>

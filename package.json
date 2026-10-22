@@ -1,7 +1,7 @@
 {
   "name": "ev-paneli",
   "productName": "Ev Paneli",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Windows tray app and quick control panel for Home Assistant",
   "main": "src/main.js",
   "author": "Emre Sav",

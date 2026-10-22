@@ -89,7 +89,7 @@ test('o-45: taşınabilir derleme tanımlı (portable bloğu, ayrı dosya adı);
   const paket = JSON.parse(oku('package.json'));
   assert.equal(paket.scripts.dist, 'electron-builder --win nsis --x64 --publish never');
   assert.equal(paket.scripts['dist:tasinabilir'], 'electron-builder --win portable --x64 --publish never');
-  assert.equal(paket.version, '1.6.0', 'sürüm yapi.test.js ile aynı (1.6.0)');
+  assert.equal(paket.version, '1.7.0', 'sürüm yapi.test.js ile aynı (1.7.0)');
 });
 
 test('o-45: portable bloğu electron-builder şemasına uyar (node_modules kuruluysa); CHANGELOG.md paketlenir', () => {

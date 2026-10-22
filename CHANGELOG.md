@@ -2,6 +2,40 @@
 
 Release notes before 1.3.0 are in Turkish. / 1.3.0 öncesi sürüm notları Türkçedir.
 
+### 1.7.0 — 2026-10-23
+
+Update with "Check now" in Settings or "Check for updates" in the tray menu, or by running `Ev-Paneli-Kurulum-1.7.0.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. This release gives the quick panel a new layout, brings a new logo, and fixes the findings of a security and bug audit. The code is checked with `npm test` and `npm run kontrol`, and the panel and the corner notification were tried in the app with a sample home.
+
+**A new quick panel layout**
+
+- **Clock at the top:** The panel opens with a large clock and the date. If a top card shows the weather, it sits to the right of the clock with the wind in its tooltip; click it to open the daily or hourly forecast.
+- **Now-playing strip:** A media player chosen for a top card becomes a small strip under the clock with the album cover, the track, play/pause and next. Click the strip to open the full media card.
+- **Light rows:** Lights are compact rows that fill to their brightness, with a thin line at the current level. Drag sideways on a row, press Shift + ← / →, or turn the mouse wheel to dim; click the row to turn the light on or off. Presets, the slider and colours are in the light's detail view (⋯).
+- **Calmer details:** Section titles have no emoji, notifications sit in one pill, the page tabs sit in a well, the climate +/− buttons are round, the bottom buttons have icons and the scroll bar is thin. The panel is 396 px wide.
+- Choosing "Clock and date" for a top card adds nothing extra, since the clock is always shown. The command palette does not show the clock.
+
+**New logo**
+
+- A blue rounded square with a white house outline and an amber dot. The old icon drew the roof upside down. Tray sizes use a thicker, pixel-aligned outline so the icon stays sharp at 16 px.
+
+**Corner notification**
+
+- It now appears centred above the open panel, and the whole window fades in and out, so no empty box is left behind at the end.
+- The title uses the tile name you gave a favorite, falling back to the Home Assistant name.
+
+**Safety (only tightens)**
+
+- Scenes and groups with a member in an unsupported domain are hidden.
+- Scenes and groups with a valve, an automation or a destructive member always need press-and-hold, and cannot run from hotkeys, the command line, desktop tiles, delayed actions or external triggers.
+- Folder sync keeps your local "ask to confirm" setting when the synced copy drops it.
+
+**Fixes**
+
+- Undo merges only with the newest entry, and undoing a scene restores brightness in one step. Delayed actions respect their limit.
+- Media cards that are favorites use the favorite's settings, so confirmation applies.
+- Camera refresh keeps the enlarged view, the room close confirmation resets per room, and desktop tiles follow the look and text size.
+- Update errors are logged by cause, and startup waits for the first state read.
+
 ### 1.6.0 — 2026-10-22
 
 Update with "Check now" in Settings or "Check for updates" in the tray menu, or by running `Ev-Paneli-Kurulum-1.6.0.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. This release changes how the corner notification and the Settings window look. The code is checked with `npm test` and `npm run kontrol`, and both were viewed with sample data in a browser; they have not been tried in the installed app yet.

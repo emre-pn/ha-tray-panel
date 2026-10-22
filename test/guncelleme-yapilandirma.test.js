@@ -58,7 +58,7 @@ test('o-51: electron-updater tam sürüme sabitli tek çalışma bağımlılığ
   const paket = JSON.parse(oku('package.json'));
   assert.deepEqual(Object.keys(paket.dependencies), ['electron-updater']);
   assert.match(paket.dependencies['electron-updater'], /^\d+\.\d+\.\d+$/, '^ ya da ~ olmadan tam sürüm');
-  assert.equal(paket.version, '1.6.0', 'bağımlılık eklemek sürümü değiştirmez');
+  assert.equal(paket.version, '1.7.0', 'bağımlılık eklemek sürümü değiştirmez');
   const kilit = JSON.parse(oku('package-lock.json'));
   assert.equal(kilit.packages['node_modules/electron-updater'].version, paket.dependencies['electron-updater']);
   assert.notEqual(kilit.packages['node_modules/electron-updater'].dev, true, 'paketlenen (çalışma) bağımlılık');

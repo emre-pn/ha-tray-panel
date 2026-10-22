@@ -12,7 +12,7 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 
 ## Özellikler
 
-- Tepsi simgesinden açılan hızlı panel: ışıklar (hazır parlaklık düğmeleri ve kaydırıcıyla), sahneler, medya ve bilgisayar eylemleri, bir de "son kullanılanlar" satırı. Her karonun simgesi yuvarlak bir rozette durur, ışık karosu parlaklığı kadar dolar, Home Assistant'ın yanıtı ✓ ya da ! rozetiyle görünür.
+- Tepsi simgesinden açılan hızlı panel: en üstte saat, yanında hava durumu ve altında çalan parça şeridi; ışıklar, sahneler, medya ve bilgisayar eylemleri, bir de "son kullanılanlar" satırı. Işık, parlaklığı kadar dolan kompakt bir satırdır: üstünde yana sürükle, Shift + ← / → ya da tekerlekle kıs; hazır seviyeler, kaydırıcı ve renkler "⋯" ile açılır. Her karonun simgesi yuvarlak bir rozette durur, Home Assistant'ın yanıtı ✓ ya da ! rozetiyle görünür.
 - Her eylemden sonra köşede küçük bir bildirim: cihazın simgesi, adı ve ne olduğu (örneğin "Kapatıldı" ya da "Parlaklık %80").
 - Bulanık aramalı komut paleti (`Ctrl+Alt+P`). `masa 40` yazınca ışık %40 olur, `masa 0` kapatır.
 - Ana pencere, palet, her favori ve her HA panosu için genel kısayollar. Kısayol kutuları bastığın tuşları kendisi yazar.
@@ -42,7 +42,7 @@ Tüm ekran görüntüleri gerçek bir evle değil, uydurma bir örnek evle çeki
 <table>
 <tr>
 <td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Hava durumu, medya oynatıcı ve tahminle hızlı panel"><br><sub>Hızlı panel</sub></td>
-<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Parlaklık ve beyaz tonu seçenekleriyle ışık kartları"><br><sub>Işıklar</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Işık satırları ve hazır seviyeler ile beyaz tonuyla bir ışığın ayrıntısı"><br><sub>Işıklar</sub></td>
 <td align="center" valign="top"><img src="docs/screenshots/climate-fan.png" width="240" alt="Klima ve vantilatör kartları"><br><sub>Klima ve vantilatör</sub></td>
 </tr>
 <tr>
