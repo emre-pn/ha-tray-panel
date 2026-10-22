@@ -43,7 +43,7 @@ All screenshots use a made-up demo home, not a real one.
 <tr>
 <td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Quick panel with weather, a media player and the forecast"><br><sub>Quick panel</sub></td>
 <td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Light cards with brightness presets and white tone"><br><sub>Lights</sub></td>
-<td align="center" valign="top"><img src="docs/screenshots/climate-fan-curtains.png" width="240" alt="Climate, fan and curtain cards"><br><sub>Climate, fan and curtains</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/climate-fan.png" width="240" alt="Climate and fan cards"><br><sub>Climate and fan</sub></td>
 </tr>
 <tr>
 <td align="center" valign="top"><img src="docs/screenshots/sensors-forecast.png" width="240" alt="Weather forecast and sensor strip"><br><sub>Forecast and sensors</sub></td>
@@ -55,6 +55,11 @@ All screenshots use a made-up demo home, not a real one.
 <td align="center" valign="top"><img src="docs/screenshots/quick-panel-light.png" width="240" alt="Quick panel in the light theme"><br><sub>Light theme</sub></td>
 </tr>
 </table>
+
+### Corner notification
+
+<p><img src="docs/screenshots/corner-notification.png" width="320" alt="Corner notification: Desk Lamp, Brightness 60%"><br>
+<img src="docs/screenshots/corner-notification-off.png" width="320" alt="Corner notification: Coffee Machine, Turned off"></p>
 
 ### Command palette
 

@@ -43,7 +43,7 @@ Tüm ekran görüntüleri gerçek bir evle değil, uydurma bir örnek evle çeki
 <tr>
 <td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Hava durumu, medya oynatıcı ve tahminle hızlı panel"><br><sub>Hızlı panel</sub></td>
 <td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Parlaklık ve beyaz tonu seçenekleriyle ışık kartları"><br><sub>Işıklar</sub></td>
-<td align="center" valign="top"><img src="docs/screenshots/climate-fan-curtains.png" width="240" alt="Klima, vantilatör ve perde kartları"><br><sub>Klima, vantilatör ve perde</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/climate-fan.png" width="240" alt="Klima ve vantilatör kartları"><br><sub>Klima ve vantilatör</sub></td>
 </tr>
 <tr>
 <td align="center" valign="top"><img src="docs/screenshots/sensors-forecast.png" width="240" alt="Hava tahmini ve sensör şeridi"><br><sub>Tahmin ve sensörler</sub></td>
@@ -55,6 +55,11 @@ Tüm ekran görüntüleri gerçek bir evle değil, uydurma bir örnek evle çeki
 <td align="center" valign="top"><img src="docs/screenshots/quick-panel-light.png" width="240" alt="Açık temada hızlı panel"><br><sub>Açık tema</sub></td>
 </tr>
 </table>
+
+### Köşe bildirimi
+
+<p><img src="docs/screenshots/corner-notification.png" width="320" alt="Köşe bildirimi: Desk Lamp, parlaklık %60"><br>
+<img src="docs/screenshots/corner-notification-off.png" width="320" alt="Köşe bildirimi: Coffee Machine kapatıldı"></p>
 
 ### Komut paleti
 
