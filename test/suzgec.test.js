@@ -429,6 +429,21 @@ test('h-39: üye denetimi kapı kuralını gevşetmez (her yasak alan üye liste
   assert.equal(uyelerGuvenliMi(['lock.a']), false);
 });
 
+test('1.6.0 sonrası: sahne/grup üyesinin alanı alan kaydında olmalı (kamera, group, remote... üyeli sahne güvensiz); kayıtlı alanlardaki üye geçer', () => {
+  const { uyelerGuvenliMi } = require('../src/lib/suzgec');
+  const { KAYITLI_ALANLAR } = require('../src/lib/alan-kaydi');
+  const sahne = (uyeler) => varlik('scene.aksam', 'Akşam', { entity_id: uyeler });
+  for (const uye of ['camera.salon', 'group.ev', 'remote.tv', 'lawn_mower.bahce', 'water_heater.kombi', 'input_text.not', 'person.ali', 'bilinmeyen.x']) {
+    assert.equal(uyelerGuvenliMi(['light.salon', uye]), false, uye);
+    assert.equal(guvenliVarlikMi(sahne(['light.salon', uye])), false, uye);
+    assert.equal(guvenliVarlikMi(sahne(uye)), false, `tek metin üye: ${uye}`);
+    assert.equal(guvenliVarlikMi(varlik('light.salon_grubu', 'Salon', { entity_id: ['light.a', uye] })), false, `grup: ${uye}`);
+  }
+  // cover dışındaki kayıtlı alanlar engellenmez (vana/otomasyon üyesi sahneyi zorunlu onaylı yapar: test/eylem-sinifi.test.js).
+  for (const alan of KAYITLI_ALANLAR.filter((a) => a !== 'cover')) assert.equal(uyelerGuvenliMi([`${alan}.salon`]), true, alan);
+  assert.ok(guvenliVarlikMi(sahne(['light.salon', 'switch.priz', 'media_player.tv', 'climate.salon', 'valve.bahce'])));
+});
+
 // --- 1.4.0: yeni alanlar yalnız sıkılaştırır ----------------------------------------------------------------------
 
 test('1.4.0: binary_sensor kapı/pencere/açıklık/kilit/kurcalama/güvenlik sınıfları (her yazımla) yasak; zararsız sınıflar serbest', () => {

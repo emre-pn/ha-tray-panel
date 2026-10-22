@@ -110,26 +110,32 @@ function sahteIzleyici() {
  * @param {object} bag
  * @param {string} bag.klasor ortak eşitleme klasörü
  * @param {string} bag.aygit bu bilgisayarın yerel durum kaydındaki aygit kimliği (verilirse esitlemeDurumu.aygit olarak yazılır)
+ * @param {boolean} [bag.yerelDegistiBagli] true: ayar yazımı (içe aktarma dahil) main.js ayarlariYaz gibi yonetici.yerelDegisti() çağırır
  */
-function bilgisayarKur({ klasor, aygit = null, ayarEk = {}, acik = true, saat = { t: BASLANGIC }, parolaDeposu = sahteParolaDeposu(), yasak = [], secilecekKlasor = klasor, fsOzel = null }) {
+function bilgisayarKur({ klasor, aygit = null, ayarEk = {}, acik = true, saat = { t: BASLANGIC }, parolaDeposu = sahteParolaDeposu(), yasak = [], secilecekKlasor = klasor, fsOzel = null, yerelDegistiBagli = false }) {
   const ayarlar = ayarlarYap({
     ...(acik ? { klasorEsitleme: true, esitlemeKlasoru: klasor } : { esitlemeKlasoru: klasor }),
     ...(aygit ? { esitlemeDurumu: { aygit } } : {}),
     ...ayarEk,
   });
-  const durum = { ayarYazimi: 0, iceAktar: [], yedek: 0, gunluk: [], degisti: 0, uygulandi: [], iceAktarHatasi: false, diyalog: secilecekKlasor, hata: null };
+  // iceAktarSirasinda(ayarlar): içe aktarma sürerken (ör. kullanıcının Ayarlar'da yaptığı) başka bir değişikliği taklit eder
+  const durum = { ayarYazimi: 0, iceAktar: [], yedek: 0, gunluk: [], degisti: 0, uygulandi: [], iceAktarHatasi: false, iceAktarSirasinda: null, diyalog: secilecekKlasor, hata: null };
   const zaman = sahteZaman(saat);
   const izle = sahteIzleyici();
+  const yazildi = () => {
+    durum.ayarYazimi += 1;
+    if (yerelDegistiBagli) yonetici.yerelDegisti();
+    return true;
+  };
   const yonetici = esitlemeYoneticisiOlustur({
     ayarlarAl: () => ayarlar,
-    ayarlariYaz: () => {
-      durum.ayarYazimi += 1;
-      return true;
-    },
+    ayarlariYaz: yazildi,
     iceAktar: async (cozum) => {
       durum.iceAktar.push(JSON.parse(JSON.stringify(cozum.ayarlar)));
       if (durum.iceAktarHatasi) return { ok: false, hata: 'sahte hata' };
       for (const [alan, deger] of Object.entries(cozum.ayarlar)) ayarlar[alan] = JSON.parse(JSON.stringify(deger));
+      if (durum.iceAktarSirasinda) durum.iceAktarSirasinda(ayarlar);
+      if (yerelDegistiBagli) yazildi(); // main.js ayarlariIceAktarUygula ayarları ayarlariYaz ile yazar
       return { ok: true };
     },
     varsayilanAl: () => VARSAYILAN,

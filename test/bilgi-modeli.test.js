@@ -121,6 +121,31 @@ test('bilgiModeliOlustur: şerit, kartlar, takvim, liste ve ayar; sayısal değe
   assert.deepEqual(m.ayar, { saatBicimi: '24', tarihBicimi: 'kisa', takvimGunSayisi: 5, sensorGrafik: false, sensorGrafikSaat: 24, pilEsigi: 25, havaTahmini: 'gunluk' });
 });
 
+test('medya üst kartı: oynatıcı onay isteyen FAVORİYSE karo favori kaydıyla kurulur (yıkıcı sınıf, tüm servisler onaylı: renderer basılı tutma ister); favori değilse ya da onay:false ise zararsız', () => {
+  const oynatici = { 'media_player.salon': durum('media_player.salon', 'playing', { friendly_name: 'Salon TV', volume_level: 0.4 }) };
+  const ayarlar = { ustKart1: 'medya', birincilMedya: 'media_player.salon' };
+  const karo = (favoriler) => M.bilgiModeliOlustur({ ayarlar: { ...ayarlar, ...(favoriler ? { favoriler } : {}) }, durumAl: (k) => oynatici[k] }).kartlar[0].karo;
+
+  const onayli = karo([{ entity_id: 'media_player.salon', ad: 'Salon TV', etiket: 'Televizyon', onay: true }]);
+  assert.equal(onayli.sinif, 'yikici', 'ana süreç düğmeleri onay-gerekli ile reddedeceği için panel de bunu bilmeli');
+  for (const servis of ['media_play_pause', 'media_next_track', 'volume_set', 'turn_off']) assert.ok(onayli.onayliServisler.includes(servis), servis);
+  assert.equal(onayli.etiket, 'Televizyon', 'favorinin etiketi');
+
+  const serbest = karo(undefined);
+  assert.equal(serbest.sinif, 'zararsiz');
+  assert.ok(!serbest.onayliServisler.includes('media_play_pause') && !serbest.onayliServisler.includes('volume_set'), 'oynat / ses tek tıklamayla');
+  assert.equal(serbest.etiket, 'Salon TV');
+  assert.equal(karo([{ entity_id: 'media_player.baska', ad: 'Baska', onay: true }]).sinif, 'zararsiz', 'başka oynatıcının favori kaydı karışmaz');
+  assert.equal(karo([{ entity_id: 'media_player.salon', ad: 'Salon TV', onay: false }]).sinif, 'zararsiz');
+  assert.equal(karo([null, 5, { entity_id: 'media_player.salon', ad: 'Salon TV', onay: true }]).sinif, 'yikici', 'bozuk favori öğeleri atlanır');
+  assert.equal(karo([{ entity_id: 'media_player.salon', ad: 'Kapı zili', onay: true }]), null, 'favorinin adı kapı sözcüğü içerirse karo hiç görünmez (Kapı Kuralı)');
+
+  // aynı kayıt eylem hattında da kullanıldığı için sınıf aynı: renderer'a giden karo hatla çelişmez
+  const { eylemSinifi } = require('../src/lib/eylem-sinifi');
+  const kayit = { entity_id: 'media_player.salon', ad: 'Salon TV', onay: true };
+  assert.equal(eylemSinifi(oynatici['media_player.salon'], kayit, 'media_play_pause').sinif, 'yikici');
+});
+
 test('bilgiModeliOlustur: boş ayar boş bölüm üretir, varsayılan ayarlar döner', () => {
   const m = M.bilgiModeliOlustur({ ayarlar: {}, durumAl });
   assert.deepEqual(m, {

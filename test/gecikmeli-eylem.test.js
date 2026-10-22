@@ -220,6 +220,82 @@ test('aynı varlık ve işlem yeniden planlanınca eskisinin yerine geçer; en �
   assert.equal(p.g.sayi(), EN_COK_BEKLEYEN);
 });
 
+/** POST'u elle serbest bırakılan HA sarmalayıcısı: "açma HA yanıtını beklerken" araya giren planları sınamak için. */
+function bekletenHA() {
+  const bekleyenler = [];
+  const durum = { tut: true }; // false: POST'lar doğrudan geçer
+  return {
+    bekleyenler,
+    durum,
+    sarmala: (haIstek) => (yol, secenek) => {
+      if (secenek?.yontem !== 'POST' || !durum.tut) return haIstek(yol, secenek);
+      return new Promise((coz, reddet) => bekleyenler.push({ birak: () => haIstek(yol, secenek).then(coz, reddet), hataVer: (h) => reddet(h) }));
+    },
+  };
+}
+const akit = () => new Promise((coz) => setImmediate(coz));
+const lambalar = (adet) => Object.fromEntries(Array.from({ length: adet }, (_, i) => [`light.l${i}`, { entity_id: `light.l${i}`, state: 'off', attributes: { friendly_name: `Lamba ${i}` } }]));
+
+test('süreli: aynı plan açma beklenirken iki kez istenirse TEK zamanlayıcı kalır (eski kayıt açmadan SONRA yeniden aranır); tek kapatma gider', async () => {
+  const bek = bekletenHA();
+  const o = kur({ haSarmala: bek.sarmala });
+  const a = o.g.planla({ kaynak: 'palet', kimlik: 'fan.vantilator', yon: 'sureli', dakika: 30 });
+  const b = o.g.planla({ kaynak: 'palet', kimlik: 'fan.vantilator', yon: 'sureli', dakika: 45 });
+  await akit();
+  assert.equal(bek.bekleyenler.length, 2, 'iki açma isteği HA yanıtını bekliyor');
+  bek.bekleyenler[0].birak();
+  assert.equal((await a).ok, true);
+  bek.bekleyenler[1].birak();
+  assert.equal((await b).ok, true);
+  assert.equal(o.g.sayi(), 1, 'ikinci istek birincinin yerine geçti');
+  assert.equal(o.saat.bekleyen(), 1, 'tek zamanlayıcı');
+  assert.equal(o.g.ozet()[0].bitis, o.saat.simdi() + 45 * DK, 'son istek geçerli');
+  bek.durum.tut = false;
+  await o.saat.ileri(45 * DK + 10);
+  assert.deepEqual(o.postlar().map((p) => p.yol.split('/').at(-1)), ['turn_on', 'turn_on', 'turn_off'], 'tek kapatma');
+});
+
+test('süreli: açma beklenirken yer ayrılır; liste araya giren planla dolarsa cihaz AÇILMADAN "dolu" döner, açılmış cihaz zamanlayıcısız kalmaz', async () => {
+  const bek = bekletenHA();
+  const dolu = lambalar(13);
+  const o = kur({ varliklar: dolu, favoriler: Object.keys(dolu).map((k) => ({ entity_id: k, ad: k })), haSarmala: bek.sarmala });
+  for (let i = 0; i < EN_COK_BEKLEYEN - 1; i += 1) assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: `light.l${i}`, yon: 'kapat', dakika: 10 })).ok, true);
+  const surelisi = o.g.planla({ kaynak: 'palet', kimlik: 'light.l9', yon: 'sureli', dakika: 5 });
+  await akit();
+  assert.equal(bek.bekleyenler.length, 1, 'açma HA yanıtını bekliyor');
+  // açma sürerken başka bir plan son yeri alamaz
+  assert.deepEqual((await o.g.planla({ kaynak: 'palet', kimlik: 'light.l10', yon: 'kapat', dakika: 10 })).tur, 'dolu');
+  assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: 'light.l3', yon: 'kapat', dakika: 20 })).ok, true, 'var olanı yenilemek yer istemez');
+  bek.bekleyenler[0].birak();
+  const sonuc = await surelisi;
+  assert.equal(sonuc.ok, true);
+  assert.equal(o.g.sayi(), EN_COK_BEKLEYEN);
+  assert.equal(o.ha.durum.get('light.l9').state, 'on');
+  // liste tam doluyken yeni süreli plan cihazı hiç açmaz
+  const postlar = o.postlar().length;
+  const tasan = await o.g.planla({ kaynak: 'palet', kimlik: 'light.l11', yon: 'sureli', dakika: 5 });
+  assert.deepEqual([tasan.ok, tasan.tur], [false, 'dolu']);
+  assert.equal(o.postlar().length, postlar, 'cihaz açılmadı');
+  assert.equal(o.ha.durum.get('light.l11').state, 'off');
+  bek.durum.tut = false;
+  await o.saat.ileri(5 * DK + 10);
+  assert.equal(o.ha.durum.get('light.l9').state, 'off', 'süre dolunca kapandı');
+});
+
+test('süreli: açma başarısız olunca ayrılan yer geri verilir (sonraki plan kabul edilir)', async () => {
+  const bek = bekletenHA();
+  const dolu = lambalar(12);
+  const o = kur({ varliklar: dolu, favoriler: Object.keys(dolu).map((k) => ({ entity_id: k, ad: k })), haSarmala: bek.sarmala });
+  for (let i = 0; i < EN_COK_BEKLEYEN - 1; i += 1) await o.g.planla({ kaynak: 'palet', kimlik: `light.l${i}`, yon: 'kapat', dakika: 10 });
+  const surelisi = o.g.planla({ kaynak: 'palet', kimlik: 'light.l9', yon: 'sureli', dakika: 5 });
+  await akit();
+  assert.deepEqual((await o.g.planla({ kaynak: 'palet', kimlik: 'light.l10', yon: 'kapat', dakika: 10 })).tur, 'dolu');
+  bek.bekleyenler[0].hataVer(Object.assign(new Error('x'), { tur: 'ag' }));
+  assert.equal((await surelisi).ok, false);
+  assert.equal(o.g.sayi(), EN_COK_BEKLEYEN - 1);
+  assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: 'light.l10', yon: 'kapat', dakika: 10 })).ok, true, 'yer geri verildi');
+});
+
 test('favori olmayan varlık ERTELENEMEZ (serbest kimlikle eylem yok): HA isteği hiç gitmez; favori ise ayardaki kayıt kullanılır', async () => {
   const o = kur({ favoriler: [] });
   const s = await o.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 });
@@ -257,6 +333,51 @@ test('favori dışı kimlik yalnız "diğer cihazlar" listesinde VE paletDigerCi
 
   const hatali = kur({ favoriler: [], ayarlar: { paletDigerCihazlar: true } }, { digerMi: async () => { throw new Error('x'); } });
   assert.equal((await hatali.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).tur, 'bilinmeyen-favori', 'listeye bakılamazsa reddedilir');
+});
+
+test('fire anında favori dışı kimlik "diğer cihazlar" listesinde yeniden aranır: listeden düşmüşse ya da liste okunamazsa çalışmaz; listedeyse çalışır', async () => {
+  const listede = new Set(['light.salon', 'switch.priz']);
+  let hata = false;
+  const o = kur({ favoriler: [], ayarlar: { paletDigerCihazlar: true } }, { digerMi: async (k) => (hata ? Promise.reject(new Error('x')) : listede.has(k)) });
+  assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).ok, true);
+  assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: 'switch.priz', yon: 'kapat', dakika: 5 })).ok, true);
+  assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: 'fan.vantilator', yon: 'sureli', dakika: 5 })).ok, false, 'listede olmayan hiç kurulmaz');
+  listede.delete('light.salon'); // cihaz listeden düştü (kullanılamaz ya da güvenli değil artık)
+  await o.saat.ileri(5 * DK + 5);
+  assert.deepEqual(govde(o), [['/api/services/switch/turn_off', 'switch.priz']], 'yalnız hâlâ listedeki çalışır');
+  assert.deepEqual(o.kayitlar.find((k) => k.sonuc === 'atlandi'), { kaynak: 'gecikmeli', kimlik: 'light.salon', ad: 'Salon lambası', islem: 'turn_off', sonuc: 'atlandi', neden: 'favori-degil' });
+
+  const h = kur({ favoriler: [], ayarlar: { paletDigerCihazlar: true } }, { digerMi: async () => (hata ? Promise.reject(new Error('x')) : true) });
+  assert.equal((await h.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).ok, true);
+  hata = true;
+  await h.saat.ileri(5 * DK + 5);
+  assert.deepEqual(h.postlar(), [], 'liste okunamıyorsa serbest kimlik çalışmaz');
+
+  // favori olan, listeye bakılmadan çalışır
+  const f = kur(undefined, { digerMi: async () => { throw new Error('çağrılmamalı'); } });
+  assert.equal((await f.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).ok, true);
+  await f.saat.ileri(5 * DK + 5);
+  assert.equal(f.postlar().length, 1);
+});
+
+test('digerAyarDegisti: paletDigerCihazlar kapanınca favori olmayan bekleyenler iptal olur (geçmişe yazılır), favoriler ve açık ayar etkilenmez', async () => {
+  const o = kur({ favoriler: [{ entity_id: 'light.salon', ad: 'Salon lambası' }], ayarlar: { paletDigerCihazlar: true } }, { digerMi: async (k) => k === 'switch.priz' });
+  await o.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 5 });
+  await o.g.planla({ kaynak: 'palet', kimlik: 'switch.priz', yon: 'kapat', dakika: 5 });
+  assert.equal(o.g.sayi(), 2);
+  o.g.digerAyarDegisti(); // ayar hâlâ açık
+  assert.equal(o.g.sayi(), 2);
+  o.ayarlar.paletDigerCihazlar = false;
+  const once = o.sayac.degisti;
+  o.g.digerAyarDegisti();
+  assert.equal(o.g.sayi(), 1);
+  assert.deepEqual(o.g.ozet().map((x) => x.ad), ['Salon lambası']);
+  assert.equal(o.saat.bekleyen(), 1, 'iptal edilenin zamanlayıcısı bırakıldı');
+  assert.ok(o.sayac.degisti > once, 'liste değişti bildirimi');
+  assert.deepEqual(o.kayitlar.at(-1), { kaynak: 'panel', kimlik: 'switch.priz', ad: 'Masa prizi', islem: 'gecikmeli-iptal', sonuc: 'iptal' });
+  await o.saat.ileri(5 * DK + 5);
+  assert.deepEqual(govde(o), [['/api/services/light/turn_off', 'light.salon']]);
+  o.g.digerAyarDegisti(); // bekleyen kalmadı: hata vermez, bildirim üretmez
 });
 
 test('uyku: bilgisayar uyurken süre geçerse eylem ÇALIŞTIRILMAZ, kullanıcıya söylenir ve geçmişe "atlandi" yazılır', async () => {

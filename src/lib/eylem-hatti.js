@@ -56,21 +56,29 @@ const ORAN_SINIRI_SON = 10; // sonDeger (kaydırıcı bırakıldı / hazır sevi
 
 const BASILI_SURE_MS = 800;
 const BASILI_TOLERANS_MS = 100; // zamanlayıcı/IPC gecikmesi payı
+const BASILI_SINIRI = 32; // aynı anda tutulan en çok başlangıç kaydı
 const BASILI_OMUR_MS = 10_000; // başlatılıp unutulan basış sonsuza dek geçerli kalmasın (0,8 sn tutma + istek gecikmesi için bol)
 
 /**
  * Panel/palet'te "basılı tut" onayının ana süreç tarafı. Renderer yalnız "basış başladı" der (yuzey:basili-basla); onay,
  * ana sürecin kendi saatiyle en az ~0,8 sn geçmişse ve yalnız BİR kez geçerlidir. Böylece tek bir IPC çağrısıyla
  * yıkıcı eylem çalıştırılamaz.
+ * Sınırda (BASILI_SINIRI) yalnız süresi dolmuş ya da EN ESKİ kayıt atılır; o an tutulmakta olan basış silinmez. Yüzey (panel/palet)
+ * gizlenince ya da kip değişince başlamış basışlar src/yuzey-yoneticisi.js tarafından iptal edilir.
  * @param {{simdi?: () => number, sureMs?: number}} [secenek]
  */
 function basiliTutmaDeposu({ simdi = () => Date.now(), sureMs = BASILI_SURE_MS } = {}) {
-  const basislar = new Map(); // kimlik -> başlangıç zamanı
+  const basislar = new Map(); // kimlik -> başlangıç zamanı (ekleme sırası = başlama sırası)
   return {
     basla(kimlik) {
       if (typeof kimlik !== 'string') return false;
-      if (basislar.size >= 32) basislar.clear(); // sınırsız büyümesin
-      basislar.set(kimlik, simdi());
+      const t = simdi();
+      basislar.delete(kimlik); // yeniden başlayan basış sıranın sonuna gider
+      if (basislar.size >= BASILI_SINIRI) {
+        for (const [k, bas] of basislar) if (t - bas > BASILI_OMUR_MS) basislar.delete(k);
+        if (basislar.size >= BASILI_SINIRI) basislar.delete(basislar.keys().next().value); // sınırsız büyümesin: yalnız en eskisi
+      }
+      basislar.set(kimlik, t);
       return true;
     },
     /** Yeterince basılı tutuldu mu? Doğruysa kayıt tüketilir (ikinci kez kullanılamaz). */

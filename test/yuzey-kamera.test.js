@@ -28,7 +28,7 @@ const model = (ek = {}) => ({
 function kur({ yanitlar = {}, acik = true } = {}) {
   const odak = { aktif: null };
   const zaman = sahteZaman();
-  const durum = { acik, cizimler: 0, satirlar: [], odaklar: new Map(), istekler: [], bekleyenler: [] };
+  const durum = { acik, cizimler: 0, boyutlar: 0, satirlar: [], odaklar: new Map(), istekler: [], bekleyenler: [] };
   const ctx = {
     t,
     olustur: (etiket, sinif, metin) => {
@@ -46,6 +46,7 @@ function kur({ yanitlar = {}, acik = true } = {}) {
       return Promise.resolve(y ?? { ok: true, veri: PNG_URL, yas: 0, onbellek: false });
     },
     yenidenCiz: () => (durum.cizimler += 1),
+    boyutDegisti: () => (durum.boyutlar += 1),
     simdi: () => zaman.simdi(),
     zamanlayici: { setTimeout: (f, ms) => zaman.setTimeout(f, ms), clearTimeout: (id) => zaman.clearTimeout(id) },
     acikMi: () => durum.acik,
@@ -466,4 +467,51 @@ test('Şimdi yenile: yalnız o kameranın görüntüsünü ister; yükleniyorken
   assert.equal(balkon.yenile.disabled, false);
   assert.equal(balkon.resim.getAttribute('src'), JPEG_URL);
   assert.equal(salon.resim.getAttribute('src'), PNG_URL, 'diğer kamera etkilenmez');
+});
+
+test('Büyüt: yenileme sürerken (eski kare bellekte) büyütme korunur; görüntü gelince kart küçülüp uzamaz, düğme "Küçült" kalır', async () => {
+  let coz;
+  const bekle = new Promise((c) => (coz = c));
+  const yanitlar = {};
+  const { modul, kartlar, zaman } = kur({ yanitlar });
+  modul.ayarla(model());
+  modul.gosterildi();
+  await akit();
+  const kart = kartlar()[0];
+  const [salon] = kartlar().map(kartDurumu);
+  const buyut = bulSinif(kart, 'kamera-buyut')[0];
+  buyut.gonder('click');
+  assert.ok(kart.sinifVar('kamera-buyuk'));
+  yanitlar['camera.salon'] = () => bekle;
+  salon.yenile.gonder('click');
+  assert.equal(salon.durum.textContent, 'yuzey.kamera.yukleniyor');
+  assert.ok(kart.sinifVar('kamera-buyuk'), 'yenileme sürerken kart tam genişlikte kalır');
+  assert.equal(buyut.getAttribute('aria-pressed'), 'true');
+  assert.equal(buyut.textContent, 'yuzey.kamera.kucult');
+  assert.equal(buyut.disabled, true, 'yüklenirken düğme yine kapalıdır');
+  zaman.ilerle(4000);
+  coz({ ok: true, veri: JPEG_URL, yas: 0 });
+  await akit();
+  assert.equal(salon.resim.getAttribute('src'), JPEG_URL);
+  assert.ok(kart.sinifVar('kamera-buyuk'), 'yeni kare de büyük gelir');
+  assert.equal(buyut.disabled, false);
+  assert.equal(buyut.textContent, 'yuzey.kamera.kucult');
+});
+
+test('Büyüt: ilk yükleme (eski kare yok) büyütülmüş başlamaz; Büyüt/Küçült panel yüksekliğinin yeniden ölçülmesini ister', async () => {
+  const { modul, kartlar, durum } = kur();
+  modul.ayarla(model());
+  modul.gosterildi();
+  await akit();
+  const kart = kartlar()[0];
+  assert.ok(!kart.sinifVar('kamera-buyuk'));
+  const buyut = bulSinif(kart, 'kamera-buyut')[0];
+  const onceki = durum.boyutlar;
+  buyut.gonder('click');
+  assert.equal(durum.boyutlar, onceki + 1, 'büyütünce yükseklik yeniden ölçülür');
+  buyut.gonder('click');
+  assert.equal(durum.boyutlar, onceki + 2, 'küçültünce de');
+  modul.gizlendi();
+  buyut.gonder('click');
+  assert.equal(durum.boyutlar, onceki + 2, 'görüntü yokken tıklama etkisizdir: ölçüm istenmez');
 });

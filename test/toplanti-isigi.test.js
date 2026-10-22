@@ -120,6 +120,45 @@ test('izleyici: durdur toplantı bitişini bildirmez; duraklat/surdur uykuda yok
   assert.deepEqual(o.degisimler, [true]);
 });
 
+test('izleyici: yenile() yalnız zamanlayıcıyı yeni aralıkla kurar; toplantı durumu ve boş okuma sayacı korunur (devam eden toplantı yeniden başlamaz)', async () => {
+  let aralik = 10_000;
+  const degisimler = [];
+  const zamanlayicilar = [];
+  const silinen = [];
+  let yanit = cikti('0x1', '0x0');
+  const iz = toplantiIzleyiciOlustur({
+    sorgula: async () => yanit,
+    kaynakAl: () => 'mikrofon',
+    aralikAl: () => aralik,
+    degisti: (k) => degisimler.push(k),
+    zaman: { setTimeout: (fn, ms) => (zamanlayicilar.push({ fn, ms }), zamanlayicilar.length), clearTimeout: (id) => silinen.push(id) },
+  });
+  iz.baslat();
+  await new Promise(setImmediate);
+  assert.deepEqual(degisimler, [true]);
+  assert.equal(zamanlayicilar.at(-1).ms, 10_000);
+  // bir boş okuma görüldü (bitiş için ikinci gerekir)
+  yanit = cikti('0x1', '0x5');
+  await iz.yokla();
+  aralik = 30_000;
+  iz.yenile();
+  assert.equal(zamanlayicilar.at(-1).ms, 30_000, 'bekleyen zamanlayıcı yeni aralıkla kuruldu');
+  assert.ok(silinen.length >= 1, 'eskisi bırakıldı');
+  assert.deepEqual(degisimler, [true], 'yeniden "başladı" bildirilmedi');
+  assert.equal(iz.durum().toplantida, true);
+  await iz.yokla(); // sayaç korunduğu için bu ikinci boş okuma: bitiş
+  assert.deepEqual(degisimler, [true, false]);
+
+  // duraklatılmışken ya da durdurulmuşken zamanlayıcı kurmaz
+  const once = zamanlayicilar.length;
+  iz.duraklat();
+  iz.yenile();
+  assert.equal(zamanlayicilar.length, once);
+  iz.durdur();
+  iz.yenile();
+  assert.equal(zamanlayicilar.length, once);
+});
+
 test('toplantı ışığı modülü kayıt defterine yazmaz ve ağ/dosya API\'si kullanmaz', () => {
   const kaynak = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'toplanti-isigi.js'), 'utf8');
   assert.doesNotMatch(kaynak, /reg(\.exe)?['"]?\s*,\s*\[\s*['"](add|delete|import)|require\(/);

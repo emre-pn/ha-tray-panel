@@ -6,6 +6,10 @@
  *
  * Kontrast (WCAG 4,5:1): --metin ve --soluk --bg üzerinde, --rozet-metin --vurgu / --canli / --yedek / --hata üzerinde en az 4,5'tir;
  * test/masaustu-karo-sayfa.test.js iki temada hesaplar. Yeni renk eklerken o testi güncelleyin.
+ *
+ * Görünüm ayarları (o-25 / o-29 / o-34): ana süreç `gorunum` modelini gönderir, lib/tema-renk.js gorunumUygula bunu <html> üzerine yazar
+ * (özel/hazır palet değişkenleri + data-sema, yüksek karşıtlıkta data-karsitlik, "Hareketi azalt"ta data-hareket). Aşağıdaki
+ * :root[data-sema] / [data-karsitlik] / [data-hareket] kuralları bunlara yanıt verir; hiçbiri yoksa karo yukarıdaki paletle çizilir.
  */
 
 :root {
@@ -50,6 +54,52 @@
     --bg: rgba(255, 255, 255, 0.7);
     --dugme: rgba(227, 233, 243, 0.85);
     --kenar: rgba(15, 23, 42, 0.16);
+  }
+}
+
+/* Özel / hazır palet (data-sema yalnız palet değişkenleri yazılınca konur): düğme zemini paletin "yüzey üstü" tonundan gelir. */
+:root[data-sema="koyu"] {
+  color-scheme: dark;
+}
+
+:root[data-sema="acik"] {
+  color-scheme: light;
+}
+
+:root[data-sema] {
+  --dugme: var(--karo-uzerinde, var(--bg));
+}
+
+/* Yüksek karşıtlık (o-25): opak zemin, metin >= 7:1; ana süreç malzemeyi kapatır, özel renkler yok sayılır (yuzey.css ile aynı değerler). */
+:root[data-karsitlik] {
+  color-scheme: dark;
+  --bg: #000000;
+  --kenar: #ffffff;
+  --dugme: #262626;
+  --metin: #ffffff;
+  --soluk: #e6e6e6;
+  --acik: #ffd400;
+  --canli: #3ddc84;
+  --yedek: #ffd400;
+  --hata: #ff6b6b;
+  --vurgu: #5cc8ff;
+  --rozet-metin: #000000;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-karsitlik] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --kenar: #000000;
+    --dugme: #e0e0e0;
+    --metin: #000000;
+    --soluk: #1a1a1a;
+    --acik: #6b3300;
+    --canli: #005a2f;
+    --yedek: #7a3b00;
+    --hata: #a50000;
+    --vurgu: #004fc4;
+    --rozet-metin: #ffffff;
   }
 }
 
@@ -246,9 +296,26 @@ body {
   outline-offset: 1px;
 }
 
+/* Yüksek karşıtlık: kalın kenarlık ve odak halkası (kontrast zeminde 7:1'in üstünde). */
+:root[data-karsitlik] .karo,
+:root[data-karsitlik] .onayar {
+  border-width: 2px;
+}
+
+:root[data-karsitlik] :focus-visible {
+  outline-width: 3px;
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Uygulamanın kendi "Hareketi azalt" ayarı (data-hareket="azalt"): sistem tercihiyle aynı sonuç. */
+:root[data-hareket="azalt"] * {
+  transition: none !important;
+  animation: none !important;
 }

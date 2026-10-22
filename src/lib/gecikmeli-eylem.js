@@ -13,6 +13,7 @@
  *    yine tek güvenli hattan geçer (eylem.kayitliCalistir, kaynak 'gecikmeli'): Kapı Kuralı, eylem sınıfı + yüzey izni (gecikmeli onay
  *    SUNAMAZ, yıkıcı çalışmaz), servis izin listesi, hız sınırı, tek POST. Hat kuralları o an yeniden uygulanır.
  *  - Süre 1 dakika - 24 saat; en çok 10 bekleyen eylem. Aynı varlığa aynı işlemi yeniden planlamak eskisinin yerine geçer.
+ *    "Süreli" planda varlık açılırken (HA'yı beklerken) yer ayrılır: kapatma zamanlayıcısına yer kalmadığı için açık unutulan cihaz olmaz.
  *  - Bekleyenler yalnız bellektedir: uygulama kapanınca hepsi iptal olur, bilgisayar uykudayken çalışmaz. Zamanlayıcı tetiklendiğinde
  *    planlanan zamandan 2 dakikadan fazla geçmişse (uyku, saat atlaması) eylem ÇALIŞTIRILMAZ, kullanıcıya "çalışmadı" denir.
  *  - Ayar `gecikmeliEylem` kapanınca bekleyenlerin hepsi iptal edilir.
@@ -69,6 +70,7 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
   const acikMi = () => ayarlarAl()?.gecikmeliEylem !== false;
   const bekleyenler = new Map(); // id -> { id, kimlik, ad, servis, yon, bitis, zamanlayici }
   let sayac = 0;
+  let ayrilan = 0; // "süreli" planda varlığı açarken (HA beklenirken) kapatma zamanlayıcısı için ayrılmış yer sayısı
 
   const adiAl = (varlik, kimlik) => {
     const ad = varlik?.attributes?.friendly_name;
@@ -76,6 +78,16 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
   };
 
   const favoriBul = (kimlik) => (ayarlarAl()?.favoriler ?? []).find((f) => f?.entity_id === kimlik);
+  const eskiBul = (kimlik, servis) => [...bekleyenler.values()].find((o) => o.kimlik === kimlik && o.servis === servis);
+
+  /** Favori dışı kimlik şu an "diğer cihazlar" listesinde mi? Liste okunamazsa false (reddedilir). */
+  async function listedeMi(kimlik) {
+    try {
+      return (await digerMi(kimlik)) === true;
+    } catch {
+      return false;
+    }
+  }
 
   /** Favori ise ayardaki kayıt (kendi ayarlarıyla), değilse tek seferlik kayıt (yalnız "diğer cihazlar" yolundan gelmiş kimlik için). Kapı Kuralı hatta yine uygulanır. */
   function kayitBul(kimlik, ad) {
@@ -108,7 +120,8 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     degisti();
     if (!acikMi()) return;
     // Planlandıktan sonra favoriden çıkarılmış ve "diğer cihazlar" yolu da kapalıysa serbest kimlikle eylem çalışmasın.
-    if (!favoriBul(o.kimlik) && ayarlarAl()?.paletDigerCihazlar !== true) {
+    const favori = favoriBul(o.kimlik) !== undefined;
+    if (!favori && ayarlarAl()?.paletDigerCihazlar !== true) {
       kaydet({ kaynak: ETIKET, kimlik: o.kimlik, ad: o.ad, islem: o.servis, sonuc: 'atlandi', neden: 'favori-degil' });
       return;
     }
@@ -116,6 +129,11 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
       // Bilgisayar uyudu ya da saat ilerledi: eski bir komut sürpriz biçimde çalışmasın.
       kaydet({ kaynak: ETIKET, kimlik: o.kimlik, ad: o.ad, islem: o.servis, sonuc: 'atlandi', neden: 'kacirildi' });
       bildir({ tur: 'hata', metin: t('gecikmeli.kacirildi', { ad: o.ad }) });
+      return;
+    }
+    // Favori değilse planlama anındaki koşul yeniden denetlenir: cihaz artık "diğer cihazlar" listesinde (güvenli, kullanılabilir) olmalı.
+    if (!favori && !(await listedeMi(o.kimlik))) {
+      kaydet({ kaynak: ETIKET, kimlik: o.kimlik, ad: o.ad, islem: o.servis, sonuc: 'atlandi', neden: 'favori-degil' });
       return;
     }
     try {
@@ -163,19 +181,26 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     const kayit = kayitBul(kimlik, ad);
     if (eylemSinifi(varlik, kayit).sinif !== SINIF.ZARARSIZ) return { ok: false, tur: 'kaynak-izinsiz' }; // onay isteyen eylem ertelenemez
 
-    const eski = [...bekleyenler.values()].find((o) => o.kimlik === kimlik && o.servis === servis);
-    if (!eski && bekleyenler.size >= EN_COK_BEKLEYEN) return { ok: false, tur: 'dolu' };
+    // Yer denetimi varlığı açmadan ÖNCE yapılır (süreli planda açılmış ama kapatma zamanlayıcısı kurulamamış cihaz olmasın); ayrılan yerler sayılır.
+    if (!eskiBul(kimlik, servis) && bekleyenler.size + ayrilan >= EN_COK_BEKLEYEN) return { ok: false, tur: 'dolu' };
 
     if (yon === 'sureli') {
-      const simdiAc = await eylem.kayitliCalistir({ kimlik, kaynak, kayit, eylem: { servis: YONLER.ac }, sessiz: true }, 'cihaz');
-      if (!simdiAc?.ok) {
-        bildir({ tur: 'hata', metin: t('gecikmeli.acilamadi', { ad }) });
-        return { ok: false, tur: simdiAc?.tur ?? 'hata' };
+      ayrilan += 1; // açma HA'yı beklerken başka bir plan bu yeri alamaz
+      try {
+        const simdiAc = await eylem.kayitliCalistir({ kimlik, kaynak, kayit, eylem: { servis: YONLER.ac }, sessiz: true }, 'cihaz');
+        if (!simdiAc?.ok) {
+          bildir({ tur: 'hata', metin: t('gecikmeli.acilamadi', { ad }) });
+          return { ok: false, tur: simdiAc?.tur ?? 'hata' };
+        }
+      } finally {
+        ayrilan -= 1;
       }
     }
 
+    // Açmayı beklerken aynı plan başka bir istekle kurulmuş (ya da kalkmış) olabilir: eski kayıt şimdi yeniden aranır, ikinci zamanlayıcı açılmaz.
+    const eski = eskiBul(kimlik, servis);
     if (eski) kaldir(eski.id);
-    else if (bekleyenler.size >= EN_COK_BEKLEYEN) return { ok: false, tur: 'dolu' }; // aşırı yarış: açma beklerken liste dolmuş olabilir
+    else if (bekleyenler.size >= EN_COK_BEKLEYEN) return { ok: false, tur: 'dolu' }; // savunma: ayrılan yer buna engel olur
     sayac += 1;
     const o = { id: `g${sayac}`, kimlik, ad, servis, yon: servis === YONLER.ac ? 'ac' : 'kapat', bitis: simdi() + dakika * 60_000, zamanlayici: null };
     bekleyenler.set(o.id, o);
@@ -223,6 +248,18 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     ayarDegisti() {
       if (!acikMi()) hepsiniIptal({ kaynak: 'panel' });
       else degisti();
+    },
+    /** `paletDigerCihazlar` değişti: kapandıysa favori olmayan cihazların bekleyenleri iptal olur (favoriler etkilenmez). */
+    digerAyarDegisti() {
+      if (ayarlarAl()?.paletDigerCihazlar === true) return;
+      let iptalEdilen = 0;
+      for (const o of [...bekleyenler.values()]) {
+        if (favoriBul(o.kimlik)) continue;
+        kaldir(o.id);
+        kaydet({ kaynak: 'panel', kimlik: o.kimlik, ad: o.ad, islem: 'gecikmeli-iptal', sonuc: 'iptal' });
+        iptalEdilen += 1;
+      }
+      if (iptalEdilen > 0) degisti();
     },
     /** Uygulama çıkışı: hepsi iptal (hiçbir şey çalışmaz, geçmişe yazılmaz). */
     kapat() {

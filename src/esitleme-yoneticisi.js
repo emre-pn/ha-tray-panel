@@ -98,6 +98,7 @@ function esitlemeYoneticisiOlustur({
   let sonImza = '';
   let sonCalisma = 0;
   let sonYerelKilit = null;
+  let kendiUygulamamiz = false; // klasörden gelen bölüm şu an uygulanıyor: bu sırada gelen yerelDegisti kendi yazımımızın yankısıdır
   let yedekGerekli = false; // eşitleme yeni açıldı: klasörden ilk uygulamadan önce ayar yedeği alınır
   let yedekAlindi = false; // yedek bu açma döneminde alındı (her uygulamada tekrarlanmaz)
   const uygulanamayan = new Map(); // bölüm -> reddedilen uzak damga (aynı sürüm tekrar tekrar denenmez)
@@ -416,10 +417,13 @@ function esitlemeYoneticisiOlustur({
         }
       }
       let sonuc;
+      kendiUygulamamiz = true;
       try {
         sonuc = await iceAktar(k.temiz.cozum);
       } catch {
         sonuc = { ok: false };
+      } finally {
+        kendiUygulamamiz = false;
       }
       if (sonuc?.ok) {
         uygulanamayan.delete(ad);
@@ -432,6 +436,12 @@ function esitlemeYoneticisiOlustur({
         k.durum = kayit.bolumler[ad] ?? { ozet: k.ozetL, zaman: 0, aygit: '' }; // uygulanamadı: kayıt ilerlemez
         gunlugeYaz('Klasör eşitleme: bir bölüm uygulanamadı.');
       }
+    }
+    if (uygulananlar.length > 0) {
+      // Uygulanan bölümler kendi yeni özetleriyle kilide girer: kendi uygulamamızın ayar yazımı ikinci bir eşitleme planlamaz. Uygulama sürerken
+      // başka bir yerel değişiklik olduysa (ya da uygulama başka bir bölümü değiştirdiyse) kilit tutmaz ve eşitleme her zamanki gibi planlanır.
+      sonYerelKilit = secili.map((ad) => (uygulananlar.includes(ad) ? kayit.bolumler[ad].ozet : kararlar[ad].ozetL)).join('|');
+      if (yerelKilit() !== sonYerelKilit) planla(DEGISIKLIK_BEKLEME_MS);
     }
 
     // 2) Dosyaya yazılacak birleşik içerik.
@@ -535,9 +545,12 @@ function esitlemeYoneticisiOlustur({
 
   // ---- Dışarıya açılan işlemler ---------------------------------------------------------------------------------------------------------
 
-  /** Ayar dosyası yazıldı (main.js ayarlariYaz): bölümlerden biri değiştiyse kısa süre sonra eşitlenir. */
+  /**
+   * Ayar dosyası yazıldı (main.js ayarlariYaz): bölümlerden biri değiştiyse kısa süre sonra eşitlenir. Klasörden gelen bölüm uygulanırken gelen
+   * çağrı atlanır; uygulama bitince esitleIc kilidi karşılaştırır ve o sırada başka bir değişiklik olduysa eşitlemeyi kendisi planlar.
+   */
   function yerelDegisti() {
-    if (!etkinMi()) return;
+    if (!etkinMi() || kendiUygulamamiz) return;
     if (yerelKilit() === sonYerelKilit) return;
     planla(DEGISIKLIK_BEKLEME_MS);
   }

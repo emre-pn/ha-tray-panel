@@ -1523,6 +1523,20 @@
       }
     }
 
+    /* Hareketi azalt (ayar): ayarlar.js <html data-hareket> yazar; sistem tercihindeki kuralın yanında bu kutu da geçişleri ve yumuşak kaydırmayı kapatır */
+    :root[data-hareket="azalt"] {
+      scroll-behavior: auto;
+    }
+
+    :root[data-hareket="azalt"] details.bolum > summary::before,
+    :root[data-hareket="azalt"] input,
+    :root[data-hareket="azalt"] select,
+    :root[data-hareket="azalt"] .buton,
+    :root[data-hareket="azalt"] .cihaz-satir,
+    :root[data-hareket="azalt"] .checkbox-etiket input[type="checkbox"]::before {
+      transition: none;
+    }
+
     /* ---- 1.6.0 düzen -------------------------------------------------------------------------------------------------------------
        Windows 11 Ayarlar gibi: solda kategori menüsü (arama kutusu üstte), sağda yalnız seçili kategori (ayarlar-kategori.js; öbür
        kategorilerin bölümleri kategori-disi sınıfıyla gizlenir). Bölümler gruplanmış satırlardır: ayarlar arasında ince çizgi, aç/kapa

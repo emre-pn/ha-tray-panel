@@ -196,6 +196,16 @@ function guncellemeYoneticisiOlustur({
       guncelleyici.on?.('update-downloaded', (olay) => {
         indirilenDosya = typeof olay?.downloadedFile === 'string' ? olay.downloadedFile : null;
       });
+      // 'error' dinleyicisi yoksa EventEmitter olayı fırlatır; electron-updater onu bazı yollarda bir söz zincirinin içinde yayar (ör. quitAndInstall'dan
+      // sonra yükleyici başlatılamazsa) ve bu işlenmemiş reddedilmeye dönüşürdü. Hatalar denetle/indir'in await'iyle ve kurulum zaman aşımıyla
+      // zaten işlenir: burada yalnız sınıflandırılmış neden günlüğe yazılır (ileti, adres ve yol yazılmaz).
+      guncelleyici.on?.('error', (h) => {
+        try {
+          gunluk(`Güncelleyici hata bildirdi (${hataSinifla(h)}).`);
+        } catch {
+          /* günlük hatası güncellemeyi bozmasın */
+        }
+      });
     }
     const g = guncelleyici;
     g.autoDownload = false; // indirme yalnız kullanıcı onayıyla
@@ -217,6 +227,26 @@ function guncellemeYoneticisiOlustur({
     durum = onceki;
     ilerleme = 0;
     gunluk(`Güncelleme işlemi tamamlanamadı (${neden}).`);
+    yay();
+  }
+
+  /**
+   * İndirme ya da kurma doğrulaması sürerken ayar kapanmış (uygulamaGuncelleme) ya da ön sürümlere izin kalkmış (onSurumler) olabilir; kapandi()
+   * o sırada çalışmaz. Bu yüzden her beklemeden sonra yeniden bakılır. null = devam; yoksa dönülecek `sonuc`.
+   */
+  function izinKalktiMi(hedef) {
+    if (!acikMi()) return 'kapali';
+    if (hedef?.onSurum === true && onSurumlerMi() !== true) return 'gecersiz';
+    return null;
+  }
+
+  /** İzin kalktığı için sürüm bilgisi ve inmiş dosya atılır (kapandi() ile aynı sonuç: bosta). */
+  function izinKalktiAt() {
+    bilgi = null;
+    hata = null;
+    ilerleme = 0;
+    indirilenDosya = null;
+    durum = 'bosta';
     yay();
   }
 
@@ -305,6 +335,10 @@ function guncellemeYoneticisiOlustur({
     if (durum === 'indirildi') return { sonuc: 'indirildi', surum: bilgi?.surum };
     if (durum !== 'yeni' || !bilgi) return { sonuc: 'gecersiz' };
     const hedef = bilgi;
+    if (izinKalktiMi(hedef)) {
+      izinKalktiAt(); // ön sürümlere izin kalkmış: eski öneri indirilmez
+      return { sonuc: 'gecersiz' };
+    }
     durum = 'indiriliyor';
     ilerleme = 0;
     hata = null;
@@ -324,6 +358,11 @@ function guncellemeYoneticisiOlustur({
       indirilenDosya = null;
       hataya(dogrulandi, 'yeni');
       return { sonuc: 'hata', neden: dogrulandi };
+    }
+    const kalkti = izinKalktiMi(hedef); // indirme sürerken ayar kapandıysa sonuç "indirildi" yapılmaz (kapandi() indiriliyor durumunda atlanır)
+    if (kalkti) {
+      izinKalktiAt();
+      return { sonuc: kalkti };
     }
     indirilenDosya = dosya;
     ilerleme = 100;
@@ -354,6 +393,11 @@ function guncellemeYoneticisiOlustur({
     if (destekMi() !== 'tamam') return { sonuc: 'desteklenmiyor', neden: destekMi() };
     if (durum !== 'indirildi' || !bilgi || !indirilenDosya) return { sonuc: 'gecersiz' };
     const hedef = bilgi;
+    const once = izinKalktiMi(hedef); // ön sürüm izni kalkmışsa (acikMi yukarıda bakıldı) inmiş ön sürüm kurulmaz
+    if (once) {
+      izinKalktiAt();
+      return { sonuc: once };
+    }
     durum = 'kuruluyor';
     hata = null;
     yay();
@@ -362,6 +406,11 @@ function guncellemeYoneticisiOlustur({
       indirilenDosya = null;
       hataya(dogrulandi, 'yeni');
       return { sonuc: 'hata', neden: dogrulandi };
+    }
+    const sonra = izinKalktiMi(hedef); // doğrulama sürerken ayar kapanmış olabilir: quitAndInstall'dan hemen önce son bakış
+    if (sonra) {
+      izinKalktiAt();
+      return { sonuc: sonra };
     }
     try {
       kurulumaHazirlan();

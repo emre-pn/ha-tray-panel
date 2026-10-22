@@ -64,7 +64,7 @@ async function sahteSunucuyla(o) {
   const sahte = new EventEmitter();
   sahte.listen = (_s, cb) => cb();
   sahte.close = (cb) => cb();
-  const api = yerelApiOlustur({ jetonAl: o.jetonAl, isle: o.isle, simdi: o.simdi, gunluk: () => {}, sunucuOlustur: () => sahte });
+  const api = yerelApiOlustur({ jetonAl: o.jetonAl, isle: o.isle, simdi: o.simdi, gunluk: o.gunluk ?? (() => {}), sunucuOlustur: () => sahte });
   await api.baslat(48123);
   return api;
 }
@@ -167,6 +167,30 @@ test('yetki: jeton yoksa 503, yanlış jeton 401; art arda yanlış deneme geçi
   const res = await istek(api, {});
   assert.equal(res.kod, 200);
   assert.doesNotMatch(JSON.stringify(res.govde), new RegExp(JETON));
+});
+
+test('kilit günlüğü: her yeni kilit penceresi bir satır yazar (ilk kilitten sonrakiler de görünür); kilitliyken ek satır yazılmaz; jeton günlüğe girmez', async () => {
+  let an = 0;
+  const kayit = [];
+  const api = await sahteSunucuyla({ jetonAl: async () => JETON, isle: async () => ({ ok: true }), simdi: () => an, gunluk: (m) => kayit.push(m) });
+  const kilitSatiri = () => kayit.filter((m) => /kilit/.test(m)).length; // başlangıç satırı sayılmaz
+  const yanlis = { basliklar: { authorization: `Bearer ${jetonUret()}` } };
+  const kilitle = async () => {
+    for (let i = 0; i < KILIT.deneme; i += 1) assert.equal((await istek(api, yanlis)).kod, 401);
+    assert.equal((await istek(api, {})).kod, 429, 'kilitli');
+  };
+  await kilitle();
+  assert.equal(kilitSatiri(), 1);
+  for (let i = 0; i < 3; i += 1) assert.equal((await istek(api, yanlis)).kod, 429);
+  assert.equal(kilitSatiri(), 1, 'kilitliyken yanlış jeton sayılmaz ve ek satır yazılmaz');
+  an += KILIT.sureMs;
+  assert.equal((await istek(api, {})).kod, 200, 'kilit kalktı');
+  await kilitle();
+  assert.equal(kilitSatiri(), 2, 'ikinci kilit de günlükte');
+  an += KILIT.sureMs;
+  await kilitle();
+  assert.equal(kilitSatiri(), 3);
+  assert.equal(kayit.some((g) => g.includes(JETON)), false);
 });
 
 test('gövde: sınırı aşan 413, bozuk JSON 400, şema dışı 400; geçerli istek kapıya gider ve sonuç türü HTTP koduna çevrilir', async () => {

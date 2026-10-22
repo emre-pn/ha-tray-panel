@@ -1084,6 +1084,48 @@ test('1.4.0 yuzey:geri-al (o-12): yalnız açık panel/paletten, yüksüz; kayna
   }
 });
 
+test('yuzey:basili-basla: panel gizlenince, kapanınca ve panelden palete geçince başlamış basışlar iptal edilir (eski bir basış yeni oturumda onay sayılmaz)', async () => {
+  const basla = [];
+  const iptal = [];
+  const eylem = { basiliBasla: (kimlik) => (basla.push(kimlik), kimlik !== 'light.favori_degil'), basiliIptal: (kimlik) => iptal.push(kimlik) };
+  const o = kur({ eylem });
+  try {
+    const bas = o.ipcIsleyicileri.get('yuzey:basili-basla');
+    const birak = o.ipcIsleyicileri.get('yuzey:basili-birak');
+    const p = await panelAc(o);
+    const olay = o.yuzeyOlayi(p);
+    assert.deepEqual(await bas(olay, 'button.pc_bilgisayari_kapat'), { ok: true });
+    assert.deepEqual(await bas(olay, 'light.favori_degil'), { ok: false });
+    assert.deepEqual(basla, ['button.pc_bilgisayari_kapat', 'light.favori_degil']);
+    assert.deepEqual(iptal, []);
+    o.yonetici.gizle('test');
+    assert.deepEqual(iptal, ['button.pc_bilgisayari_kapat'], 'gizlenince yalnız başlamış basış iptal edilir (reddedilen için iptal çağrısı yok)');
+
+    // bırakılan basış zaten iptal edilmiştir; gizlerken ikinci kez iptal edilmez
+    assert.equal(o.yonetici.panelAcKapat('test'), 'acildi');
+    await akit();
+    await bas(olay, 'script.iyi_geceler');
+    await birak(olay, 'script.iyi_geceler');
+    o.yonetici.gizle('test');
+    assert.deepEqual(iptal, ['button.pc_bilgisayari_kapat', 'script.iyi_geceler']);
+
+    // panelden palete geçiş: eski kipin basışı taşınmaz
+    assert.equal(o.yonetici.panelAcKapat('test'), 'acildi');
+    await akit();
+    await bas(olay, 'button.pc_bilgisayari_kapat');
+    assert.equal(o.yonetici.paletAcKapat(), 'acildi');
+    await akit();
+    assert.deepEqual(iptal.slice(2), ['button.pc_bilgisayari_kapat']);
+    await bas(olay, 'script.iyi_geceler');
+
+    // yönetici kapanırken de iptal edilir
+    o.yonetici.kapat();
+    assert.deepEqual(iptal.slice(3), ['script.iyi_geceler']);
+  } finally {
+    o.temizle();
+  }
+});
+
 test('1.4.0 yuzey:geciktir (o-15): yalnız açık panel/paletten; yük biçimce doğrulanır; kaynak pencere kipinden gelir; sonuç yalnız { ok, tur } döner', async () => {
   const cagrilar = [];
   const eylemEk = {

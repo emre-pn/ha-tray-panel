@@ -83,7 +83,8 @@ const ZARARSIZ_KIMLIKLER = new Set([
   'script.telefonu_bul',
 ]);
 
-// İpucu belirteçleri yalnız bu alanlarda aranır (ışık, vantilatör ve sahne muaf).
+// İpucu belirteçleri yalnız bu alanlarda aranır (ışık, vantilatör ve sahne muaf). Sahnenin KENDİ adı bilerek taranmaz ("Işıkları kapat",
+// "Hepsini kapat" masum sahnelerdir); sahnenin ne yaptığını üyeleri söyler ve üyeler ayrıca taranır (uyelerdenZorunluMu).
 const IPUCU_ALANLARI = new Set(['button', 'input_button', 'script', 'switch', 'input_boolean']);
 // Belirteç BAŞI eşleşir ("kapatma" ve "kapat"; ama "preset" "reset" sayılmaz).
 const IPUCU_BELIRTECLERI = ['kapat', 'restart', 'reboot', 'shutdown', 'poweroff', 'uyut', 'hibernate', 'powershell', 'sifirla', 'reset'];
@@ -117,12 +118,31 @@ function ipucuVarMi(kimlik, ad) {
   return IPUCU_CIFTLERI.some(([a, b]) => basiVar(a) && basiVar(b));
 }
 
+/** Üye kimliği kendi başına zorunlu onaylı mı (vana/otomasyon alanı, açık yıkıcı liste, kendi alanında ipucu belirteci)? */
+function uyeZorunluMu(uye) {
+  const alan = alanAl(uye);
+  if (ZORUNLU_ONAYLI_ALANLAR.has(alan) || YIKICI_KIMLIKLER.has(uye)) return true;
+  return IPUCU_ALANLARI.has(alan) && !ZARARSIZ_KIMLIKLER.has(uye) && ipucuVarMi(uye, '');
+}
+
+/**
+ * 1.6.0 sonrası (yalnız sıkılaştırma): sahne/grup üye listesi (attributes.entity_id). Sahne çalışınca üyeleri ayarlanır; zorunlu onaylı bir üyesi
+ * (vana, otomasyon, PC kapat, "modem yeniden başlat" anahtarı...) olan sahne ya da grup da zorunlu onaylıdır: kısayol, komut satırı, masaüstü
+ * karosu, ertelenen eylem ve dış tetikler onu çalıştıramaz, panel/palet basılı tutma ister. Kapı/kilit ve alan kaydında olmayan üyeyi süzgeç
+ * (suzgec.js uyelerGuvenliMi) zaten eler; burada geçersiz biçim yalnız atlanır.
+ */
+function uyelerdenZorunluMu(nitelikler) {
+  const uyeler = nitelikler.entity_id;
+  const liste = typeof uyeler === 'string' ? [uyeler] : Array.isArray(uyeler) ? uyeler : [];
+  return liste.some((uye) => typeof uye === 'string' && uyeZorunluMu(uye));
+}
+
 /**
  * @param {{entity_id:string, attributes?:object}} varlik HA durumu (ya da en az { entity_id, attributes.friendly_name })
  * @param {{onay?:boolean}} [favori] ayardaki favori kaydı
  * @param {string} [servis] 1.4.0: çağrılacak servis (verilmezse varlığın tek tıklama eylemi sınıflanır)
  * @returns {{ sinif: 'zararsiz'|'yikici'|'yasak', zorunlu: boolean, neden: string }}
- *   zorunlu: onay kapatılamaz (açık liste, ipucu belirteci ya da 'yikici' servis)
+ *   zorunlu: onay kapatılamaz (açık liste, ipucu belirteci, zorunlu onaylı sahne/grup üyesi ya da 'yikici' servis)
  */
 function eylemSinifi(varlik, favori, servis) {
   const temel = varlikSinifi(varlik, favori);
@@ -141,10 +161,12 @@ function varlikSinifi(varlik, favori) {
   if (!guvenliVarlikMi(varlik)) return { sinif: SINIF.YASAK, zorunlu: true, neden: 'guvenlik' };
   const kimlik = varlik.entity_id;
   const alan = alanAl(kimlik);
-  const ad = varlik.attributes && typeof varlik.attributes === 'object' ? varlik.attributes.friendly_name ?? '' : '';
+  const nitelikler = varlik.attributes && typeof varlik.attributes === 'object' ? varlik.attributes : {};
+  const ad = nitelikler.friendly_name ?? '';
   const onay = favori && typeof favori === 'object' ? favori.onay : undefined;
   if (ZORUNLU_ONAYLI_ALANLAR.has(alan)) return { sinif: SINIF.YIKICI, zorunlu: true, neden: 'alan-zorunlu' };
   if (YIKICI_KIMLIKLER.has(kimlik)) return { sinif: SINIF.YIKICI, zorunlu: true, neden: 'acik-liste' };
+  if (uyelerdenZorunluMu(nitelikler)) return { sinif: SINIF.YIKICI, zorunlu: true, neden: 'uye' };
   if (ZARARSIZ_KIMLIKLER.has(kimlik)) {
     // Kullanıcı "Onay iste"yi açıkça işaretlediyse zararsız listedeki eylem de onay ister (ekstra güvenlik).
     return onay === true

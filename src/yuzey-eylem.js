@@ -222,6 +222,9 @@
     let odaOnayKodu = null; // ilk tıklaması yapılmış, ikinci tıklamayı bekleyen oda grubu
     let odaZamanlayici = null;
     let odaBekliyor = false;
+    // Ekrandaki GÜNCEL düğme (oda kodu -> { dugme, grup: { kod, etiket }, n }): panel yeniden çizilince yeni düğme kurulur; onay süresi dolunca ya da
+    // yanıt gelince yazılacak olan eski (ekrandan kalkmış) düğme değil bu kayıttaki düğmedir. Her çizimde aynı kodun kaydı yenisiyle değişir.
+    const odaDugmeleri = new Map();
     const zaman = bag.zaman || {
       setTimeout: function (f, ms) {
         return setTimeout(f, ms);
@@ -234,7 +237,10 @@
     function odaOnayiniBirak() {
       if (odaZamanlayici !== null) zaman.clearTimeout(odaZamanlayici);
       odaZamanlayici = null;
+      const onceki = odaOnayKodu;
       odaOnayKodu = null;
+      const kayit = onceki === null ? undefined : odaDugmeleri.get(onceki);
+      if (kayit) odaDugmesiniYaz(kayit.dugme, kayit.grup, kayit.n); // "Emin misin?" yazısı ekrandaki güncel düğmede kalmasın
     }
 
     /** Düğmenin metni ve ipucu: onay beklerken "Emin misin? Kapat (n)". */
@@ -266,15 +272,15 @@
       dugme.type = 'button';
       odaDugmesiniYaz(dugme, grup, n);
       dugme.disabled = odaBekliyor;
+      odaDugmeleri.set(grup.kod, { dugme: dugme, grup: { kod: grup.kod, etiket: grup.etiket }, n: n });
       dugme.addEventListener('click', function () {
         if (odaBekliyor) return;
         if (odaOnayKodu !== grup.kod) {
           odaOnayiniBirak();
           odaOnayKodu = grup.kod;
           odaZamanlayici = zaman.setTimeout(function () {
-            odaOnayKodu = null;
             odaZamanlayici = null;
-            odaDugmesiniYaz(dugme, grup, n);
+            odaOnayiniBirak(); // tıklanan düğme panel yeniden çizilince değişmiş olabilir: güncel düğme sıfırlanır
           }, ODA_ONAY_MS);
           odaDugmesiniYaz(dugme, grup, n);
           return;
@@ -286,6 +292,9 @@
         const bitir = function (yanit) {
           odaBekliyor = false;
           dugme.disabled = false;
+          odaDugmeleri.forEach(function (kayit) {
+            kayit.dugme.disabled = false; // istek sürerken panel yeniden çizildiyse yeni düğmeler pasif kurulmuştur
+          });
           if ((!yanit || yanit.ok !== true) && typeof bag.ipucu === 'function') bag.ipucu(t('yuzey.ipucu.odaOlmadi'));
         };
         Promise.resolve()

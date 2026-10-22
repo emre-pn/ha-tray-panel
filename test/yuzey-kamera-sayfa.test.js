@@ -107,3 +107,16 @@ test('kamera hatası panelde kısa metin olarak görünür; sahte görüntü yok
   assert.match(metin(sayfa), /izin/i);
   assert.ok(goruntuler(sayfa).every((g) => g.getAttribute('src') === null));
 });
+
+test('Büyüt/Küçült tam yeniden çizim olmadan panel yüksekliğinin yeniden ölçülmesini ister (köprüye boyut gider)', async () => {
+  const sayfa = await panelAc({ model: modelKamerali(), kameraYaniti: { ok: true, veri: PNG_URL } });
+  await akit();
+  sayfa.zaman.ilerle(0);
+  const boyutlar = () => sayfa.cagrilar.filter((c) => c[0] === 'boyut').map((c) => c[1]);
+  const onceki = boyutlar().length;
+  sayfa.oge('kok').offsetHeight = 480; // büyütmeden sonra içerik yüksekliği (sahte DOM'da kök yüksekliğinden okunur)
+  const buyut = sayfa.bul((o) => o.sinifVar('kamera-buyut'))[0];
+  buyut.gonder('click');
+  sayfa.zaman.ilerle(0);
+  assert.deepEqual(boyutlar().slice(onceki), [480], 'büyütünce yeni yükseklik bildirilir');
+});

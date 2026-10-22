@@ -176,6 +176,10 @@ function toplantiIzleyiciOlustur({ sorgula, kaynakAl = () => 'ikisi', aralikAl =
       duraklatildi = false;
       planla();
     },
+    /** Aralık ayarı değişti: bekleyen zamanlayıcı yeni aralıkla kurulur. Toplantı durumu ve sayaçlar korunur (devam eden toplantı yeniden "başladı" sayılmaz). */
+    yenile() {
+      planla();
+    },
     yokla,
     durum: () => ({ calisiyor, duraklatildi, toplantida: durum }),
   };

@@ -449,6 +449,87 @@ test('ön sürüm: seçenek açıkken ön sürüm önerilir ve işaretlenir; kap
   assert.deepEqual(await kapali.yonetici.denetle({ elle: true }), { sonuc: 'hata', neden: 'butunluk' });
 });
 
+test('güncelleyicinin "error" olayı dinlenir: dinleyicisiz EventEmitter fırlatırdı (quitAndInstall sonrası söz zincirinde işlenmemiş reddedilme); günlüğe yalnız sınıf yazılır', async () => {
+  const { g, ortam, yonetici } = kur();
+  await yonetici.denetle({ elle: true });
+  assert.ok(g.listenerCount('error') >= 1, 'error dinleyicisi var');
+  assert.doesNotThrow(() => g.emit('error', Object.assign(new Error('GET https://github.com/gizli -> C:\gizli'), { code: 'ENOTFOUND' }), 'yığın izi'));
+  assert.doesNotThrow(() => g.emit('error', 'metin hata'));
+  assert.ok(ortam.gunlukler.some((m) => /Güncelleyici hata bildirdi \(ag\)/.test(m)));
+  assert.doesNotMatch(ortam.gunlukler.join('\n'), /github|gizli|https|yığın/);
+  assert.equal(yonetici.durum().durum, 'yeni', 'olay tek başına durumu bozmaz');
+});
+
+test('indirme sürerken ayar kapanırsa sonuç "indirildi" olmaz: bilgi/dosya atılır, yeniden açılsa da kurulamaz', async () => {
+  let bitir;
+  const bekle = new Promise((r) => { bitir = r; });
+  const { dis, g, ortam, yonetici } = kur({ indirme: async (gg) => { await bekle; gg.emit('update-downloaded', { downloadedFile: path.join('C:', 'onbellek', AD) }); return []; } });
+  await yonetici.denetle({ elle: true });
+  const indiriyor = yonetici.indir();
+  dis.acik = false;
+  yonetici.kapandi(); // main.js ayar kapanınca çağırır; indiriliyor durumunda etkisizdir
+  assert.equal(yonetici.durum().durum, 'indiriliyor');
+  bitir();
+  assert.deepEqual(await indiriyor, { sonuc: 'kapali' });
+  assert.equal(yonetici.durum().durum, 'bosta');
+  assert.equal(yonetici.durum().surum, null);
+  assert.ok(!ortam.olaylar.some((o) => o.durum === 'indirildi'));
+  assert.deepEqual(await yonetici.kur(), { sonuc: 'kapali' });
+  dis.acik = true;
+  assert.deepEqual(await yonetici.kur(), { sonuc: 'gecersiz' });
+  assert.ok(!g.cagrilar.some((c) => Array.isArray(c)));
+});
+
+test('indirme sürerken ön sürüm izni kalkarsa inen ön sürüm "indirildi" olmaz ve kurulmaz; kararlı sürümü etkilemez', async () => {
+  const onAd = 'Ev-Paneli-Kurulum-1.5.0-beta.1.exe';
+  const onBilgi = BILGI({ version: '1.5.0-beta.1', files: [{ url: onAd, sha512: SHA, size: ICERIK.length }], path: onAd });
+  let bitir;
+  const bekle = new Promise((r) => { bitir = r; });
+  const { dis, g, yonetici } = kur({
+    onSurumler: true,
+    kontrol: async () => ({ isUpdateAvailable: true, updateInfo: onBilgi }),
+    indirme: async (gg) => { await bekle; gg.emit('update-downloaded', { downloadedFile: path.join('C:', 'onbellek', onAd) }); return []; },
+  });
+  await yonetici.denetle({ elle: true });
+  const indiriyor = yonetici.indir();
+  dis.onSurumler = false;
+  yonetici.kapandi(); // indiriliyor durumunda etkisiz
+  bitir();
+  assert.deepEqual(await indiriyor, { sonuc: 'gecersiz' });
+  assert.equal(yonetici.durum().durum, 'bosta');
+  assert.equal(yonetici.durum().onSurum, false);
+  assert.deepEqual(await yonetici.kur(), { sonuc: 'gecersiz' });
+  assert.ok(!g.cagrilar.some((c) => Array.isArray(c)));
+  // kararlı sürüm: ön sürüm izni kapalıyken de normal biter
+  const kararli = kur({ onSurumler: false });
+  await kararli.yonetici.denetle({ elle: true });
+  assert.equal((await kararli.yonetici.indir()).sonuc, 'indirildi');
+});
+
+test('kur: inmiş ön sürümün izni sonradan kalkarsa (kapandi çağrılmasa bile) kurulmaz; doğrulama sürerken ayar kapanırsa quitAndInstall çağrılmaz', async () => {
+  const onAd = 'Ev-Paneli-Kurulum-1.5.0-beta.1.exe';
+  const onBilgi = BILGI({ version: '1.5.0-beta.1', files: [{ url: onAd, sha512: SHA, size: ICERIK.length }], path: onAd });
+  const bilgisi = { onSurumler: true, kontrol: async () => ({ isUpdateAvailable: true, updateInfo: onBilgi }), indirme: async (gg) => { gg.emit('update-downloaded', { downloadedFile: path.join('C:', 'onbellek', onAd) }); return []; } };
+  const a = kur(bilgisi);
+  await a.yonetici.denetle({ elle: true });
+  assert.equal((await a.yonetici.indir()).sonuc, 'indirildi');
+  a.dis.onSurumler = false;
+  assert.deepEqual(await a.yonetici.kur(), { sonuc: 'gecersiz' });
+  assert.equal(a.ortam.hazirlik, 0, 'çıkış bayrağı kurulmadı');
+  assert.ok(!a.g.cagrilar.some((c) => Array.isArray(c)));
+  assert.equal(a.yonetici.durum().durum, 'bosta');
+
+  let ozetCagri = 0;
+  const b = kur({ ozet: () => { if (++ozetCagri === 2) b.dis.acik = false; return { sha512: SHA, boyut: ICERIK.length }; } }); // 2. doğrulama = kurmadan önceki
+  await b.yonetici.denetle({ elle: true });
+  assert.equal((await b.yonetici.indir()).sonuc, 'indirildi');
+  assert.deepEqual(await b.yonetici.kur(), { sonuc: 'kapali' });
+  assert.equal(b.ortam.hazirlik, 0);
+  assert.ok(!b.g.cagrilar.some((c) => Array.isArray(c)));
+  assert.equal(b.yonetici.durum().durum, 'bosta');
+  assert.equal(b.ortam.zamanlayicilar.length, 0, 'kurulum zaman aşımı kurulmadı');
+});
+
 test('modül kaynağı: ağ/electron yok; yalnız node: yerlilerini ve ./ modüllerini kullanır; güncelleyici kapatma ayarları sabit', () => {
   const kaynak = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'guncelleme.js'), 'utf8');
   for (const e of kaynak.matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)) assert.ok(e[1].startsWith('node:') || e[1].startsWith('./'), e[1]);

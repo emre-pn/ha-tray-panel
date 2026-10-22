@@ -32,6 +32,7 @@ const KARO_GORUNUM_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'karo-g
 const DUZEN_ISLEMLERI_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'duzen-islemleri.js'), 'utf8');
 const KISAYOL_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'kisayol.js'), 'utf8');
 const ARAMA_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'arama.js'), 'utf8');
+const AYAR_ARAMA_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'ayar-arama.js'), 'utf8'); // yalnız aramaModulu: true ile yüklenir
 const DIL_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'dil.js'), 'utf8');
 const TEMA_RENK_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'tema-renk.js'), 'utf8');
 const SOZLUK_ANA_BETIGI = fs.readFileSync(path.join(KOK, 'src', 'lib', 'ceviri', 'ana.js'), 'utf8');
@@ -264,6 +265,9 @@ function sayfayiKur({
   disYaniti = null, // 1.4.0 dis grubu köprü yanıtları: { disTetikDurumu, disKisayolOlustur, disBaglantiKopyala, disJetonKopyala, disJetonYenile, disIzinKaldir } (işlev ya da nesne)
   eylemYaniti = null, // eylem grubu köprü yanıtları: { etkinlikListesi, etkinlikTemizle, ... } (işlev ya da nesne)
   baglantiYaniti = null, // bağlantı katmanı (o-55..o-58) köprü yanıtları (test/baglanti-sahte.js)
+  koprudenKaldir = [], // köprüden (window.evPaneli) çıkarılacak işlev adları: eski bir preload'u taklit eder (sayfa typeof denetimleriyle çökmeden çalışmalı)
+  aramaModulu = false, // true: src/lib/ayar-arama.js (window.EvAyarArama) yüklenir; belge.querySelectorAll('.bolum' vb.) GERÇEK ayarlar.html ağacından (test/mini-dom.js, dönen `aramaAgaci`) yanıtlanır.
+  //   Varsayılan kapalı: modül yoktur ve arama kutusu etkisizdir (ayarlar.js modülsüz çalışmalı); ayarlar-kategori.js bu düzeneğe HİÇ yüklenmez (ayarlar.js onsuz da çalışmalı).
 }) {
   const sunucu = duzles(ayar);
   const durum = { yedekler, sonOdak: null, gecmis };
@@ -620,6 +624,8 @@ function sayfayiKur({
     // 1.4.0 bağlantı katmanı (o-55..o-58)
     ...baglantiSahtesi.kopru,
   };
+  for (const ad of koprudenKaldir) delete evPaneli[ad];
+  const aramaAgaci = aramaModulu ? require('./mini-dom').htmlAgaci(HTML) : null;
 
   const belge = {
     getElementById(kimlik) {
@@ -643,6 +649,8 @@ function sayfayiKur({
     },
     nodeType: 9,
     querySelectorAll: (secici) => {
+      // Arama modülü açıkken yalnız çeviri seçicileri sahte öğelere gider; .bolum / .form-grubu / .grup-baslik gibi yapı seçicileri gerçek HTML ağacına.
+      if (aramaAgaci && secici !== '[data-i18n]' && secici !== '[data-i18n-attr]') return aramaAgaci.querySelectorAll(secici);
       const ad = secici === '[data-i18n]' ? 'data-i18n' : 'data-i18n-attr';
       return ceviriOgeleri.filter((o) => o.getAttribute(ad) !== null);
     },
@@ -683,6 +691,7 @@ function sayfayiKur({
   vm.runInContext(SOZLUK_AYARLAR_BETIGI, sandbox, { filename: 'ceviri/ayarlar.js' });
   vm.runInContext(KISAYOL_BETIGI, sandbox, { filename: 'kisayol.js' });
   vm.runInContext(ARAMA_BETIGI, sandbox, { filename: 'arama.js' });
+  if (aramaModulu) vm.runInContext(AYAR_ARAMA_BETIGI, sandbox, { filename: 'ayar-arama.js' });
   vm.runInContext(TEMA_RENK_BETIGI, sandbox, { filename: 'tema-renk.js' });
   vm.runInContext(KARO_GORUNUM_BETIGI, sandbox, { filename: 'karo-gorunum.js' });
   vm.runInContext(DUZEN_ISLEMLERI_BETIGI, sandbox, { filename: 'duzen-islemleri.js' });
@@ -696,6 +705,10 @@ function sayfayiKur({
   vm.runInContext(BETIK, sandbox, { filename: 'ayarlar.js' });
   return {
     oge: (kimlik) => ogeler.get(kimlik),
+    /** aramaModulu: true ise arama modülünün gezdiği gerçek ayarlar.html ağacı (test/mini-dom.js); değilse null. */
+    aramaAgaci,
+    /** Sayfa bağlamında window.<ad> tanımlı mı (örn. 'EvAyarArama', 'EvAyarKategori'). */
+    modulYuklu: (ad) => sandbox[ad] !== undefined,
     baglantiDeposu: baglantiSahtesi.baglantiDeposu,
     cagrilar,
     sorular,

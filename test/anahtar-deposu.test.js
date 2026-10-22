@@ -397,3 +397,57 @@ test('karantinayaAl (tur 2): yeniden adlandırma başarısızsa false döner ve 
   assert.equal(depo.varMi(), true);
   assert.equal(await depo.anahtarAl(), ANAHTAR);
 });
+
+// Göç (yenidenYaz) ile yaz/sil iç içe geçer: diske her yazma/silme ile `surum` artışı AYNI eşzamanlı turda olur (arada await yok); göçün
+// "surum değişti mi?" bakışı ile yeniden adlandırması da öyle. Bu yüzden hiçbir iç içe geçme yeni ya da silinmiş anahtarı eskisiyle ezemez.
+// `tutulacaklar`: çözülen düz metin bunlardan biriyse asenkron çözme `ac(metin)` çağrılana kadar bekler (göçün ya da kaydın doğrulama adımı seçilir).
+function tutucuKur(baslangicDosyasi, tutulacaklar) {
+  const fs = sahteFs();
+  const s = sahteSafe();
+  const kapilar = new Map();
+  for (const metin of tutulacaklar) {
+    let ac;
+    const bekle = new Promise((coz) => {
+      ac = coz;
+    });
+    kapilar.set(metin, { bekle, ac });
+  }
+  const asilCoz = s.safe.decryptStringAsync;
+  s.safe.decryptStringAsync = async (veri) => {
+    const sonuc = await asilCoz(veri);
+    const kapi = kapilar.get(sonuc.result);
+    if (kapi) await kapi.bekle;
+    return sonuc;
+  };
+  fs.dosyalar.set(YOL, baslangicDosyasi(s.kodla));
+  const depo = anahtarDeposuOlustur({ dosyaYolu: YOL, fs, safe: s.safe, gunluk: () => {} });
+  return { fs, depo, kodla: s.kodla, ac: (metin) => kapilar.get(metin).ac() };
+}
+
+const aninda = () => new Promise((coz) => setImmediate(coz));
+
+test('göç süren bir yaz ile iç içe: yaz göçten SONRA biter ve yeni anahtar kazanır (göç yeni anahtarı ezmez; yedek kalmaz)', async () => {
+  const { fs, depo, kodla, ac } = tutucuKur((k) => k(SENKRON, ANAHTAR), ['TEST_YENI_ANAHTAR_222']);
+  const kayit = depo.yaz('TEST_YENI_ANAHTAR_222'); // doğrulama adımında bekliyor (henüz diske yeniden adlandırılmadı, surum artmadı)
+  await aninda();
+  assert.equal(await depo.anahtarAl(), ANAHTAR, 'göç sürerken okuma o anki diski görür');
+  assert.ok(bastan(fs).startsWith(ASENKRON), 'göç eski anahtarı yeni biçimle yazdı');
+  ac('TEST_YENI_ANAHTAR_222');
+  await kayit;
+  assert.equal(bastan(fs), kodla(ASENKRON, 'TEST_YENI_ANAHTAR_222').toString());
+  assert.equal(await depo.anahtarAl(), 'TEST_YENI_ANAHTAR_222');
+  assert.deepEqual([...fs.dosyalar.keys()], [YOL], 'geçici dosya ve eski anahtarın yedeği kalmadı');
+});
+
+test('göç sürerken "Anahtarı sil": silinen anahtar göçle geri gelmez, yedek ve geçici dosya kalmaz', async () => {
+  const { fs, depo, ac } = tutucuKur((k) => k(SENKRON, ANAHTAR), [ANAHTAR]);
+  const okuma = depo.anahtarAl(); // göçün doğrulama adımında (geçici dosya yazıldı) bekliyor
+  await aninda();
+  assert.equal(fs.dosyalar.has(`${YOL}.gocu.tmp`), true);
+  assert.deepEqual(await depo.sil(), { silindi: true });
+  ac(ANAHTAR);
+  assert.equal(await okuma, ANAHTAR, 'bayat okuma kendi sonucunu verir');
+  assert.deepEqual([...fs.dosyalar.keys()], [], 'göç diski geri getirmedi');
+  assert.equal(depo.varMi(), false);
+  assert.equal(await depo.anahtarAl(), null);
+});

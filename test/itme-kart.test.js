@@ -463,3 +463,61 @@ test('kaynak: kart modülü ağa çıkmaz, yerel dosya dışında bir şey yükl
   assert.doesNotMatch(kaynak, /\bfetch\(|loadURL|net\.|http:|https:|webhook|Authorization|shell\.|openExternal|child_process/);
   assert.equal((kaynak.match(/loadFile\(/g) ?? []).length, 1);
 });
+
+test('konum: metin ölçeği büyüyünce köşe bildirimi de büyür; kart onunla ÇAKIŞMAZ (ölçeklenmiş köşe yüksekliği + boşluk)', async () => {
+  const { KOSE_BOYUTU, koseKonumu } = require('../src/lib/pencere-yerlesim');
+  const alan = { x: 0, y: 0, width: 1920, height: 1040 };
+  for (const olcek of [1, 1.3, 1.5]) {
+    const o = kur({ metinOlcegiAl: () => olcek });
+    try {
+      o.kart.goster(bildirim('x'));
+      await o.akit();
+      const { y, height } = o.pencereler[0].sinirlar.at(-1);
+      const kose = koseKonumu(alan, { width: KOSE_BOYUTU.width * olcek, height: KOSE_BOYUTU.height * olcek });
+      assert.ok(y + height <= kose.y - 12, `ölçek ${olcek}: kart (${y + height}) ölçeklenmiş köşe bildiriminin (${kose.y}) 12 px üstünde olmalı`);
+    } finally {
+      o.temizle();
+    }
+  }
+});
+
+test('konum: kart panelin yanına (başka sütuna) taşındıysa köşe bildirimi onu yukarı itmez; aynı sütundaysa bildirimin üstünde kalır', async () => {
+  // Panel yukarıya kadar uzanır: kart üstüne sığmaz, soluna yerleşir; küçük köşe bildirimi ise panelin üstüne sığar (başka sütun)
+  const uzunPanel = kur({ engelAl: () => ({ x: 1500, y: 100, width: 400, height: 940 }) });
+  try {
+    uzunPanel.kart.goster(bildirim('x'));
+    await uzunPanel.akit();
+    const { x, y, height } = uzunPanel.pencereler[0].sinirlar.at(-1);
+    assert.equal(x, 1500 - 360 - 8, 'panelin solunda');
+    assert.equal(y + height, 1040 - 16, 'çalışma alanının alt kenarına oturur, boşuna yukarı itilmez');
+  } finally {
+    uzunPanel.temizle();
+  }
+  const kisaPanel = kur({ engelAl: () => ({ x: 1500, y: 600, width: 400, height: 420 }) });
+  try {
+    kisaPanel.kart.goster(bildirim('x'));
+    await kisaPanel.akit();
+    const { y, height } = kisaPanel.pencereler[0].sinirlar.at(-1);
+    const { KOSE_BOYUTU } = require('../src/lib/pencere-yerlesim');
+    assert.equal(y + height, 600 - 8 - KOSE_BOYUTU.height - 12, 'panelin üstünde, köşe bildiriminin de üstünde');
+  } finally {
+    kisaPanel.temizle();
+  }
+});
+
+test('yükleme beklerken HA kartı temizlerse (gizle) bekleyen kart sıfırlanır; sayfa yüklenince eski kart çıkmaz', async () => {
+  const o = kur({ yuklemeSonucu: 'bekle' });
+  try {
+    o.kart.goster(bildirim('Hareket', { etiket: 'hareket' }));
+    const p = o.pencereler[0];
+    o.kart.temizle('hareket');
+    p.webContents.emit('did-finish-load');
+    await o.akit();
+    assert.deepEqual(o.mesajlar(p), [], 'temizlenen kart sayfa yüklenince görünmedi');
+    assert.equal(p.gorunur, false);
+    o.kart.goster(bildirim('Yeni', { etiket: 'yeni' }));
+    assert.deepEqual(o.mesajlar(p).map((m) => m.mesaj), ['Yeni'], 'sonraki kart normal gösterilir');
+  } finally {
+    o.temizle();
+  }
+});

@@ -112,6 +112,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   let elleYakinlastirma = false; // kullanıcı Ctrl + / − ile tabandan ayrıldı: Ayarlar'daki metin boyutu değişse bile oturum seçimi korunur
   let uygulananOlcek = 1; // pencerenin sayfasına son yazılan yakınlaştırma (yeni pencerede 1)
   let disOnaySoruldu = false; // o-54: panel bir bağlantı izni sorusu için açıldı ve soru henüz yanıtlanmadı
+  const baslayanBasislar = new Set(); // bu yüzeyde ana sürece bildirilmiş "basılı tutma başladı" kimlikleri (yüzey kapanınca iptal edilir)
 
   /** o-54: açık izin sorusu panel kapanınca / palete geçince reddedilir (dis-tetikler zaman aşımını da kendisi uygular). */
   function disOnayiBirak() {
@@ -121,6 +122,20 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       disOnay?.kapandi();
     } catch {
       gunluk('Bağlantı izni sorusu kapatılamadı.');
+    }
+  }
+
+  /** Yüzey gizlenince / kapanınca / başka kipe geçince yarım kalmış basılı tutmalar iptal edilir: eski bir basış yeni oturumda "yeterince uzun" sayılmasın. */
+  function basislariBirak() {
+    if (baslayanBasislar.size === 0) return;
+    const kimlikler = [...baslayanBasislar];
+    baslayanBasislar.clear();
+    for (const kimlik of kimlikler) {
+      try {
+        eylem.basiliIptal?.(kimlik);
+      } catch {
+        gunluk('Basılı tutma kaydı silinemedi.');
+      }
     }
   }
 
@@ -242,6 +257,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     odakKaybiniIptalEt();
     odakYedeginiIptalEt();
     disOnayiBirak();
+    basislariBirak();
     pencere = null;
     yuklendi = false;
     mod = null;
@@ -431,6 +447,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
   function goster(kip) {
     if (!KIPLER.includes(kip)) return false;
     if (kip !== 'panel') disOnayiBirak();
+    if (mod !== kip) basislariBirak(); // panelden palete (ya da tersi) geçişte eski kipin basışı taşınmaz
     if (!canliMi()) olustur();
     if (!canliMi()) return false;
     if (!yuklendi) {
@@ -477,6 +494,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     menuAcik = 0;
     bekleyenMod = null;
     disOnayiBirak();
+    basislariBirak();
     if (!canliMi()) return;
     const gorunurdu = pencere.isVisible();
     mod = null;
@@ -532,13 +550,20 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     });
     ipcMain.handle('yuzey:basili-basla', (olay, kimlik) => {
       if (!yuzeydenMi(olay) || !kaynakKip()) return izinYok();
-      return { ok: eylem.basiliBasla(kimlik) };
+      const ok = eylem.basiliBasla(kimlik);
+      if (ok === true) {
+        baslayanBasislar.delete(kimlik); // yeniden başlayan basış sıranın sonuna gider (ana süreç deposuyla aynı sıra)
+        if (baslayanBasislar.size >= 64) baslayanBasislar.delete(baslayanBasislar.values().next().value); // renderer sınırsız büyütemez (depo zaten en çok 32 tutar)
+        baslayanBasislar.add(kimlik);
+      }
+      return { ok };
     });
     // Renderer basılı tutmayı BIRAKTI (iptal): ana süreçteki başlangıç kaydı silinir. Onay zaten ana sürecin kendi saatiyle
     // doğrulanır; bu, savunma derinliğidir (bırakılan basış sonradan "yeterince uzun" sayılmasın).
     ipcMain.handle('yuzey:basili-birak', (olay, kimlik) => {
       if (!yuzeydenMi(olay)) return izinYok();
       eylem.basiliIptal(kimlik);
+      if (typeof kimlik === 'string') baslayanBasislar.delete(kimlik);
       return { ok: true };
     });
     // 1.4.0 (o-23): iğne düğmesi. Yük yalnız bir boolean'dır; yalnız açık HIZLI PANELDEN (palette düğme yok). Ayarı ana süreç yazar (bag.sabitDegistir) ve
@@ -832,6 +857,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       odakKaybiniIptalEt();
       odakYedeginiIptalEt();
       disOnayiBirak();
+      basislariBirak();
       const eski = pencere;
       pencere = null;
       mod = null;

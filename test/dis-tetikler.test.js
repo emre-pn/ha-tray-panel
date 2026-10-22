@@ -94,6 +94,7 @@ function ortam(ayar = {}, { anahtar = true } = {}) {
         durdur: () => (izleyiciCagrilari.push('durdur'), (calisiyor = false)),
         duraklat: () => izleyiciCagrilari.push('duraklat'),
         surdur: () => izleyiciCagrilari.push('surdur'),
+        yenile: () => izleyiciCagrilari.push('yenile'),
         durum: () => ({ calisiyor, duraklatildi: false, toplantida: false }),
       };
     },
@@ -337,6 +338,38 @@ test('toplantı ışığı: başlangıçta favori başlar, bitişte seçime gör
   o.ayarlar.tetikToplantiFavori = '';
   o.d.ayarDegisti('tetikToplantiFavori');
   assert.equal(o.izleyiciCagrilari.at(-1), 'durdur');
+});
+
+test('toplantı ışığı: aralık / kaynak değişince izleyici SIFIRLANMAZ (devam eden toplantı yeniden "başladı" sayılıp başlangıç eylemi tekrarlanmaz); açma-kapama ve favori değişimi yeniden kurar', async () => {
+  const o = ortam({ tetikToplanti: true, tetikToplantiFavori: 'light.salon', tetikToplantiBitis: 'geriYukle' });
+  const say = (ad) => o.izleyiciCagrilari.filter((c) => c === ad).length;
+  o.d.baslat();
+  assert.equal(say('baslat'), 1);
+  o.izleyici().degisti(true); // toplantı başladı: başlangıç eylemi bir kez
+  await bekle();
+  assert.equal(o.eylemler.length, 1);
+  const [baslatOnce, durdurOnce] = [say('baslat'), say('durdur')];
+
+  o.ayarlar.tetikToplantiAralik = 30;
+  o.d.ayarDegisti('tetikToplantiAralik');
+  o.ayarlar.tetikToplantiKaynak = 'kamera';
+  o.d.ayarDegisti('tetikToplantiKaynak');
+  assert.deepEqual([say('baslat'), say('durdur')], [baslatOnce, durdurOnce], 'izleyici durdurulup yeniden başlatılmadı');
+  assert.equal(say('yenile'), 2, 'yeni aralık zamanlayıcıya uygulanır');
+  assert.equal(o.eylemler.length, 1, 'başlangıç eylemi tekrarlanmadı');
+
+  // başka favori seçildi: izleyici yeniden kurulur (eski davranış)
+  o.ayarlar.tetikToplantiFavori = 'scene.film';
+  o.d.ayarDegisti('tetikToplantiFavori');
+  assert.deepEqual([say('durdur'), say('baslat')], [durdurOnce + 1, baslatOnce + 1]);
+  // seçenek kapandı: durur
+  o.ayarlar.tetikToplanti = false;
+  o.d.ayarDegisti('tetikToplanti');
+  assert.equal(o.izleyiciCagrilari.at(-1), 'durdur');
+  // yeniden açılınca kurulur
+  o.ayarlar.tetikToplanti = true;
+  o.d.ayarDegisti('tetikToplanti');
+  assert.equal(o.izleyiciCagrilari.at(-1), 'baslat');
 });
 
 test('durum ve tanılama özeti sır taşımaz; durdur API\'yi kapatır ve bekleyen izni reddeder', async () => {

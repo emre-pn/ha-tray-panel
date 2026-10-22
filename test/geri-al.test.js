@@ -94,6 +94,17 @@ test('renk: renk sıcaklığı ya da rgb önceki renge döner; renk modu bilinmi
   assert.equal(plan({ istek: { servis: 'turn_on', veri: { rgb_color: [1, 2, 3] } }, sonuc: ok({ servis: 'turn_on', once: { state: 'on', attributes: { rgb_color: [999, 0, 0] } } }) }), null);
 });
 
+test('renk: sıcaklık kipindeki ışıkta kelvin bilinmiyorsa rgb değerine DÜŞÜLMEZ (HA bu kipte türetilmiş rgb_color da verir; geri alma beyaz ışığı RGB kipine geçirirdi)', () => {
+  const istek = { servis: 'turn_on', veri: { rgb_color: [10, 20, 30] } };
+  const kipli = (nitelik) => plan({ istek, sonuc: ok({ servis: 'turn_on', once: { state: 'on', attributes: nitelik } }) });
+  assert.equal(kipli({ color_mode: 'color_temp', rgb_color: [255, 180, 100] }), null, 'kelvin yok');
+  assert.equal(kipli({ color_mode: 'color_temp', color_temp_kelvin: 'x', rgb_color: [255, 180, 100] }), null, 'kelvin sayı değil');
+  assert.deepEqual(kipli({ color_mode: 'color_temp', color_temp_kelvin: 2700.4, rgb_color: [255, 180, 100] }).adimlar[0].eylem, { servis: 'turn_on', veri: { color_temp_kelvin: 2700 } });
+  // rgb kipli ışık rgb ile geri döner; kip bilinmiyorsa eski davranış (rgb varsa rgb)
+  assert.deepEqual(kipli({ color_mode: 'hs', rgb_color: [255, 180, 100] }).adimlar[0].eylem.veri, { rgb_color: [255, 180, 100] });
+  assert.deepEqual(kipli({ rgb_color: [1, 2, 3] }).adimlar[0].eylem.veri, { rgb_color: [1, 2, 3] });
+});
+
 test('vantilatör hızı: önceki yüzdeye döner (0-100 kırpılır); kapalıyken açıldıysa kapatır', () => {
   const fan = (once, istek = { servis: 'set_percentage', veri: { percentage: 30 } }) => geriAlmaPlani({ kimlik: 'fan.v', ad: 'V', istek, sonuc: ok({ alan: 'fan', servis: 'set_percentage', once }) });
   assert.deepEqual(fan({ state: 'on', attributes: { percentage: 66 } }).adimlar[0].eylem, { servis: 'set_percentage', veri: { percentage: 66 } });
@@ -102,7 +113,7 @@ test('vantilatör hızı: önceki yüzdeye döner (0-100 kırpılır); kapalıyk
   assert.equal(fan({ state: 'on', attributes: {} }), null);
 });
 
-test('sahne: üyelerin önceki durumu adım olur (açıksa parlaklıkla), güvensiz alan ve geçersiz durum atlanır, en çok 12 üye', () => {
+test('sahne: üyelerin önceki durumu adım olur (açıksa parlaklıkla TEK adım), güvensiz alan ve geçersiz durum atlanır, en çok 12 üye', () => {
   const uyeler = [
     { kimlik: 'light.salon', ad: 'Salon', durum: 'on', parlaklik: 78 },
     { kimlik: 'switch.priz', ad: 'Priz', durum: 'off' },
@@ -115,8 +126,7 @@ test('sahne: üyelerin önceki durumu adım olur (açıksa parlaklıkla), güven
   const p = geriAlmaPlani({ kimlik: 'scene.film', ad: 'Film', istek: { servis: 'turn_on' }, sonuc: ok({ alan: 'scene', servis: 'turn_on' }), sahneUyeleri: uyeler });
   assert.equal(p.tur, 'sahne');
   assert.deepEqual(p.adimlar.map((a) => [a.kimlik, a.eylem]), [
-    ['light.salon', { servis: 'turn_on' }],
-    ['light.salon', { parlaklik: 78 }],
+    ['light.salon', { parlaklik: 78 }], // parlaklık komutu ışığı o yüzdeyle açar: üye başına tek adım (tek POST)
     ['switch.priz', { servis: 'turn_off' }],
   ]);
   assert.ok(p.adimlar.every((a) => a.uye === true));
@@ -124,6 +134,14 @@ test('sahne: üyelerin önceki durumu adım olur (açıksa parlaklıkla), güven
   assert.equal(geriAlmaPlani({ kimlik: 'scene.film', ad: 'Film', istek: {}, sonuc: ok({ alan: 'scene' }) }), null);
   const cok = Array.from({ length: 30 }, (_, i) => ({ kimlik: `switch.p${i}`, ad: `P${i}`, durum: 'on' }));
   assert.equal(geriAlmaPlani({ kimlik: 'scene.film', ad: 'Film', istek: {}, sonuc: ok({ alan: 'scene' }), sahneUyeleri: cok }).adimlar.length, EN_COK_SAHNE_UYESI);
+  // parlaklığı bilinen ışıklar adım bütçesini ikiye katlamaz: 12 üye = 12 adım
+  const isiklar = Array.from({ length: 30 }, (_, i) => ({ kimlik: `light.l${i}`, ad: `L${i}`, durum: 'on', parlaklik: 50 }));
+  const isikPlani = geriAlmaPlani({ kimlik: 'scene.film', ad: 'Film', istek: {}, sonuc: ok({ alan: 'scene' }), sahneUyeleri: isiklar });
+  assert.equal(isikPlani.adimlar.length, EN_COK_SAHNE_UYESI);
+  assert.ok(isikPlani.adimlar.every((a) => a.eylem.parlaklik === 50 && a.uye === true));
+  // parlaklığı bilinmeyen ya da kapalı ışık düz aç / kapa
+  const duz = geriAlmaPlani({ kimlik: 'scene.film', ad: 'Film', istek: {}, sonuc: ok({ alan: 'scene' }), sahneUyeleri: [{ kimlik: 'light.a', ad: 'A', durum: 'on' }, { kimlik: 'light.b', ad: 'B', durum: 'off', parlaklik: 40 }, { kimlik: 'light.c', ad: 'C', durum: 'on', parlaklik: 0 }] });
+  assert.deepEqual(duz.adimlar.map((a) => a.eylem), [{ servis: 'turn_on' }, { servis: 'turn_off' }, { servis: 'turn_on' }]);
 });
 
 // ---------------------------------------------------------------- yığın
@@ -205,6 +223,47 @@ test('sürekli değerler (parlaklık, renk, hız) aynı varlıkta 5 sn içinde T
   y.ekle({ kimlik: 'switch.p', ad: 'P', plan: aKapa('switch.p'), kaynak: 'panel' });
   y.ekle({ kimlik: 'switch.p', ad: 'P', plan: aKapa('switch.p'), kaynak: 'panel' });
   assert.equal(y.sayi(), 5);
+});
+
+test('sürekli değer birleşmesi yalnız yığının EN ÜSTÜNDEKİ girdiyle olur: araya başka eylem girdiyse yeni girdi açılır (geri alma sırası bozulmaz)', () => {
+  const { y, ileri } = yigin();
+  y.ekle({ kimlik: 'light.a', ad: 'A', plan: parlaklikPlani(80), kaynak: 'panel' }); // A: önceki 80
+  ileri(300);
+  y.ekle({ kimlik: 'switch.b', ad: 'B', plan: aKapa('switch.b'), kaynak: 'panel' });
+  ileri(300);
+  const ikinci = y.ekle({ kimlik: 'light.a', ad: 'A', plan: parlaklikPlani(50), kaynak: 'panel' }); // A: önceki 50, 5 sn içinde ama B araya girdi
+  assert.equal(y.sayi(), 3, 'eski A girdisi yerinde güncellenmez');
+  assert.equal(y.son(), ikinci, 'son eylem (A) en üstte');
+  assert.deepEqual(y.son().adimlar[0].eylem, { parlaklik: 50 });
+  // geri alma sırası: A (son), B, A (ilk)
+  y.cikar(y.son().id);
+  assert.equal(y.son().kimlik, 'switch.b');
+  y.cikar(y.son().id);
+  assert.deepEqual([y.son().kimlik, y.son().adimlar[0].eylem], ['light.a', { parlaklik: 80 }], 'ilk A girdisi en eski değeri korudu');
+  // üstteki girdi aynı varlıksa birleşme sürer
+  const { y: y2, ileri: ileri2 } = yigin();
+  const a1 = y2.ekle({ kimlik: 'light.a', ad: 'A', plan: parlaklikPlani(80), kaynak: 'panel' });
+  ileri2(100);
+  assert.equal(y2.ekle({ kimlik: 'light.a', ad: 'A', plan: parlaklikPlani(60), kaynak: 'panel' }), a1);
+  assert.equal(y2.sayi(), 1);
+});
+
+test('parti girdisine adım eklenince girdi en üste çıkar (araya girmiş başka eylemden sonra da son eylem önce geri alınır); geriKoy sırası bozulmaz', () => {
+  const { y } = yigin();
+  const parti = { id: 'oda:salon', ad: 'Salon' };
+  y.ekle({ kimlik: 'light.a', ad: 'A', plan: aKapa('light.a'), kaynak: 'panel', parti });
+  y.ekle({ kimlik: 'switch.b', ad: 'B', plan: aKapa('switch.b'), kaynak: 'panel' });
+  assert.equal(y.son().kimlik, 'switch.b');
+  y.ekle({ kimlik: 'light.c', ad: 'C', plan: aKapa('light.c'), kaynak: 'panel', parti });
+  assert.equal(y.sayi(), 2, 'parti hâlâ tek girdi');
+  assert.equal(y.son().tur, 'oda');
+  assert.deepEqual(y.son().adimlar.map((x) => x.kimlik), ['light.a', 'light.c']);
+  const oda = y.son();
+  y.cikar(oda.id);
+  assert.equal(y.son().kimlik, 'switch.b');
+  y.geriKoy(oda);
+  assert.equal(y.son(), oda, 'geri konan parti girdisi yine en üstte');
+  assert.equal(y.sayi(), 2);
 });
 
 test('parti (oda kapatma): aynı partinin adımları tek girdide toplanır, tekrarlar atılır, adım sayısı sınırlıdır', () => {

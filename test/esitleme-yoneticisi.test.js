@@ -593,6 +593,37 @@ test(
 );
 
 test(
+  'klasörden gelen bölüm uygulanınca kendi ayar yazımımız (yerelDegisti) ikinci bir eşitleme planlamaz; uygulama sürerken başka bir bölüm değişirse eşitleme yine planlanır ve değişiklik yazılır',
+  ortam(async (klasor) => {
+    const b = bilgisayarKur({ klasor, aygit: AYGIT_B, ayarEk: { temaZorla: 'koyu', favoriler: [SALON] } });
+    await b.esitle();
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik', favoriler: [] }, yerelDegistiBagli: true });
+    assert.equal((await a.esitle()).ok, true);
+    assert.equal(a.ayarlar.temaZorla, 'koyu');
+    assert.ok(a.durum.iceAktar.length > 0, 'klasördeki bölümler uygulandı');
+    assert.equal(a.zaman.zamanlayiciSayisi(), 0, 'kendi uygulamamızın yankısı için ek eşitleme planlanmadı');
+    a.yonetici.yerelDegisti();
+    assert.equal(a.zaman.zamanlayiciSayisi(), 0, 'yerel içerik eşitlenen içerikle aynı');
+
+    // B yeniden değiştirir; A uygularken kullanıcı başka bir bölümü (bildirim) değiştirir: değişiklik kaybolmaz
+    b.ayarlar.temaZorla = 'acik';
+    await b.esitle();
+    const bip = !a.ayarlar.bipSesi;
+    a.durum.iceAktarSirasinda = (ayarlar) => {
+      ayarlar.bipSesi = bip;
+    };
+    assert.equal((await a.esitle()).ok, true);
+    a.durum.iceAktarSirasinda = null;
+    assert.equal(a.ayarlar.temaZorla, 'acik');
+    assert.equal(a.zaman.zamanlayiciSayisi(), 1, 'uygulama sırasındaki başka değişiklik için eşitleme planlandı');
+    assert.deepEqual(a.zaman.bekleyenler().filter((x) => !x.tekrarli).map((x) => x.ms), [DEGISIKLIK_BEKLEME_MS]);
+    await a.zaman.tetikle();
+    assert.equal(dosyaBelgesi(a).bolumler.bildirim.ayarlar.bipSesi, bip, 'değişiklik klasöre yazıldı');
+    assert.equal(a.zaman.zamanlayiciSayisi(), 0);
+  }),
+);
+
+test(
   'izleme: izlenen klasörün kendisi silinince (Windows\'ta dosya adı yerine klasör yoluyla sonsuz "rename" olayı gelir) izleyici hemen bırakılır, "klasör yok" görünür; klasör dönünce yoklama yeniden kurar',
   ortam(async (klasor) => {
     const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'koyu' } });
@@ -742,6 +773,32 @@ test(
     const c = bilgisayarKur({ klasor, aygit: 'cccccccccccccccc', ayarEk: { favoriler: [{ ...BETIK, onay: false }, { ...SALON, onay: true }] } });
     await c.esitle();
     assert.equal(c.ayarlar.favoriler[0].onay, false);
+  }),
+);
+
+test(
+  'parolasız eşitleme: yerelde onay:true olan ışık favorisi klasörden onaysız ya da onay:false (daha yeni damgayla) gelse de onay istemeye devam eder; dosyadaki değer ezilmez',
+  ortam(async (klasor) => {
+    const KORIDOR = { entity_id: 'light.koridor', ad: 'Koridor' };
+    const b = bilgisayarKur({ klasor, aygit: AYGIT_B, ayarEk: { favoriler: [{ ...SALON }, { ...MUTFAK }] } });
+    await b.esitle();
+    // A ilk kez eşitlenir: klasördeki sürüm alınır ama A'nın "Onay iste" kararı düşmez
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { favoriler: [{ ...SALON, onay: true }] } });
+    assert.equal((await a.esitle()).ok, true);
+    assert.deepEqual(a.ayarlar.favoriler.map((f) => [f.entity_id, f.onay]), [['light.salon', true], ['light.mutfak', undefined]]);
+    assert.ok(a.durum.gunluk.some((m) => /onay gevşetmeleri yok sayıldı/.test(m)));
+    // B daha sonra onay:false yazar (daha yeni damga): A yine onay ister, diğer değişiklik gelir
+    b.ayarlar.favoriler = [{ ...SALON, onay: false }, { ...MUTFAK }, { ...KORIDOR }];
+    await b.esitle();
+    assert.equal(dosyaBelgesi(b).bolumler.favoriler.ayarlar.favoriler[0].onay, false);
+    assert.equal((await a.esitle()).ok, true);
+    assert.deepEqual(a.ayarlar.favoriler.map((f) => [f.entity_id, f.onay]), [['light.salon', true], ['light.mutfak', undefined], ['light.koridor', undefined]]);
+    // kararlı: A sonraki turlarda dosyayı yeniden yazmaz, B'nin değeri dosyada kalır
+    const metin = a.dosyaOku();
+    await a.esitle();
+    await a.esitle();
+    assert.equal(a.dosyaOku(), metin);
+    assert.equal(a.ayarlar.favoriler[0].onay, true);
   }),
 );
 

@@ -18,7 +18,9 @@
  *      izin sonrası 1-5 yeniden denetlenir (bu arada seçenek kapanmış ya da favori değişmiş olabilir)
  *   7. eylem.distenCalistir; sonuç etkinlik geçmişi için `olay` ile bildirilir (sır, adres, anahtar taşımaz)
  * Kural tabanlı tetikler (PC olayı, toplantı ışığı) için ayrıca "geri yükle": aç/kapat öncesi karonun durumu (açık/kapalı, parlaklık)
- * bellekte saklanır, geriYukle onu geri kurar (diske yazılmaz, ANLIK_OMRU_MS sonra unutulur).
+ * bellekte saklanır, geriYukle onu geri kurar (diske yazılmaz, ANLIK_OMRU_MS sonra unutulur). Anlık kaynak başınadır (pc-olayi ve toplanti
+ * birbirinin anlığını görmez), var olan tüketilmemiş anlığın üzerine yazılmaz ve eylem BAŞARISIZ olursa (hiçbir çağrı başaramadıysa) silinir:
+ * hiç uygulanmamış bir eylemin eski durumu saatler sonra geri yüklenmez.
  */
 
 const { DIS_KAYNAKLAR, disKaynakIzni } = require('./eylem-sinifi');
@@ -149,7 +151,7 @@ function cozumYuku(cozum) {
 function disTetikKapisiOlustur({ ayarlarAl, karolarAl, eylem, onaySor = null, izinEkle = () => {}, bildir = () => {}, t = (k) => k, olay = () => {}, gunluk = () => {}, simdi = () => Date.now() }) {
   const zamanlar = new Map(); // kaynak -> [zaman]
   const genelZamanlar = [];
-  const anliklar = new Map(); // `${kaynak}|${kimlik}` -> { durum, yuzde, zaman }
+  const anliklar = new Map(); // `${kaynak}|${kimlik}` -> { durum, yuzde, zaman, bekleyen (sonucu beklenen çağrı), basarili }
   let onayBekliyor = false;
 
   const ayarlar = () => {
@@ -200,11 +202,26 @@ function disTetikKapisiOlustur({ ayarlarAl, karolarAl, eylem, onaySor = null, iz
     return k;
   }
 
+  /** Eylemden ÖNCE çağrılır; anlık sonucu beklenen çağrıya bağlanır (anlikSonuclandir). Girdi yoksa null. */
   function anlikKaydet(anahtar, karo) {
-    if (anlikAl(anahtar)) return; // kilit + uyku arka arkaya: ilk (asıl) durum korunur
-    if (karo.durum !== 'acik' && karo.durum !== 'kapali') return;
+    const mevcut = anlikAl(anahtar);
+    if (mevcut) {
+      mevcut.bekleyen += 1;
+      return mevcut; // kilit + uyku arka arkaya: ilk (asıl) durum korunur
+    }
+    if (karo.durum !== 'acik' && karo.durum !== 'kapali') return null;
     if (anliklar.size >= EN_COK_ANLIK) anliklar.delete(anliklar.keys().next().value);
-    anliklar.set(anahtar, { durum: karo.durum, yuzde: Number.isInteger(karo.yuzde) ? karo.yuzde : null, zaman: simdi() });
+    const girdi = { durum: karo.durum, yuzde: Number.isInteger(karo.yuzde) ? karo.yuzde : null, zaman: simdi(), bekleyen: 1, basarili: false };
+    anliklar.set(anahtar, girdi);
+    return girdi;
+  }
+
+  /** Eylemin sonucu geldi: hiçbir çağrı başaramadıysa anlık silinir (eylem uygulanmadı, saklanacak eski durum yok). */
+  function anlikSonuclandir(anahtar, girdi, basarili) {
+    if (!girdi) return;
+    girdi.bekleyen -= 1;
+    if (basarili) girdi.basarili = true;
+    else if (girdi.bekleyen <= 0 && !girdi.basarili && anliklar.get(anahtar) === girdi) anliklar.delete(anahtar);
   }
 
   /** Kural tabanlı istek (kimlik + işlem) -> { karo, is } ya da hata. geriYukle burada anlığa çevrilir (tüketilmez). */
@@ -355,13 +372,16 @@ function disTetikKapisiOlustur({ ayarlarAl, karolarAl, eylem, onaySor = null, iz
         }
       }
     }
+    const anahtar = `${kaynak}|${h.karo.id}`;
+    let anlik = null;
     if (KURAL_KAYNAKLARI.includes(kaynak)) {
-      const anahtar = `${kaynak}|${h.karo.id}`;
       if (h.islem === 'geriYukle') anliklar.delete(anahtar);
-      else if (h.islem === 'ac' || h.islem === 'kapat' || h.islem === 'baslat') anlikKaydet(anahtar, h.karo);
+      else if (h.islem === 'ac' || h.islem === 'kapat' || h.islem === 'baslat') anlik = anlikKaydet(anahtar, h.karo);
     }
     const yuk = { kimlik: h.karo.id, kaynak, bildirim: bildirimKipi(kaynak, a), ...h.is };
-    return sonucla(kaynak, h.karo, eylem.distenCalistir(yuk));
+    const sonuc = await sonucla(kaynak, h.karo, eylem.distenCalistir(yuk)); // distenCalistir aynı tikte çağrılır (uykuya geçerken istek çıkabilsin)
+    anlikSonuclandir(anahtar, anlik, sonuc.ok === true);
+    return sonuc;
   }
 
   /** Dış tetiklere konabilen favoriler: tek tıklama eylemi zararsız ve komut satırında geri bulunan adı olanlar (sıra: favori sırası). */

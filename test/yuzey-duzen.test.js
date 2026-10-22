@@ -699,6 +699,21 @@ test('uzun basma (500 ms): ayrıntı bölmesi açılır, gruplar gizlenir, odak 
   assert.equal(icerik(sayfa).bul((o) => sinifli(o, 'ayrinti-baslik'))[0].textContent, 'Ampul');
 });
 
+test('uzun basma: imleç hâlâ basılıyken ayrıntı açılsa da odak "Geri"de kalır (bırakınca da) ve ok tuşu gezintisi çalışır', async () => {
+  const sayfa = await panelAc();
+  const ampul = dugmeBul(sayfa, 'Ampul');
+  sayfa.odakVer(ampul);
+  basiliTut(sayfa, ampul, 500); // belge düzeyinde pointerdown da gider: basılı fare yeniden çizimleri erteler
+  assert.equal(ayrintiVarMi(sayfa), true);
+  assert.equal(sayfa.odakta(), geriDugmesi(sayfa), 'basış sürerken odak gövdeye düşmez');
+  birak(sayfa, ampul);
+  sayfa.zaman.ilerle(10);
+  assert.equal(sayfa.odakta(), geriDugmesi(sayfa), 'bırakınca da');
+  const menu = icerik(sayfa).bul((o) => sinifli(o, 'ayrinti-menu'))[0];
+  sayfa.belgeOlayi('keydown', { key: 'ArrowRight', target: sayfa.odakta() });
+  assert.equal(sayfa.odakta(), menu, 'klavye gezintisi ayrıntı bölmesinde çalışır');
+});
+
 test('uzun basma: bırakınca gelen tıklama yutulur (ışık açılıp kapanmaz); yutma süresi dolunca normal tıklama çalışır', async () => {
   const sayfa = await panelAc();
   const ampul = dugmeBul(sayfa, 'Ampul');
@@ -1050,6 +1065,16 @@ test('CSS: boyut sınıfları sütun sayısıyla uyumlu; sekme, ayrıntı ve uzu
   assert.match(CSS, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.karo\.uzun-basma::after\s*\{\s*content:\s*none/);
   const disarida = k.filter((r) => !r.secici.startsWith(':root')).map((r) => r.govde).join('\n');
   assert.doesNotMatch(disarida, /#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+});
+
+test('CSS: "Hareketi azalt" ayarı (<html data-hareket>) uzun basma çizgisini de kapatır; yıkıcı karonun 0,8 sn dolumu hareketi azaltınca da çalışır', () => {
+  const k = kurallar(CSS);
+  const govde = (secici) => k.filter((r) => r.secici.split(',').map(bosluksuz).includes(secici)).map((r) => r.govde).join(';');
+  assert.match(govde(':root[data-hareket="azalt"] .karo.uzun-basma::after'), /content:\s*none/);
+  // işlevsel geri bildirim: dolum ilerlemesi hareketi azalt kurallarının hiçbirinde kapatılmaz
+  const azaltKurallari = k.filter((r) => r.secici.includes('[data-hareket="azalt"]')).map((r) => r.secici + '{' + r.govde + '}').join('\n');
+  assert.doesNotMatch(azaltKurallari, /basili|dolum/);
+  assert.match(govde('.karo.basili::after'), /animation:\s*dolum 800ms linear forwards/);
 });
 
 test('çeviri: yeni panel anahtarlarının hepsi iki dilde var ve Türkçe karşılıkları boş değil', () => {

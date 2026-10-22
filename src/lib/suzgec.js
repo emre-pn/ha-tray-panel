@@ -215,6 +215,9 @@ const UYE_YASAK_ALANLARI = new Set([...YASAK_ALANLAR, 'cover']);
  * h-39: sahne/grup üye listesi (attributes.entity_id). Liste yoksa (undefined/null) true: bugünkü davranış. Varsa her üye
  * geçerli bir varlık kimliği olmalı, yasak alanda (kilit, alarm, kepenk/kapı) olmamalı ve kimliği kapı kuralından geçmeli.
  * Beklenmeyen biçim (dizi/metin olmayan değer, geçersiz üye) güvensiz sayılır.
+ * 1.6.0 sonrası (yalnız sıkılaştırma): üyenin alanı alan kaydında (alan-kaydi.js) da olmalıdır. Kayıtta olmayan alan (camera, group, remote,
+ * lawn_mower...) hiçbir yüzeye giremez; sahne üzerinden dolaylı olarak da ayarlanmaz (kilitleri toplayan bir `group` üyesi kapıyı açabilir).
+ * Vana/otomasyon gibi zorunlu onaylı üyeler süzgeçten geçer ama sahneyi zorunlu onaylı yapar (eylem-sinifi.js uyelerdenZorunluMu).
  */
 function uyelerGuvenliMi(uyeler) {
   if (uyeler === undefined || uyeler === null) return true;
@@ -222,7 +225,8 @@ function uyelerGuvenliMi(uyeler) {
   if (!Array.isArray(liste)) return false;
   for (const uye of liste) {
     if (typeof uye !== 'string' || !VARLIK_KIMLIGI_DESENI.test(uye)) return false;
-    if (UYE_YASAK_ALANLARI.has(alanAl(uye))) return false;
+    const alan = alanAl(uye);
+    if (UYE_YASAK_ALANLARI.has(alan) || !kayitliAlanMi(alan)) return false;
     if (!adGuvenliMi(uye, '')) return false;
   }
   return true;

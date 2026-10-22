@@ -72,6 +72,8 @@ const yeniMi = (a, b) => a.zaman > b.zaman || (a.zaman === b.zaman && a.aygit > 
  * Parolasız eşitlemede klasöre yazabilen herkes dosyayı değiştirebilir; onay gevşetmesi (favoride `onay:false`: düğme/script/otomasyon gibi
  * eylemlerin "basılı tutarak onay" şartını kapatmak) bu yoldan KABUL EDİLMEZ. Uzak favoride `onay:false` yalnız yerelde zaten aynı favoride
  * `onay:false` ise (kullanıcının kendi kararı) korunur; aksi halde alan atılır (varsayılan sınıf geçerli kalır). `onay:true` (sıkılaştırma) olduğu gibi gelir.
+ * Yerelde `onay:true` olan favori uzakta `onay:true` değilse (onay:false ya da alan yok) yerel `onay:true` korunur: ışık, priz, sahne gibi
+ * varsayılanı onaysız alanlarda alanın düşmesi de onayın kalkması demektir (kısayol, masaüstü karosu ve dış tetiklere açılırdı).
  * Parolalı (şifreli zarf) dosya parolayı bilen bilgisayarlardan geldiği için güvenilir sayılır ve bu işlem yapılmaz.
  * @returns {{favoriler: object[], atilan: number}} atilan: yok sayılan gevşetme sayısı
  */
@@ -80,7 +82,13 @@ function onayGevsetmesiniEngelle(uzakFavoriler, yerelFavoriler) {
   const yerel = new Map((Array.isArray(yerelFavoriler) ? yerelFavoriler : []).filter((f) => duzNesne(f) && typeof f.entity_id === 'string').map((f) => [f.entity_id, f]));
   let atilan = 0;
   const favoriler = uzakFavoriler.map((f) => {
-    if (!duzNesne(f) || f.onay !== false || yerel.get(f.entity_id)?.onay === false) return f;
+    if (!duzNesne(f) || f.onay === true) return f;
+    const yerelOnay = yerel.get(f.entity_id)?.onay;
+    if (yerelOnay === true) {
+      atilan += 1;
+      return { ...f, onay: true };
+    }
+    if (f.onay !== false || yerelOnay === false) return f;
     atilan += 1;
     const { onay: _onay, ...digerleri } = f;
     return digerleri;

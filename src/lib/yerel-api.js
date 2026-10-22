@@ -120,7 +120,6 @@ function yerelApiOlustur({ jetonAl, isle, gunluk = () => {}, simdi = () => Date.
   const istekZamanlari = [];
   const yanlislar = [];
   let kilitBitis = 0;
-  let kilitBildirildi = false;
 
   function yanitla(res, kod, govde, ek = {}) {
     if (res.headersSent || res.writableEnded) return;
@@ -155,10 +154,9 @@ function yerelApiOlustur({ jetonAl, isle, gunluk = () => {}, simdi = () => Date.
     if (yanlislar.length >= KILIT.deneme) {
       kilitBitis = an + KILIT.sureMs;
       yanlislar.length = 0;
-      if (!kilitBildirildi) {
-        kilitBildirildi = true;
-        gunluk('Yerel API: art arda yanlış jeton; geçici kilit.');
-      }
+      // Kilitliyken jeton denetimine inilmez (istekIsle 429 döner): yeni kilit ancak öncekinin bitiminden sonra açılır, yani her kilit
+      // penceresi için tek satır yazılır (en çok dakikada bir); sonraki kilitler de günlükte görünür.
+      gunluk('Yerel API: art arda yanlış jeton; geçici kilit.');
     }
   }
 

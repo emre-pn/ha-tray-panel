@@ -136,6 +136,85 @@ test('ipucu belirteçleri: kapat, restart, reboot, shutdown, uyut, sıfırla, ye
   }
 });
 
+// --- 1.6.0 sonrası: sahne/grup üyeleri (yalnız sıkılaştırma) ---------------------------------------------------------------------
+
+const uyeli = (uyeler, kimlik = 'scene.bahce', ad = 'Bahçe') => ({ entity_id: kimlik, state: 'unknown', attributes: { friendly_name: ad, entity_id: uyeler } });
+const ZORUNLU_UYELER = [
+  'valve.ana_vana',
+  'automation.sulama',
+  'button.pc_bilgisayari_kapat',
+  'switch.oyun_bilgisayari',
+  'script.iyi_geceler',
+  'switch.modem_yeniden_baslat',
+  'switch.router_reset',
+  'input_boolean.sunucu_kapat',
+  'script.nas_reboot',
+];
+
+test('1.6.0 sonrası: zorunlu onaylı üyesi (vana, otomasyon, açık yıkıcı liste, ipucu) olan sahne ya da grup zorunlu onaylıdır; onay:false kapatamaz', () => {
+  for (const uye of ZORUNLU_UYELER) {
+    for (const favori of [undefined, {}, { onay: false }, { onay: true }]) {
+      assert.deepEqual(eylemSinifi(uyeli(['light.salon', uye]), favori), { sinif: SINIF.YIKICI, zorunlu: true, neden: 'uye' }, `${uye} ${JSON.stringify(favori)}`);
+    }
+    assert.equal(eylemSinifi(uyeli(uye)).zorunlu, true, `tek metin üye: ${uye}`);
+    assert.equal(eylemSinifi(uyeli(['switch.priz', uye], 'switch.tum_prizler', 'Tüm prizler'), { onay: false }).zorunlu, true, `anahtar grubu: ${uye}`);
+    for (const kaynak of KAYNAKLAR) {
+      assert.equal(kaynakIzni(eylemSinifi(uyeli([uye]), { onay: false }).sinif, kaynak).izin, ['tepsi-menu', 'panel', 'palet'].includes(kaynak), `${uye} ${kaynak}`);
+    }
+  }
+});
+
+test('1.6.0 sonrası: zararsız üyeli sahne değişmez; ipucu üyenin KENDİ alanında aranır; sahnenin kendi adı bilerek taranmaz', () => {
+  assert.deepEqual(eylemSinifi(uyeli(['light.salon', 'switch.priz', 'media_player.tv', 'climate.salon'])), { sinif: SINIF.ZARARSIZ, zorunlu: false, neden: 'alan-varsayilani' });
+  assert.deepEqual(eylemSinifi(uyeli(['light.salon']), { onay: true }), { sinif: SINIF.YIKICI, zorunlu: false, neden: 'favori-ayari' });
+  // ışık/vantilatör üyesi adında "kapat" geçse de kendi başına yıkıcı değildir; açık zararsız listedeki üye ipucuya takılmaz
+  assert.equal(eylemSinifi(uyeli(['light.salon_kapat', 'fan.reset_fan', 'button.pc_ekran_kapat'])).sinif, SINIF.ZARARSIZ);
+  // "Işıkları kapat" gibi masum sahneler kısayolda kalsın: sahnenin ne yaptığını üyeleri söyler
+  assert.equal(eylemSinifi(uyeli(['light.salon'], 'scene.bilgisayari_kapat', 'PC Kapat')).sinif, SINIF.ZARARSIZ);
+  assert.equal(eylemSinifi(uyeli(['light.salon', 'valve.ana_vana'], 'scene.isiklari_kapat', 'Işıkları kapat')).zorunlu, true);
+});
+
+test('1.6.0 sonrası: vanalı sahne panelde, palette ve tepsi menüsünde aynı sınıfı alır; tek güvenli hat kısayol, komut satırı, masaüstü, ertelenen ve dış kaynakları reddeder', async () => {
+  const { eylemHattiOlustur, hizSiniriOlustur } = require('../src/lib/eylem-hatti');
+  const { karoOlustur } = require('../src/lib/yuzey-modeli');
+  const durum = uyeli(['light.bahce', 'valve.ana_vana']);
+  const favori = { entity_id: 'scene.bahce', ad: 'Bahçe', onay: false };
+  const karo = karoOlustur(favori, durum);
+  assert.equal(karo.sinif, 'yikici', 'panel/palet karosu basılı tutma ister');
+  assert.ok(karo.onayliServisler.includes('turn_on'));
+  const kur = (basili) => {
+    const postlar = [];
+    const hat = eylemHattiOlustur({
+      favoriAl: (k) => (k === favori.entity_id ? favori : undefined),
+      guncelDurum: async (k) => (k === durum.entity_id ? durum : null),
+      haIstek: async (yol) => {
+        postlar.push(yol);
+        return [];
+      },
+      basiliOnayi: () => basili,
+      hizSiniri: hizSiniriOlustur({ simdi: () => 1000 }),
+    });
+    return { hat, postlar };
+  };
+  for (const kaynak of KAYNAKLAR.filter((k) => !['tepsi-menu', 'panel', 'palet'].includes(k))) {
+    const { hat, postlar } = kur(true);
+    const s = await hat({ kimlik: 'scene.bahce', kaynak, onay: 'basili' });
+    assert.deepEqual([s.ok, s.tur], [false, 'kaynak-izinsiz'], kaynak);
+    assert.equal(postlar.length, 0, kaynak);
+  }
+  for (const kaynak of ['panel', 'palet']) {
+    const onaysiz = kur(false);
+    assert.equal((await onaysiz.hat({ kimlik: 'scene.bahce', kaynak, onay: 'basili' })).tur, 'onay-gerekli', kaynak);
+    assert.equal(onaysiz.postlar.length, 0);
+    const basili = kur(true);
+    assert.equal((await basili.hat({ kimlik: 'scene.bahce', kaynak, onay: 'basili' })).ok, true, kaynak);
+    assert.deepEqual(basili.postlar, ['/api/services/scene/turn_on']);
+  }
+  const tepsi = kur(false);
+  assert.equal((await tepsi.hat({ kimlik: 'scene.bahce', kaynak: 'tepsi-menu' })).tur, 'onay-gerekli');
+  assert.equal((await tepsi.hat({ kimlik: 'scene.bahce', kaynak: 'tepsi-menu', onay: 'diyalog' })).ok, true);
+});
+
 test('ipucu belirteçleri belirteç BAŞI eşleşir ve ışık/sahne alanlarında aranmaz', () => {
   // "preset" içinde "reset" harfleri var ama belirteç başı değil.
   assert.equal(eylemSinifi(sentetik('switch.preset', 'Preset')).sinif, SINIF.ZARARSIZ);

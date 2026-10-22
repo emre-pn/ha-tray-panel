@@ -22,6 +22,7 @@ const BETIK = oku('src/masaustu-karo-sayfa.js');
 const BETIK_KODU = BETIK.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s\/\/.*$/gm, '');
 const DIL = oku('src/lib/dil.js');
 const SOZLUK = oku('src/lib/ceviri/yuzey.js');
+const TEMA_RENK = oku('src/lib/tema-renk.js');
 
 class SahteOge {
   constructor(etiket = 'div', kimlik = null) {
@@ -146,8 +147,11 @@ const karoModeli = (ek = {}) => ({
  * @param {string} [s.dil] durumAl yanıtındaki dil
  * @param {boolean} [s.kopruYok] window.evKaro tanımsız
  * @param {boolean} [s.ceviriYok] EvDil/EvCeviriYuzey yüklenmedi
+ * @param {boolean} [s.temaRenkYok] lib/tema-renk.js yüklenmedi
+ * @param {object} [s.gorunum] durumAl yanıtındaki görünüm modeli
+ * @param {boolean} [s.sistemAzalt] sistem "animasyonları azalt" (prefers-reduced-motion: reduce)
  */
-function sayfayiKur({ model = karoModeli(), dil, malzeme, calistirYaniti = { ok: true }, kopruYok = false, ceviriYok = false, durumYaniti } = {}) {
+function sayfayiKur({ model = karoModeli(), dil, malzeme, gorunum, calistirYaniti = { ok: true }, kopruYok = false, ceviriYok = false, temaRenkYok = false, sistemAzalt = false, durumYaniti } = {}) {
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
     ogeler.set(kimlik, new SahteOge(new RegExp(`<(\\w+)[^>]*\\bid="${kimlik}"`).exec(HTML)?.[1] ?? 'div', kimlik));
@@ -165,7 +169,7 @@ function sayfayiKur({ model = karoModeli(), dil, malzeme, calistirYaniti = { ok:
   let durumDinleyici = null;
   let dilDinleyici = null;
   const kopru = {
-    durumAl: async () => (durumYaniti !== undefined ? durumYaniti : { ok: true, model, ...(malzeme !== undefined ? { malzeme } : {}), ...(dil !== undefined ? { dil } : {}) }),
+    durumAl: async () => (durumYaniti !== undefined ? durumYaniti : { ok: true, model, ...(malzeme !== undefined ? { malzeme } : {}), ...(gorunum !== undefined ? { gorunum } : {}), ...(dil !== undefined ? { dil } : {}) }),
     onDurum: (cb) => {
       durumDinleyici = cb;
       return () => {};
@@ -180,7 +184,28 @@ function sayfayiKur({ model = karoModeli(), dil, malzeme, calistirYaniti = { ok:
     },
     kaldir: (...bagimsiz) => cagrilar.push(['kaldir', bagimsiz]),
   };
-  const kok = { dataset: {} };
+  // <html> öğesi: lib/tema-renk.js gorunumUygula öznitelik ve stil değişkeni yazar (CSS değişkenleri satır içi stil olarak, CSSOM üzerinden).
+  const kokNitelikleri = {};
+  const kokDegiskenleri = {};
+  const kok = {
+    dataset: {},
+    nitelikler: kokNitelikleri,
+    degiskenler: kokDegiskenleri,
+    style: {
+      setProperty: (ad, deger) => {
+        kokDegiskenleri[ad] = deger;
+      },
+      removeProperty: (ad) => {
+        delete kokDegiskenleri[ad];
+      },
+    },
+    setAttribute: (ad, deger) => {
+      kokNitelikleri[ad] = String(deger);
+    },
+    removeAttribute: (ad) => {
+      delete kokNitelikleri[ad];
+    },
+  };
   const belge = {
     documentElement: kok,
     querySelectorAll: (secici) => ceviriOgeleri.filter((o) => (secici === '[data-i18n]' ? 'data-i18n' in o.attributes : 'data-i18n-attr' in o.attributes)),
@@ -195,10 +220,12 @@ function sayfayiKur({ model = karoModeli(), dil, malzeme, calistirYaniti = { ok:
     document: belge,
     setTimeout: (fn, ms) => zaman.setTimeout(fn, ms),
     clearTimeout: (id) => zaman.clearTimeout(id),
+    matchMedia: (sorgu) => ({ matches: sistemAzalt && /prefers-reduced-motion:\s*reduce/.test(sorgu) }),
     ...(kopruYok ? {} : { evKaro: kopru }),
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  if (!temaRenkYok) vm.runInContext(TEMA_RENK, sandbox, { filename: 'lib/tema-renk.js' });
   if (!ceviriYok) {
     vm.runInContext(DIL, sandbox, { filename: 'lib/dil.js' });
     vm.runInContext(SOZLUK, sandbox, { filename: 'lib/ceviri/yuzey.js' });
@@ -232,7 +259,7 @@ test('HTML: katı CSP, satır içi betik/stil yok, yalnız yerel betikler; bekle
   assert.match(HTML, /Content-Security-Policy[^>]*default-src 'none'[^>]*script-src 'self'[^>]*style-src 'self'[^>]*connect-src 'none'/);
   assert.doesNotMatch(HTML, /<script(?![^>]*\bsrc=)[^>]*>\s*\S/i, 'satır içi betik yok');
   assert.doesNotMatch(HTML, /\sstyle=|\son\w+=/i, 'satır içi stil/olay yok');
-  assert.deepEqual([...HTML.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]), ['lib/dil.js', 'lib/ceviri/yuzey.js', 'masaustu-karo-sayfa.js']);
+  assert.deepEqual([...HTML.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]), ['lib/dil.js', 'lib/ceviri/yuzey.js', 'lib/tema-renk.js', 'masaustu-karo-sayfa.js']);
   for (const kimlik of ['karo', 'baglanti', 'kaldir', 'ana', 'etiket', 'deger', 'onayarlar']) assert.match(HTML, new RegExp(`id="${kimlik}"`));
 });
 
@@ -349,6 +376,52 @@ test('malzeme: acrylic/mica html[data-malzeme] olur, başka değer kaldırır', 
   assert.equal('malzeme' in s.kok.dataset, false);
   s.durum({ malzeme: '"><script>' });
   assert.equal('malzeme' in s.kok.dataset, false);
+});
+
+// --- Görünüm ayarları (o-25 / o-29 / o-34) -------------------------------------------------------------------------------------------
+
+test('görünüm: durumAl yanıtındaki yüksek karşıtlık ve hareketi azalt, karo ilk çizilirken <html> üzerindedir', async () => {
+  const s = sayfayiKur({ gorunum: { karsitlik: true, hareketiAzalt: true } });
+  await akit();
+  assert.equal(s.kok.nitelikler['data-karsitlik'], '1');
+  assert.equal(s.kok.nitelikler['data-hareket'], 'azalt');
+  assert.equal(s.oge('etiket').textContent, 'Salon', 'karo yine çizildi');
+});
+
+test('görünüm: özel palet yalnız beyaz listeli değişkenlere yazılır; data-sema konur; geçersiz değer ve bilinmeyen değişken yok sayılır', async () => {
+  const s = sayfayiKur();
+  await akit();
+  s.durum({ model: karoModeli(), malzeme: 'yok', gorunum: { sema: 'acik', degiskenler: { '--bg': '#f3f5f9', '--vurgu': '#1d4ed8', '--dugme': '#000000', '--bg-yok': '#ffffff', '--metin': 'url(x)' } } });
+  assert.equal(s.kok.nitelikler['data-sema'], 'acik');
+  assert.deepEqual(JSON.parse(JSON.stringify(s.kok.degiskenler)), { '--bg': '#f3f5f9', '--vurgu': '#1d4ed8' });
+});
+
+test('görünüm: yeni iletide görünüm yoksa önceki özel görünüm temizlenir (varsayılana dönüş)', async () => {
+  const s = sayfayiKur({ gorunum: { karsitlik: true, hareketiAzalt: true, sema: 'koyu', degiskenler: { '--bg': '#000000' } } });
+  await akit();
+  assert.ok(s.kok.nitelikler['data-karsitlik']);
+  s.durum({ model: karoModeli(), malzeme: 'yok' });
+  assert.deepEqual(JSON.parse(JSON.stringify(s.kok.nitelikler)), {});
+  assert.deepEqual(JSON.parse(JSON.stringify(s.kok.degiskenler)), {});
+});
+
+test('görünüm: sistemin "animasyonları azalt" tercihi de data-hareket="azalt" yazar; ikisi de kapalıyken yazmaz', async () => {
+  const sistem = sayfayiKur({ sistemAzalt: true });
+  await akit();
+  assert.equal(sistem.kok.nitelikler['data-hareket'], 'azalt');
+  const hicbiri = sayfayiKur({ gorunum: { karsitlik: false } });
+  await akit();
+  assert.equal('data-hareket' in hicbiri.kok.nitelikler, false);
+  assert.equal('data-karsitlik' in hicbiri.kok.nitelikler, false);
+});
+
+test('görünüm: lib/tema-renk.js yüklenemezse karo yine çizilir ve hata fırlatmaz', async () => {
+  const s = sayfayiKur({ temaRenkYok: true, gorunum: { karsitlik: true } });
+  await akit();
+  assert.equal(s.oge('etiket').textContent, 'Salon');
+  assert.doesNotThrow(() => s.durum({ model: karoModeli({ etiket: 'Mutfak' }), malzeme: 'yok', gorunum: { karsitlik: true } }));
+  assert.equal(s.oge('etiket').textContent, 'Mutfak');
+  assert.deepEqual(JSON.parse(JSON.stringify(s.kok.nitelikler)), {});
 });
 
 // --- Eylemler ----------------------------------------------------------------------------------------------------------------------
@@ -551,4 +624,57 @@ test('CSS: sürükleme bölgesi yalnız karo yüzeyinde, düğmeler no-drag; dı
   const disi = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
   const renkliSatirlar = disi.split('\n').filter((satir) => /#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(satir) && !/^\s*--[\w-]+:/.test(satir));
   assert.deepEqual(renkliSatirlar, [], 'renkler yalnız değişken tanımlarında');
+});
+
+// --- CSS: görünüm ayarları (yüksek karşıtlık, palet, hareketi azalt) ------------------------------------------------------------------
+
+const karsitlikKoyu = /^:root\[data-karsitlik\]\s*\{([^}]*)\}/m.exec(CSS)?.[1] ?? '';
+const karsitlikAcik = /@media \(prefers-color-scheme: light\)\s*\{\s*:root\[data-karsitlik\]\s*\{([^}]*)\}/.exec(CSS)?.[1] ?? '';
+const KARSITLIK = { koyu: degiskenler(karsitlikKoyu), acik: { ...degiskenler(karsitlikKoyu), ...degiskenler(karsitlikAcik) } };
+
+test('CSS yüksek karşıtlık: iki temada da tüm karo değişkenleri hex; metin ve soluk metin zeminde en az 7:1, diğer yazılar 4,5:1', () => {
+  for (const [tema, d] of Object.entries(KARSITLIK)) {
+    for (const ad of ['bg', 'kenar', 'dugme', 'metin', 'soluk', 'acik', 'canli', 'yedek', 'hata', 'vurgu', 'rozet-metin']) {
+      assert.match(d[ad] ?? '', /^#[0-9a-fA-F]{6}$/, `${tema}: --${ad}`);
+    }
+    for (const [ad, on, arka, en_az] of [
+      ['metin / bg', d.metin, d.bg, 7],
+      ['soluk / bg', d.soluk, d.bg, 7],
+      ['metin / dugme', d.metin, d.dugme, 7],
+      ['acik / bg', d.acik, d.bg, 4.5],
+      ['kenar / bg', d.kenar, d.bg, 7],
+      ['rozet-metin / vurgu', d['rozet-metin'], d.vurgu, 4.5],
+      ['hata / bg', d.hata, d.bg, 4.5],
+      ['canli / bg', d.canli, d.bg, 4.5],
+      ['yedek / bg', d.yedek, d.bg, 4.5],
+    ]) {
+      assert.ok(kontrast(on, arka) >= en_az, `${tema}: ${ad} = ${kontrast(on, arka).toFixed(2)}`);
+    }
+  }
+});
+
+test('CSS yüksek karşıtlık: değerler hızlı panelin yuzey.css yüksek karşıtlık paletiyle aynı (iki tema)', () => {
+  const yuzey = oku('src/yuzey.css');
+  const koyu = degiskenler(/^:root\[data-karsitlik\]\s*\{([^}]*)\}/m.exec(yuzey)[1]);
+  const acik = { ...koyu, ...degiskenler(/@media \(prefers-color-scheme: light\)\s*\{\s*:root\[data-karsitlik\]\s*\{([^}]*)\}/.exec(yuzey)[1]) };
+  const karsilik = { bg: 'bg', kenar: 'kenar', dugme: 'karo-uzerinde', metin: 'metin', soluk: 'soluk', acik: 'acik', canli: 'canli', yedek: 'yedek', hata: 'hata', vurgu: 'vurgu', 'rozet-metin': 'rozet-metin' };
+  for (const [tema, panel] of [['koyu', koyu], ['acik', acik]]) {
+    for (const [karoAd, panelAd] of Object.entries(karsilik)) assert.equal(KARSITLIK[tema][karoAd].toLowerCase(), panel[panelAd].toLowerCase(), `${tema}: --${karoAd}`);
+  }
+});
+
+test('CSS: özel palet (data-sema) düğme zeminini paletten alır ve malzeme kurallarından SONRA gelir; yüksek karşıtlık da malzemeyi geçersiz kılar', () => {
+  const kural = /:root\[data-sema\]\s*\{[^}]*--dugme:\s*var\(--karo-uzerinde[^}]*\}/.exec(CSS);
+  assert.ok(kural, ':root[data-sema] { --dugme: var(--karo-uzerinde...) }');
+  const sonMalzeme = CSS.lastIndexOf(':root[data-malzeme] {');
+  assert.ok(sonMalzeme > 0 && kural.index > sonMalzeme, 'palet kuralı malzeme kurallarından sonra (aynı özgüllük: sonraki kazanır)');
+  assert.ok(CSS.indexOf(':root[data-karsitlik] {') > sonMalzeme, 'yüksek karşıtlık kuralı malzeme kurallarından sonra');
+  assert.match(CSS, /:root\[data-sema="koyu"\]\s*\{\s*color-scheme:\s*dark/);
+  assert.match(CSS, /:root\[data-sema="acik"\]\s*\{\s*color-scheme:\s*light/);
+});
+
+test('CSS: uygulamanın "Hareketi azalt" ayarı (data-hareket) geçiş ve animasyonu kapatır; kalın kenarlık ve odak halkası yüksek karşıtlıkta', () => {
+  assert.match(CSS, /:root\[data-hareket="azalt"\]\s*\*\s*\{[^}]*transition:\s*none !important[^}]*animation:\s*none !important/);
+  assert.match(CSS, /:root\[data-karsitlik\] \.karo,\s*:root\[data-karsitlik\] \.onayar\s*\{\s*border-width:\s*2px/);
+  assert.match(CSS, /:root\[data-karsitlik\] :focus-visible\s*\{\s*outline-width:\s*3px/);
 });

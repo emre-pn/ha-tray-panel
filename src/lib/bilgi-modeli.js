@@ -118,9 +118,14 @@ function etiketle(kimlik, varlik) {
   return adGuvenliMi(kimlik, ad) ? ad : null;
 }
 
-/** Sensör/hava/varlık karosu (Kapı Kuralı dahil karoOlustur'dan); olmazsa null. */
-function bilgiKarosu(kimlik, durumAl, t) {
-  return karoOlustur({ entity_id: kimlik, ad: nesneAdi(kimlik) }, durumAl(kimlik), t);
+/**
+ * Sensör/hava/varlık/medya karosu (Kapı Kuralı dahil karoOlustur'dan); olmazsa null. Varlık aynı zamanda favoriyse ayardaki FAVORİ KAYDI
+ * kullanılır (eylem katmanı da kimliği önce favorilerde arar): onay istenen oynatıcı panelde "zararsız" çizilip düğmeleri
+ * 'onay-gerekli' ile reddedilmesin, karo onaylı servisleriyle gelsin (renderer basılı tutma ister).
+ */
+function bilgiKarosu(kimlik, durumAl, t, favoriler) {
+  const favori = favoriler.find((f) => f && typeof f === 'object' && f.entity_id === kimlik);
+  return karoOlustur(favori ?? { entity_id: kimlik, ad: nesneAdi(kimlik) }, durumAl(kimlik), t);
 }
 
 function kullanilabilirMi(varlik) {
@@ -155,12 +160,13 @@ function listeSatiri(kimlik, durumAl) {
 function bilgiModeliOlustur({ ayarlar, durumAl, t = TR, sensorKarolari = [] }) {
   const y = yapilandirma(ayarlar);
   const a = ayarlar && typeof ayarlar === 'object' ? ayarlar : {};
+  const favoriler = Array.isArray(a.favoriler) ? a.favoriler : [];
 
   const serit = [];
   for (const kimlik of y.serit) {
     const alan = alanAl(kimlik);
     if (alan !== 'sensor' && alan !== 'binary_sensor') continue;
-    const karo = bilgiKarosu(kimlik, durumAl, t);
+    const karo = bilgiKarosu(kimlik, durumAl, t, favoriler);
     if (karo) serit.push(karo);
   }
 
@@ -170,14 +176,14 @@ function bilgiModeliOlustur({ ayarlar, durumAl, t = TR, sensorKarolari = [] }) {
     if (deger === 'saat') {
       kartlar.push({ yuva, tur: 'saat', karo: null, secilmedi: false });
     } else if (deger === 'hava') {
-      const karo = y.hava && alanAl(y.hava) === 'weather' ? bilgiKarosu(y.hava, durumAl, t) : null;
+      const karo = y.hava && alanAl(y.hava) === 'weather' ? bilgiKarosu(y.hava, durumAl, t, favoriler) : null;
       kartlar.push({ yuva, tur: 'hava', karo, secilmedi: y.hava === '' });
     } else if (deger === 'medya') {
-      const karo = medyaKimligiMi(y.medya) ? bilgiKarosu(y.medya, durumAl, t) : null;
+      const karo = medyaKimligiMi(y.medya) ? bilgiKarosu(y.medya, durumAl, t, favoriler) : null;
       kartlar.push({ yuva, tur: 'medya', karo, secilmedi: y.medya === '' });
     } else {
       const alan = alanAl(deger);
-      const karo = alan === 'sensor' || alan === 'binary_sensor' ? bilgiKarosu(deger, durumAl, t) : null;
+      const karo = alan === 'sensor' || alan === 'binary_sensor' ? bilgiKarosu(deger, durumAl, t, favoriler) : null;
       if (karo) kartlar.push({ yuva, tur: 'varlik', karo, secilmedi: false });
     }
   }

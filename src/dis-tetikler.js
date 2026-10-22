@@ -395,11 +395,22 @@ function disTetiklerOlustur({
     zaman,
   });
 
+  let izlenenFavori = ''; // izleyicinin kurulduğu başlangıç favorisi
+
   function toplantiUygula() {
     const a = ayarlar();
-    const acik = a.tetikToplanti === true && typeof regSorgula === 'function' && typeof a.tetikToplantiFavori === 'string' && a.tetikToplantiFavori !== '';
+    const favori = typeof a.tetikToplantiFavori === 'string' ? a.tetikToplantiFavori : '';
+    const acik = a.tetikToplanti === true && typeof regSorgula === 'function' && favori !== '';
+    if (acik && izleyici.durum().calisiyor && favori === izlenenFavori) {
+      // Seçenek açık kalıp yalnız aralık / kaynak değişti: izleyici sıfırlanmaz. Sıfırlama devam eden toplantıyı yeniden "başladı" sayar,
+      // başlangıç eylemini bir kez daha çalıştırırdı (ışığı toplantı sırasında kapatan kullanıcı için ışık yeniden açılırdı).
+      izleyici.yenile();
+      durumDegisti();
+      return;
+    }
     izleyici.durdur();
     toplantida = false;
+    izlenenFavori = favori;
     if (acik) izleyici.baslat();
     durumDegisti();
   }

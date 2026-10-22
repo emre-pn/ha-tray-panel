@@ -60,6 +60,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
   let pencere = null;
   let yuklendi = false;
   let bekleyen = null;
+  let gorunenBilgi = null; // şu an ekranda olan 'bilgi' kaydı (eylem geri bildirimi onu keserse sıranın başına döner)
   let kuyruk = []; // gösterilmeyi bekleyen 'bilgi' bildirimleri
   let gizlemeZamanlayicisi = null;
   let yuklemeZamanlayicisi = null;
@@ -100,6 +101,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
     const kayit = bekleyen;
     const sirada = kuyruk;
     bekleyen = null;
+    gorunenBilgi = null;
     kuyruk = [];
     pencere = null;
     yuklendi = false;
@@ -180,13 +182,15 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
 
   /** Görünen bildirim bitti: sırada bekleyen bilgi varsa onu göster, yoksa pencereyi gizle. */
   function sonraki() {
+    gorunenBilgi = null;
     if (!canliMi()) return;
     const siradaki = kuyruk.shift();
     if (siradaki) gosterIc(siradaki);
     else pencere.hide();
   }
 
-  function gosterIc({ tur, metin, simge, ozet }) {
+  function gosterIc(kayit) {
+    const { tur, metin, simge, ozet } = kayit;
     if (!canliMi() || !yuklendi) return;
     bekleyen = null;
     const bilgi = tur === 'bilgi';
@@ -211,12 +215,23 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       if (bilgi) yuk.simge = kisalt(simge, BILGI_SIMGE_SINIRI);
       else if (ozet) yuk.ozet = ozet;
       pencere.webContents.send('kose:goster', yuk);
+      gorunenBilgi = bilgi ? kayit : null;
       if (!pencere.isVisible()) pencere.showInactive(); // odak almadan göster
       clearTimeout(gizlemeZamanlayicisi);
       gizlemeZamanlayicisi = setTimeout(sonraki, sureMs + GIZLEME_PAYI_MS);
     } catch {
       gunluk('Köşe bildirimi gösterilemedi.');
     }
+  }
+
+  /**
+   * Eylem geri bildirimi (ok / hata) hemen gösterilir; ama ekranda ya da yüklenmeyi bekleyen bir 'bilgi' (bildirim kuralı, 6 sn) onun yüzünden
+   * kaybolmasın: kesilen bilgi sıranın BAŞINA döner ve eylem sonucu bitince yeniden gösterilir. Sıra doluysa en eskisi (bu) düşer.
+   */
+  function bilgiyiErtele() {
+    const kesilen = bekleyen !== null && bekleyen.tur === 'bilgi' ? bekleyen : gorunenBilgi;
+    gorunenBilgi = null;
+    if (kesilen !== null && kuyruk.length < BILGI_KUYRUK_SINIRI) kuyruk.unshift(kesilen);
   }
 
   return {
@@ -245,6 +260,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       if (ozetTemiz) kayit.ozet = ozetTemiz; // yedek (Windows bildirimi) yalnız tur ve metni kullanır
       if (!canliMi()) olustur();
       if (!canliMi()) return false;
+      if (!bilgi) bilgiyiErtele();
       if (bilgi && (bekleyen !== null || (yuklendi && pencere.isVisible()))) {
         // Bir bildirim zaten görünüyor (ya da yüklenmeyi bekliyor): bilgi sırasını bekler; sıra dolarsa en eskisi düşer.
         if (kuyruk.length >= BILGI_KUYRUK_SINIRI) kuyruk.shift();
@@ -262,6 +278,8 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       clearTimeout(gizlemeZamanlayicisi);
       clearTimeout(yuklemeZamanlayicisi);
       kuyruk = [];
+      bekleyen = null;
+      gorunenBilgi = null;
       const eski = pencere;
       pencere = null; // önce boşalt: yok edilirken gelen olaylar sıfırlamayı tetiklemesin
       if (eski && !eski.isDestroyed()) eski.destroy();

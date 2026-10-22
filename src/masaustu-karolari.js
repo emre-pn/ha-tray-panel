@@ -13,6 +13,10 @@
  *  - Eylem kaynağı 'masaustu': onay/basılı tutma sunulmaz, yıkıcı eylem çalışmaz; her şey tek güvenli hattan geçer (src/eylem.js).
  *  - HA'daki ad sonradan Kapı Kuralı'na takılırsa (ya da favori/seçim kalkarsa) karo her durum değişiminde (esitle) kapatılır.
  *  - Sayfa süreci ölürse pencere yok edilir; aynı karo bir oturumda 3 kez ölürse yeniden açılmaz (çökme döngüsü olmaz).
+ *  - Açılış gecikmesi (hazirla) bitmeden gelen durum değişiklikleri karo açmaz: ilk durum akını ana pencere ve tepsiden önce karo
+ *    penceresi açmasın (modelDegisti, açılış zamanlayıcısı dolana dek bekler; ayar kaynaklı esitle çağrıları bundan etkilenmez).
+ *  - Görünüm (o-25 / o-29 / o-34): sayfaya görünüm modeli (yüksek karşıtlık, palet, hareketi azalt) gider ve metin boyutu çarpanı
+ *    sayfa yakınlaştırması olarak uygulanır; pencerenin en az/en çok boyutu aynı oranda büyür (köşe bildirimi ve itme kartıyla aynı).
  *
  * Penceresiz çalışan karo tepside ya da görev çubuğunda görünmez (skipTaskbar). Çerçevesiz pencerenin sürükle/yeniden boyutlandır
  * davranışı, çok monitörlü yerleşim ve Windows 11 malzemesi gerçek Windows'ta DENENMEDİ (README elle deneme listesi).
@@ -32,6 +36,7 @@ const ILK_ACILIS_GECIKMESI_MS = 2000;
 const EN_COK_COKME = 3;
 const OPAK_MALZEME = Object.freeze({ malzeme: 'yok', secenekler: Object.freeze({ backgroundColor: '#2a3040' }) });
 const YERLESIM_TOLERANSI = 2; // DIP; karma DPI yuvarlamasını "kullanıcı taşımadı" saymak için
+const sinirla = (deger, enAz, enCok) => Math.min(enCok, Math.max(enAz, deger));
 
 /** İki pencere sınırı (tolerans dahilinde) aynı mı? */
 const ayniSinir = (a, b) =>
@@ -55,16 +60,19 @@ function varsayilanZaman() {
  * @param {() => object[]} bag.ekranlarAl bağlı ekran özetleri (ekranlariOzetle)
  * @param {(kimlik: string) => void} bag.kaldir karoyu sabitleme listesinden çıkarır (pencerenin × düğmesi / kapatılması)
  * @param {() => ({malzeme: string, secenekler: object})} [bag.malzemeAl]
+ * @param {() => (object|null)} [bag.gorunumAl] görünüm modeli (src/lib/gorunum.js gorunumModeli); null ise sayfaya gönderilmez
+ * @param {() => number} [bag.metinOlcegiAl] Ayarlar > Görünüm > Metin boyutu çarpanı (1 ile 2 arası; geçersizse 1)
  * @param {Function} [bag.t] çevirmen
  * @param {() => string} [bag.dilAl]
  * @param {(m: string) => void} [bag.gunluk]
  * @param {{setTimeout: Function, clearTimeout: Function}} [bag.zaman]
  */
-function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konumKaydet, ustteAl, ekranlarAl, kaldir, malzemeAl = () => OPAK_MALZEME, t = TR, dilAl = null, gunluk = () => {}, zaman = varsayilanZaman() }) {
-  const karolar = new Map(); // karo kimliği -> { kimlik, sira, pencere, yuklendi, gosterildi, sonModel, kayitZamanlayicisi, bizKapatiyor }
+function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konumKaydet, ustteAl, ekranlarAl, kaldir, malzemeAl = () => OPAK_MALZEME, gorunumAl = () => null, metinOlcegiAl = () => 1, t = TR, dilAl = null, gunluk = () => {}, zaman = varsayilanZaman() }) {
+  const karolar = new Map(); // karo kimliği -> { kimlik, sira, pencere, yuklendi, gosterildi, sonModel, olcek, yakinlastirma, kayitZamanlayicisi, bizKapatiyor }
   const cokmeler = new Map(); // karo kimliği -> bu oturumdaki çökme sayısı
   let kapaniyor = false;
   let acilisZamanlayicisi = null;
+  let acilisBekliyor = false; // hazirla() çağrıldı, gecikme henüz dolmadı: modelDegisti karo açmaz
   const izinYok = () => ({ ok: false, hata: t('ana.izinYok') });
 
   const canliMi = (e) => !!e.pencere && !e.pencere.isDestroyed();
@@ -82,15 +90,76 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
     return guvenli(() => karolariAl(), 'Masaüstü karoları belirlenemedi.') ?? [];
   }
 
+  /** Ayarlar > Görünüm > Metin boyutu çarpanı; sayı değilse ya da 1 ile 2 arasında değilse 1 (köşe bildirimiyle aynı doğrulama). */
+  function metinOlcegi() {
+    let olcek = 1;
+    try {
+      olcek = Number(metinOlcegiAl());
+    } catch {
+      gunluk('Masaüstü karosu metin boyutu okunamadı.');
+    }
+    return Number.isFinite(olcek) && olcek >= 1 && olcek <= 2 ? olcek : 1;
+  }
+
+  /** Görünüm modeli (nesne) ya da null: varsayılan görünümde sayfaya hiçbir anahtar gitmez. */
+  function gorunumOku() {
+    try {
+      const g = gorunumAl();
+      return g && typeof g === 'object' ? g : null;
+    } catch {
+      gunluk('Masaüstü karosu görünümü okunamadı.');
+      return null;
+    }
+  }
+
+  /** Pencerenin en az/en çok boyutu metin boyutuyla orantılı büyür; yeni sınırın dışında kalan pencere sınıra çekilir. */
+  function boyutSiniriniUygula(e, olcek) {
+    const { en_az: az, en_cok: cok } = KARO_BOYUT_SINIRLARI;
+    const enAz = { width: Math.round(az.width * olcek), height: Math.round(az.height * olcek) };
+    const enCok = { width: Math.round(cok.width * olcek), height: Math.round(cok.height * olcek) };
+    const p = e.pencere;
+    try {
+      if (typeof p.setMinimumSize === 'function') p.setMinimumSize(enAz.width, enAz.height);
+      if (typeof p.setMaximumSize === 'function') p.setMaximumSize(enCok.width, enCok.height);
+      if (typeof p.getBounds !== 'function' || typeof p.setBounds !== 'function') return;
+      const mevcut = p.getBounds();
+      const yeni = { x: mevcut.x, y: mevcut.y, width: sinirla(mevcut.width, enAz.width, enCok.width), height: sinirla(mevcut.height, enAz.height, enCok.height) };
+      if (yeni.width === mevcut.width && yeni.height === mevcut.height) return;
+      e.yerlesim = yeni; // bu boyut değişimi kullanıcıdan gelmedi: konumuKaydet kayıtlı konumu ezmez
+      p.setBounds(yeni);
+    } catch {
+      gunluk('Masaüstü karosu boyutu ayarlanamadı.');
+    }
+  }
+
+  /** Metin boyutu çarpanı değiştiyse sayfa yakınlaştırması ve pencere sınırları güncellenir. Kayıtlı konuma dokunulmaz. */
+  function olcegiUygula(e, olcek) {
+    const wc = e.pencere.webContents;
+    if (olcek !== e.yakinlastirma && typeof wc.setZoomFactor === 'function') {
+      try {
+        wc.setZoomFactor(olcek);
+        e.yakinlastirma = olcek;
+      } catch {
+        gunluk('Masaüstü karosu yakınlaştırması uygulanamadı.');
+      }
+    }
+    if (olcek === e.olcek) return;
+    e.olcek = olcek;
+    boyutSiniriniUygula(e, olcek);
+  }
+
   function modelGonder(e, zorla = false) {
     if (!canliMi(e) || !e.yuklendi) return;
     const model = guvenli(() => modelAl(e.kimlik), 'Masaüstü karosu modeli alınamadı.');
     if (!model) return;
     const malzeme = guvenli(() => malzemeAl().malzeme, 'Masaüstü karosu malzemesi okunamadı.') ?? 'yok';
-    const imza = JSON.stringify([model, malzeme]);
+    const gorunum = gorunumOku();
+    const olcek = metinOlcegi();
+    const imza = JSON.stringify([model, malzeme, gorunum, olcek]);
     if (!zorla && imza === e.sonModel) return; // değişmeyen model yeniden gönderilmez (durum deposu sık tetiklenir)
     e.sonModel = imza;
-    guvenli(() => e.pencere.webContents.send('karo:durum', { model, malzeme }), 'Masaüstü karosu modeli gönderilemedi.');
+    olcegiUygula(e, olcek);
+    guvenli(() => e.pencere.webContents.send('karo:durum', { model, malzeme, ...(gorunum ? { gorunum } : {}) }), 'Masaüstü karosu modeli gönderilemedi.');
   }
 
   function konumuKaydet(e) {
@@ -133,7 +202,9 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
   function olustur(kimlik, sira) {
     if ((cokmeler.get(kimlik) ?? 0) >= EN_COK_COKME) return; // art arda çöken karo bu oturumda yeniden açılmaz
     const hedef = karoHedefi({ kayit: konumlariAl()?.[kimlik] ?? null, sira, ekranlar: guvenli(() => ekranlarAl(), 'Ekranlar okunamadı.') ?? [] });
-    const e = { kimlik, sira, pencere: null, yuklendi: false, gosterildi: false, sonModel: null, kayitZamanlayicisi: null, bizKapatiyor: false, yerlesim: { x: hedef.x, y: hedef.y, width: hedef.width, height: hedef.height } };
+    const olcek = metinOlcegi();
+    // olcek: pencere sınırlarının dayandığı çarpan; yakinlastirma: sayfaya yazılmış yakınlaştırma (yeni sayfada 1; ilk modelle birlikte yazılır).
+    const e = { kimlik, sira, pencere: null, yuklendi: false, gosterildi: false, sonModel: null, olcek, yakinlastirma: 1, kayitZamanlayicisi: null, bizKapatiyor: false, yerlesim: { x: hedef.x, y: hedef.y, width: hedef.width, height: hedef.height } };
     try {
       const bu = yerelPencereOlustur({
         preload: PRELOAD_KARO,
@@ -142,10 +213,10 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
           y: hedef.y,
           width: hedef.width,
           height: hedef.height,
-          minWidth: KARO_BOYUT_SINIRLARI.en_az.width,
-          minHeight: KARO_BOYUT_SINIRLARI.en_az.height,
-          maxWidth: KARO_BOYUT_SINIRLARI.en_cok.width,
-          maxHeight: KARO_BOYUT_SINIRLARI.en_cok.height,
+          minWidth: Math.round(KARO_BOYUT_SINIRLARI.en_az.width * olcek),
+          minHeight: Math.round(KARO_BOYUT_SINIRLARI.en_az.height * olcek),
+          maxWidth: Math.round(KARO_BOYUT_SINIRLARI.en_cok.width * olcek),
+          maxHeight: Math.round(KARO_BOYUT_SINIRLARI.en_cok.height * olcek),
           show: false,
           frame: false,
           skipTaskbar: true,
@@ -222,7 +293,8 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
     ipcMain.handle('karo:durum-al', (olay) => {
       const e = karodanBul(olay);
       if (!e) return izinYok();
-      return { ok: true, model: guvenli(() => modelAl(e.kimlik), 'Masaüstü karosu modeli alınamadı.') ?? null, malzeme: malzemeAl().malzeme, ...(dilAl ? { dil: dilAl() } : {}) };
+      const gorunum = gorunumOku();
+      return { ok: true, model: guvenli(() => modelAl(e.kimlik), 'Masaüstü karosu modeli alınamadı.') ?? null, malzeme: malzemeAl().malzeme, ...(gorunum ? { gorunum } : {}), ...(dilAl ? { dil: dilAl() } : {}) };
     });
     ipcMain.handle('karo:calistir', async (olay, yuk) => {
       const e = karodanBul(olay);
@@ -251,11 +323,23 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
     /** Açılıştan biraz sonra karolar arka planda açılır (ana pencere ve tepsi önce gelsin). */
     hazirla(gecikmeMs = ILK_ACILIS_GECIKMESI_MS) {
       zaman.clearTimeout(acilisZamanlayicisi);
-      acilisZamanlayicisi = zaman.setTimeout(esitle, gecikmeMs);
+      acilisBekliyor = true;
+      acilisZamanlayicisi = zaman.setTimeout(() => {
+        acilisZamanlayicisi = null;
+        acilisBekliyor = false;
+        esitle();
+      }, gecikmeMs);
     },
     esitle,
-    /** Durum deposu değişti: geçersizleşen karo kapanır, açık karoların modeli (değiştiyse) tazelenir. */
-    modelDegisti: esitle,
+    /**
+     * Durum deposu değişti: geçersizleşen karo kapanır, açık karoların modeli (değiştiyse) tazelenir. Açılış gecikmesi (hazirla)
+     * dolmadan gelen değişiklik hiçbir şey yapmaz: ilk bağlantı / durum akını karo penceresini erkenden açmasın; gecikme dolunca
+     * esitle zaten güncel durumu okur.
+     */
+    modelDegisti() {
+      if (acilisBekliyor) return;
+      esitle();
+    },
     /** Ayar masaustuKaroUstte değişti: açık karoların "her zaman üstte" durumu güncellenir. */
     ustteDegisti() {
       const ust = guvenli(() => ustteAl() === true, 'Masaüstü karosu üst durumu okunamadı.') === true;
@@ -270,6 +354,13 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
         malzemeUygula(e.pencere, malzemeAl());
         modelGonder(e, true);
       }
+    },
+    /**
+     * Görünüm ayarı değişti (yüksek karşıtlık, palet, hareketi azalt, animasyon, metin boyutu): açık karolara güncel görünüm modeli
+     * gider ve metin boyutu uygulanır. Ayarlar > Görünüm değişiklikleri karoya bu çağrıyla ulaşır (yoksa sonraki model değişimiyle).
+     */
+    gorunumuUygula() {
+      for (const e of karolar.values()) if (canliMi(e)) modelGonder(e, true);
     },
     /** Arayüz dili değişti: pencere başlığı güncellenir, sayfaya 'dil:degisti' gider. */
     dilDegisti() {
@@ -310,6 +401,7 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
     /** Uygulama kapanıyor: bekleyen konumlar yazılır, tüm karo pencereleri yok edilir. */
     kapat() {
       kapaniyor = true;
+      acilisBekliyor = false;
       zaman.clearTimeout(acilisZamanlayicisi);
       for (const e of [...karolar.values()]) kapatKaro(e, { konumKaydi: true });
     },

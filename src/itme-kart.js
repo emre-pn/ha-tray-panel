@@ -155,6 +155,7 @@ function itmeKartiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malzemeAl
 
   function gizle() {
     clearTimeout(zamanlayici);
+    bekleyen = null; // gösterilecek kart kalmadı (yüklenirken HA kartı temizlediyse sayfa yüklenince eski kart çıkmasın)
     if (canliMi()) pencere.hide();
   }
 
@@ -169,8 +170,12 @@ function itmeKartiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malzemeAl
     const olcek = metinOlcegi();
     const boyut = olcek === 1 ? KART_BOYUTU : { width: KART_BOYUTU.width * olcek, height: KART_BOYUTU.height * olcek };
     const yer = koseKonumu(alan, boyut, undefined, engel);
-    // köşe bildirimi (sağ alt) ile çakışmasın: kart onun üstünde durur (yer yoksa çalışma alanının üstüne yaslanır)
-    const y = Math.max(Math.round(alan.y), yer.y - (KOSE_BOYUTU.height + KOSE_ARASI_BOSLUK));
+    // Köşe bildirimi (sağ alt) ile çakışmasın: köşe bildiriminin konumu aynı metin ölçeği ve aynı engelle hesaplanır (yazı büyüyünce o da büyür);
+    // kart onunla aynı sütunda kesişiyorsa onun üstünde durur (yer yoksa çalışma alanının üstüne yaslanır). Panelin yanına (başka sütuna)
+    // taşınan kart yukarı itilmez.
+    const kose = koseKonumu(alan, olcek === 1 ? KOSE_BOYUTU : { width: KOSE_BOYUTU.width * olcek, height: KOSE_BOYUTU.height * olcek }, undefined, engel);
+    const cakisir = yer.x < kose.x + kose.width && kose.x < yer.x + yer.width && yer.y < kose.y + kose.height && kose.y < yer.y + yer.height;
+    const y = cakisir ? Math.max(Math.round(alan.y), kose.y - KOSE_ARASI_BOSLUK - yer.height) : yer.y;
     pencere.setBounds({ ...yer, y });
     if (olcek !== uygulananOlcek && typeof pencere.webContents.setZoomFactor === 'function') {
       pencere.webContents.setZoomFactor(olcek);

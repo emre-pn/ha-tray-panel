@@ -15,8 +15,8 @@
  *  - ışık rengi (sıcaklık ya da rgb): önceki renk (ışık kapalıyken açıldıysa geri alma kapatır)
  *  - vantilatör hızı: önceki yüzde
  *  - sahne: sahnenin üyelerinden aç-kapa yapılabilenlerin (ışık, priz, vantilatör, sanal anahtar; en çok 12) önceki durumu
- * Sürekli değerlerde (parlaklık, renk, hız) aynı varlık için kısa aralıkla (5 sn) gelen değişiklikler TEK girdide toplanır ve EN ESKİ
- * görüntüyü korur: kaydırıcıyı sürüklemek tek bir geri alma adımıdır.
+ * Sürekli değerlerde (parlaklık, renk, hız) aynı varlık için kısa aralıkla (5 sn) gelen değişiklikler, araya başka bir eylem girmediyse
+ * (yığının en üstündeki girdiyle) TEK girdide toplanır ve EN ESKİ görüntüyü korur: kaydırıcıyı sürüklemek tek bir geri alma adımıdır.
  */
 
 const { alanAl } = require('./suzgec');
@@ -53,7 +53,8 @@ function acKapaAdimi(hedef) {
 /** Önceki rengi geri yükleyen adım (renk sıcaklığı ya da rgb); önceki renk bilinmiyorsa null. */
 function renkAdimi(oznitelikler) {
   const kelvin = sonluSayi(oznitelikler.color_temp_kelvin);
-  if (oznitelikler.color_mode === 'color_temp' && kelvin !== null) return { eylem: { servis: 'turn_on', veri: { color_temp_kelvin: Math.round(kelvin) } } };
+  // Sıcaklık kipinde kelvin bilinmiyorsa rgb'ye DÜŞÜLMEZ: HA bu kipte rgb_color'ı türetilmiş olarak da verir, geri alma beyaz ışığı RGB kipine geçirirdi.
+  if (oznitelikler.color_mode === 'color_temp') return kelvin === null ? null : { eylem: { servis: 'turn_on', veri: { color_temp_kelvin: Math.round(kelvin) } } };
   const rgb = oznitelikler.rgb_color;
   if (Array.isArray(rgb) && rgb.length === 3 && rgb.every((c) => Number.isInteger(c) && c >= 0 && c <= 255)) return { eylem: { servis: 'turn_on', veri: { rgb_color: [...rgb] } } };
   return null;
@@ -114,12 +115,10 @@ function sahnePlani(kimlik, ad, uyeler) {
   const adimlar = [];
   for (const u of uyeler.slice(0, EN_COK_SAHNE_UYESI)) {
     if (!u || typeof u.kimlik !== 'string' || !SAHNE_UYE_ALANLARI.includes(alanAl(u.kimlik)) || !durumGecerliMi(u.durum)) continue;
-    const eylem = u.durum === 'on' ? { servis: 'turn_on' } : { servis: 'turn_off' };
+    // Açıkken önceki parlaklık biliniyorsa TEK adım: parlaklık komutu ışığı o yüzdeyle açar (ışık "aç" ile cihaz hafızasına güvenmez, üye başına tek POST)
+    const parlakli = u.durum === 'on' && alanAl(u.kimlik) === 'light' && Number.isInteger(u.parlaklik) && u.parlaklik >= 1 && u.parlaklik <= 100;
+    const eylem = parlakli ? { parlaklik: u.parlaklik } : u.durum === 'on' ? { servis: 'turn_on' } : { servis: 'turn_off' };
     adimlar.push({ kimlik: u.kimlik, ad: typeof u.ad === 'string' ? u.ad : u.kimlik, eylem, uye: true });
-    // Açıkken önceki parlaklık biliniyorsa ikinci adım olarak onu da geri yükle (ışık "aç" cihaz hafızasına güvenmesin)
-    if (u.durum === 'on' && alanAl(u.kimlik) === 'light' && Number.isInteger(u.parlaklik) && u.parlaklik >= 1 && u.parlaklik <= 100) {
-      adimlar.push({ kimlik: u.kimlik, ad: typeof u.ad === 'string' ? u.ad : u.kimlik, eylem: { parlaklik: u.parlaklik }, uye: true });
-    }
   }
   return adimlar.length === 0 ? null : { tur: 'sahne', adimlar };
 }
@@ -145,9 +144,10 @@ function geriAlYiginiOlustur({ simdi = () => Date.now(), sureAl = () => VARSAYIL
 
   return {
     /**
-     * Plan bir girdi olarak yığına yazılır. Sürekli değerde (parlaklık, renk, hız) aynı varlığın en yeni girdisi 5 sn içindeyse
-     * onunla birleşir (EN ESKİ adımlar korunur, yalnız zaman yenilenir). `parti` ({ id, ad }) verilirse aynı partinin adımları TEK girdide
-     * toplanır (oda kapatma: her cihazın önceki durumu tek "geri al" olur). @returns {object|null} eklenen/birleşen girdi
+     * Plan bir girdi olarak yığına yazılır. Sürekli değerde (parlaklık, renk, hız) yığının EN ÜSTTEKİ girdisi aynı varlığın ve 5 sn içindeyse
+     * onunla birleşir (EN ESKİ adımlar korunur, yalnız zaman yenilenir); arada başka bir eylem olduysa yeni girdi açılır, böylece geri alma
+     * sırası (son eylem önce) bozulmaz. `parti` ({ id, ad }) verilirse aynı partinin adımları TEK girdide toplanır (oda kapatma: her cihazın
+     * önceki durumu tek "geri al" olur); adım eklenen parti girdisi en üste taşınır. @returns {object|null} eklenen/birleşen girdi
      */
     ekle({ kimlik, ad, plan, kaynak, parti }) {
       sureDoldu();
@@ -161,6 +161,9 @@ function geriAlYiginiOlustur({ simdi = () => Date.now(), sureAl = () => VARSAYIL
           const varOlan = new Set(buParti.adimlar.map((a) => `${a.kimlik}|${JSON.stringify(a.eylem)}`));
           for (const a of adimlar) if (buParti.adimlar.length < EN_COK_ADIM && !varOlan.has(`${a.kimlik}|${JSON.stringify(a.eylem)}`)) buParti.adimlar.push(a);
           buParti.zaman = t;
+          sayac += 1; // en yeni dokunulan girdi en üste çıkar (geriKoy sırası id iledir)
+          buParti.id = sayac;
+          girdiler = [...girdiler.filter((g) => g !== buParti), buParti];
           return buParti;
         }
         sayac += 1;
@@ -169,8 +172,8 @@ function geriAlYiginiOlustur({ simdi = () => Date.now(), sureAl = () => VARSAYIL
         if (girdiler.length > enCok) girdiler = girdiler.slice(-enCok);
         return girdi;
       }
-      const son = [...girdiler].reverse().find((g) => g.kimlik === kimlik);
-      if (son && SUREKLI_TURLER.includes(plan.tur) && son.tur === plan.tur && t - son.zaman <= BIRLESTIRME_MS) {
+      const son = girdiler.at(-1);
+      if (son && son.kimlik === kimlik && SUREKLI_TURLER.includes(plan.tur) && son.tur === plan.tur && t - son.zaman <= BIRLESTIRME_MS) {
         son.zaman = t;
         return son;
       }

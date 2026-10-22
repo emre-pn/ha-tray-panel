@@ -152,19 +152,40 @@ test('oauthIstegi: adres ayardaki köken olmalı ve anahtar/jeton için güvenli
   assert.deepEqual(o.cagrilar.map((c) => `${c.yontem} ${c.url}`), [`POST ${DIS}/auth/token`]);
 });
 
-test('oauthIstegi: 403 adresi 15 dk duraklatır (yetki kesici); duraklatılmış adrese ne jeton ucu ne anahtarlı istek gider', async (t) => {
-  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
-  const o = kur({ anahtar: 'TEST_ANAHTAR_000', jeton: (url) => (url.endsWith('/auth/token') ? new Response('yasak', { status: 403 }) : json({})) });
+test('oauthIstegi: 403 adresi 15 dk duraklatır (yetki kesici); duraklatılmış adrese ne jeton ucu ne anahtarlı istek gider; süre dolunca AYNI istemci yeniden gönderir', async () => {
+  // Zaman elle ilerletilir (simdi hem istemciye hem yetki kesiciye verilir): duraklatma da, bitişi de TEK istemci/kesici örneğinde sınanır
+  // (yeni örnek kurmak bellekteki duraklatmayı sıfırlar ve süre dolumunu hiç sınamaz).
+  let zaman = 1_000_000;
+  let yerelYasakli = true;
+  const o = kur({
+    simdi: () => zaman,
+    anahtar: 'TEST_ANAHTAR_000',
+    jeton: (url) => {
+      if (!url.endsWith('/auth/token')) return json({});
+      return yerelYasakli && url.startsWith(YEREL) ? new Response('yasak', { status: 403 }) : tamam();
+    },
+  });
+  const agaCikan = () => o.cagrilar.filter((c) => !manifestMi(c.url)).length;
+  const yerelTokenIstegi = () => o.tokenIstekleri().filter((c) => c.url.startsWith(YEREL)).length;
   await assert.rejects(o.istemci.oauthIstegi({ form: FORM, taban: YEREL }), (h) => h.tur === 'yasak-erisim' && h.durumKodu === 403);
-  const once = o.cagrilar.length;
+  const once = agaCikan();
+  assert.equal(yerelTokenIstegi(), 1);
   await assert.rejects(o.istemci.oauthIstegi({ form: FORM, taban: YEREL }), (h) => h.tur === 'duraklatildi');
   await assert.rejects(o.istemci.haIstek('/api/states'), (h) => h.tur === 'duraklatildi', 'anahtarlı istek de aynı duraklatmaya uyar');
-  assert.equal(o.cagrilar.filter((c) => !manifestMi(c.url)).length, once - o.cagrilar.slice(0, once).filter((c) => manifestMi(c.url)).length, 'duraklatma sürerken yeni jeton/anahtarlı istek yok');
-  // diğer köken (dış adres) etkilenmez
-  assert.equal((await kur({ jeton: tamam }).istemci.oauthIstegi({ form: FORM, taban: DIS })).durum, 200);
-  t.mock.timers.tick(15 * 60_000 + 1000);
-  const sonra = kur({ jeton: tamam });
-  assert.equal((await sonra.istemci.oauthIstegi({ form: FORM, taban: YEREL })).durum, 200);
+  assert.equal(agaCikan(), once, 'duraklatma sürerken yeni jeton/anahtarlı istek yok');
+  // diğer köken (dış adres) AYNI istemcide etkilenmez
+  assert.equal((await o.istemci.oauthIstegi({ form: FORM, taban: DIS })).durum, 200);
+  assert.equal(agaCikan(), once + 1, 'dış adrese tek jeton isteği gitti');
+  // 15 dk dolmasına 1 ms kala hâlâ duraklatılmış: yerel adrese hiçbir şey çıkmaz
+  zaman += 15 * 60_000 - 1;
+  await assert.rejects(o.istemci.oauthIstegi({ form: FORM, taban: YEREL }), (h) => h.tur === 'duraklatildi');
+  assert.equal(agaCikan(), once + 1);
+  // süre dolunca aynı istemci kendiliğinden yeniden gönderir (jeton ucu artık 403 vermiyor)
+  zaman += 1000;
+  yerelYasakli = false;
+  assert.equal((await o.istemci.oauthIstegi({ form: FORM, taban: YEREL })).durum, 200);
+  assert.equal(yerelTokenIstegi(), 2, 'duraklatma bitti: yerel jeton ucuna ikinci istek gitti');
+  await o.istemci.haIstek('/api/states'); // anahtarlı istek de açıldı (fırlatmaz)
 });
 
 test('oauthIstegi: küresel kapı — jeton istekleri ve anahtarlı istekler aynı anda en çok 1 kimlikli işlem yürütür', async () => {

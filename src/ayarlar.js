@@ -1524,10 +1524,18 @@
     const kok = document.documentElement;
     if (yuksekKarsitlik.checked) kok.setAttribute('data-karsitlik', '1');
     else kok.removeAttribute('data-karsitlik');
+    hareketiAzaltUygula();
     const olcek = Number(metinOlcegi.value);
     metinCarpani = METIN_OLCEKLERI.indexOf(olcek) >= 0 ? olcek / 100 : 1;
     if (metinCarpani !== 1) yakinlastirmaDokunuldu = true;
     yakinlastirmaYaz();
+  }
+
+  /** "Hareketi azalt" kutusu: Ayarlar'ın kendi geçişleri de kapanır (<html data-hareket>, ayarlar.html); sistem tercihi CSS'te ayrıca korunur. */
+  function hareketiAzaltUygula() {
+    const kok = document.documentElement;
+    if (hareketiAzalt.checked) kok.setAttribute('data-hareket', 'azalt');
+    else kok.removeAttribute('data-hareket');
   }
 
   /** Panel rengi kutusu: "#rrggbb" ya da boş. Geçerliyse seçici eşlenir ve hata temizlenir; geçersizse kutu işaretlenir. true = geçerli. */
@@ -4389,6 +4397,7 @@
     temaOnizlemeGuncelle();
   });
   metinOlcegi.addEventListener('change', ayarlarGorunumunuUygula);
+  hareketiAzalt.addEventListener('change', hareketiAzaltUygula);
   animasyonlar.addEventListener('change', animasyonAlanlariniGuncelle);
   [
     [panelVurguRengi, panelVurguSecici, btnPanelVurguSifirla],

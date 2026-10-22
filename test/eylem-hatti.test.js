@@ -296,6 +296,33 @@ test('basiliTutmaDeposu: 0,8 sn dolmadan onay yok; dolunca bir kez; ikinci kez y
   assert.equal(depo.basla(5), false);
 });
 
+test('basiliTutmaDeposu: sınıra gelince YALNIZ en eski (ya da süresi dolmuş) kayıt atılır; tutulmakta olan basış silinmez', () => {
+  let t = 0;
+  const depo = basiliTutmaDeposu({ simdi: () => t });
+  for (let i = 0; i < 31; i += 1) depo.basla(`button.eski${i}`);
+  t = 100;
+  depo.basla('script.tutulan'); // 32. kayıt: şu an tutuluyor
+  t = 200;
+  depo.basla('script.yeni'); // 33. başlangıç: eskiden bütün kayıtları (tutulanı da) siliyordu
+  t = 100 + 800;
+  assert.equal(depo.tuket('script.tutulan'), true, 'tutulan basış korundu');
+  assert.equal(depo.tuket('button.eski0'), false, 'en eski atıldı');
+  assert.equal(depo.tuket('button.eski1'), true, 'yalnız bir kayıt atılır, ötekiler korunur');
+  t = 200 + 800;
+  assert.equal(depo.tuket('script.yeni'), true);
+
+  // süresi dolmuş kayıtlar önce temizlenir: canlı kayıt hiç atılmaz
+  const d2 = basiliTutmaDeposu({ simdi: () => t });
+  t = 0;
+  for (let i = 0; i < 32; i += 1) d2.basla(`button.k${i}`);
+  t = 20_000;
+  d2.basla('script.a');
+  d2.basla('script.b');
+  t = 20_000 + 800;
+  assert.equal(d2.tuket('script.a'), true);
+  assert.equal(d2.tuket('script.b'), true);
+});
+
 test('hizSiniriOlustur: temizle sayaçları sıfırlar', () => {
   const h = hizSiniriOlustur({ simdi: () => 5 });
   for (let i = 0; i < ORAN_SINIRI; i += 1) assert.equal(h.dene('x.y'), true);

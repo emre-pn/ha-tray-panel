@@ -157,6 +157,7 @@ const UYGULAMA_KIMLIGI = 'io.github.emre-pn.evpaneli'; // electron-builder.yml i
 const HA_BOLUMU = 'persist:ha';
 const GIZLI_BASLAT_ARG = '--gizli';
 const FAVORI_YENILEME_MS = 60_000; // canlı bağlantı YOKKEN (REST yedeği) durum yenileme aralığı
+const ILK_DURUM_BEKLEME_MS = 10_000; // soğuk açılışta `--eylem` / dış isteğin ilk durum okumasını en çok bu kadar beklemesi (HA yanıt vermezse takılmaz)
 const REST_TEK_ISTEK_SINIRI = 25; // izlenen varlık bundan çoksa tek /api/states isteği, değilse varlık başına istek
 const REST_ESZAMANLILIK = 4; // varlık başına isteklerde çalışan sayısı; kimlikli kapı (K1) bunları zaten SIRAYA dizer (aynı anda ağda en çok 1)
 const OTURUM_KAPANMA_BEKLEME_MS = 15_000; // query-session-end sonrası session-end gelmezse oturum kapatma iptal edilmiş sayılır
@@ -1251,6 +1252,8 @@ const masaustuKarolari = masaustuKarolariOlustur({
     ayarlaraFavoriDegistiBildir(); // açık Ayarlar sayfası eski listeyle kaydedip karoyu geri getirmesin
   },
   malzemeAl: yeniPencereMalzemesi,
+  gorunumAl: gorunumuAl, // o-25 / o-29 / o-34: karo sayfası da görünüm modelini alır
+  metinOlcegiAl, // o-25
   t,
   dilAl: () => etkinDil,
   gunluk,
@@ -2586,6 +2589,7 @@ function gorunumuYenile() {
     yuzey.malzemeyiUygula();
     kose.malzemeyiUygula();
     itmeKart.malzemeyiUygula();
+    masaustuKarolari.malzemeyiUygula(); // karo arka planı + görünüm modeli (yüksek karşıtlık, palet) açık karolara da gider
   } catch {
     gunluk('Pencere görünümü güncellenemedi.');
   }
@@ -3611,6 +3615,22 @@ async function durumlariYenile({ zorla = false } = {}) {
   return favoriYenilemeSuruyor;
 }
 
+/**
+ * Açılıştaki ilk durum okumasının bitmesini (başarılı ya da başarısız) en çok ILK_DURUM_BEKLEME_MS bekleyen söz. ASLA reddetmez ve asılı kalmaz:
+ * HA'ya ulaşılamasa da süre dolunca çözülür, bekleyen istek eskisi gibi (boş depoyla) çalışır ve başarısızlığını kendisi söyler.
+ */
+function ilkDurumuBekle(okuma) {
+  return new Promise((coz) => {
+    const sinir = setTimeout(coz, ILK_DURUM_BEKLEME_MS);
+    Promise.resolve(okuma)
+      .catch(() => {})
+      .finally(() => {
+        clearTimeout(sinir);
+        coz();
+      });
+  });
+}
+
 /** Yıkıcı eylem için onay penceresi (tepsi menüsü; soru-3). true = "Çalıştır". Açıkken ana pencere odak kaybıyla gizlenmez. */
 async function onayDiyalogu(ad, kimlik) {
   acikOnaySayisi += 1;
@@ -3991,7 +4011,12 @@ ekAyarDinle('masaustuKarolari', () => masaustuKarolari.esitle());
 ekAyarDinle('masaustuKaroUstte', () => masaustuKarolari.ustteDegisti());
 // Grup "tema" (o-25, o-29, o-34): görünüm ayarları değişince açık pencereler güncellenir. Sayfaların kendi görünümü (renkler, animasyon)
 // `gorunum` olarak her gösterimde yeniden gönderilir; burada yalnız pencere düzeyindeki şeyler (arka plan rengi/malzemesi, yakınlaştırma) tazelenir.
-ekAyarDinle('metinOlcegi', () => yuzey.metinOlcegiUygula());
+ekAyarDinle('metinOlcegi', () => {
+  yuzey.metinOlcegiUygula();
+  masaustuKarolari.gorunumuUygula(); // karo sayfası yakınlaştırması ve pencere en az/en çok boyutu
+});
+// Açık masaüstü karoları sürekli görünür: hareketi azalt ve animasyon ayarları da karoya hemen gider
+for (const ad of ['hareketiAzalt', 'animasyonlar', 'animasyonGecisleri', 'havaEfekti', 'mevsimEfekti']) ekAyarDinle(ad, () => masaustuKarolari.gorunumuUygula());
 // Grup "etkilesim" (o-20, o-23, o-60, o-38): tekerlek / sabitleme açık sayfaya hemen bildirilir; diğerleri bir sonraki olayda okunur
 for (const ad of ['karoTekerlegi', 'panelSabit']) ekAyarDinle(ad, () => yuzey.etkilesimDegisti());
 ekAyarDinle('kisayolBasiliTut', () => basiliTut.sifirla());
@@ -4698,7 +4723,9 @@ function baslat() {
 
     // Canlı durum (hiz-03): tek WebSocket; kurulamazsa REST yedeği 60 sn'de bir yeniler. Hızlı panel arka planda yüklenir.
     ws.baslat();
-    durumlariYenile();
+    // Soğuk açılışta durum deposu boştur: perde gibi durum gelmeden görünmeyen karolar süzülür, HA'daki güncel adla eşleşen favori bulunamaz
+    // ve güvenlik süzgeci HA'daki güncel adı/sınıfı henüz görmemiştir. `--eylem` ve dış istekler (Jump List, evpaneli://) bu okumanın bitmesini bekler (`--durum` gibi).
+    const ilkDurumSozu = ilkDurumuBekle(durumlariYenile());
     bildirimAkisiniBaslat();
     // Mobil bildirimler (o-61): yalnız kayıtlıysa ve ayar açıksa itme kanalı açılır; aksi halde hiçbir şey olmaz. Ayar değişince kanal açılır/kapanır.
     ekAyarDinle('mobilBildirimler', (yeni) => {
@@ -4732,14 +4759,14 @@ function baslat() {
     disTetikler.baslat();
     surumDenetimiPlanla(SURUM_ILK_DENETIM_MS);
     hazirListeyiUygula().finally(() => {
-      if (baslangicDisIstegi) disIstegiIsle(baslangicDisIstegi, baslangicArgv, null); // evpaneli:// ya da Jump List / kısayol ile açılış
+      if (baslangicDisIstegi) ilkDurumSozu.then(() => disIstegiIsle(baslangicDisIstegi, baslangicArgv, null)); // evpaneli:// ya da Jump List / kısayol ile açılış
       else if (baslangicPencereKomutu) {
         // uygulama `--goster` / `--durum`... ile başlatıldı; durum belgesi için favori durumları önce okunur
         const komut = baslangicPencereKomutu;
         Promise.resolve(komut.tur === 'durum' ? durumlariYenile({ zorla: true }) : undefined)
           .catch(() => {})
           .finally(() => pencereDurumKomutuIsle(komut));
-      } else if (baslangicEylemi) komutSatiriEylemiCalistir(baslangicEylemi.ad); // uygulama `--eylem=<ad>` ile başlatıldı
+      } else if (baslangicEylemi) ilkDurumSozu.then(() => komutSatiriEylemiCalistir(baslangicEylemi.ad)); // uygulama `--eylem=<ad>` ile başlatıldı
       else if (baslangicEylemIstendi) komutEylemiIsle(null); // `--eylem` var ama anlaşılamadı: sessiz kalmaz, hata bildirilir (h-22)
       if (bekleyenPencereKomutu) {
         const bekleyen = bekleyenPencereKomutu;
@@ -4749,12 +4776,12 @@ function baslat() {
       if (bekleyenKomutEylemi) {
         const bekleyen = bekleyenKomutEylemi;
         bekleyenKomutEylemi = null;
-        komutEylemiIsle(bekleyen.ad === null ? null : bekleyen); // hazır olmadan gelen ikinci kopya eylemi
+        ilkDurumSozu.then(() => komutEylemiIsle(bekleyen.ad === null ? null : bekleyen)); // hazır olmadan gelen ikinci kopya eylemi
       }
       if (bekleyenDisIstegi) {
         const bekleyen = bekleyenDisIstegi;
         bekleyenDisIstegi = null;
-        disIstegiIsle(bekleyen.istek, bekleyen.argv, bekleyen.ek); // hazır olmadan gelen ikinci kopya bağlantısı / görevi
+        ilkDurumSozu.then(() => disIstegiIsle(bekleyen.istek, bekleyen.argv, bekleyen.ek)); // hazır olmadan gelen ikinci kopya bağlantısı / görevi
       }
     });
 

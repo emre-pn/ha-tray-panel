@@ -508,6 +508,21 @@ test('diğer cihazlar: favoriye ekle ana süreç işlevine {kimlik, ad, alan} ve
   assert.equal(o.ha.istekler.length, once, 'ayar kapanınca ağa çıkılmaz');
 });
 
+test('diğer cihazlar + gecikmeli: digerAyarDegisti paletDigerCihazlar kapanınca favori olmayan cihazın bekleyen gecikmeli eylemini iptal eder; favorininki sürer', async () => {
+  const o = kurDiger();
+  assert.equal((await o.ek.gecikmeliPlanla('palet', { kimlik: 'light.mutfak', yon: 'kapat', dakika: 5 })).ok, true, 'favori dışı');
+  assert.equal((await o.ek.gecikmeliPlanla('palet', { kimlik: 'light.salon', yon: 'kapat', dakika: 5 })).ok, true, 'favori');
+  assert.equal(o.ek.modelBolumu().gecikmeli.length, 2);
+  o.ek.digerAyarDegisti(); // ayar hâlâ açık
+  assert.equal(o.ek.modelBolumu().gecikmeli.length, 2);
+  o.ayarlar.paletDigerCihazlar = false;
+  o.ek.digerAyarDegisti();
+  assert.deepEqual(o.ek.modelBolumu().gecikmeli.map((x) => x.ad), ['Salon lambası']);
+  assert.ok(o.ek.etkinlik.liste().some((k) => k.kimlik === 'light.mutfak' && k.islem === 'gecikmeli-iptal'), 'iptal geçmişe yazıldı');
+  await o.saat.ileri(5 * 60_000 + 100);
+  assert.deepEqual(o.postlar().map((p) => p.govde.entity_id), ['light.salon'], 'iptal edilen cihaza hiçbir komut gitmez');
+});
+
 test('diğer cihazlar: haIstek verilmezse özellik kapalı kalır (eski kurulum çökmez); kapat() belleği boşaltır', async () => {
   const haIstekSiz = kurDiger(true, { haIstek: undefined });
   assert.deepEqual(await haIstekSiz.ek.digerListe('palet'), { ok: false, tur: 'kapali' });

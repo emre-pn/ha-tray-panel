@@ -419,3 +419,39 @@ test('onayGevsetmesiniEngelle: uzak onay:false yerelde de onay:false değilse at
   assert.equal(parolali.onayAtilan, 0);
 });
 
+test('onayGevsetmesiniEngelle: yerelde onay:true olan favori uzakta onay:false ya da onaysız gelirse (ışık/priz/sahne: varsayılanı onaysız) yerel onay:true korunur', () => {
+  const uzak = [
+    { entity_id: 'light.salon', ad: 'Salon' },
+    { entity_id: 'switch.priz', ad: 'Priz', onay: false },
+    { entity_id: 'scene.film', ad: 'Film', kisayol: 'Control+Alt+F' },
+    { entity_id: 'light.mutfak', ad: 'Mutfak', onay: true },
+    { entity_id: 'light.koridor', ad: 'Koridor' },
+  ];
+  const yerel = [
+    { entity_id: 'light.salon', ad: 'Salon', onay: true },
+    { entity_id: 'switch.priz', ad: 'Priz', onay: true },
+    { entity_id: 'scene.film', ad: 'Film', onay: true },
+    { entity_id: 'light.mutfak', ad: 'Mutfak', onay: true },
+    { entity_id: 'light.koridor', ad: 'Koridor' },
+  ];
+  const once = JSON.stringify(uzak);
+  const s = E.onayGevsetmesiniEngelle(uzak, yerel);
+  assert.equal(JSON.stringify(uzak), once, 'girdi değişmez');
+  const beklenen = [['light.salon', true], ['switch.priz', true], ['scene.film', true], ['light.mutfak', true], ['light.koridor', undefined]];
+  assert.deepEqual(s.favoriler.map((f) => [f.entity_id, f.onay]), beklenen);
+  assert.equal(s.atilan, 3);
+
+  // İçe aktarma hattından sonra da: onay:true kalır, onaylı favori kısayol taşıyamaz (kısayol atılır).
+  const ham = { favoriler: uzak, panolar: [] };
+  const parolasiz = E.uzakBolumTemizle('favoriler', ham, { varsayilan: VARSAYILAN, parolasiz: true, yerelFavoriler: yerel });
+  assert.equal(parolasiz.ok, true);
+  assert.deepEqual(parolasiz.cozum.ayarlar.favoriler.map((f) => [f.entity_id, f.onay]), beklenen);
+  assert.equal(parolasiz.cozum.ayarlar.favoriler.find((f) => f.entity_id === 'scene.film').kisayol, undefined);
+  assert.equal(parolasiz.onayAtilan, 3);
+  // Parolalı dosya güvenilir: uzaktaki değer aynen gelir.
+  const parolali = E.uzakBolumTemizle('favoriler', ham, { varsayilan: VARSAYILAN, parolasiz: false, yerelFavoriler: yerel });
+  assert.deepEqual(parolali.cozum.ayarlar.favoriler.map((f) => [f.entity_id, f.onay]), [['light.salon', undefined], ['switch.priz', false], ['scene.film', undefined], ['light.mutfak', true], ['light.koridor', undefined]]);
+  assert.equal(parolali.cozum.ayarlar.favoriler.find((f) => f.entity_id === 'scene.film').kisayol, 'Control+Alt+F');
+  assert.equal(parolali.onayAtilan, 0);
+});
+

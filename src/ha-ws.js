@@ -263,6 +263,11 @@ function haWsOlustur({
     return [...izlenenKume];
   }
 
+  /** Yanıtı henüz gelmemiş trigger/olay abonelik istekleri "eski" sayılır (abonelikYenile peş peşe çağrılırsa ilkinin HA'daki aboneliği sızmasın). */
+  function bekleyenAbonelikleriEskit() {
+    for (const [id, tur] of bekleyenler) if (tur === 'trigger' || tur === 'olay') bekleyenler.set(id, 'eski-abone');
+  }
+
   function aboneOl(s) {
     izlenenKume = new Set([...izlenen()].filter((k) => typeof k === 'string'));
     if (izlenenKume.size === 0) return kaliciYedek('izlenen-yok');
@@ -275,6 +280,12 @@ function haWsOlustur({
     const basarili = m.ham.success === true;
     const s = soket;
     if (!s || !tur) return;
+    if (tur === 'eski-abone') {
+      // abonelikYenile yerine yenisini gönderdiği, yanıtı henüz gelmemiş abonelik: kurulduysa HA'da hemen silinir (yoksa sonsuza dek açık kalırdı);
+      // reddedildiyse bir şey yapılmaz (yedeğe geçiş ve durumlar isteği yenisinin kendi yanıtına bağlıdır).
+      if (basarili) gonder(s, p.abonelikSilMesaji(yeniId('abonelik-sil'), m.id));
+      return;
+    }
     if (tur === 'komut') {
       const k = komutlar.get(m.id);
       if (!k) return;
@@ -584,6 +595,7 @@ function haWsOlustur({
         gonder(soket, p.abonelikSilMesaji(yeniId('abonelik-sil'), abonelik.id));
         abonelik = null;
       }
+      bekleyenAbonelikleriEskit(); // bir önceki yenileme henüz yanıtlanmadıysa onun aboneliği yanıtı gelince silinir
       aboneOl(soket);
       return true;
     },

@@ -19,18 +19,42 @@ const GUN = 86400000;
 const AYAR = { yerelAdres: 'https://192.168.1.50:8123', disAdres: 'https://ha.example.com' };
 const YETKILI_GECERSIZ = 'net::ERR_CERT_AUTHORITY_INVALID';
 
-function ortamKur({ ayar = AYAR, dosyaSec = async () => null, sertifikaOkuyucu, onceden = null } = {}) {
+function ortamKur({ ayar = AYAR, dosyaSec = async () => null, sertifikaOkuyucu, onceden = null, gecikmeli = false } = {}) {
   const klasor = fs.mkdtempSync(path.join(os.tmpdir(), 'ev-paneli-sertyon-'));
   const dosyaYolu = path.join(klasor, 'sertifika-guveni.json');
   if (onceden) fs.writeFileSync(dosyaYolu, JSON.stringify(onceden), 'utf8');
   const gunluk = [];
-  const depo = sertifikaDeposuOlustur({ dosyaYolu, fs, gunluk: (m) => gunluk.push(m) });
+  const gercekDepo = sertifikaDeposuOlustur({ dosyaYolu, fs, gunluk: (m) => gunluk.push(m) });
+  let depo = gercekDepo;
+  let yuklemeyiBitir = async () => {};
+  if (gecikmeli) {
+    // Gerçek depo kayıtları eşzamanlı yükler (hazirMi() ilk hazir() çağrısında true olur); yönetici ise eşzamansız bir depoya da dayanıklı olmalı.
+    // Bu sarmalayıcı yüklemeyi `yuklemeyiBitir()` çağrılana dek bekletir: o ana kadar hazirMi() false, hazir() bekler, kayıtlar boştur.
+    let hazirBayrak = false;
+    let coz;
+    let reddet;
+    const sozu = new Promise((c, r) => {
+      coz = c;
+      reddet = r;
+    });
+    depo = { ...gercekDepo, hazirMi: () => hazirBayrak, hazir: () => sozu };
+    yuklemeyiBitir = async ({ hata = false } = {}) => {
+      if (hata) {
+        reddet(new Error('okunamadi'));
+        return;
+      }
+      await gercekDepo.yukle();
+      hazirBayrak = true;
+      coz();
+    };
+  }
   let guncelAyar = ayar;
   const yonetici = sertifikaYoneticisiOlustur({ depo, ayarlarAl: () => guncelAyar, dosyaSec, sertifikaOkuyucu, gunluk: (m) => gunluk.push(m) });
   return {
     klasor,
     depo,
     yonetici,
+    yuklemeyiBitir,
     gunluk,
     ayarDegistir: (yeni) => {
       guncelAyar = yeni;
@@ -232,6 +256,69 @@ test('oturum kancası: kayıt yokken kanca kalkar (varsayılan); kayıt ekleninc
     assert.equal(oturum.kapatma, 4);
   } finally {
     o.temizle();
+  }
+});
+
+test('oturum kancası (eşzamansız depo): kayıtlar yüklenirken gelen istek yüklemeyi bekler, sonra YÜKLENEN kayda göre yanıtlanır; ilk yükleme bağlantıları kapatmaz', async () => {
+  const { ca, sunucu } = zincirUret({ sunucuAdi: 'ha.example.com', san: ['ha.example.com'] });
+  const o = ortamKur({ gecikmeli: true, onceden: { surum: 1, ca: [{ pem: ca.pem }], sabit: [] } });
+  try {
+    const oturum = sahteOturum();
+    o.yonetici.oturumaBagla(oturum);
+    assert.equal(o.yonetici.hazirMi(), false, 'sınama düzeneği: depo henüz hazır değil');
+    assert.equal(typeof oturum.proc, 'function', 'kayıt olup olmadığı bilinmiyorken kanca kurulur (istekler kayıtsız geçmesin)');
+    const yanitlar = [];
+    oturum.proc(istek('ha.example.com', sunucu), (k) => yanitlar.push(['ha', k]));
+    oturum.proc(istek('baska.example.net', sunucu), (k) => yanitlar.push(['baska', k]));
+    await new Promise((coz) => setImmediate(coz));
+    assert.deepEqual(yanitlar, [], 'yükleme bitmeden karar verilmez (yüklenmemiş boş kayda göre -3 verilmez)');
+
+    await o.yuklemeyiBitir();
+    await new Promise((coz) => setImmediate(coz));
+    assert.deepEqual(yanitlar.sort(), [['baska', -3], ['ha', 0]], 'bekleyen istekler yüklenen özel kök CA ile yanıtlandı');
+    assert.equal(typeof oturum.proc, 'function', 'kayıt var: kanca kalır');
+    assert.equal(oturum.kapatma, 0, 'ilk yükleme açık bağlantıları kapatmaz');
+    assert.equal(await procCalistir(oturum, istek('ha.example.com', sunucu)), 0, 'hazır depoda istek hemen yanıtlanır');
+  } finally {
+    o.temizle();
+  }
+});
+
+test('oturum kancası (eşzamansız depo): yükleme bitince kayıt yoksa bekleyen istek -3 alır ve kanca kalkar; yükleme hata verirse istek yine yanıtsız kalmaz', async () => {
+  const { sunucu } = zincirUret({ sunucuAdi: 'ha.example.com', san: ['ha.example.com'] });
+  const bos = ortamKur({ gecikmeli: true });
+  try {
+    const oturum = sahteOturum();
+    bos.yonetici.oturumaBagla(oturum);
+    let yanit = null;
+    oturum.proc(istek('ha.example.com', sunucu), (k) => {
+      yanit = k;
+    });
+    await new Promise((coz) => setImmediate(coz));
+    assert.equal(yanit, null, 'yükleme bitmeden yanıt yok');
+    await bos.yuklemeyiBitir();
+    await new Promise((coz) => setImmediate(coz));
+    assert.equal(yanit, -3, 'kayıt yok: Chromium sonucu');
+    assert.equal(oturum.proc, null, 'kayıt yoksa kanca kaldırılır');
+    assert.equal(oturum.kapatma, 0);
+  } finally {
+    bos.temizle();
+  }
+
+  const bozuk = ortamKur({ gecikmeli: true });
+  try {
+    const oturum = sahteOturum();
+    bozuk.yonetici.oturumaBagla(oturum);
+    let yanit = null;
+    oturum.proc(istek('ha.example.com', sunucu), (k) => {
+      yanit = k;
+    });
+    await bozuk.yuklemeyiBitir({ hata: true });
+    await new Promise((coz) => setImmediate(coz));
+    assert.equal(yanit, -3, 'yükleme başarısız: istek askıda kalmaz, Chromium sonucu verilir');
+    assert.equal(typeof oturum.proc, 'function', 'hazır olmayan depoda kanca kaldırılmaz');
+  } finally {
+    bozuk.temizle();
   }
 });
 

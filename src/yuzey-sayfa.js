@@ -677,6 +677,9 @@
             return kopru.kamera(kimlik);
           },
           yenidenCiz: bilgiYenidenCiz,
+          boyutDegisti: function () {
+            setTimeout(boyutBildir, 0); // Büyüt / Küçült: tam yeniden çizim olmadan panel yüksekliği yeniden ölçülür
+          },
           simdi: function () {
             return Date.now();
           },
@@ -1364,13 +1367,43 @@
    */
   function rakamOkumasi() {
     if (!hareketAcik() || typeof el.icerik.querySelectorAll !== 'function') return null;
-    const sayac = {};
     const harita = new Map();
-    el.icerik.querySelectorAll(RULO_SECICI).forEach(function (o) {
-      sayac[o.className] = (sayac[o.className] || 0) + 1;
-      harita.set(o.className + '#' + sayac[o.className], o.textContent);
+    rakamOgeleri(function (o, anahtar) {
+      // Yuvarlanma sürerken öğenin metni giden + gelen haneleri art arda içerir ("21" -> "22" iken "212"): asıl değer (hedef) okunur
+      harita.set(anahtar, ruloHedefleri.has(o) ? ruloHedefleri.get(o) : o.textContent);
     });
     return harita;
+  }
+
+  /** Yuvarlanan öğenin asıl (son) metni; yuvarlanma bitince ya da öğe atılınca silinir. */
+  const ruloHedefleri = new WeakMap();
+
+  /**
+   * Sayı taşıyan öğenin sahibi: en yakın odak kayıtlı öğe (karo düğmesi) ya da adlı kart grubu. Eşleşme çizimler arasında DOM sırasına
+   * değil karoya bakar: sekme değişince, karo eklenip çıkınca bir karonun eski değeri başka karonunkiyle karşılaştırılmaz.
+   * Sahibi bulunamayan öğe (saat, hava durumu...) sınıf içindeki sırasıyla eşleşir.
+   */
+  function rakamSahibi(o, odakAnahtarlari) {
+    for (let p = o.parentNode; p; p = p.parentNode) {
+      const anahtar = odakAnahtarlari.get(p);
+      if (anahtar !== undefined) return 'o:' + anahtar;
+      if (typeof p.getAttribute === 'function' && p.getAttribute('role') === 'group' && p.getAttribute('aria-label')) return 'g:' + p.getAttribute('aria-label');
+    }
+    return '';
+  }
+
+  /** İçerikteki sayı öğelerini (sahip + sınıf + sıra) anahtarıyla gezer; anahtar iki çizim arasında aynı öğeyi gösterir. */
+  function rakamOgeleri(islev) {
+    const odakAnahtarlari = new Map();
+    odakHaritasi.forEach(function (oge, anahtar) {
+      odakAnahtarlari.set(oge, anahtar);
+    });
+    const sayac = {};
+    el.icerik.querySelectorAll(RULO_SECICI).forEach(function (o) {
+      const ad = rakamSahibi(o, odakAnahtarlari) + '|' + o.className;
+      sayac[ad] = (sayac[ad] || 0) + 1;
+      islev(o, ad + '#' + sayac[ad]);
+    });
   }
 
   function sayiDegeri(metin) {
@@ -1380,13 +1413,12 @@
 
   function rakamlariYuvarla(onceki) {
     if (!onceki || onceki.size === 0) return;
-    const sayac = {};
-    el.icerik.querySelectorAll(RULO_SECICI).forEach(function (o) {
-      sayac[o.className] = (sayac[o.className] || 0) + 1;
-      const eski = onceki.get(o.className + '#' + sayac[o.className]);
+    rakamOgeleri(function (o, anahtar) {
+      const eski = onceki.get(anahtar);
       const yeni = o.textContent;
       if (eski === undefined || eski === yeni || eski.length !== yeni.length || !/\d/.test(eski) || !/\d/.test(yeni) || o.children.length > 0) return;
       const yon = sayiDegeri(yeni) >= sayiDegeri(eski) ? 1 : -1;
+      ruloHedefleri.set(o, yeni);
       o.textContent = '';
       let gecikme = 0;
       for (let i = 0; i < yeni.length; i += 1) {
@@ -1408,6 +1440,7 @@
       }
       setTimeout(function () {
         o.textContent = yeni;
+        ruloHedefleri.delete(o);
       }, RULO_MS + gecikme + 20);
     });
   }
@@ -2441,6 +2474,17 @@
     else delete kok.dataset.malzeme;
   }
 
+  /**
+   * Görünüm modelini <html> öğesine yazar (lib/tema-renk.js; yuzey-gorunum.js ile aynı işlev, ikincisi tekrar yazsa da sonuç aynıdır). Böylece
+   * ayardaki "Hareketi azalt" (<html data-hareket>) ilk çizimde de geçerlidir. Tema betiği yüklenmediyse hiçbir şey yapılmaz.
+   */
+  function gorunumuHemenUygula(gorunum) {
+    const Tema = window.EvTemaRenk;
+    if (!Tema || typeof Tema.gorunumUygula !== 'function') return;
+    const sistemAzalt = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches === true;
+    Tema.gorunumUygula(document.documentElement, gorunum, { hareketAzalt: sistemAzalt });
+  }
+
   function kipAyarla(yeni) {
     mod = yeni === 'palet' ? 'palet' : 'panel';
     document.body.className = 'mod-' + mod;
@@ -2465,6 +2509,7 @@
     bildirimAcik = false; // her gösterimde bildirim listesi kapalı başlar
     bildirimImzasi = '';
     karoKilitleri.clear();
+    sonDoluluk.clear(); // gizliyken değişen parlaklık, yeni gösterimde eski değerden yayla kaymasın
     odakHaritasi = new Map(); // yeni gösterimde eski gösterimin odağı geri verilmez
     panelSatirlari = [];
     if (duzen) duzen.sifirla(); // ayrıntı bölmesi kapanır; seçili sayfa korunur
@@ -2622,6 +2667,7 @@
   kopru.durumAl().then(function (yanit) {
     if (!yanit || yanit.ok !== true) return;
     dilKur(yanit.dil); // yanıtta dil yoksa ya da geçersizse Türkçe (HTML varsayılanı) kalır
+    gorunumuHemenUygula(yanit.gorunum); // ilk çizimden ÖNCE: yuzey-gorunum.js bu betikten sonra yüklenir ve kendi yanıtını daha geç alır
     malzemeAyarla(yanit.malzeme);
     kipAyarla(yanit.mod);
     etkilesimAyarla(yanit.etkilesim);

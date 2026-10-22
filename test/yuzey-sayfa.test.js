@@ -3321,6 +3321,55 @@ test('oda grubu (o-14): onay beklerken model yenilense bile onay durumu korunur;
   assert.equal(sayfa.oge('ipucu').textContent, '', 'başarıda ipucu yok (özet bildirimini ana süreç verir)');
 });
 
+test('oda grubu (o-14): onay beklerken panel yeniden çizilirse süre dolunca EKRANDAKİ yeni düğme sıfırlanır ("Emin misin?" takılı kalmaz)', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL() });
+  const eski = odaDugmesi(sayfa);
+  eski.gonder('click');
+  sayfa.durum({ ...ODALI_MODEL(), ust: { ...MODEL.ust, medyaCaliyor: false } }); // yeniden çizim: aynı kod için yeni düğme kurulur
+  const yeniDugme = odaDugmesi(sayfa);
+  assert.notEqual(yeniDugme, eski, 'düğme yeniden kuruldu');
+  assert.equal(yeniDugme.textContent, 'Emin misin? Kapat (2)', 'onay durumu yeniden çizimde korunur');
+  sayfa.zaman.ilerle(4100);
+  assert.equal(yeniDugme.textContent, 'Odayı kapat (2)');
+  assert.ok(!yeniDugme.className.split(' ').includes('onay'), 'onay sınıfı kalkar');
+  assert.equal(yeniDugme.attributes['aria-label'], 'Odayı kapat: Salon, 2 açık cihaz');
+  yeniDugme.gonder('click');
+  await akit();
+  assert.deepEqual(odaCagrilari(sayfa), [], 'süre dolduktan sonraki tıklama yine yalnız yeni bir ilk adımdır');
+  assert.equal(yeniDugme.textContent, 'Emin misin? Kapat (2)');
+});
+
+test('oda grubu (o-14): bir odada onay beklerken başka odanın düğmesine basılırsa ilk odanın "Emin misin?" yazısı da kalkar', async () => {
+  const ikinci = { ...odaGrubu({ kod: 'oda-89abcdef', etiket: 'Mutfak' }) };
+  const sayfa = await panelAc({ eylemBetigi: true, model: { ...ODALI_MODEL(), gruplar: [odaGrubu(), ikinci] } });
+  const dugmeler = () => sayfa.oge('icerik').bul((o) => o.etiket === 'button' && o.className.split(' ').includes('oda-kapat'));
+  const [salon, mutfak] = dugmeler();
+  salon.gonder('click');
+  assert.equal(salon.textContent, 'Emin misin? Kapat (2)');
+  mutfak.gonder('click');
+  assert.equal(mutfak.textContent, 'Emin misin? Kapat (2)');
+  assert.equal(salon.textContent, 'Odayı kapat (2)', 'onay yalnız son tıklanan odada bekler');
+  assert.ok(!salon.className.split(' ').includes('onay'));
+  await akit();
+  assert.deepEqual(odaCagrilari(sayfa), [], 'hiçbir adım istek göndermez');
+});
+
+test('oda grubu (o-14): istek sürerken panel yeniden çizilirse yanıt gelince EKRANDAKİ yeni düğme de açılır (pasif takılı kalmaz)', async () => {
+  let coz;
+  const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL(), odaKapatYaniti: () => new Promise((c) => (coz = c)) });
+  odaDugmesi(sayfa).gonder('click');
+  odaDugmesi(sayfa).gonder('click');
+  await akit();
+  assert.equal(odaDugmesi(sayfa).disabled, true);
+  sayfa.durum({ ...ODALI_MODEL(), ust: { ...MODEL.ust, medyaCaliyor: false } }); // oda cihazları durum değiştirdi: yeniden çizim, yeni düğme pasif kurulur
+  const yeniDugme = odaDugmesi(sayfa);
+  assert.equal(yeniDugme.disabled, true);
+  coz({ ok: true });
+  await akit();
+  assert.equal(yeniDugme.disabled, false);
+  assert.equal(odaCagrilari(sayfa).length, 1);
+});
+
 test('oda grubu (o-14): başarısız ya da hata veren yanıtta kısa ipucu çıkar ve düğme takılı kalmaz', async () => {
   for (const yanit of [{ ok: false, tur: 'hata' }, () => Promise.reject(new Error('ipc')), null]) {
     const sayfa = await panelAc({ eylemBetigi: true, model: ODALI_MODEL(), odaKapatYaniti: yanit });

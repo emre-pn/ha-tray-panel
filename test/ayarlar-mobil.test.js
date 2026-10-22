@@ -20,7 +20,7 @@ const AD = {
   durum: 'mobilDurum',
   bolum: 'bolumMobil',
 };
-const sayfaAc = (ek = {}) => acilmisSayfa({ ayar: { ...AYAR_D3, ...(ek.ayar ?? {}) }, cihazlar: CIHAZLAR_D3, aracYaniti: ek.aracYaniti });
+const sayfaAc = (ek = {}) => acilmisSayfa({ ayar: { ...AYAR_D3, ...(ek.ayar ?? {}) }, cihazlar: CIHAZLAR_D3, aracYaniti: ek.aracYaniti, koprudenKaldir: ek.koprudenKaldir });
 const tikla = async (sayfa, kimlik) => {
   sayfa.oge(kimlik).dispatchEvent({ type: 'click', preventDefault() {}, stopPropagation() {} });
   await akit();
@@ -192,10 +192,17 @@ test('"bolumMobil" bölümünü açmayı ana süreç isteyebilir (bildirim tıkl
 });
 
 test('köprüde mobil işlevleri yoksa (eski preload) sayfa çökmez; düğmeler zararsızdır', async () => {
-  const sayfa = await sayfaAc();
-  assert.equal(typeof sayfa.oge(AD.kaydol), 'object');
+  // Eski bir preload mobilDurumu / mobilKaydol / mobilKaydiSil / onMobilDegisti açmaz: işlevler sahte köprüden GERÇEKTEN çıkarılır.
+  const sayfa = await sayfaAc({ koprudenKaldir: ['mobilDurumu', 'mobilKaydol', 'mobilKaydiSil', 'onMobilDegisti'] });
+  assert.equal(sayfa.oge(AD.durum).textContent, '', 'durum okunamadı: ne "kayıtlı değil" ne başka bir metin uydurulur');
   await tikla(sayfa, AD.kaydol);
   await tikla(sayfa, AD.kaydiSil);
+  assert.equal(sayfa.cagrilar.some((c) => c[0] === 'mobilKaydol' || c[0] === 'mobilKaydiSil'), false, 'olmayan işlev çağrılmaz');
+  assert.equal(sayfa.oge(AD.kaydol).disabled, false, 'düğme meşgul kalmaz');
+  assert.equal(sayfa.oge(AD.durum).textContent, '');
+  sayfa.oge(AD.kutu).dispatchEvent({ type: 'change' }); // kutuyu değiştirmek de zararsız
+  await akit();
+  assert.equal(sayfa.oge(AD.durum).textContent, '');
 });
 
 test('dil değişince mobil metinleri yeni dilde yeniden yazılır (durum satırı dahil)', async () => {

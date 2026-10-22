@@ -141,9 +141,10 @@ function eylemEkleriOlustur({ eylem, ayarlarAl, dosyalar, fs, gunluk = () => {},
     digerListe: (kaynak) => (diger ? diger.liste({ kaynak }) : Promise.resolve({ ok: false, tur: 'kapali' })),
     digerCalistir: (kaynak, yuk) => (diger ? diger.calistir({ kaynak, kimlik: yuk?.kimlik, islem: yuk?.islem }) : Promise.resolve({ ok: false, tur: 'kapali' })),
     digerFavoriEkle: (kaynak, kimlik) => (diger ? diger.favoriyeEkle({ kaynak, kimlik }) : Promise.resolve({ ok: false, tur: 'kapali' })),
-    /** Ayarlar'da paletDigerCihazlar değişti: kapanınca liste silinir. */
+    /** Ayarlar'da paletDigerCihazlar değişti: kapanınca liste silinir ve favori olmayan cihazların bekleyen gecikmeli eylemleri iptal olur. */
     digerAyarDegisti() {
       if (diger) diger.ayarDegisti();
+      gecikmeli.digerAyarDegisti();
     },
 
     // --- Son değişenler (o-18) ---

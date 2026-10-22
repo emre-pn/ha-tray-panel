@@ -36,7 +36,7 @@ const favori = (kimlik, ek = {}) => ({ entity_id: kimlik, ad: kimlik.split('.')[
  * @param {object[]} [s.favoriler]
  * @param {object[]} [s.varliklar] depodaki durumlar
  */
-function kur({ secili = ['light.salon', 'switch.priz'], favoriler = null, varliklar = null, konumlar = {}, ust = false, ekranlar = [EKRAN_BIRINCI], malzeme = null, yuklemeReddi = false, kurucuHatasi = false, dil = 'tr' } = {}) {
+function kur({ secili = ['light.salon', 'switch.priz'], favoriler = null, varliklar = null, konumlar = {}, ust = false, ekranlar = [EKRAN_BIRINCI], malzeme = null, yuklemeReddi = false, kurucuHatasi = false, dil = 'tr', gorunum = null, olcek = 1 } = {}) {
   const o = {
     secili: [...secili],
     favoriler: favoriler ?? [favori('light.salon', { parlaklik: true }), favori('switch.priz'), favori('sensor.sicaklik'), favori('light.mutfak')],
@@ -57,11 +57,19 @@ function kur({ secili = ['light.salon', 'switch.priz'], favoriler = null, varlik
     sonZamanlayici: 0,
     baglanti: { canli: true, baglanti: 'ev' },
     eylemYaniti: { ok: true },
+    gorunum, // gorunumAl'ın döndürdüğü görünüm modeli (null: varsayılan görünüm)
+    olcek, // metinOlcegiAl'ın döndürdüğü çarpan
   };
   class SahteWebContents extends EventEmitter {
     constructor() {
       super();
       this.mesajlar = [];
+      this.zoomlar = []; // setZoomFactor çağrıları
+    }
+
+    setZoomFactor(f) {
+      if (o.zoomHatasi) throw new Error('boom');
+      this.zoomlar.push(f);
     }
 
     setWindowOpenHandler(fn) {
@@ -82,6 +90,8 @@ function kur({ secili = ['light.salon', 'switch.priz'], favoriler = null, varlik
       this.cagri = { show: 0, showInactive: 0, focus: 0 };
       this.sinirlar = { x: secenekler.x, y: secenekler.y, width: secenekler.width, height: secenekler.height };
       this.setBoundsCagrilari = [];
+      this.minBoyutlar = []; // setMinimumSize çağrıları
+      this.maxBoyutlar = []; // setMaximumSize çağrıları
       this.ustCagrilari = [];
       this.basliklar = [];
       this.renkler = [];
@@ -125,6 +135,15 @@ function kur({ secili = ['light.salon', 'switch.priz'], favoriler = null, varlik
     setBounds(sinir) {
       this.sinirlar = { ...sinir };
       this.setBoundsCagrilari.push({ ...sinir });
+    }
+
+    setMinimumSize(en, boy) {
+      if (o.boyutHatasi) throw new Error('boom');
+      this.minBoyutlar.push([en, boy]);
+    }
+
+    setMaximumSize(en, boy) {
+      this.maxBoyutlar.push([en, boy]);
     }
 
     setAlwaysOnTop(deger) {
@@ -193,6 +212,14 @@ function kur({ secili = ['light.salon', 'switch.priz'], favoriler = null, varlik
       o.secili = o.secili.filter((k) => k !== kimlik);
     },
     malzemeAl: o.malzeme ? () => o.malzeme : undefined,
+    gorunumAl: () => {
+      if (o.gorunumHatasi) throw new Error('boom');
+      return o.gorunum;
+    },
+    metinOlcegiAl: () => {
+      if (o.olcekHatasi) throw new Error('boom');
+      return o.olcek;
+    },
     t,
     dilAl: () => dil,
     gunluk: (m) => o.gunlukler.push(m),
@@ -365,6 +392,41 @@ test('hazirla: açılıştan 2 saniye sonra esitle çalışır; kapat bekleyen a
   assert.equal(p.zamanlayicilar.size, 0);
 });
 
+test('hazirla: gecikme dolmadan gelen durum değişikliği karo AÇMAZ; gecikme dolunca açılır ve sonraki değişiklikler yine işlenir', async () => {
+  const o = kur();
+  o.yonetici.hazirla();
+  o.yonetici.modelDegisti(); // soğuk açılışta ilk bağlantı / durum akını
+  o.baglanti = { canli: false, baglanti: 'kapali' };
+  o.yonetici.modelDegisti();
+  await o.yukle();
+  assert.equal(o.pencereler.length, 0, 'açılış gecikmesi bitmeden pencere yok');
+  assert.equal(o.zamanlayicilar.size, 1, 'zamanlayıcı yerinde');
+  o.zamanlayiciTetikle();
+  await o.yukle();
+  assert.equal(o.pencereler.length, 2, 'gecikme dolunca güncel durumla açılır');
+  assert.equal(o.sonMesaj(o.pencereler[0], 'karo:durum').model.baglanti.canli, false, 'ilk model akın sonundaki güncel durumdur');
+  o.varliklar.set('light.salon', varlik('light.salon', 'off'));
+  o.yonetici.modelDegisti();
+  assert.equal(o.sonMesaj(o.pencereler[0], 'karo:durum').model.durum, 'kapali', 'gecikmeden sonra modelDegisti yine tazeler');
+});
+
+test('hazirla: açılış gecikmesi yalnız modelDegisti\'ni bekletir; ayardan gelen esitle (karo seçildi) hemen açar; kapat bekleyeni iptal eder', async () => {
+  const o = kur();
+  o.yonetici.hazirla(50);
+  o.yonetici.esitle();
+  await o.yukle();
+  assert.equal(o.pencereler.length, 2, 'kullanıcı karo seçti: bekleme yok');
+  const p = kur();
+  p.yonetici.hazirla();
+  p.yonetici.kapat();
+  p.yonetici.modelDegisti();
+  assert.equal(p.zamanlayicilar.size, 0);
+  assert.equal(p.pencereler.length, 0);
+  const q = kur();
+  q.yonetici.modelDegisti(); // hazirla hiç çağrılmadıysa (sınama / ayar sonrası) bekleme yok
+  assert.equal(q.pencereler.length, 2);
+});
+
 test('karoları belirleyen ya da modeli üreten işlev hata fırlatırsa uygulama düşmez, günlüğe yazılır', async () => {
   const o = kur();
   o.karolariAlHatasi = true;
@@ -521,6 +583,155 @@ test('malzeme: pencere seçeneklerine karışır; değişince arka plan uygulan�
   o.yonetici.malzemeyiUygula();
   assert.equal(p.renkler.at(-1), '#2a3040');
   assert.equal(o.sonMesaj(p, 'karo:durum').malzeme, 'yok');
+});
+
+// --- Görünüm ayarları (o-25 / o-29 / o-34): görünüm modeli ve metin boyutu --------------------------------------------------------------
+
+const KARSITLIK = { karsitlik: true, hareketiAzalt: true };
+
+test('görünüm: gorunumAl modeli karo:durum ve karo:durum-al yanıtına eklenir; varsayılan görünümde (null) hiçbir anahtar eklenmez', async () => {
+  const o = kur({ secili: ['light.salon'], gorunum: KARSITLIK });
+  const [p] = await ac(o);
+  assert.deepEqual(o.sonMesaj(p, 'karo:durum').gorunum, KARSITLIK);
+  const yanit = await o.cagir('karo:durum-al', o.olay(p));
+  assert.deepEqual(yanit.gorunum, KARSITLIK);
+  const v = kur({ secili: ['light.salon'] });
+  const [q] = await ac(v);
+  assert.equal('gorunum' in v.sonMesaj(q, 'karo:durum'), false);
+  assert.equal('gorunum' in (await v.cagir('karo:durum-al', v.olay(q))), false);
+});
+
+test('görünüm: gorunumuUygula açık karolara yeni görünümü hemen yollar; değişmeyen görünüm modelDegisti ile yeniden gitmez, değişen sonraki modelDegisti ile de gider', async () => {
+  const o = kur({ secili: ['light.salon', 'switch.priz'] });
+  const [a, b] = await ac(o);
+  const sayi = (p) => p.webContents.mesajlar.filter((m) => m.kanal === 'karo:durum').length;
+  o.yonetici.modelDegisti();
+  assert.deepEqual([sayi(a), sayi(b)], [1, 1], 'görünüm değişmedi: yeniden gönderilmez');
+  o.gorunum = KARSITLIK;
+  o.yonetici.gorunumuUygula();
+  assert.deepEqual([sayi(a), sayi(b)], [2, 2]);
+  assert.deepEqual(o.sonMesaj(a, 'karo:durum').gorunum, KARSITLIK);
+  assert.deepEqual(o.sonMesaj(b, 'karo:durum').gorunum, KARSITLIK);
+  o.yonetici.modelDegisti();
+  assert.equal(sayi(a), 2, 'aynı görünüm: yeniden gönderilmez');
+  o.gorunum = { karsitlik: false, animasyon: { gecis: true } }; // ana süreç değişikliği bildirmese bile bir sonraki durum değişimi taşır
+  o.yonetici.modelDegisti();
+  assert.equal(sayi(a), 3);
+  assert.equal(o.sonMesaj(a, 'karo:durum').gorunum.animasyon.gecis, true);
+  o.gorunum = null; // varsayılana dönüş: anahtar yokluğu sayfada özel görünümü temizler
+  o.yonetici.gorunumuUygula();
+  assert.equal('gorunum' in o.sonMesaj(a, 'karo:durum'), false);
+});
+
+test('görünüm: gorunumuUygula yüklenmemiş / yok edilmiş pencereye bir şey yollamaz; hata fırlatmaz', async () => {
+  const o = kur({ secili: ['light.salon', 'switch.priz'] });
+  o.yonetici.esitle(); // sayfalar henüz yüklenmedi
+  o.gorunum = KARSITLIK;
+  assert.doesNotThrow(() => o.yonetici.gorunumuUygula());
+  assert.ok(o.pencereler.every((p) => p.webContents.mesajlar.length === 0));
+  await o.yukle();
+  o.pencereler[0].yikik = true;
+  assert.doesNotThrow(() => o.yonetici.gorunumuUygula());
+});
+
+test('görünüm: görünümü ya da metin boyutunu okuyan işlev hata fırlatırsa karo yine açılır ve güncel model gider (varsayılan görünüm, çarpan 1)', async () => {
+  const o = kur({ secili: ['light.salon'], gorunum: KARSITLIK, olcek: 1.5 });
+  o.gorunumHatasi = true;
+  o.olcekHatasi = true;
+  const [p] = await ac(o);
+  const mesaj = o.sonMesaj(p, 'karo:durum');
+  assert.equal(mesaj.model.id, 'light.salon');
+  assert.equal('gorunum' in mesaj, false);
+  assert.deepEqual(p.webContents.zoomlar, [], 'çarpan 1: yeni sayfada varsayılan yakınlaştırma zaten 1');
+  assert.ok(o.gunlukler.some((m) => /görünümü okunamadı/.test(m)));
+  assert.ok(o.gunlukler.some((m) => /metin boyutu okunamadı/.test(m)));
+});
+
+test('metin boyutu: sayfa yakınlaştırması ilk modelle birlikte uygulanır; pencerenin en az/en çok boyutu aynı oranda büyür', async () => {
+  const o = kur({ secili: ['light.salon'], olcek: 1.5 });
+  const [p] = await ac(o);
+  assert.deepEqual(p.webContents.zoomlar, [1.5]);
+  assert.deepEqual([p.secenekler.minWidth, p.secenekler.minHeight, p.secenekler.maxWidth, p.secenekler.maxHeight], [180, 132, 540, 390]);
+  o.yonetici.modelDegisti();
+  o.yonetici.gorunumuUygula();
+  assert.deepEqual(p.webContents.zoomlar, [1.5], 'çarpan değişmedi: yakınlaştırma yeniden yazılmaz');
+  const v = kur({ secili: ['light.salon'] });
+  const [q] = await ac(v);
+  assert.deepEqual(q.webContents.zoomlar, [], 'varsayılan çarpan 1: yakınlaştırmaya dokunulmaz');
+  assert.deepEqual([q.secenekler.minWidth, q.secenekler.minHeight, q.secenekler.maxWidth, q.secenekler.maxHeight], [120, 88, 360, 260]);
+});
+
+test('metin boyutu: ayar değişince açık karoda yakınlaştırma ve boyut sınırları güncellenir; sınır dışına çıkan pencere sınıra çekilir ve bu kullanıcı konumu olarak KAYDEDİLMEZ', async () => {
+  const o = kur({ secili: ['light.salon'] });
+  const [p] = await ac(o);
+  assert.equal(p.minBoyutlar.length, 0, 'çarpan değişmedi: sınırlara dokunulmaz');
+  o.olcek = 1.3;
+  o.yonetici.gorunumuUygula();
+  assert.deepEqual(p.webContents.zoomlar, [1.3]);
+  assert.deepEqual(p.minBoyutlar.at(-1), [156, 114]);
+  assert.deepEqual(p.maxBoyutlar.at(-1), [468, 338]);
+  assert.deepEqual(p.setBoundsCagrilari, [{ x: 1728, y: 16, width: 176, height: 114 }], 'yeni en az 156x114: 176x112 pencerede yalnız yükseklik çekilir');
+});
+
+test('metin boyutu: yeni en az boyutun altında kalan pencere büyütülür, en çok boyutun üstüne çıkan küçültülür; konum (x, y) korunur ve bu hareket kayıt sayılmaz', async () => {
+  const o = kur({ secili: ['light.salon'] });
+  const [p] = await ac(o);
+  p.sinirlar = { x: 300, y: 200, width: 130, height: 90 }; // kullanıcı karoyu 120x88'e yakın küçülttü (çarpan 1'de geçerli)
+  p.emit('resize');
+  o.zamanlayiciTetikle();
+  assert.deepEqual(o.kaydedilenKonumlar.at(-1), { 'light.salon': { x: 300, y: 200, width: 130, height: 90 } }, 'kullanıcının seçimi kaydedilir');
+  const kayitSayisi = o.kaydedilenKonumlar.length;
+  o.olcek = 1.5;
+  o.yonetici.gorunumuUygula();
+  assert.deepEqual(p.setBoundsCagrilari.at(-1), { x: 300, y: 200, width: 180, height: 132 }, 'en az 180x132');
+  p.emit('resize'); // gerçek pencere setBounds sonrası 'resize' yayar
+  o.zamanlayiciTetikle();
+  assert.equal(o.kaydedilenKonumlar.length, kayitSayisi, 'program boyutu kullanıcı seçimi olarak kaydedilmez');
+  assert.deepEqual(o.konumlar['light.salon'], { x: 300, y: 200, width: 130, height: 90 }, 'kayıtlı konum durur');
+  p.sinirlar = { x: 300, y: 200, width: 500, height: 380 }; // 1,5 katında geçerli (en çok 540x390)
+  o.olcek = 1;
+  o.yonetici.gorunumuUygula();
+  assert.deepEqual(p.setBoundsCagrilari.at(-1), { x: 300, y: 200, width: 360, height: 260 }, 'çarpan 1\'e dönünce en çok 360x260');
+  assert.deepEqual(p.webContents.zoomlar, [1.5, 1]);
+});
+
+test('metin boyutu: geçersiz çarpan (sayı değil, 1\'den küçük, 2\'den büyük, sonsuz) 1 sayılır', async () => {
+  for (const gecersiz of ['kocaman', NaN, 0.5, 3, Infinity, null, undefined, {}]) {
+    const o = kur({ secili: ['light.salon'], olcek: gecersiz });
+    const [p] = await ac(o);
+    assert.deepEqual(p.webContents.zoomlar, [], String(gecersiz));
+    assert.equal(p.secenekler.minWidth, 120, String(gecersiz));
+  }
+  for (const gecerli of [1, 1.15, 1.3, 1.5, 2]) {
+    const o = kur({ secili: ['light.salon'], olcek: gecerli });
+    const [p] = await ac(o);
+    assert.deepEqual(p.webContents.zoomlar, gecerli === 1 ? [] : [gecerli]);
+  }
+});
+
+test('metin boyutu: yakınlaştırma ya da boyut sınırı uygulanamazsa karo yine açılır ve modelini alır; hata günlüğe yazılır, sonraki gönderimde yakınlaştırma yeniden denenir', async () => {
+  const o = kur({ secili: ['light.salon'], olcek: 1.5 });
+  o.zoomHatasi = true;
+  o.boyutHatasi = true;
+  const [p] = await ac(o);
+  assert.equal(o.sonMesaj(p, 'karo:durum').model.id, 'light.salon');
+  assert.deepEqual(p.cagri, { show: 0, showInactive: 1, focus: 0 }, 'karo yine gösterildi');
+  assert.ok(o.gunlukler.some((m) => /yakınlaştırması uygulanamadı/.test(m)));
+  o.olcek = 1.3; // çarpan değişti: boyut sınırları uygulanmaya çalışılır
+  o.yonetici.gorunumuUygula();
+  assert.ok(o.gunlukler.some((m) => /boyutu ayarlanamadı/.test(m)));
+  o.zoomHatasi = false;
+  o.yonetici.gorunumuUygula();
+  assert.deepEqual(p.webContents.zoomlar, [1.3], 'başarısız yakınlaştırma sayılmadı: yeniden denendi');
+});
+
+test('görünüm ve metin boyutu eylem sınırını değiştirmez: karo:calistir yükü yine yalnız tikla / parlaklık ön ayarıdır', async () => {
+  const o = kur({ secili: ['light.salon'], gorunum: KARSITLIK, olcek: 1.5 });
+  const [p] = await ac(o);
+  assert.deepEqual(await o.cagir('karo:calistir', o.olay(p), { tur: 'tikla' }), { ok: true });
+  assert.deepEqual(o.eylemCagrilari, [{ kimlik: 'light.salon' }]);
+  assert.equal((await o.cagir('karo:calistir', o.olay(p), { tur: 'tikla', gorunum: KARSITLIK, olcek: 3 })).ok, false);
+  assert.equal(o.eylemCagrilari.length, 1);
 });
 
 test('dilDegisti: pencere başlığı yeni dilde, sayfaya dil:degisti gider', async () => {

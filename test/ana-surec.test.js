@@ -2283,6 +2283,32 @@ ortamda('komut satırı (h-22): uygulama kapalıyken "--eylem <ad>" ile açılı
   assert.deepEqual(ortam.durum.bildirimler, []);
 });
 
+ortamda('komut satırı (soğuk açılış): "--eylem <ad>" ilk durum okuması bitince çalışır; HA\'daki güncel adla eşleşir (kayıtlı ad eskimiş olsa da)', { ...dalga3([{ entity_id: 'light.oturma_1', ad: 'Eski ad' }]), acilisArgv: ['--eylem', 'salon', 'lambası'], ha: [durumNesnesi('light.oturma_1', 'Salon Lambası', 'off')] }, async (ortam) => {
+  await ortam.akit();
+  assert.equal(ortam.pencere.gorunur, false, 'ana pencere açılmadı');
+  assert.equal(postlar(ortam).length, 1, 'durum okunmadan çalışsaydı "bulunamadı" olurdu');
+  assert.equal(postlar(ortam)[0].url, 'http://192.168.1.10:8123/api/services/light/toggle');
+  assert.deepEqual(JSON.parse(postlar(ortam)[0].govde), { entity_id: 'light.oturma_1' });
+  assert.deepEqual(ortam.durum.bildirimler, []);
+});
+
+ortamda('komut satırı (soğuk açılış): HA yanıt vermezse bekleme sınırlıdır; eylem yine denenir ve başarısızlık söylenir (sonsuza dek asılı kalmaz)', {
+  ...dalga3([{ entity_id: 'light.salon_lambasi', ad: 'Salon Lambası' }]),
+  acilisArgv: ['--eylem', 'salon', 'lambası'],
+  apiYaniti: (url, secenek) => (new URL(url).pathname === '/api/' && (secenek.method ?? 'GET') === 'GET' ? new Response(JSON.stringify({ message: 'API running.' }), { status: 200 }) : new Promise(() => {})), // doğrulama geçer, gerisi yanıtsız
+}, async (ortam) => {
+  await ortam.akit();
+  assert.deepEqual(ortam.durum.bildirimler, [], 'ilk okuma sürerken eylem bekler');
+  for (let i = 0; i < 6; i += 1) {
+    ortam.ilerle(10_000);
+    await ortam.akit();
+  }
+  assert.equal(ortam.pencere.gorunur, false);
+  assert.equal(ortam.durum.bildirimler.length, 1, 'bekleme bitti: eylem çalıştı ve başarısızlığını söyledi');
+  assert.match(ortam.durum.bildirimler[0].body, /yanıt vermedi/);
+  assert.deepEqual(postlar(ortam), []);
+});
+
 ortamda('komut satırı (h-22): uygulama kapalıyken anlaşılmayan "--eylem" ile açılış da pencere açmaz ve hata bildirir (sessizce yok sayılmaz)', { ...dalga3([SALON]), acilisArgv: ['--eylem'] }, async (ortam) => {
   haKur(ortam.durum, HA_VARLIKLARI);
   await ortam.akit();

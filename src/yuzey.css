@@ -2806,6 +2806,10 @@ button.bilgi-kart:hover {
   transition: none;
 }
 
+:root[data-hareket="azalt"] .karo.uzun-basma::after {
+  content: none; /* ilerleme çizgisi yok (sistem tercihindeki kuralla aynı); ayrıntı yine 500 ms sonra açılır. Yıkıcı karonun 0,8 sn dolumu bu sınıfı kullanmaz */
+}
+
 /* ---- İşlevsel hareket (1.4.1): varsayılan AÇIK; hareketi azalt (ayar ya da sistem) kapatır ---- */
 @media (prefers-reduced-motion: no-preference) {
   /* Basma: hızla küçülür, bırakınca yayla yerine oturur (basılı tutulan yıkıcı karo küçülmez) */

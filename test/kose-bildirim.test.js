@@ -572,3 +572,97 @@ test('köşe bildirimi (1.6.0): bilgi türünde özet kayda girmez (kaynak bekç
   const kaynak = fs.readFileSync(path.join(KOK, 'kose-bildirim.js'), 'utf8');
   assert.match(kaynak, /const ozetTemiz = bilgi \? null : ozetDuzelt\(ozet\);/);
 });
+
+test('köşe bildirimi: eylem geri bildirimi (ok / hata) ekrandaki bilgiyi hemen keser ama bilgi KAYBOLMAZ; sıranın başına döner ve eylem bitince yeniden görünür', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'Kapı açık kaldı', simge: '!' });
+    await o.akit();
+    o.kose.goster({ tur: 'bilgi', metin: 'Sıradaki', simge: 'i' });
+    o.kose.goster({ tur: 'ok', metin: 'Lamba açıldı' });
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin), ['Kapı açık kaldı', 'Lamba açıldı'], 'eylem sonucu bilgiyi beklemez');
+    t.mock.timers.tick(1500 + 150);
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin), ['Kapı açık kaldı', 'Lamba açıldı', 'Kapı açık kaldı'], 'kesilen bilgi sırada öne geçer');
+    t.mock.timers.tick(6000 + 150);
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin).at(-1), 'Sıradaki');
+    t.mock.timers.tick(6000 + 150);
+    assert.equal(o.pencereler[0].gorunur, false, 'sıra bitince pencere gizlenir');
+    o.kose.goster({ tur: 'ok', metin: 'Tek başına' });
+    t.mock.timers.tick(1500 + 150);
+    assert.equal(o.pencereler[0].gorunur, false, 'ekranda bilgi yokken ok sonrası geri dönen bir şey yok');
+    assert.equal(o.mesajlar(o.pencereler[0]).length, 5);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: hata geri bildirimi de bilgiyi keser ve bilgi yeniden görünür; ok art arda gelince bilgi bir kez sırada kalır (çoğalmaz)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'Uyarı', simge: '!' });
+    await o.akit();
+    o.kose.goster({ tur: 'hata', metin: 'Olmadı' });
+    o.kose.goster({ tur: 'ok', metin: 'Oldu' });
+    o.kose.goster({ tur: 'ok', metin: 'Yine oldu' });
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin), ['Uyarı', 'Olmadı', 'Oldu', 'Yine oldu']);
+    t.mock.timers.tick(1500 + 150);
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin).slice(4), ['Uyarı']);
+    t.mock.timers.tick(6000 + 150);
+    assert.equal(o.mesajlar(o.pencereler[0]).length, 5, 'bilgi bir kez daha gösterildi, çoğalmadı');
+    assert.equal(o.pencereler[0].gorunur, false);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: yükleme beklerken gelen ilk bilgi, araya giren eylem geri bildirimiyle EZİLMEZ; ok önce, bilgi ardından görünür', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur({ yuklemeSonucu: 'bekle' });
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'Çamaşır bitti', simge: 'i' });
+    o.kose.goster({ tur: 'ok', metin: 'Lamba açıldı' });
+    o.pencereler[0].webContents.emit('did-finish-load');
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin), ['Lamba açıldı']);
+    t.mock.timers.tick(1500 + 150);
+    assert.deepEqual(o.mesajlar(o.pencereler[0]).map((m) => m.metin), ['Lamba açıldı', 'Çamaşır bitti']);
+    assert.deepEqual(o.yedekler, []);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: sıra doluyken kesilen bilgi geri dönmez (kural: dolu sırada en eski düşer); sıradakiler korunur', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { BILGI_KUYRUK_SINIRI } = require(path.join(KOK, 'kose-bildirim.js'));
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'ilk', simge: 'i' });
+    await o.akit();
+    for (let i = 0; i < BILGI_KUYRUK_SINIRI; i += 1) o.kose.goster({ tur: 'bilgi', metin: `s${i}`, simge: 'i' });
+    o.kose.goster({ tur: 'ok', metin: 'Tamam' });
+    t.mock.timers.tick(1500 + 150);
+    for (let i = 0; i < BILGI_KUYRUK_SINIRI; i += 1) t.mock.timers.tick(6150);
+    const metinler = o.mesajlar(o.pencereler[0]).map((m) => m.metin);
+    assert.deepEqual(metinler, ['ilk', 'Tamam', 's0', 's1', 's2', 's3', 's4']);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: kapat() bekleyen kaydı da sıfırlar; yeniden oluşan pencere eski bildirimi göstermez', async () => {
+  const o = kur({ yuklemeSonucu: 'bekle' });
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'Eski' });
+    o.kose.kapat();
+    assert.equal(o.pencereler[0].yikik, true);
+    o.kose.goster({ tur: 'bilgi', metin: 'Yeni', simge: 'i' });
+    assert.equal(o.pencereler.length, 2);
+    o.pencereler[1].webContents.emit('did-finish-load');
+    assert.deepEqual(o.mesajlar(o.pencereler[1]).map((m) => m.metin), ['Yeni'], 'eski bekleyen bildirim yeni pencerede görünmez');
+    assert.deepEqual(o.yedekler, []);
+  } finally {
+    o.temizle();
+  }
+});

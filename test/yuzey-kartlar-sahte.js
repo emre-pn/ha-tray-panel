@@ -198,7 +198,7 @@ const modelYap = (...karolar) => ({
  * `dil`: durumAl yanıtındaki etkin dil. `calistirYaniti`: sabit yanıt ya da (yuk) => yanıt/söz.
  * Dönen nesne: oge(kimlik), cagrilar, zaman, durum(model), calistirmalar() ...
  */
-function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, kartlarYok = false, kameraYaniti = null, etkilesim, sabitleYaniti = (istenen) => ({ ok: true, sabit: istenen }) } = {}) {
+function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, kartlarYok = false, kameraYaniti = null, etkilesim, gorunum, temaRenk = false, sabitleYaniti = (istenen) => ({ ok: true, sabit: istenen }) } = {}) {
   const odak = { aktif: null };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
@@ -219,7 +219,7 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
   let dilDinleyici = null;
   let etkilesimDinleyici = null;
   const kopru = {
-    durumAl: async () => ({ ok: true, mod, model, ...(dil !== undefined ? { dil } : {}), ...(etkilesim !== undefined ? { etkilesim } : {}) }),
+    durumAl: async () => ({ ok: true, mod, model, ...(dil !== undefined ? { dil } : {}), ...(etkilesim !== undefined ? { etkilesim } : {}), ...(gorunum !== undefined ? { gorunum } : {}) }),
     onDurum: (cb) => {
       durumDinleyici = cb;
       return () => {};
@@ -301,6 +301,8 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
     if (kartlarYok && ad === 'yuzey-kartlar.js') continue;
     vm.runInContext(kaynak, sandbox, { filename: ad });
   }
+  // yuzey.html'de lib/tema-renk.js sayfa betiğinden SONRA yüklenir; ilk durum-al yanıtı gelmeden hazırdır (temaRenk: true)
+  if (temaRenk) vm.runInContext(oku('src/lib/tema-renk.js'), sandbox, { filename: 'lib/tema-renk.js' });
   return {
     oge: (kimlik) => ogeler.get(kimlik),
     cagrilar,

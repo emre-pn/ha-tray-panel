@@ -40,6 +40,7 @@ function ortam({ ayar = ACIK, onaySor = null, sunucu = SUNUCU } = {}) {
   const olaylar = [];
   const izinler = [];
   const sorular = [];
+  const kontrol = { postHata: false, ilkPostHata: false }; // true: sonraki POST'lar ağ hatasıyla düşer (ilkPostHata: yalnız ilki)
   let an = 1_000_000;
   const ayarlar = { favoriler: FAVORILER, ...structuredClone(ayar) };
   const depo = durumDeposuOlustur({ gruplamaMs: 0, zaman: { setTimeout: () => 0, clearTimeout: () => {} } });
@@ -51,6 +52,10 @@ function ortam({ ayar = ACIK, onaySor = null, sunucu = SUNUCU } = {}) {
     canliMi: () => false,
     haIstek: async (yol, secenek = {}) => {
       istekler.push({ yol, yontem: secenek.yontem ?? 'GET', govde: secenek.govde });
+      if (secenek.yontem === 'POST' && (kontrol.postHata || kontrol.ilkPostHata)) {
+        kontrol.ilkPostHata = false;
+        throw Object.assign(new Error('x'), { tur: 'ag' });
+      }
       const e = /^\/api\/states\/(.+)$/.exec(yol);
       if (e) {
         if (!sunucu[e[1]]) throw Object.assign(new Error('x'), { tur: 'bulunamadi' });
@@ -94,7 +99,7 @@ function ortam({ ayar = ACIK, onaySor = null, sunucu = SUNUCU } = {}) {
     an += 2500;
     return kapi.calistir(istek);
   };
-  return { kapi, cagir, eylem, ayarlar, istekler, postlar, bildirimler, olaylar, izinler, sorular, ileri: (ms) => (an += ms) };
+  return { kapi, cagir, eylem, ayarlar, istekler, postlar, bildirimler, olaylar, izinler, sorular, kontrol, ileri: (ms) => (an += ms) };
 }
 
 test('dış kaynaklar eylem sınıfı kaynaklarındadır; disKaynakIzni valf, otomasyon, kamera, perde ve klima modunu reddeder', () => {
@@ -300,6 +305,47 @@ test('PC olayı: kilit + uyku arka arkaya ilk durumu korur; anlık ANLIK_OMRU_MS
   await o.kapi.calistir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' });
   o.ileri(ANLIK_OMRU_MS + 1);
   assert.equal((await o.kapi.calistir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).tur, 'anlik-yok');
+});
+
+test('anlık: eylem BAŞARISIZ olursa saklanmaz (uygulanmamış eylemin eski durumu saatler sonra geri yüklenmez); sonraki başarılı eylem yeni anlık alır', async () => {
+  const o = ortam({ ayar: { ...ACIK, tetikPcAcma: true } });
+  o.kontrol.postHata = true;
+  const hata = await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' });
+  assert.equal(hata.ok, false);
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).tur, 'anlik-yok', 'başarısız eylemin anlığı yok');
+  assert.equal(o.postlar().length, 1, 'geri yükleme hiçbir komut göndermedi');
+  o.kontrol.postHata = false;
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' })).ok, true);
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).ok, true, 'başarılı eylemin anlığı var');
+  assert.deepEqual(o.postlar().at(-1).govde, { entity_id: 'light.led', brightness_pct: 40 });
+});
+
+test('anlık: kilit + uyku arka arkaya iken biri başarısız olsa da ilk (asıl) durum korunur; hepsi başarısız olursa anlık kalmaz', async () => {
+  const o = ortam({ ayar: { ...ACIK, tetikPcAcma: true } });
+  o.kontrol.ilkPostHata = true; // kilit olayının komutu düşer, uyku olayınınki geçer
+  const kilit = o.kapi.calistir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' });
+  const uyku = o.kapi.calistir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' });
+  assert.equal((await kilit).ok, false);
+  assert.equal((await uyku).ok, true);
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).ok, true, 'biri başardı: anlık duruyor');
+
+  const h = ortam({ ayar: { ...ACIK, tetikPcAcma: true } });
+  h.kontrol.postHata = true;
+  const a = h.kapi.calistir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' });
+  const b = h.kapi.calistir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' });
+  assert.deepEqual([(await a).ok, (await b).ok], [false, false]);
+  assert.equal((await h.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).tur, 'anlik-yok', 'hiçbiri başaramadı');
+});
+
+test('anlık: kaynak başınadır (pc-olayi ve toplanti birbirinin anlığını görmez); kendi kaynağının tüketilmemiş anlığı üzerine yazılmaz', async () => {
+  const o = ortam({ ayar: { ...ACIK, tetikPcAcma: true } });
+  await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' });
+  assert.equal((await o.cagir({ kaynak: 'toplanti', kimlik: 'light.led', islem: 'geriYukle' })).tur, 'anlik-yok', 'PC olayının anlığı toplantıya geri yükletmez');
+  // toplantı kendi anlığını alır; PC olayının anlığı bundan etkilenmez
+  await o.cagir({ kaynak: 'toplanti', kimlik: 'light.led', islem: 'baslat' });
+  assert.equal((await o.cagir({ kaynak: 'toplanti', kimlik: 'light.led', islem: 'geriYukle' })).ok, true);
+  assert.equal((await o.cagir({ kaynak: 'toplanti', kimlik: 'light.led', islem: 'geriYukle' })).tur, 'anlik-yok', 'tüketildi');
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).ok, true, 'PC olayının anlığı yerinde');
 });
 
 test('toplantı ışığı: baslat ışığı açar, sahneyi tek tıklama eylemiyle başlatır; bitişte geri yükleme', async () => {

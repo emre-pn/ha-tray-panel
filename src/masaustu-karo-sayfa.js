@@ -5,6 +5,9 @@
  * süreç hangi pencerenin hangi karoya ait olduğunu kendisi bilir; sayfa yalnız "tıkla" ya da bir parlaklık ön ayarı yollar.
  * (Ana süreç tarafı: masaustu-karolari.js.)
  *
+ * Görünüm (o-25 / o-29 / o-34): `karo:durum` ve durumAl yanıtındaki `gorunum` (ana süreçte üretilen model: yüksek karşıtlık, hazır/özel palet,
+ * "Hareketi azalt") lib/tema-renk.js gorunumUygula ile <html> üzerine yazılır; yüklenemezse karo varsayılan görünümle çizilir.
+ *
  * Arayüz dili: HTML'deki Türkçe varsayılandır; durumAl yanıtındaki `dil` ve `dil:degisti` iletisiyle çevrilir (lib/dil.js +
  * lib/ceviri/yuzey.js). Betikteki görünür metinlerin hepsi sözlükten gelir (t('anahtar')); çeviri betikleri yüklenemese bile karo
  * yine çizilir (etiket ve değer; metin anahtarları yerine boş bırakılır).
@@ -116,6 +119,14 @@
     else delete k.dataset.malzeme;
   }
 
+  // Görünüm modeli: yoksa (varsayılan görünüm) önceki özel görünüm temizlenir. Sistemin "animasyonları azalt" tercihi de hareketi azaltır.
+  function gorunumAyarla(gorunum) {
+    const Tema = window.EvTemaRenk;
+    if (!Tema || typeof Tema.gorunumUygula !== 'function') return;
+    const azalt = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches === true;
+    Tema.gorunumUygula(document.documentElement, gorunum, { hareketAzalt: azalt });
+  }
+
   function hataGoster() {
     kok.classList.add('hata');
     clearTimeout(hataZamanlayicisi);
@@ -141,6 +152,7 @@
   function modelAl(yuk) {
     if (!yuk || typeof yuk !== 'object') return;
     if (yuk.malzeme !== undefined) malzemeAyarla(yuk.malzeme);
+    gorunumAyarla(yuk.gorunum);
     if (yuk.model && typeof yuk.model === 'object') {
       model = yuk.model;
       ciz();
@@ -169,7 +181,7 @@
       Promise.resolve(kopru.durumAl()).then(function (yanit) {
         if (!yanit || yanit.ok !== true) return;
         if (yanit.dil !== undefined) dilUygula({ dil: yanit.dil });
-        modelAl({ model: yanit.model, malzeme: yanit.malzeme });
+        modelAl({ model: yanit.model, malzeme: yanit.malzeme, gorunum: yanit.gorunum });
       }).catch(function () {
         /* ana süreç yanıt vermedi: karo boş kalır, sonraki karo:durum iletisiyle dolar */
       });

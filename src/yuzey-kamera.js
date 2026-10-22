@@ -13,7 +13,8 @@
  *  - Tüm metin textContent ile yazılır; bulanıklık CSS sınıfıyla (kamera-bulanik) yapılır (satır içi stil yok, CSP).
  *
  * ctx (yuzey-sayfa.js verir): t(anahtar, degisken), olustur(etiket, sinif, metin), odakKaydet(anahtar, oge), satirEkle(ogeler),
- * kamera(kimlik) -> Promise<{ok, veri?, yas?, tur?}>, yenidenCiz(), simdi(), zamanlayici { setTimeout, clearTimeout }, acikMi().
+ * kamera(kimlik) -> Promise<{ok, veri?, yas?, tur?}>, yenidenCiz(), boyutDegisti() (isteğe bağlı: Büyüt/Küçült sonrası panel yüksekliğini yeniden ölçer),
+ * simdi(), zamanlayici { setTimeout, clearTimeout }, acikMi().
  */
 (function (kok, fabrika) {
   const modul = fabrika();
@@ -81,7 +82,10 @@
       const etiket = k.etiket;
       kart.ad.textContent = etiket;
       const goruntuVar = k.adim === 'tamam' && typeof k.veri === 'string';
-      if (!goruntuVar) k.buyuk = false; // görüntü yokken büyütülecek bir şey yok; yeni görüntü her zaman normal boyutta başlar
+      // Yenileme sürerken (eski kare bellekte) büyütme korunur: kart her yenilemede küçülüp uzamaz. Görüntü yokken (ilk yükleme, hata, gizleme)
+      // büyütülecek bir şey yoktur; yeni görüntü her zaman normal boyutta başlar.
+      const yenileniyor = k.adim === 'yukleniyor' && typeof k.veri === 'string';
+      if (!goruntuVar && !yenileniyor) k.buyuk = false;
       kart.kok.className = 'kamera-karo' + (k.buyuk ? ' kamera-buyuk' : '');
       kart.buyut.disabled = !goruntuVar;
       kart.buyut.setAttribute('aria-pressed', k.buyuk ? 'true' : 'false');
@@ -147,6 +151,7 @@
         if (!sim || sim.adim !== 'tamam') return;
         sim.buyuk = !sim.buyuk;
         gorunumuGuncelle(sim);
+        if (typeof ctx.boyutDegisti === 'function') ctx.boyutDegisti(); // tam genişlik / yükseklik değişti: panel yüksekliği yeniden ölçülür
       });
       const yas = yap('span', 'kamera-yas');
       alt.appendChild(yenile);

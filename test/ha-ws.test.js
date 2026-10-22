@@ -461,6 +461,65 @@ test('abonelikYenile: canlı bağlantıda soketi kapatmadan eski aboneliği sile
   assert.equal(o.depo.al('light.b')?.state, 'off');
 });
 
+test('abonelikYenile peş peşe (aynı turda): ilk yenilemenin aboneliği yanıtı gelince silinir, yalnız sonuncusu kalır (HA\'da sızıntı yok)', async () => {
+  const o = sahteOrtam({ izlenen: ['light.a'] });
+  const { s, aboneId } = await canliYap(o, { durumlar: [varlik('light.a', 'on')] });
+  const sayim = (tur) => s.gonderilen.filter((m) => m.type === tur);
+  const durumSayisi = sayim('get_states').length;
+
+  o.ayar.izlenen = ['light.a', 'light.b'];
+  o.ws.abonelikYenile();
+  o.ayar.izlenen = ['light.a', 'light.b', 'light.c']; // aynı ayar kaydı birden çok izlenen alanı değiştirdi: ikinci çağrı yanıt gelmeden
+  o.ws.abonelikYenile();
+  const [b, c] = sayim('subscribe_trigger').slice(-2);
+  assert.notEqual(b.id, c.id);
+  assert.deepEqual(sayim('unsubscribe_events').map((m) => m.subscription), [aboneId], 'ilk çağrı eskiyi (canlıdaki) sildi; ikinci çağrıda silinecek kurulmuş abonelik yok');
+
+  s.yayinla({ id: b.id, type: 'result', success: true, result: null });
+  assert.deepEqual(sayim('unsubscribe_events').map((m) => m.subscription), [aboneId, b.id], 'yerini yenisine bırakan abonelik hemen silindi');
+  assert.equal(sayim('get_states').length, durumSayisi, 'eski aboneliğin yanıtı durum istemez');
+
+  s.yayinla({ id: c.id, type: 'result', success: true, result: null });
+  assert.equal(sayim('get_states').length, durumSayisi + 1, 'yalnız sonuncunun yanıtı durum ister');
+  assert.deepEqual(sayim('unsubscribe_events').map((m) => m.subscription), [aboneId, b.id], 'sonuncusu silinmedi');
+  s.yayinla({ id: sayim('get_states').at(-1).id, type: 'result', success: true, result: [varlik('light.a', 'on'), varlik('light.b', 'off'), varlik('light.c', 'on')] });
+  assert.equal(o.ws.canliMi(), true);
+  assert.equal(o.soketler.length, 1);
+
+  // olaylar yalnız son aboneliğin kimliğiyle işlenir
+  s.yayinla({ id: c.id, type: 'event', event: { variables: { trigger: { platform: 'state', entity_id: 'light.c', to_state: varlik('light.c', 'off') } } } });
+  assert.equal(o.depo.al('light.c').state, 'off');
+  s.yayinla({ id: b.id, type: 'event', event: { variables: { trigger: { platform: 'state', entity_id: 'light.c', to_state: varlik('light.c', 'on') } } } });
+  assert.equal(o.depo.al('light.c').state, 'off');
+});
+
+test('abonelikYenile: yanıtlar ters sırada gelse de eski abonelik silinir, sonuncusu aktif kalır; reddedilen eski abonelik olay aboneliğine geçirmez', async () => {
+  const o = sahteOrtam({ izlenen: ['light.a'] });
+  const { s } = await canliYap(o, { durumlar: [varlik('light.a', 'on')] });
+  const sayim = (tur) => s.gonderilen.filter((m) => m.type === tur);
+  o.ws.abonelikYenile();
+  o.ws.abonelikYenile();
+  const [b, c] = sayim('subscribe_trigger').slice(-2);
+  s.yayinla({ id: c.id, type: 'result', success: true, result: null });
+  const durumSayisi = sayim('get_states').length;
+  s.yayinla({ id: b.id, type: 'result', success: true, result: null });
+  assert.equal(sayim('unsubscribe_events').at(-1).subscription, b.id);
+  assert.equal(sayim('get_states').length, durumSayisi);
+  s.yayinla({ id: sayim('get_states').at(-1).id, type: 'result', success: true, result: [varlik('light.a', 'on')] });
+  s.yayinla({ id: c.id, type: 'event', event: { variables: { trigger: { platform: 'state', entity_id: 'light.a', to_state: varlik('light.a', 'off') } } } });
+  assert.equal(o.depo.al('light.a').state, 'off', 'sonuncu abonelik olay işler');
+
+  // eski istek reddedilirse (ör. üç yenileme peş peşe) trigger->olay yedeğine geçilmez: sonuç yenisinin yanıtına bağlıdır
+  o.ws.abonelikYenile();
+  o.ws.abonelikYenile();
+  const [d, e] = sayim('subscribe_trigger').slice(-2);
+  s.yayinla({ id: d.id, type: 'result', success: false, error: { code: 'unknown_error', message: 'x' } });
+  assert.equal(sayim('subscribe_events').length, 0, 'eski reddi olay aboneliği açmaz');
+  s.yayinla({ id: e.id, type: 'result', success: true, result: null });
+  assert.equal(o.ws.canliMi(), true);
+  assert.equal(sayim('unsubscribe_events').some((m) => m.subscription === d.id), false, 'kurulmamış aboneliğin silinmesi istenmez');
+});
+
 test('h-17: auth_ok gelip get_states hep başarısız olursa bekleme büyür (2, 4, 8 sn) ve 3. denemede REST yedeğine geçilir', async () => {
   const o = sahteOrtam();
   const authSonrasiDus = (s) => {

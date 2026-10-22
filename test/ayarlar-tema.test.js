@@ -273,6 +273,22 @@ test('o-25 yüksek karşıtlık: Ayarlar penceresi de hemen opak/yüksek karşı
   assert.match(HTML, /:root\[data-karsitlik\]\s*\{/);
 });
 
+test('hareketi azalt: Ayarlar penceresi de kutuyla hemen sakinleşir (<html data-hareket>), kayıtlı ayarla açılır; CSS geçişleri ve yumuşak kaydırmayı kapatır', async () => {
+  const sayfa = await acilmisSayfa({ ayar: TEMA_AYARI, cihazlar: CIHAZLAR });
+  assert.equal(sayfa.htmlOzelligi('data-hareket'), null);
+  isaretle(sayfa.oge('hareketiAzalt'), true);
+  assert.equal(sayfa.htmlOzelligi('data-hareket'), 'azalt');
+  isaretle(sayfa.oge('hareketiAzalt'), false);
+  assert.equal(sayfa.htmlOzelligi('data-hareket'), null);
+  const kayitli = await acilmisSayfa({ ayar: { ...TEMA_AYARI, hareketiAzalt: true }, cihazlar: CIHAZLAR });
+  assert.equal(kayitli.htmlOzelligi('data-hareket'), 'azalt', 'kayıtlı ayarla açılır');
+  assert.match(HTML, /:root\[data-hareket="azalt"\]\s*\{\s*scroll-behavior:\s*auto;/);
+  const kural = HTML.slice(HTML.indexOf(':root[data-hareket="azalt"] details.bolum > summary::before'));
+  const secici = kural.slice(0, kural.indexOf('{'));
+  for (const parca of ['summary::before', 'input', 'select', '.buton', '.cihaz-satir', '.checkbox-etiket input[type="checkbox"]::before']) assert.ok(secici.includes(parca), parca);
+  assert.match(kural.slice(kural.indexOf('{'), kural.indexOf('}')), /transition:\s*none/);
+});
+
 test('o-25 metin boyutu: Ayarlar penceresi seçimle hemen büyür; Ctrl +/-/0 ile çarpılır; kayıtlı yakınlaştırma korunur', async () => {
   const sayfa = await acilmisSayfa({ ayar: TEMA_AYARI, cihazlar: CIHAZLAR });
   assert.equal(sayfa.yakinlastirma(), undefined, 'varsayılan: hiçbir şey yazılmaz');
