@@ -2,6 +2,18 @@
 
 Release notes before 1.3.0 are in Turkish. / 1.3.0 öncesi sürüm notları Türkçedir.
 
+### 1.4.1 — 2026-10-22
+
+Update by running `Ev-Paneli-Kurulum-1.4.1.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. The code is checked with `npm test` and `npm run kontrol`; the new motion has not been tried in a real window yet.
+
+**Look and feel**
+
+- **Motion that helps:** Tiles respond when pressed and change colour with Windows 11 timings (100–167 ms), and the quick panel slides up briefly when it opens from the tray. The palette still opens instantly. Press-and-hold tiles do not shrink when pressed, so they never look as if a single click ran them. This is on by default and turns off with "Reduce motion" in Settings or with the Windows animation effects setting. The decorative animations (tiles sliding in, the sliding highlight, weather and season effects) stay optional and off by default.
+- **The success tick stays:** The green tick after an action no longer disappears when Home Assistant reports the new state a moment later. It stays for its full second.
+- **Steadier panel:** The quick panel no longer resizes itself twice on every height change, which made it jump.
+- **Type:** Text uses Windows 11's Segoe UI Variable font, and no text is smaller than 12 px. Chart axes, the small tile size and the camera age label use 11 px.
+- **Settings:** The Settings window now follows the Windows animation effects setting and its own "Reduce motion" switch: no smooth scrolling and no fades when motion is reduced.
+
 ### 1.4.0 — 2026-10-17
 
 Update by running `Ev-Paneli-Kurulum-1.4.0.exe` over the installed version. The settings schema is still 6: only new fields were added, so your settings, favorites and token stay as they are. The code is checked with `npm test` and `npm run kontrol`; it has not been tried in a real window, on a real Windows setup or against a real Home Assistant yet, so open the tray, the quick panel, the palette and Settings once before relying on it. Everything that reaches outside the app (external triggers, local API, `evpaneli://` links, mobile notifications, in-app updates, folder sync, camera snapshots) is off until you switch it on.

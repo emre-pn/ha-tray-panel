@@ -2467,11 +2467,11 @@
     ['ayar.anim.mevsim.kis', 'Kış (kar)', 'Winter (snow)', 'Winter (Schnee)', 'Hiver (neige)', 'Invierno (nieve)'],
     ['ayar.anim.azalt', 'Hareketi azalt', 'Reduce motion', 'Bewegung reduzieren', 'Réduire le mouvement', 'Reducir el movimiento'],
     ['ayar.anim.azaltIpucu',
-      'Açıkken hiçbir süs animasyonu çalışmaz. Windows’un “hareketi azalt” tercihi bu ayardan bağımsız olarak her zaman geçerlidir; yüksek karşıtlıkta efektler çizilmez.',
-      'When on, no decorative animation runs. The Windows “reduce motion” preference always applies regardless of this setting; effects are not drawn in high contrast.',
-      'Wenn aktiviert, läuft keine Zieranimation. Die Windows-Einstellung zur Bewegungsreduzierung gilt unabhängig von dieser Option immer; bei hohem Kontrast werden keine Effekte gezeichnet.',
-      'Lorsque l’option est activée, aucune animation décorative ne s’exécute. La préférence Windows de réduction des animations s’applique toujours, quel que soit ce réglage\u00A0; les effets ne sont pas dessinés en contraste élevé.',
-      'Si está activado, no se ejecuta ninguna animación decorativa. La preferencia de Windows para reducir el movimiento se aplica siempre, independientemente de este ajuste; los efectos no se dibujan con contraste alto.'],
+      'Açıkken hiçbir animasyon çalışmaz; basma ve panel açılış hareketi de durur. Windows’un “hareketi azalt” tercihi bu ayardan bağımsız olarak her zaman geçerlidir; yüksek karşıtlıkta efektler çizilmez.',
+      'When on, no animation runs, including the short press and panel-opening motion. The Windows “reduce motion” preference always applies regardless of this setting; effects are not drawn in high contrast.',
+      'Wenn aktiviert, läuft keine Animation, auch nicht die kurze Bewegung beim Drücken und beim Öffnen des Panels. Die Windows-Einstellung zur Bewegungsreduzierung gilt unabhängig von dieser Option immer; bei hohem Kontrast werden keine Effekte gezeichnet.',
+      'Lorsque l’option est activée, aucune animation ne s’exécute, y compris le court mouvement à l’appui et à l’ouverture du panneau. La préférence Windows de réduction des animations s’applique toujours, quel que soit ce réglage\u00A0; les effets ne sont pas dessinés en contraste élevé.',
+      'Si está activado, no se ejecuta ninguna animación, ni siquiera el breve movimiento al pulsar y al abrir el panel. La preferencia de Windows para reducir el movimiento se aplica siempre, independientemente de este ajuste; los efectos no se dibujan con contraste alto.'],
 
     // --- Home Assistant erişim anahtarı ---
     ['ayar.anahtar.baslik',

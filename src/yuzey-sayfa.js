@@ -272,13 +272,42 @@
     }, HATA_ISARETI_MS);
   }
 
-  /** Başarı: karoda 1 sn yeşil çerçeve (g-08). */
-  function basariIsaretle(oge) {
+  /**
+   * Başarı: karoda 1 sn yeşil çerçeve (g-08). 1.4.1: HA'nın durum yankısı paneli baştan çizer ve eski düğme gider; bu yüzden
+   * karonun işaret bitiş zamanı tutulur, yeniden çizilen karo işareti süresi dolana kadar taşır (basariyiSurdur).
+   */
+  const basariSonu = new Map(); // karo kimliği -> işaretin bitiş zamanı (ms)
+
+  function basariIsaretle(oge, karo) {
     if (!oge || !oge.classList) return;
     oge.classList.add('basari');
+    if (karo && karo.id !== undefined && oge.classList.contains('karo')) {
+      const simdi = Date.now();
+      basariSonu.forEach(function (bitis, kimlik) {
+        if (bitis <= simdi) basariSonu.delete(kimlik);
+      });
+      basariSonu.set(karo.id, simdi + BASARI_ISARETI_MS);
+    }
     setTimeout(function () {
       oge.classList.remove('basari');
     }, BASARI_ISARETI_MS);
+  }
+
+  /** Yeniden çizilen karoda süren başarı işaretini korur; işaret ikinci kez belirmez (CSS .basari-surer). */
+  function basariyiSurdur(karo, dugme) {
+    const bitis = basariSonu.get(karo.id);
+    if (bitis === undefined) return;
+    const kalan = bitis - Date.now();
+    if (kalan <= 0) {
+      basariSonu.delete(karo.id);
+      return;
+    }
+    dugme.classList.add('basari');
+    dugme.classList.add('basari-surer');
+    setTimeout(function () {
+      dugme.classList.remove('basari');
+      dugme.classList.remove('basari-surer');
+    }, kalan);
   }
 
   /** Kaydırıcının ara değerleri ve basılı tutulan ses -/+ her seferinde "başarı" yanıp sönmesin. */
@@ -290,7 +319,7 @@
 
   function sonucIsle(sonuc, karo, oge, yuk) {
     if (sonuc && sonuc.ok === true) {
-      if (basariGosterilmeli(karo, yuk)) basariIsaretle(oge);
+      if (basariGosterilmeli(karo, yuk)) basariIsaretle(oge, karo);
       return;
     }
     if (!sonuc || sonuc.ok !== false) return;
@@ -885,6 +914,7 @@
       dugme.setAttribute('aria-pressed', karo.durum === 'acik' ? 'true' : 'false');
     }
     odakKaydet('k:' + karo.id, dugme);
+    basariyiSurdur(karo, dugme);
 
     if (karo.varsayilanEylem === false) {
       // Tek tıklama eylemi yok (kart olarak çizilmeyen iklim / medya / sensör...): düz tıklama servis göndermez, ipucu verir.

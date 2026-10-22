@@ -346,7 +346,19 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     const konum = kip === 'palet' ? paletKonumu(alan, boyut) : panelKonumu(tepsiSinirlariAl(), alan, boyut, 8, ekran.bounds);
     const hedef = { x: konum.x, y: konum.y, width: boyut.width, height: boyut.height };
     pencere.setBounds(hedef);
-    pencere.setBounds(hedef); // karma DPI'da ilk çağrı yanlış ölçeklenebilir, ikincisi düzeltir (denenmedi)
+    // Karma DPI'da ilk çağrı yanlış ölçeklenebilir; ikinci çağrı yalnız sonuç hedeften saparsa yapılır (1.4.1: her yükseklik
+    // değişiminde koşulsuz iki kez boyutlamak paneli sıçratıyordu).
+    if (sinirSapti(pencere, hedef)) pencere.setBounds(hedef);
+  }
+
+  function sinirSapti(p, hedef) {
+    if (typeof p.getBounds !== 'function') return true;
+    try {
+      const s = p.getBounds();
+      return !s || s.x !== hedef.x || s.y !== hedef.y || s.width !== hedef.width || s.height !== hedef.height;
+    } catch {
+      return true;
+    }
   }
 
   /**

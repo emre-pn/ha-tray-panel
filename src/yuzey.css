@@ -10,7 +10,21 @@
  *
  * Kontrast (WCAG 4,5:1): metin değişkenleri kendi zeminlerinde (--karo, --bg, --bg-ust; seçili satırda --karo-uzerinde) en az
  * 4,5'tir; test/yuzey-sayfa.test.js bunu iki temada da hesaplar. Yeni renk eklerken o testi güncelleyin.
+ *
+ * Yazı (1.4.1): Windows 11'in Segoe UI Variable yazı tipi; metin en az 12 px (Windows alt sınırı). Yalnız grafik ekseni, küçük
+ * karo boyutunun durum satırı ve kamera görüntüsünün yaşı 11 px'tir (sabit alan).
  */
+
+/* Hareket jetonları (1.4.1): Windows 11 süreleri ve eğrileri. Renk değildir; temalar ve özel palet bunları değiştirmez (bu yüzden
+   renk değişkenlerinin :root bloğunda değil, html'de) */
+html {
+  --t-hizli: 100ms;
+  --t-normal: 167ms;
+  --t-yavas: 250ms;
+  --e-giris: cubic-bezier(0, 0, 0, 1);
+  --e-cikis: cubic-bezier(1, 0, 1, 1);
+  --e-ui: cubic-bezier(0.23, 1, 0.32, 1);
+}
 
 :root {
   color-scheme: dark;
@@ -145,7 +159,7 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--metin);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
   user-select: none;
 }
@@ -226,7 +240,7 @@ input:focus-visible,
 .baglanti {
   flex: none;
   margin-left: auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
   white-space: nowrap;
 }
@@ -285,7 +299,7 @@ input:focus-visible,
 .eski {
   flex: 1 0 100%;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--metin);
   background: var(--karo);
   border: 1px solid var(--yedek);
@@ -315,7 +329,7 @@ input:focus-visible,
   flex: none;
   width: 16px;
   height: 16px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 16px;
   text-align: center;
@@ -363,7 +377,7 @@ input:focus-visible,
   flex: none;
   min-width: 18px;
   padding: 0 5px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 18px;
   text-align: center;
@@ -467,7 +481,7 @@ input:focus-visible,
 
 .bildirim-gizli {
   padding: 2px 12px 6px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -498,7 +512,7 @@ input:focus-visible,
 
 .dis-onay-ayrinti {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -540,7 +554,7 @@ input:focus-visible,
 
 .bolum-baslik {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -638,7 +652,7 @@ input:focus-visible,
   background: var(--karo);
   border: 1px solid var(--kenar);
   border-radius: 8px;
-  transition: background 100ms ease-out;
+  transition: background var(--t-hizli) ease-out;
 }
 
 .karo:hover {
@@ -702,7 +716,7 @@ input:focus-visible,
 }
 
 .karo-durum {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -725,7 +739,7 @@ input:focus-visible,
 
 /* Yıkıcı karoda kalıcı "basılı tut" alt yazısı (g-08); yalnız fareyle üstüne gelince görünen title'a bağlı kalmaz */
 .karo-ipucu {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.02em;
   color: var(--yikici-metin);
 }
@@ -850,14 +864,14 @@ input:focus-visible,
 .kart-durum {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   text-align: right;
   color: var(--soluk);
   overflow-wrap: anywhere;
 }
 
 .kart-bilgi {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
   overflow-wrap: anywhere;
 }
@@ -1142,7 +1156,7 @@ input:focus-visible,
 /* Palet altı kısayol ipucu şeridi (k-08); panelde gizli */
 .palet-serit {
   padding: 6px 12px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
   border-top: 1px solid var(--kenar);
 }
@@ -1241,7 +1255,7 @@ input:focus-visible,
   max-width: 60%;
   padding: 2px 10px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1297,7 +1311,7 @@ input:focus-visible,
 
 .palet-baslik {
   padding: 4px 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1350,20 +1364,20 @@ input:focus-visible,
 }
 
 .palet-grup {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
 .palet-durum {
   min-width: 56px;
-  font-size: 11px;
+  font-size: 12px;
   text-align: right;
   color: var(--soluk);
 }
 
 .rozet {
   padding: 1px 7px;
-  font-size: 11px;
+  font-size: 12px;
   background: var(--vurgu);
   color: var(--rozet-metin);
   border-radius: 999px;
@@ -1479,7 +1493,7 @@ button.bilgi-kart:hover {
 .hava-ek,
 .kart-not {
   flex: 1 0 100%;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -1501,7 +1515,7 @@ button.bilgi-kart:hover {
 }
 
 .tahmin-baslik {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -1514,7 +1528,7 @@ button.bilgi-kart:hover {
 .tahmin-tur .aralik-dugme {
   flex: none;
   padding: 2px 10px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .tahmin-liste {
@@ -1542,7 +1556,7 @@ button.bilgi-kart:hover {
 }
 
 .tahmin-zaman {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -1558,7 +1572,7 @@ button.bilgi-kart:hover {
 
 .tahmin-dusuk,
 .tahmin-yagis {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -1568,7 +1582,7 @@ button.bilgi-kart:hover {
 }
 
 .bilgi-etiket {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -1586,7 +1600,7 @@ button.bilgi-kart:hover {
 }
 
 .kart-uyari {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bilgi-kart.dikkat,
@@ -1625,7 +1639,7 @@ button.bilgi-kart:hover {
 }
 
 .serit-etiket {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -1655,7 +1669,7 @@ button.bilgi-kart:hover {
 }
 
 .sensor-uyari {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .sensor-gosterge {
@@ -1837,7 +1851,7 @@ button.bilgi-kart:hover {
 /* Takvim */
 .takvim-gun {
   margin-top: 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--soluk);
 }
@@ -1929,7 +1943,7 @@ button.bilgi-kart:hover {
 }
 
 .detay-birim {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -1952,7 +1966,7 @@ button.bilgi-kart:hover {
 
 .eksen {
   fill: var(--soluk);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .cizgi {
@@ -1990,7 +2004,7 @@ button.bilgi-kart:hover {
 .detay-imlec {
   min-height: 16px;
   margin: 4px 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
   overflow-wrap: anywhere;
 }
@@ -2010,7 +2024,7 @@ button.bilgi-kart:hover {
 }
 
 .istatistik-etiket {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -2055,7 +2069,7 @@ button.bilgi-kart:hover {
 .seri-istatistik {
   flex: 1 0 100%;
   padding-left: 30px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -2208,7 +2222,7 @@ button.bilgi-kart:hover {
 
 .boyut-kucuk .karo-durum,
 .karo.boyut-kucuk .karo-durum {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .boyut-buyuk .karo,
@@ -2330,7 +2344,7 @@ button.bilgi-kart:hover {
 
 .ayrinti-durum {
   flex: none;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -2376,10 +2390,14 @@ button.bilgi-kart:hover {
  * Ana süreç görünüm modelini gönderir; src/yuzey-gorunum.js (lib/tema-renk.js gorunumUygula) bunu <html> öğesine yazar:
  *   data-sema="koyu|acik"   özel/hazır panel paleti etkin; değişkenler <html>'in CSSOM stilinde (inline bildirimsiz) gelir, color-scheme buradan
  *   data-karsitlik          yüksek karşıtlık (aşağıdaki sabit palet; özel renkler yok sayılır)
- *   data-hareket="azalt"    hareketi azalt ayarı açık: kozmetik geçişler kapanır
- *   data-gecis              hareketli geçişler açık (animasyonlar AÇIK ve hareket azaltılmamış)
- * Renkler yine yalnız değişkenlerdendir. Yeni animasyon eklerken: :root[data-gecis] altına koy ve @media (prefers-reduced-motion:
- * no-preference) içinde tut; test/tema-yuzey.test.js bunu denetler.
+ *   data-hareket="azalt"    hareketi azalt (ayar ya da sistem) açık: işlevsel ve kozmetik bütün geçişler kapanır
+ *   data-gecis              kozmetik geçişler açık (animasyonlar AÇIK ve hareket azaltılmamış)
+ *   data-acilis             panel az önce gizliyken açıldı: kısa açılış hareketi (src/yuzey-gorunum.js; palette yazılmaz)
+ * İki hareket katmanı vardır (1.4.1). İşlevsel katman (basma, başarı işareti, panel açılışı) varsayılan AÇIKTIR ve
+ * :root:not([data-hareket]) altındadır; kozmetik katman (karo kayması, kayan vurgu, simge büyümesi, efektler) :root[data-gecis]
+ * altındadır ve varsayılan KAPALIDIR. İkisi de @media (prefers-reduced-motion: no-preference) içindedir. Yalnız transform ve
+ * opacity canlandırılır. Basılı tutulan (yıkıcı) karo basınca küçülmez: tek tıkla çalışıyormuş izlenimi vermesin.
+ * Renkler yine yalnız değişkenlerdendir; test/tema-yuzey.test.js bu kuralları denetler.
  * ===================================================================================================================== */
 
 :root[data-sema="koyu"] {
@@ -2535,6 +2553,40 @@ button.bilgi-kart:hover {
   transition: none;
 }
 
+/* ---- İşlevsel hareket (1.4.1): varsayılan AÇIK; hareketi azalt (ayar ya da sistem) kapatır ---- */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-hareket]) .karo {
+    transition: background var(--t-hizli) ease-out, transform var(--t-hizli) var(--e-ui);
+  }
+
+  :root:not([data-hareket]) .karo:not(.yikici):not(.yok):active {
+    transform: scale(0.98);
+  }
+
+  :root:not([data-hareket]) .karo.basari::before {
+    animation: isaret-belir var(--t-normal) var(--e-giris) both;
+  }
+
+  :root:not([data-hareket])[data-acilis] .kok {
+    animation: panel-ac var(--t-normal) var(--e-giris) backwards;
+  }
+}
+
+@keyframes isaret-belir {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* Akrilik zemin anında belirir; içerik kısa bir yukarı kaymayla gelir (opaklık 0'dan başlamaz: boş zemin görünmesin) */
+@keyframes panel-ac {
+  from {
+    opacity: 0.4;
+    transform: translateY(8px);
+  }
+}
+
 /* ---- Kozmetik animasyonlar (o-34): varsayılan KAPALI; yalnız :root[data-gecis] varken ve hareket azaltılmamışken ---- */
 
 /* Efekt tuvali (hava / mevsim): tüm pencerenin üstünde, fareyi geçirir; çizimi src/lib/efekt.js yapar */
@@ -2558,14 +2610,6 @@ button.bilgi-kart:hover {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-gecis] .karo {
-    transition: background 100ms ease-out, transform 90ms ease-out;
-  }
-
-  :root[data-gecis] .karo:active {
-    transform: scale(0.97);
-  }
-
   /* Karo içeri kayması: pencere her gösterildiğinde karolar sırayla kayarak girer (<html data-giris>'i src/yuzey-gorunum.js kısa süre ekler;
      .kok'a sınıf eklenmez çünkü yuzey-sayfa.js her çizimde .kok sınıfını yeniden yazar) */
   :root[data-gecis][data-giris] .izgara > .karo,
@@ -2666,10 +2710,15 @@ button.bilgi-kart:hover {
   }
 }
 
+/* Başarı işareti yeniden çizimden sonra da süresi dolana kadar durur (src/yuzey-sayfa.js basari-surer); ikinci kez belirmez */
+:root .karo.basari.basari-surer::before {
+  animation: none;
+}
+
 /* ---- 1.4.0 cihaz grubu (o-48): kamera anlık görüntüsü (src/yuzey-kamera.js). Görüntü varsayılan olarak bulanıktır. ---- */
 .kamera-not {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
 }
 
@@ -2731,7 +2780,7 @@ button.bilgi-kart:hover {
   justify-content: center;
   min-height: 64px;
   padding: 6px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--soluk);
   text-align: center;
   background: var(--bg);
@@ -2753,7 +2802,7 @@ button.bilgi-kart:hover {
 .kamera-yenile,
 .kamera-buyut {
   padding: 3px 10px;
-  font-size: 11px;
+  font-size: 12px;
   background: var(--karo-uzerinde);
   border: 1px solid var(--kenar);
   border-radius: 6px;
@@ -2772,7 +2821,7 @@ button.bilgi-kart:hover {
 
 .kamera-yas {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--soluk);
 }
 

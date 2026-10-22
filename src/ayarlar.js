@@ -186,6 +186,12 @@
   const havaEfekti = $('havaEfekti');
   const mevsimEfekti = $('mevsimEfekti');
   const hareketiAzalt = $('hareketiAzalt');
+  /** 1.4.1: sistemde ya da bu sayfada "hareketi azalt" açıksa bölüme yumuşak kaydırma yerine anında gidilir. */
+  const kaydirmaDavranisi = () =>
+    (hareketiAzalt && hareketiAzalt.checked === true) ||
+    (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches === true)
+      ? 'auto'
+      : 'smooth';
   const btnAyarlariKaydet = $('btnAyarlariKaydet');
   const kirliGosterge = $('kirliGosterge');
   const tepsiSolTik = $('tepsiSolTik');
@@ -555,7 +561,7 @@
   function bolumeGit(bolumKimligi, baslikKimligi) {
     const bolum = $(bolumKimligi);
     try {
-      bolum.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      bolum.scrollIntoView({ behavior: kaydirmaDavranisi(), block: 'start' });
     } catch {
       /* kaydırma desteklenmiyor */
     }
@@ -604,7 +610,7 @@
     if (!ad) return;
     const girdi = ALAN_KUTULARI[ad].girdi;
     try {
-      girdi.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      girdi.scrollIntoView({ behavior: kaydirmaDavranisi(), block: 'center' });
     } catch {
       /* kaydırma desteklenmiyor */
     }
@@ -3240,7 +3246,7 @@
     const bolum = $(kimlik);
     bolum.open = true;
     try {
-      bolum.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      bolum.scrollIntoView({ behavior: kaydirmaDavranisi(), block: 'start' });
     } catch {
       /* kaydırma desteklenmiyor */
     }
@@ -3997,7 +4003,7 @@
       if (alanlar.length === 0 || !kuralOgeleri[i]) continue;
       const girdi = [].concat(kuralOgeleri[i].girdiler[alanlar[0]])[0];
       try {
-        girdi.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        girdi.scrollIntoView({ behavior: kaydirmaDavranisi(), block: 'center' });
       } catch {
         /* kaydırma desteklenmiyor */
       }

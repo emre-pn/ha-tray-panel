@@ -226,14 +226,19 @@ test('yüksek karşıtlık: özel palet değişkenleri yok sayılır (CSS özgü
 
 // ---- o-34: animasyonlar --------------------------------------------------------------------------------------------------------
 
-test('animasyonlar: yeni animation/transition bildirimleri yalnız :root[data-gecis] altında ve prefers-reduced-motion: no-preference içindedir', () => {
+const ISLEVSEL = ':root:not([data-hareket])';
+
+test('animasyonlar: animation/transition bildirimleri yalnız işlevsel (:root:not([data-hareket])) ya da kozmetik (:root[data-gecis]) katmanda ve prefers-reduced-motion: no-preference içindedir', () => {
   const bas = YUZEY_CSS.indexOf('Görünüm ayarları (1.4.0 grup "tema")');
   assert.ok(bas > 0, 'tema bloğu işaretli');
   const temaBlogu = kurallar(YUZEY_CSS.slice(bas));
   const hareketli = temaBlogu.filter((k) => /\b(animation|transition|animation-delay)\s*:/.test(k.govde) && !/^\s*(?:animation|transition):\s*none/.test(k.govde));
   assert.ok(hareketli.length >= 8, `hareketli kural sayısı ${hareketli.length}`);
   for (const k of hareketli) {
-    assert.ok(k.secici.split(',').every((s) => s.trim().startsWith(':root[data-gecis]')), `${k.secici}: :root[data-gecis] ile başlamıyor`);
+    assert.ok(
+      k.secici.split(',').every((s) => s.trim().startsWith(':root[data-gecis]') || s.trim().startsWith(ISLEVSEL)),
+      `${k.secici}: :root[data-gecis] ya da ${ISLEVSEL} ile başlamıyor`,
+    );
     assert.equal(k.medya, HAREKET_VAR, `${k.secici}: prefers-reduced-motion: no-preference içinde değil`);
   }
   // köşe bildirimi
@@ -255,7 +260,7 @@ test('animasyonlar: varsayılanda (öznitelik yok) hiçbir yeni kural etkin değ
   // @keyframes yalnız kendi animasyonlarına bağlıdır; temel (öznitelik gerektirmeyen) kurallar animation kullanmaz
   for (const k of YUZEY_KURALLARI) {
     if (/\banimation\s*:/.test(k.govde) && !/animation:\s*none/.test(k.govde)) {
-      assert.ok(k.secici.includes('[data-gecis]') || /\.rozet|basili|::after|::before/.test(k.secici), `${k.secici}: beklenmeyen animasyon`);
+      assert.ok(k.secici.includes('[data-gecis]') || k.secici.startsWith(ISLEVSEL) || /\.rozet|basili|::after|::before/.test(k.secici), `${k.secici}: beklenmeyen animasyon`);
     }
   }
 });
@@ -268,6 +273,40 @@ test('animasyonlar: hareketi azalt ayarı (data-hareket) karo geçişlerini kapa
   // geçiş animasyonu seçilmeden (data-gecis yok) :root[data-hareket] kuralı dışında hiçbir karo geçişi yeniden tanımlanmaz
   const gecisliKaro = YUZEY_KURALLARI.filter((k) => k.secici.startsWith(':root[data-gecis] .karo') && /transition/.test(k.govde));
   assert.ok(gecisliKaro.every((k) => k.medya === HAREKET_VAR));
+});
+
+test('işlevsel hareket (1.4.1): basma, başarı işareti ve panel açılışı varsayılan açık; hareketi azalt kapatır; yıkıcı karo basınca küçülmez', () => {
+  const kural = (secici, medya = HAREKET_VAR) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === medya).map((k) => k.govde).join(';');
+  assert.match(kural(ISLEVSEL + ' .karo'), /transition:\s*background var\(--t-hizli\) ease-out,\s*transform var\(--t-hizli\)/);
+  assert.match(kural(ISLEVSEL + ' .karo:not(.yikici):not(.yok):active'), /transform:\s*scale\(0\.98\)/);
+  assert.match(kural(ISLEVSEL + ' .karo.basari::before'), /animation:\s*isaret-belir var\(--t-normal\) var\(--e-giris\)/);
+  assert.match(kural(ISLEVSEL + '[data-acilis] .kok'), /animation:\s*panel-ac var\(--t-normal\) var\(--e-giris\) backwards/);
+  // basınca küçülen her karo kuralı yıkıcı (basılı tutulan) karoyu dışarıda bırakır
+  for (const k of YUZEY_KURALLARI) {
+    if (/\.karo[^,]*:active/.test(k.secici) && /transform:\s*scale/.test(k.govde)) assert.match(k.secici, /:not\(\.yikici\)/, k.secici);
+  }
+  // yalnız transform ve opacity canlandırılır
+  for (const ad of ['panel-ac', 'isaret-belir']) {
+    const bas = YUZEY_CSS.indexOf('@keyframes ' + ad);
+    assert.ok(bas > 0, ad);
+    const govde = YUZEY_CSS.slice(bas).split(/\n\}\n/)[0];
+    const ozellikler = [...govde.matchAll(/^\s*([a-z-]+)\s*:/gm)].map((m) => m[1]);
+    assert.ok(ozellikler.length > 0 && ozellikler.every((o) => o === 'opacity' || o === 'transform'), ad + ': ' + ozellikler);
+  }
+  // hareket jetonları renk değişkenlerinden ayrı (özel palet onları yazmaz)
+  assert.match(kural('html', ''), /--t-normal:\s*167ms/);
+  // yeniden çizilen karoda süren başarı işareti ikinci kez belirmez: kural kozmetik işaret kuralından sonra gelir
+  const surer = YUZEY_CSS.indexOf(':root .karo.basari.basari-surer::before');
+  assert.ok(surer > YUZEY_CSS.indexOf(':root[data-gecis] .karo.basari::before'), 'basari-surer sonra gelir');
+  assert.match(kural(':root .karo.basari.basari-surer::before', ''), /animation:\s*none/);
+});
+
+test('işlevsel hareket (1.4.1): panel açılışı yalnız panel kipinde, pencere gizliyken gelen gösterimde ve hareket azaltılmamışken oynar', () => {
+  const g = oku('src/yuzey-gorunum.js');
+  const fonk = g.slice(g.indexOf('function acilisiOynat'), g.indexOf('// ---------------------------------------------------------------- kayan vurgu'));
+  assert.match(fonk, /if \(gizliydi !== true \|\| sonuc\.hareketAzalt \|\| !yuk \|\| yuk\.mod !== 'panel'\) return;/);
+  assert.match(fonk, /kok\.setAttribute\('data-acilis', '1'\)/);
+  assert.match(g, /const gizliydi = document\.hidden === true;[\s\S]*?acilisiOynat\(yuk, gizliydi\);/);
 });
 
 test('animasyonlar: kayan vurgu yalnız [data-gecis][data-kayan] iken görünür; giriş animasyonu yalnız [data-gecis][data-giris] iken çalışır; .kok sınıfına bağlı değildir', () => {

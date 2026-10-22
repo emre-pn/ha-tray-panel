@@ -1052,6 +1052,29 @@ test('hata: eylem başarısız olursa karoda kısa süreli kırmızı çerçeve 
   assert.equal(e.className.split(' ').includes('hata'), false);
 });
 
+test('başarı işareti (1.4.1): HA yankısıyla gelen yeniden çizimde kaybolmaz ve ikinci kez belirmez; süresi dolunca kalkar', async () => {
+  const sayfa = await panelAc();
+  const d = dugmeBul(sayfa, 'Ampul');
+  d.gonder('click', { detail: 1 });
+  await akit();
+  assert.ok(sinifli(d, 'basari'), 'başarı işareti');
+  sayfa.zaman.ilerle(300);
+  const acik = kopya(MODEL);
+  acik.gruplar[0].karolar[1].durum = 'acik'; // HA'nın durum yankısı: ampul açıldı, panel baştan çizilir
+  sayfa.durum(acik);
+  await akit();
+  const yeni = dugmeBul(sayfa, 'Ampul');
+  assert.notEqual(yeni, d, 'karo yeniden kuruldu');
+  assert.ok(sinifli(yeni, 'basari'), 'işaret yeni karoda sürer');
+  assert.ok(sinifli(yeni, 'basari-surer'), 'yeniden belirmez');
+  assert.equal(sinifli(dugmeBul(sayfa, 'Film'), 'basari'), false, 'yalnız eylem yapılan karo');
+  sayfa.zaman.ilerle(750);
+  assert.equal(sinifli(yeni, 'basari'), false, 'kalan süre dolunca kalkar');
+  sayfa.durum(kopya(MODEL));
+  await akit();
+  assert.equal(sinifli(dugmeBul(sayfa, 'Ampul'), 'basari'), false, 'süresi dolan işaret sonraki çizimde geri gelmez');
+});
+
 // --- gorunum-11: pencere malzemesi (data-malzeme) ---------------------------------------------
 
 test('malzeme: "acrylic" ve "mica" <html> üzerine data-malzeme yazar; "yok" ya da bilinmeyen değer özniteliği kaldırır (opak)', async () => {

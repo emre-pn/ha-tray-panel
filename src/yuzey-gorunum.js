@@ -6,6 +6,7 @@
  *     HTML ataması YOK, CSP korunur);
  *   - kozmetik animasyonları yönetir (o-34): hava/mevsim efekti (tuval, lib/efekt.js), karo içeri kayması (<html data-giris>) ve palette kayan vurgu.
  * Hepsi varsayılan KAPALIDIR ve "hareketi azalt" (ayar ya da sistemin prefers-reduced-motion tercihi) açıkken hiçbiri çalışmaz.
+ * 1.4.1: işlevsel panel açılış hareketini (<html data-acilis>) de yönetir; o varsayılan AÇIKTIR, hareketi azalt yine kapatır.
  * Efekt yalnız karo modelindeki beyaz listeli hava durumunu okur (lib/efekt.js havaDurumuBul); hiçbir eylem ya da istek yapmaz.
  * Ana sayfa betiğine (yuzey-sayfa.js) dokunmaz: kendi dinleyicilerini ekler.
  */
@@ -20,6 +21,7 @@
   const kok = document.documentElement;
   const KARE_ARALIGI_MS = 33; // ~30 kare/sn
   const GIRIS_SURESI_MS = 700;
+  const ACILIS_SURESI_MS = 400; // CSS'teki 167 ms'lik açılıştan uzun; sonra öznitelik kalkar
   const YENIDEN_BOYUT_BEKLEME_MS = 120;
 
   const sorgu = function (metin) {
@@ -32,6 +34,7 @@
   let sonuc = { hareketAzalt: false, gecis: false, animasyon: null };
   let model = null; // son karo modeli (hava durumu için)
   let girisZamanlayicisi = null;
+  let acilisZamanlayicisi = null;
   let boyutZamanlayicisi = null;
 
   const sistemHareketiAzalt = function () {
@@ -55,6 +58,24 @@
     girisZamanlayicisi = window.setTimeout(function () {
       kok.removeAttribute('data-giris'); // sonraki çizimler (model güncellemesi) yeniden oynatmasın
     }, GIRIS_SURESI_MS);
+  }
+
+  // ---------------------------------------------------------------- panel açılışı (1.4.1, işlevsel hareket)
+
+  /**
+   * Gizli panel açılırken içerik kısa bir yukarı kaymayla gelir (CSS: :root[data-acilis] .kok, 167 ms). Yalnız panel kipinde ve
+   * pencere gizliyken gelen gösterimde oynar: palet anında açılır, zaten açık panel yeniden gösterilince oynamaz. Hareketi azalt
+   * (ayar ya da sistem) açıkken hiç oynamaz.
+   */
+  function acilisiOynat(yuk, gizliydi) {
+    window.clearTimeout(acilisZamanlayicisi);
+    kok.removeAttribute('data-acilis');
+    if (gizliydi !== true || sonuc.hareketAzalt || !yuk || yuk.mod !== 'panel') return;
+    void kok.offsetWidth; // animasyon her açılışta baştan başlasın
+    kok.setAttribute('data-acilis', '1');
+    acilisZamanlayicisi = window.setTimeout(function () {
+      kok.removeAttribute('data-acilis');
+    }, ACILIS_SURESI_MS);
   }
 
   // ---------------------------------------------------------------- kayan vurgu (palet)
@@ -227,8 +248,10 @@
   );
 
   kopru.onGoster(function (yuk) {
+    const gizliydi = document.hidden === true; // ana süreç iletiyi pencereyi göstermeden önce yollar
     uygula(yuk && yuk.gorunum);
     girisiOynat();
+    acilisiOynat(yuk, gizliydi);
   });
 
   kopru.onDurum(function (yeniModel) {
