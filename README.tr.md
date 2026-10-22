@@ -41,13 +41,13 @@ Tüm ekran görüntüleri gerçek bir evle değil, uydurma bir örnek evle çeki
 
 <table>
 <tr>
-<td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Hava durumu, medya oynatıcı ve tahminle hızlı panel"><br><sub>Hızlı panel</sub></td>
-<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Işık satırları ve hazır seviyeler ile beyaz tonuyla bir ışığın ayrıntısı"><br><sub>Işıklar</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Saat, hava durumu, çalan parça şeridi ve ışık satırlarıyla hızlı panel"><br><sub>Hızlı panel</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Hazır seviyeler, kaydırıcı ve beyaz tonuyla bir ışığın ayrıntısı"><br><sub>Işıklar</sub></td>
 <td align="center" valign="top"><img src="docs/screenshots/climate-fan.png" width="240" alt="Klima ve vantilatör kartları"><br><sub>Klima ve vantilatör</sub></td>
 </tr>
 <tr>
 <td align="center" valign="top"><img src="docs/screenshots/sensors-forecast.png" width="240" alt="Hava tahmini ve sensör şeridi"><br><sub>Tahmin ve sensörler</sub></td>
-<td align="center" valign="top"><img src="docs/screenshots/todo-calendar.png" width="240" alt="Süpürge, yapılacaklar listesi ve yaklaşan etkinlikler"><br><sub>Yapılacaklar ve takvim</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/todo-calendar.png" width="240" alt="Yapılacaklar listesi ve yaklaşan etkinlikler"><br><sub>Yapılacaklar ve takvim</sub></td>
 <td align="center" valign="top"><img src="docs/screenshots/notifications.png" width="240" alt="Paneldeki Home Assistant bildirimleri"><br><sub>Bildirimler</sub></td>
 </tr>
 <tr>

@@ -41,13 +41,13 @@ All screenshots use a made-up demo home, not a real one.
 
 <table>
 <tr>
-<td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Quick panel with weather, a media player and the forecast"><br><sub>Quick panel</sub></td>
-<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="Light rows and a light's detail view with presets and white tone"><br><sub>Lights</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/quick-panel.png" width="240" alt="Quick panel with the clock, weather, a now-playing strip and light rows"><br><sub>Quick panel</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/lights.png" width="240" alt="A light's detail view with presets, the slider and white tone"><br><sub>Lights</sub></td>
 <td align="center" valign="top"><img src="docs/screenshots/climate-fan.png" width="240" alt="Climate and fan cards"><br><sub>Climate and fan</sub></td>
 </tr>
 <tr>
 <td align="center" valign="top"><img src="docs/screenshots/sensors-forecast.png" width="240" alt="Weather forecast and sensor strip"><br><sub>Forecast and sensors</sub></td>
-<td align="center" valign="top"><img src="docs/screenshots/todo-calendar.png" width="240" alt="Vacuum, to-do list and upcoming events"><br><sub>To-do list and calendar</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/todo-calendar.png" width="240" alt="To-do list and upcoming events"><br><sub>To-do list and calendar</sub></td>
 <td align="center" valign="top"><img src="docs/screenshots/notifications.png" width="240" alt="Home Assistant notifications in the panel"><br><sub>Notifications</sub></td>
 </tr>
 <tr>
