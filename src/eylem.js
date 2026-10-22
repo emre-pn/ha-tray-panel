@@ -32,7 +32,7 @@ const { eylemAdiniCoz } = require('./lib/komut-satiri');
 const { goreliParlaklik, goreliHiz, kisayolEylemiYonu, kisayolEylemiGecerliMi } = require('./lib/yonlu-eylem');
 const { alanAl, guvenliVarlikMi } = require('./lib/suzgec');
 const { durumuDuzelt } = require('./lib/ha-ws-protokol');
-const { AD_SINIRI, basariMetni, gonderildiMetni, hataBildirimiMetni } = require('./lib/bildirim-metni');
+const { AD_SINIRI, basariMetni, basariOzeti, gonderildiMetni, hataBildirimiMetni } = require('./lib/bildirim-metni');
 const { TR } = require('./lib/ceviri-varsayilan');
 const { tekrarliMi } = require('./lib/favoriler');
 const { kisalt } = require('./lib/metin');
@@ -96,7 +96,8 @@ function eylemHataMetni(sonuc, t = TR) {
  * @param {() => boolean} bag.canliMi canlı bağlantı kurulu mu (depo güncel mi)
  * @param {(yol: string, secenek?: object) => Promise<unknown>} bag.haIstek
  * @param {{ekle: Function}} bag.son "Son kullanılanlar" deposu
- * @param {(b: {tur: 'ok'|'hata', metin: string, baslik?: string}) => void} bag.geriBildirim
+ * @param {(b: {tur: 'ok'|'hata', metin: string, baslik?: string, ozet?: {baslik: string, alt: string, alan: string, acik: boolean}}) => void} bag.geriBildirim
+ *   ozet (1.6.0): köşe bildiriminin iki satırı (cihaz adı + ne oldu) ve simgesi için
  * @param {() => Promise<void>|void} bag.durumlariYenile REST ile izlenen varlıkların durumunu tazeler
  * @param {(ad: string, kimlik: string) => Promise<boolean>} bag.onayDiyalogu tepsi menüsü onay penceresi (true = çalıştır)
  * @param {() => boolean} bag.onayAcikMi bir onay penceresi zaten açık mı
@@ -259,10 +260,18 @@ function eylemKatmaniOlustur({
   function basariBildir(sonuc, istek) {
     if (sessizMi(istek)) return;
     let metin;
-    if (sonuc.parlaklik !== undefined) metin = t('sonuc.parlaklik', { ad: kisalt(sonuc.ad, AD_SINIRI), yuzde: sonuc.parlaklik });
-    else if (sonuc.servisEylemi === true) metin = gonderildiMetni(sonuc.ad, t); // 1.4.0 servis eylemi: "komut gönderildi"
-    else metin = basariMetni(sonuc.alan, sonuc.ad, sonuc.onceki, sonuc.yeni, t);
-    geriBildirim({ tur: 'ok', metin });
+    let ozet;
+    if (sonuc.parlaklik !== undefined) {
+      metin = t('sonuc.parlaklik', { ad: kisalt(sonuc.ad, AD_SINIRI), yuzde: sonuc.parlaklik });
+      ozet = { alt: t('sonuc.ozet.parlaklik', { yuzde: sonuc.parlaklik }), acik: true };
+    } else if (sonuc.servisEylemi === true) {
+      metin = gonderildiMetni(sonuc.ad, t); // 1.4.0 servis eylemi: "komut gönderildi"
+      ozet = { alt: t('sonuc.ozet.komut'), acik: false };
+    } else {
+      metin = basariMetni(sonuc.alan, sonuc.ad, sonuc.onceki, sonuc.yeni, t);
+      ozet = basariOzeti(sonuc.alan, sonuc.onceki, sonuc.yeni, t);
+    }
+    geriBildirim({ tur: 'ok', metin, ozet: { baslik: kisalt(sonuc.ad, AD_SINIRI), alan: sonuc.alan, ...ozet } });
   }
 
   /**
@@ -297,7 +306,11 @@ function eylemKatmaniOlustur({
       return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
     }
     gunluk(`Eylem başarısız: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
-    if (istek?.bildirim !== 'yok') geriBildirim({ tur: 'hata', metin: hataBildirimiMetni(eylemHataMetni(sonuc, t), t), baslik: `${adAl()} — ${kisalt(sonuc.ad || istek?.kimlik || '', AD_SINIRI)}` });
+    if (istek?.bildirim !== 'yok') {
+      const ad = kisalt(sonuc.ad || istek?.kimlik || '', AD_SINIRI);
+      const metin = hataBildirimiMetni(eylemHataMetni(sonuc, t), t);
+      geriBildirim({ tur: 'hata', metin, baslik: `${adAl()} — ${ad}`, ozet: { baslik: ad, alt: metin, alan: sonuc.alan || String(istek?.kimlik || '').split('.')[0], acik: false } });
+    }
     if (!canliMi()) Promise.resolve(durumlariYenile()).catch(() => {});
     return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
   }

@@ -29,6 +29,21 @@ const BILGI_KUYRUK_SINIRI = 5;
 const GIZLEME_PAYI_MS = 150; // sayfadaki solma animasyonu bitsin
 const METIN_SINIRI = 100;
 const ILK_YUKLEME_GECIKMESI_MS = 1000;
+const OZET_BASLIK_SINIRI = 60;
+// 1.6.0 eylem özeti: simgesi çizilebilen alanlar (köşe sayfasındaki tabloyla aynı). Listede olmayan alan simgesiz (✓ / !) gösterilir.
+const OZET_ALANLARI = new Set(['light', 'switch', 'input_boolean', 'fan', 'scene', 'script', 'automation', 'media_player', 'climate', 'water_heater', 'cover', 'humidifier', 'valve', 'vacuum', 'button', 'input_button']);
+
+/**
+ * Eylem özeti (1.6.0): { baslik, alt, alan, acik }. Başlık ve alt satır kısaltılır, alan beyaz listeden geçer; biri boşsa özet yok
+ * sayılır ve bildirim tek satır metinle çıkar.
+ */
+function ozetDuzelt(ozet) {
+  if (!ozet || typeof ozet !== 'object') return null;
+  const baslik = kisalt(String(ozet.baslik ?? ''), OZET_BASLIK_SINIRI);
+  const alt = kisalt(String(ozet.alt ?? ''), METIN_SINIRI);
+  if (baslik === '' || alt === '') return null;
+  return { baslik, alt, alan: OZET_ALANLARI.has(ozet.alan) ? ozet.alan : null, acik: ozet.acik === true };
+}
 const OPAK_MALZEME = Object.freeze({ malzeme: 'yok', secenekler: Object.freeze({ backgroundColor: '#1b1f27' }) });
 
 /**
@@ -171,7 +186,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
     else pencere.hide();
   }
 
-  function gosterIc({ tur, metin, simge }) {
+  function gosterIc({ tur, metin, simge, ozet }) {
     if (!canliMi() || !yuklendi) return;
     bekleyen = null;
     const bilgi = tur === 'bilgi';
@@ -194,6 +209,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       pencere.setIgnoreMouseEvents(true);
       const yuk = { tur, metin: kisalt(metin, bilgi ? BILGI_METIN_SINIRI : METIN_SINIRI), sureMs, malzeme: malzemeAl().malzeme, ...gorunumEki() };
       if (bilgi) yuk.simge = kisalt(simge, BILGI_SIMGE_SINIRI);
+      else if (ozet) yuk.ozet = ozet;
       pencere.webContents.send('kose:goster', yuk);
       if (!pencere.isVisible()) pencere.showInactive(); // odak almadan göster
       clearTimeout(gizlemeZamanlayicisi);
@@ -218,12 +234,15 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       if (canliMi()) malzemeUygula(pencere, malzemeAl());
     },
     /**
-     * @param {{ tur: 'ok'|'hata'|'bilgi', metin: string, simge?: string }} bildirim simge yalnız 'bilgi' türünde kullanılır (kısa düz metin)
+     * @param {{ tur: 'ok'|'hata'|'bilgi', metin: string, simge?: string, ozet?: {baslik: string, alt: string, alan?: string, acik?: boolean} }} bildirim
+     *   simge yalnız 'bilgi' türünde kullanılır (kısa düz metin); ozet (1.6.0) yalnız eylem sonucunda: iki satır ve cihaz simgesi
      * @returns {boolean} gösterildi (ya da yüklenince gösterilecek); pencere hiç oluşturulamadıysa false
      */
-    goster({ tur, metin, simge }) {
+    goster({ tur, metin, simge, ozet }) {
       const bilgi = tur === 'bilgi';
       const kayit = bilgi ? { tur: 'bilgi', metin: String(metin ?? ''), simge: String(simge ?? '') } : { tur: tur === 'hata' ? 'hata' : 'ok', metin: String(metin ?? '') };
+      const ozetTemiz = bilgi ? null : ozetDuzelt(ozet);
+      if (ozetTemiz) kayit.ozet = ozetTemiz; // yedek (Windows bildirimi) yalnız tur ve metni kullanır
       if (!canliMi()) olustur();
       if (!canliMi()) return false;
       if (bilgi && (bekleyen !== null || (yuklendi && pencere.isVisible()))) {

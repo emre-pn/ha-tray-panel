@@ -31,6 +31,19 @@ function basariMetni(alan, ad, onceki, yeni, t = TR) {
   return onceki === 'on' ? t('sonuc.kapatmaKomutu', { ad: a }) : t('sonuc.acmaKomutu', { ad: a });
 }
 
+/**
+ * Köşe bildiriminin alt satırı (1.6.0): cihaz adı ayrı satırda yazıldığı için yalnız ne olduğu ("Kapatıldı"). acik: cihazın açık
+ * olduğu kesin biliniyor mu (simge dairesi dolu çizilir). Seçim mantığı basariMetni ile aynıdır.
+ */
+function basariOzeti(alan, onceki, yeni, t = TR) {
+  if (alan === 'scene') return { alt: t('sonuc.ozet.sahne'), acik: false };
+  if (alan === 'script') return { alt: t('sonuc.ozet.script'), acik: false };
+  if (alan === 'button' || alan === 'input_button') return { alt: t('sonuc.ozet.dugme'), acik: false };
+  if (yeni === 'on' && onceki !== 'on') return { alt: t('sonuc.ozet.acildi'), acik: true };
+  if (yeni === 'off' && onceki !== 'off') return { alt: t('sonuc.ozet.kapatildi'), acik: false };
+  return { alt: t(onceki === 'on' ? 'sonuc.ozet.kapatmaKomutu' : 'sonuc.ozet.acmaKomutu'), acik: false };
+}
+
 /** Durum bilinmiyorsa genel metin. */
 function gonderildiMetni(ad, t = TR) {
   return t('sonuc.komutGonderildi', { ad: kisalt(ad, AD_SINIRI) });
@@ -228,6 +241,7 @@ const ANAHTAR_KARANTINA_BILDIRIMI = TR('bildirim.anahtarKarantina');
 
 module.exports = {
   AD_SINIRI,
+  basariOzeti,
   ACILIS_HATASI_BILDIRIMI,
   ANAHTAR_DOGRULANAMADI_BILDIRIMI,
   ANAHTAR_DOGRULANAMADI_KISA_METNI,

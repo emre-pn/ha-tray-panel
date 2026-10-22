@@ -57,6 +57,16 @@ class SahteOge {
   tikla() {
     for (const isleyici of this.dinleyiciler.click ?? []) isleyici({ type: 'click' });
   }
+
+  appendChild(cocuk) {
+    this.children.push(cocuk);
+    return cocuk;
+  }
+
+  replaceChildren(...cocuklar) {
+    this.children = cocuklar;
+    this._metin = cocuklar.map((c) => c.textContent).join('');
+  }
 }
 
 function betikCalistir(dosya, htmlDosyasi, ek) {
@@ -68,6 +78,8 @@ function betikCalistir(dosya, htmlDosyasi, ek) {
   const sandbox = {
     document: {
       documentElement: kok,
+      createElement: (ad) => Object.assign(new SahteOge(''), { tagName: ad }),
+      createElementNS: (ns, ad) => Object.assign(new SahteOge(''), { ns, tagName: ad }),
       getElementById(kimlik) {
         const oge = ogeler.get(kimlik);
         assert.ok(oge, `${htmlDosyasi} içinde #${kimlik} yok`);
@@ -240,4 +252,51 @@ test('kose-sayfa.js: malzeme "acrylic" ya da "mica" ise <html> data-malzeme alı
   s.gonder({ tur: 'ok', metin: 'g', malzeme: '"><script>' });
   assert.equal('malzeme' in s.kok.dataset, false, 'bilinmeyen değer özniteliğe yazılmaz');
   assert.equal(s.oge('metin').textContent, 'g');
+});
+
+test('kose-sayfa.js (1.6.0): eylem özeti iki satırdır; cihaz simgesi svg ile çizilir, ✓ köşedeki rozete geçer', () => {
+  const s = koseKur();
+  s.gonder({ tur: 'ok', metin: 'Ampul: %80', ozet: { baslik: 'Ampul', alt: 'Parlaklık %80', alan: 'light', acik: true } });
+  assert.equal(s.oge('metin').textContent, 'Ampul');
+  assert.equal(s.oge('alt').textContent, 'Parlaklık %80');
+  assert.equal(s.oge('alt').hidden, false);
+  const kutu = s.oge('bildirim');
+  for (const sinif of ['ikili', 'simgeli', 'acik', 'gorunur']) assert.equal(kutu.classList.contains(sinif), true, sinif);
+  const [svg, rozet] = s.oge('isaret').children;
+  assert.equal(svg.tagName, 'svg');
+  assert.equal(svg.ns, 'http://www.w3.org/2000/svg');
+  assert.equal(svg.children[0].tagName, 'path');
+  assert.ok(svg.children[0].attributes.d.length > 10);
+  assert.equal(rozet.className, 'rozet');
+  assert.equal(rozet.textContent, '✓');
+});
+
+test('kose-sayfa.js (1.6.0): hatalı eylemde rozet !, daire dolu çizilmez; bilinmeyen alan simgesiz kalır', () => {
+  const s = koseKur();
+  s.gonder({ tur: 'hata', metin: 'x', ozet: { baslik: 'Kahve makinesi', alt: 'Yapılamadı: bağlantı yok', alan: 'switch', acik: true } });
+  assert.equal(s.oge('isaret').children[1].textContent, '!');
+  assert.equal(s.oge('bildirim').classList.contains('acik'), false, 'hata açık görünmez');
+  assert.equal(s.oge('bildirim').classList.contains('hata'), true);
+  s.gonder({ tur: 'ok', metin: 'x', ozet: { baslik: 'Kapı', alt: 'Açıldı', alan: 'lock' } });
+  assert.equal(s.oge('isaret').textContent, '✓');
+  assert.equal(s.oge('isaret').children.length, 0);
+  assert.equal(s.oge('bildirim').classList.contains('simgeli'), false);
+  assert.equal(s.oge('bildirim').classList.contains('ikili'), true);
+});
+
+test('kose-sayfa.js (1.6.0): özetsiz ya da bilgi bildirimi tek satıra döner; özet metni etiket olmaz', () => {
+  const s = koseKur();
+  s.gonder({ tur: 'ok', metin: 'a', ozet: { baslik: 'Ampul', alt: 'Açıldı', alan: 'light' } });
+  s.gonder({ tur: 'bilgi', metin: 'Çamaşır bitti', simge: 'i', ozet: { baslik: 'x', alt: 'y', alan: 'light' } });
+  assert.equal(s.oge('metin').textContent, 'Çamaşır bitti');
+  assert.equal(s.oge('alt').hidden, true);
+  assert.equal(s.oge('alt').textContent, '');
+  assert.equal(s.oge('bildirim').classList.contains('ikili'), false);
+  assert.equal(s.oge('bildirim').classList.contains('simgeli'), false);
+  assert.equal(s.oge('isaret').textContent, 'i');
+  const kotu = '<img src=x onerror=alert(1)>';
+  s.gonder({ tur: 'ok', metin: 'a', ozet: { baslik: kotu, alt: kotu, alan: 'fan' } });
+  assert.equal(s.oge('metin').textContent, kotu);
+  assert.equal(s.oge('alt').textContent, kotu);
+  assert.equal(s.oge('metin').children.length + s.oge('alt').children.length, 0);
 });

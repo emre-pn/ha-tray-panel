@@ -1535,7 +1535,7 @@ const kose = koseBildirimiOlustur({
  * Eylem sonucu anında geri bildirimi (hiz-04): köşe bildirimi (ayarda açıksa), isteğe bağlı bip (yalnız başarıda) ve
  * Windows bildirimi YALNIZ hatada. Köşe penceresi hiç oluşturulamazsa başarı da Windows bildirimine düşer.
  */
-function geriBildirim({ tur, metin, baslik = uygulamaAdi() }) {
+function geriBildirim({ tur, metin, baslik = uygulamaAdi(), ozet = null }) {
   const hata = tur === 'hata';
   // ayarlar henüz yüklenmeden çağrılabilir (ör. açılışta gelen komut satırı eylemi): hata yutulmaz, varsayılanlarla gösterilir
   const bip = !!ayarlar?.bipSesi;
@@ -1548,7 +1548,7 @@ function geriBildirim({ tur, metin, baslik = uygulamaAdi() }) {
     }
   }
   let koseGosterildi = false;
-  if (koseAcik) koseGosterildi = kose.goster({ tur: hata ? 'hata' : 'ok', metin });
+  if (koseAcik) koseGosterildi = kose.goster({ tur: hata ? 'hata' : 'ok', metin, ozet }); // ozet (1.6.0): yalnız köşe bildirimi kullanır
   if (hata || (koseAcik && !koseGosterildi)) bildir(metin, baslik);
 }
 
@@ -2631,8 +2631,8 @@ function ayarlarPenceresiniAc(bolum) {
   ayarlarPenceresi = yerelPencereOlustur({
     preload: PRELOAD, // varsayılan oturum, HA oturumu değil
     secenekler: {
-      width: 780,
-      height: 860,
+      width: 1040,
+      height: 820,
       minWidth: 560,
       minHeight: 500,
       show: false,

@@ -19,6 +19,7 @@
   const Kisayol = window.EvKisayol || null;
   const Arama = window.EvArama || null;
   const AyarArama = window.EvAyarArama || null;
+  const KategoriModulu = window.EvAyarKategori || null; // 1.6.0 (ayarlar-kategori.js): solda kategori menüsü, sağda tek kategori; yoksa tek uzun sayfa
   const Dil = window.EvDil || null;
   const SozlukAyarlar = window.EvCeviriAyarlar || null;
   const SozlukAna = window.EvCeviriAna || null;
@@ -481,13 +482,19 @@
   };
 
   // Bölüm bağlantıları: [bağlantı, bölüm, odaklanacak başlık]
+  // 1.6.0: menü bağlantıları kategorilerdir (ayarlar-kategori.js); hedef, kategorinin ilk bölümü. Katlanır bölümde başlık yok (null):
+  // bölüm açılır ve özet satırına odaklanılır.
   const BOLUM_BAGLARI = [
     ['gezinBaglanti', 'bolumBaglanti', 'baglantiBaslik'],
     ['gezinFavoriler', 'bolumFavoriler', 'favorilerBaslik'],
-    ['gezinKisayollar', 'bolumKisayollar', 'kisayollarBaslik'],
     ['gezinGorunum', 'bolumGorunum', 'gorunumBaslik'],
-    ['gezinAnahtar', 'bolumAnahtar', 'anahtarBaslik'],
-    ['gezinDiger', 'bolumDiger', 'bolumDiger'],
+    ['gezinPencere', 'bolumPencere', null],
+    ['gezinKisayollar', 'bolumKisayollar', 'kisayollarBaslik'],
+    ['gezinBildirimler', 'bolumGeriBildirim', null],
+    ['gezinKartlar', 'bolumBilgi', null],
+    ['gezinOtomasyon', 'bolumEtkinlik', null],
+    ['gezinYedek', 'bolumYedek', null],
+    ['gezinHakkinda', 'bolumSurum', null],
     ['kurulumAdresLink', 'bolumBaglanti', 'baglantiBaslik'],
     ['kurulumAnahtarLink', 'bolumAnahtar', 'anahtarBaslik'],
     ['kurulumFavoriLink', 'bolumFavoriler', 'favorilerBaslik'],
@@ -560,6 +567,22 @@
 
   function bolumeGit(bolumKimligi, baslikKimligi) {
     const bolum = $(bolumKimligi);
+    if (kategoriler) {
+      if (ayarAra.value !== '') ayarAramasiniTemizle(); // menüden kategori seçmek aramayı bırakır
+      kategoriler.ogeyiGoster(bolum);
+    }
+    if (!baslikKimligi && String(bolum.tagName).toLowerCase() === 'details') {
+      // 1.6.0: kategorinin ilk bölümü katlanırsa açılır, odak özet satırına gider
+      bolum.open = true;
+      const ozet = typeof bolum.querySelector === 'function' ? bolum.querySelector('summary') : null;
+      try {
+        bolum.scrollIntoView({ behavior: kaydirmaDavranisi(), block: 'start' });
+      } catch {
+        /* kaydırma desteklenmiyor */
+      }
+      if (ozet) odakla(ozet);
+      return;
+    }
     try {
       bolum.scrollIntoView({ behavior: kaydirmaDavranisi(), block: 'start' });
     } catch {
@@ -609,6 +632,7 @@
     const ad = adlar.find(function (a) { return ALAN_KUTULARI[a]; });
     if (!ad) return;
     const girdi = ALAN_KUTULARI[ad].girdi;
+    if (kategoriler) kategoriler.ogeyiGoster(girdi); // hatalı alan başka kategorideyse oraya geçilir
     try {
       girdi.scrollIntoView({ behavior: kaydirmaDavranisi(), block: 'center' });
     } catch {
@@ -1391,6 +1415,8 @@
   // Süzme mantığı lib/ayar-arama.js'tedir (sayfadaki .bolum ve .form-grubu öğelerini sınıfla gizler); burada yalnız kutu, durum satırı ve
   // klavye bağlanır. Arama sayfadaki GÖRÜNEN metne bakar: dil değişince ya da metinler yeniden yazılınca aynı sorgu yeniden uygulanır.
   let ayarAramasi = null; // ilk yazışta kurulur
+  // 1.6.0 kategori menüsü (ayarlar-kategori.js); modül yüklenemezse null ve sayfa tek uzun sayfa olarak çalışır
+  const kategoriler = KategoriModulu ? KategoriModulu.olustur({ belge: document, t: function (anahtar) { return t(anahtar); } }) : null;
   let aramaSonucu = null; // son sonuç: { aktif, bolumSayisi, ilk }
 
   function aramaDurumunuYaz() {
@@ -1405,6 +1431,7 @@
     if (!AyarArama || !Arama || typeof document.querySelectorAll !== 'function') return;
     if (!ayarAramasi) ayarAramasi = AyarArama.olustur({ belge: document, katla: Arama.katlaDizi });
     aramaSonucu = ayarAramasi.uygula(ayarAra.value);
+    if (kategoriler) kategoriler.aramaAyarla(aramaSonucu.aktif); // arama sürerken bütün kategoriler görünür
     btnAyarAraTemizle.style.display = aramaSonucu.aktif ? 'inline-flex' : 'none';
     aramaDurumunuYaz();
   }
@@ -3244,6 +3271,7 @@
     if (ACILABILIR_BOLUMLER.indexOf(kimlik) < 0) return;
     if (ayarAra.value !== '') ayarAramasiniTemizle();
     const bolum = $(kimlik);
+    if (kategoriler) kategoriler.ogeyiGoster(bolum);
     bolum.open = true;
     try {
       bolum.scrollIntoView({ behavior: kaydirmaDavranisi(), block: 'start' });
@@ -3998,6 +4026,7 @@
   /** İlk hatalı kural alanına odaklanır (bölüm açılır). */
   function ilkHataliKuralaOdaklan() {
     $('bolumBildirimler').open = true;
+    if (kategoriler) kategoriler.ogeyiGoster($('bolumBildirimler'));
     for (let i = 0; i < kurallar.length; i += 1) {
       const alanlar = Object.keys(kurallar[i].hata);
       if (alanlar.length === 0 || !kuralOgeleri[i]) continue;
@@ -4643,6 +4672,7 @@
       bolumeGit(bag[1], bag[2]);
     });
   });
+  if (kategoriler) kategoriler.kur(); // 1.6.0: ilk kategori seçili, uzun yardım metinleri kısaltılmış başlar
 
   // Klavye: Ctrl+S kaydeder, Esc kapatır (kaydedilmemiş değişiklik varsa pencere sorar), Ctrl +/-/0 yakınlaştırır.
   document.addEventListener('keydown', function (olay) {

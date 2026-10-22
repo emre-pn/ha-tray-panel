@@ -1522,6 +1522,285 @@
         transition: none;
       }
     }
+
+    /* ---- 1.6.0 düzen -------------------------------------------------------------------------------------------------------------
+       Windows 11 Ayarlar gibi: solda kategori menüsü (arama kutusu üstte), sağda yalnız seçili kategori (ayarlar-kategori.js; öbür
+       kategorilerin bölümleri kategori-disi sınıfıyla gizlenir). Bölümler gruplanmış satırlardır: ayarlar arasında ince çizgi, aç/kapa
+       ayarları sağda anahtar düğmesi, uzun yardım metni iki satır + "Ayrıntı". Dar pencerede menü üstte yatay şerittir. */
+    .kategori-disi {
+      display: none !important;
+    }
+
+    .grup-baslik {
+      display: none;
+    }
+
+    .kategori-baslik {
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      line-height: 1.25;
+      margin: 2px 0 16px;
+      text-wrap: balance;
+    }
+
+    .kategori-baslik:focus {
+      outline: none;
+    }
+
+    .gezin-ikon {
+      flex: none;
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .bolum-gezinti a {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      font-size: 13.5px;
+      font-weight: 400;
+      color: var(--text-main);
+      background: transparent;
+      border: 0;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .bolum-gezinti a:hover {
+      background: var(--hover-row);
+    }
+
+    .bolum-gezinti a[aria-current="page"] {
+      font-weight: 600;
+      background: var(--btn2-bg);
+    }
+
+    .bolum-gezinti a[aria-current="page"]::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 3px;
+      height: 16px;
+      margin-top: -8px;
+      border-radius: 2px;
+      background: var(--primary);
+    }
+
+    .bolum {
+      border-radius: 8px;
+      padding: 18px 20px;
+      margin-bottom: 12px;
+    }
+
+    details.bolum > summary {
+      padding: 14px 20px;
+    }
+
+    details.bolum > .bolum-icerik {
+      padding: 0 20px 18px;
+    }
+
+    .form-grubu {
+      margin-bottom: 0;
+    }
+
+    .bolum .form-grubu + .form-grubu {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--card-border);
+    }
+
+    /* Aç/kapa ayarları: metin solda, Windows 11 anahtar düğmesi sağda (onay kutusunun kendisi; davranış ve erişilebilirlik aynı) */
+    .checkbox-etiket {
+      flex-direction: row-reverse;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 30px;
+    }
+
+    .checkbox-etiket input[type="checkbox"] {
+      appearance: none;
+      position: relative;
+      flex: none;
+      width: 40px;
+      height: 20px;
+      margin: 0;
+      border: 1px solid var(--text-muted);
+      border-radius: 10px;
+      background: transparent;
+    }
+
+    .checkbox-etiket input[type="checkbox"]::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 3px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .checkbox-etiket input[type="checkbox"]:checked {
+      border-color: var(--primary-btn);
+      background: var(--primary-btn);
+    }
+
+    .checkbox-etiket input[type="checkbox"]:checked::before {
+      transform: translateX(20px);
+      background: #ffffff;
+    }
+
+    .checkbox-etiket input[type="checkbox"]:disabled {
+      opacity: 0.5;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .checkbox-etiket input[type="checkbox"]::before {
+        transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), background-color 0.1s;
+      }
+    }
+
+    .ipucu-kisa {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+
+    .ipucu-ac {
+      margin-top: 2px;
+      padding: 2px 0;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      background: none;
+      border: 0;
+      cursor: pointer;
+    }
+
+    .ipucu-ac::after {
+      content: " ▾";
+    }
+
+    .ipucu-ac[aria-expanded="true"]::after {
+      content: " ▴";
+    }
+
+    @media (min-width: 760px) {
+      body {
+        padding: 0;
+      }
+
+      .sayfa {
+        display: grid;
+        grid-template-columns: 256px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto; /* kısa kategoride boşluk içerikte kalır, kaydet çubuğu alta yapışık ve ince */
+        min-height: 100vh;
+        max-width: none;
+      }
+
+      .ust-serit {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        align-self: start;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        height: 100vh;
+        overflow-y: auto;
+        margin: 0;
+        padding: 18px 12px;
+        border-bottom: 0;
+        border-right: 1px solid var(--card-border);
+        background: var(--card-bg);
+      }
+
+      .sayfa-baslik {
+        margin: 0 8px 8px;
+      }
+
+      .sayfa-baslik h1 {
+        font-size: 15px;
+      }
+
+      .ayar-ara {
+        order: 1;
+        margin: 0 2px 2px;
+      }
+
+      .ayar-ara-durum {
+        order: 2;
+        margin: 0 8px 6px;
+      }
+
+      .bolum-gezinti {
+        order: 3;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        gap: 2px;
+      }
+
+      .bildirim-seridi {
+        position: fixed;
+        bottom: 72px; /* kaydet çubuğunun hemen üstü: kategori başlığını örtmez */
+        left: 292px;
+        right: 36px;
+        z-index: 30;
+        max-width: 860px;
+        margin: 0;
+        padding: 6px;
+        border: 1px solid var(--card-border);
+        border-radius: 10px;
+        background: var(--bg); /* şerit başlığın ve kartların üstünde durur: yarı saydam bildirim rengi altını göstermesin */
+      }
+
+      main {
+        grid-column: 2;
+        grid-row: 1;
+        width: 100%;
+        max-width: 940px;
+        padding: 24px 36px 8px;
+      }
+
+      .kaydet-cubugu {
+        grid-column: 2;
+        grid-row: 2;
+        align-self: end;
+        padding: 10px 36px 12px;
+      }
+    }
+
+    @media (max-width: 759px) {
+      .bolum-gezinti {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: thin;
+      }
+
+      .bolum-gezinti a {
+        padding: 6px 10px;
+        gap: 8px;
+      }
+
+      .bolum-gezinti a[aria-current="page"]::before {
+        display: none;
+      }
+
+      .kategori-baslik {
+        font-size: 22px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1535,12 +1814,16 @@
       <h1 data-i18n="ayar.baslik">Ev Paneli Ayarları</h1>
     </div>
     <nav class="bolum-gezinti" aria-label="Ayar bölümleri" data-i18n-attr="aria-label:ayar.gezin.etiket">
-      <a id="gezinBaglanti" href="#bolumBaglanti"><span data-i18n="ayar.gezin.baglanti">Bağlantı</span></a>
-      <a id="gezinFavoriler" href="#bolumFavoriler"><span data-i18n="ayar.gezin.favoriler">Favoriler</span></a>
-      <a id="gezinKisayollar" href="#bolumKisayollar"><span data-i18n="ayar.gezin.kisayollar">Kısayollar</span></a>
-      <a id="gezinGorunum" href="#bolumGorunum"><span data-i18n="ayar.gezin.gorunum">Görünüm</span></a>
-      <a id="gezinAnahtar" href="#bolumAnahtar"><span data-i18n="ayar.gezin.anahtar">Anahtar</span></a>
-      <a id="gezinDiger" href="#bolumDiger"><span data-i18n="ayar.gezin.diger">Diğer</span></a>
+      <a id="gezinBaglanti" href="#bolumBaglanti"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span data-i18n="ayar.gezin.baglanti">Bağlantı</span></a>
+      <a id="gezinFavoriler" href="#bolumFavoriler"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg><span data-i18n="ayar.gezin.favoriler">Favoriler</span></a>
+      <a id="gezinGorunum" href="#bolumGorunum"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.7-1 1.2-1.9-.5-1 .2-2.1 1.3-2.1H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10zM7.5 11h.01M10 7.5h.01M14.5 7.5h.01"/></svg><span data-i18n="ayar.gezin.gorunum">Görünüm</span></a>
+      <a id="gezinPencere" href="#bolumPencere"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M3.5 5h17v14h-17zM3.5 9h17"/></svg><span data-i18n="ayar.gezin.pencere">Panel ve pencere</span></a>
+      <a id="gezinKisayollar" href="#bolumKisayollar"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M3 7h18v10H3zM7 10.5h.01M11 10.5h.01M15 10.5h.01M8 14h8"/></svg><span data-i18n="ayar.gezin.kisayollar">Kısayollar</span></a>
+      <a id="gezinBildirimler" href="#bolumGeriBildirim"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/></svg><span data-i18n="ayar.gezin.bildirimler">Bildirimler</span></a>
+      <a id="gezinKartlar" href="#bolumBilgi"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M4 5h7v6H4zM13 5h7v14h-7zM4 13h7v6H4z"/></svg><span data-i18n="ayar.gezin.kartlar">Kartlar ve kamera</span></a>
+      <a id="gezinOtomasyon" href="#bolumEtkinlik"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></svg><span data-i18n="ayar.gezin.otomasyon">Otomasyon</span></a>
+      <a id="gezinYedek" href="#bolumYedek"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M4 7h16v4H4zM6 11v8h12v-8M10 15h4"/></svg><span data-i18n="ayar.gezin.yedek">Yedek ve eşitleme</span></a>
+      <a id="gezinHakkinda" href="#bolumSurum"><svg class="gezin-ikon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 11v5M12 8h.01"/></svg><span data-i18n="ayar.gezin.hakkinda">Hakkında</span></a>
     </nav>
     <div class="ayar-ara" role="search">
       <input type="text" id="ayarAra" placeholder="Ayarlarda ara…  (Ctrl+F)" aria-label="Ayarlarda ara" aria-describedby="ayarAramaDurum" spellcheck="false" autocomplete="off" data-i18n-attr="placeholder:ayar.ara.yerTutucu;aria-label:ayar.ara.etiket">
@@ -1554,6 +1837,9 @@
   </header>
 
   <main>
+
+  <!-- 1.6.0: seçili kategorinin başlığı (ayarlar-kategori.js menüdeki bağlantının metnini ve çeviri anahtarını yazar) -->
+  <h2 class="kategori-baslik" id="kategoriBaslik" tabindex="-1" data-i18n="ayar.gezin.baglanti">Bağlantı</h2>
 
   <!-- İLK KURULUM: anahtar ya da favori yoksa üç adımlık liste (k-03) -->
   <section class="kurulum-listesi" id="kurulumListesi" aria-labelledby="kurulumBaslik" style="display: none;">
@@ -2863,6 +3149,7 @@ Content-Type: application/json
   <script src="ayarlar-esitleme.js"></script>
   <script src="lib/ayar-arama.js"></script>
   <script src="ayarlar-dis.js"></script>
+  <script src="ayarlar-kategori.js"></script>
   <script src="ayarlar.js"></script>
 </body>
 </html>

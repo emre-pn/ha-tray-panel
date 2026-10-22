@@ -7,6 +7,7 @@ const {
   ANAHTAR_SILME_ONAY_METNI,
   ANAHTAR_SILINDI_METNI,
   basariMetni,
+  basariOzeti,
   gonderildiMetni,
   hataBildirimiMetni,
 } = require('../src/lib/bildirim-metni');
@@ -207,4 +208,16 @@ test('h-37: Ayarlar çökme ve açılış hatası metinleri kullanıcıya ne old
 test('k-20: dış bağlantı bilgisi kısa, “HA panosu”ndan ayrı bir iş olduğunu karıştırmaz', () => {
   assert.equal(metinler.TARAYICIDA_ACILDI_METNI, 'Tarayıcıda açıldı');
   assert.equal(metinler.EPOSTA_ACILDI_METNI, 'E-posta uygulamasında açıldı');
+});
+
+test('basariOzeti (1.6.0): alt satır yalnız ne olduğunu söyler; açık yalnız gerçekten açıldıysa', () => {
+  assert.deepEqual(basariOzeti('scene', 'unknown', 'unknown'), { alt: 'Sahne etkinleştirildi', acik: false });
+  assert.deepEqual(basariOzeti('script', 'off', 'off'), { alt: 'Script çalıştırıldı', acik: false });
+  assert.deepEqual(basariOzeti('button', 'unknown', 'unknown'), { alt: 'Düğmeye basıldı', acik: false });
+  assert.deepEqual(basariOzeti('input_button', 'unknown', 'unknown'), { alt: 'Düğmeye basıldı', acik: false });
+  assert.deepEqual(basariOzeti('light', 'off', 'on'), { alt: 'Açıldı', acik: true });
+  assert.deepEqual(basariOzeti('light', 'on', 'off'), { alt: 'Kapatıldı', acik: false });
+  assert.deepEqual(basariOzeti('switch', 'on', 'on'), { alt: 'Kapatma komutu gönderildi', acik: false }, 'durum değişmediyse yalnız komut');
+  assert.deepEqual(basariOzeti('switch', 'off', 'off'), { alt: 'Açma komutu gönderildi', acik: false });
+  assert.deepEqual(basariOzeti('fan', 'unknown', 'unknown'), { alt: 'Açma komutu gönderildi', acik: false });
 });

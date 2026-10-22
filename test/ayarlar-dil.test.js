@@ -43,7 +43,8 @@ const {
 const KOK = path.join(__dirname, '..');
 // Ayarlar'ın metin yazan betikleri: ayarlar.js, düzen bölümü (ayarlar-duzen.js; 1.4.0), eylem bölümü (ayarlar-eylem.js; eylem grubu), Dış tetikler bölümü
 // (ayarlar-dis.js; 1.4.0 dis grubu) ve bağlantı katmanı bölümleri (ayarlar-baglanti/sertifika/oturum/esitleme.js; 1.4.0 bağlantı grubu). Sözlük taramaları hepsini birlikte görür.
-const BETIK = `${ANA_BETIK}\n${DUZEN_BETIK}\n${EYLEM_BETIK}\n${DIS_BETIK}\n${BAGLANTI_BETIK}\n${SERTIFIKA_BETIK}\n${OTURUM_BETIK}\n${ESITLEME_BETIK}`;
+const BETIK = `${ANA_BETIK}\n${DUZEN_BETIK}\n${EYLEM_BETIK}\n${DIS_BETIK}\n${BAGLANTI_BETIK}\n${SERTIFIKA_BETIK}\n${OTURUM_BETIK}\n${ESITLEME_BETIK}
+${fs.readFileSync(path.join(KOK, 'src', 'ayarlar-kategori.js'), 'utf8')}`; // 1.6.0 kategori menüsü ("Ayrıntı" düğmesi)
 const TURKCE_HARF = /[çğıöşüÇĞİÖŞÜ]/;
 /** Almanca (ö ü), Fransızca (ç) ve İspanyolcada geçerli olan ç ö ü hariç, yalnız Türkçede bulunan harfler. */
 const TURKCE_OZEL_HARF = /[ğĞıİşŞ]/;
@@ -121,7 +122,7 @@ test('ayarlar.html: dil seçici Görünüm bölümünde; "Dil / Language" etiket
   const betikler = [...HTML.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
   assert.deepEqual(betikler, [
     'lib/dil.js', 'lib/ceviri/ana.js', 'lib/ceviri/ayarlar.js', 'lib/kisayol.js', 'lib/arama.js', 'lib/tema-renk.js',
-    'lib/karo-gorunum.js', 'lib/duzen-islemleri.js', 'ayarlar-duzen.js', 'ayarlar-eylem.js', 'ayarlar-baglanti.js', 'ayarlar-sertifika.js', 'ayarlar-oturum.js', 'ayarlar-esitleme.js', 'lib/ayar-arama.js', 'ayarlar-dis.js', 'ayarlar.js',
+    'lib/karo-gorunum.js', 'lib/duzen-islemleri.js', 'ayarlar-duzen.js', 'ayarlar-eylem.js', 'ayarlar-baglanti.js', 'ayarlar-sertifika.js', 'ayarlar-oturum.js', 'ayarlar-esitleme.js', 'lib/ayar-arama.js', 'ayarlar-dis.js', 'ayarlar-kategori.js', 'ayarlar.js',
   ]);
   assert.match(HTML, /<html lang="tr">/);
 });
@@ -499,7 +500,7 @@ test('İngilizce açılış: tam durumla (favoriler, sıra, HA panoları, yedekl
   assert.equal(h1.textContent, 'Home Panel Settings');
   assert.equal(sayfa.ceviriOgeleri.find((o) => o.etiket === 'title').textContent, ANA.en['uygulama.ayarlarBaslik']);
   assert.equal(sayfa.ceviriOgeleri.find((o) => o.etiket === 'nav').getAttribute('aria-label'), 'Settings sections');
-  assert.equal(sayfa.ceviriOgeleri.find((o) => o.getAttribute('data-i18n') === 'ayar.gezin.anahtar').textContent, 'Access token');
+  assert.equal(sayfa.ceviriOgeleri.find((o) => o.getAttribute('data-i18n') === 'ayar.gezin.hakkinda').textContent, 'About');
   assert.equal(sayfa.oge('yedekListesi').bul((o) => o.className === 'yedek-satir').length, 2);
 
   const gorunur = gorunurMetinler(sayfa);

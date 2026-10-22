@@ -9,6 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 const path = require('node:path');
+const fs = require('node:fs');
 const { EventEmitter } = require('node:events');
 
 const KOK = path.join(__dirname, '..', 'src');
@@ -538,4 +539,36 @@ test('köşe bildirimi: bilinmeyen tür ok sayılır (bilgi yalnız açıkça is
   } finally {
     o.temizle();
   }
+});
+
+test('köşe bildirimi (1.6.0): eylem özeti sayfaya gider; başlık kısalır, bilinmeyen alan düşer, bilgi ve eksik özet yok sayılır', async () => {
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'Ampul kapatıldı', ozet: { baslik: 'Ampul', alt: 'Kapatıldı', alan: 'light', acik: false } });
+    await o.akit();
+    assert.deepEqual(o.mesajlar(o.pencereler[0]), [{ tur: 'ok', metin: 'Ampul kapatıldı', ozet: { baslik: 'Ampul', alt: 'Kapatıldı', alan: 'light', acik: false }, sureMs: 1500, malzeme: 'yok' }]);
+    o.kose.goster({ tur: 'hata', metin: 'x', ozet: { baslik: 'K'.repeat(90), alt: 'Yapılamadı', alan: 'lock', acik: true } });
+    const hata = o.mesajlar(o.pencereler[0]).at(-1).ozet;
+    assert.ok(hata.baslik.length <= 60, 'başlık 60 karaktere kısalır');
+    assert.equal(hata.alan, null, 'listede olmayan alan simgesiz kalır');
+    assert.equal(hata.acik, true);
+    o.kose.goster({ tur: 'ok', metin: 'Yalnız metin', ozet: { baslik: 'Ampul', alt: '' } });
+    assert.equal('ozet' in o.mesajlar(o.pencereler[0]).at(-1), false, 'alt satır boşsa özet yok, tek satır');
+    o.kose.goster({ tur: 'ok', metin: 'Dizi', ozet: 'metin' });
+    assert.equal('ozet' in o.mesajlar(o.pencereler[0]).at(-1), false, 'nesne olmayan özet yok sayılır');
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi (1.6.0): bilgi türünde özet kayda girmez (kaynak bekçisi), pencere açılamasa da çökmez', () => {
+  const o = kur({ yuklemeSonucu: 'red' });
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'Ampul açıldı', ozet: { baslik: 'Ampul', alt: 'Açıldı', alan: 'light', acik: true } });
+    o.kose.goster({ tur: 'bilgi', metin: 'Çamaşır bitti', simge: 'i', ozet: { baslik: 'a', alt: 'b' } });
+  } finally {
+    o.temizle();
+  }
+  const kaynak = fs.readFileSync(path.join(KOK, 'kose-bildirim.js'), 'utf8');
+  assert.match(kaynak, /const ozetTemiz = bilgi \? null : ozetDuzelt\(ozet\);/);
 });

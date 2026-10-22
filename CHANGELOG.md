@@ -2,6 +2,28 @@
 
 Release notes before 1.3.0 are in Turkish. / 1.3.0 öncesi sürüm notları Türkçedir.
 
+### 1.6.0 — 2026-10-22
+
+Update with "Check now" in Settings or "Check for updates" in the tray menu, or by running `Ev-Paneli-Kurulum-1.6.0.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. This release changes how the corner notification and the Settings window look. The code is checked with `npm test` and `npm run kontrol`, and both were viewed with sample data in a browser; they have not been tried in the installed app yet.
+
+**A new corner notification**
+
+- **Two lines:** After you run a favorite, the notification shows the device name on top and what happened below it, for example "Turned off" or "Brightness 80%".
+- **The device's own icon:** A light shows a bulb, a plug shows a plug, and so on, with a small ✓ or ! badge on the icon. The icon circle turns amber when the device was turned on. Errors are red and say why.
+- **Time bar:** A thin line at the bottom shrinks while the notification is visible.
+- **Motion:** The notification slides in from the corner with a little spring, and the icon pops in after it.
+- Notification center and alert rule notifications keep their single line. The notification still takes no clicks; undo stays in the panel and on its shortcut.
+
+**A simpler Settings window**
+
+- **Categories on the left:** Connection, Favorites, Appearance, Panel and window, Shortcuts, Notifications, Cards and camera, Automation, Backup and sync, and About. Only the chosen category is shown, with its name as the page title.
+- **Switches:** On/off settings use switches instead of check boxes.
+- **Shorter help:** Long help text under a setting shows two lines; "Details" opens the rest.
+- **Search still covers everything:** While you search, matches from all categories are shown. If a setting needs fixing when you save, Settings opens its category.
+- **More room:** The window opens wider (1040 px). In a narrow window the categories move to a row at the top.
+
+The notification's motion turns off with "Reduce motion" in Settings or with the Windows animation effects setting. The switches in Settings slide only when Windows animation effects are on.
+
 ### 1.5.0 — 2026-10-22
 
 Update with "Check now" in Settings or "Check for updates" in the tray menu, or by running `Ev-Paneli-Kurulum-1.5.0.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. This release changes how the quick panel looks and moves. The code is checked with `npm test` and `npm run kontrol`, and the panel was viewed with sample data in a browser; it has not been tried in the installed app yet.

@@ -1081,7 +1081,7 @@ ortamda('onay: "Çalıştır" denince tek POST gider, köşe bildirimi hemen ç�
   assert.equal(gonderilen[0].url, 'http://192.168.1.10:8123/api/services/button/press');
   assert.deepEqual(JSON.parse(gonderilen[0].govde), { entity_id: 'button.pc_bilgisayari_kapat' });
   assert.equal(gonderilen[0].basliklar.Authorization, `Bearer ${TEST_ANAHTAR}`);
-  assert.deepEqual(koseMesajlari(ortam), [{ tur: 'ok', metin: 'Düğmeye basıldı: Bilgisayarı Kapat', sureMs: 1500, malzeme: 'acrylic' }]);
+  assert.deepEqual(koseMesajlari(ortam), [{ tur: 'ok', metin: 'Düğmeye basıldı: Bilgisayarı Kapat', sureMs: 1500, malzeme: 'acrylic', ozet: { baslik: 'Bilgisayarı Kapat', alt: 'Düğmeye basıldı', alan: 'button', acik: false } }]);
   assert.deepEqual(ortam.durum.bildirimler, [], 'Windows bildirimi yalnız hatada');
   assert.equal(ortam.durum.bip, 0, 'bip varsayılan olarak kapalı');
 });

@@ -509,7 +509,8 @@ test('g-10: tek Kaydet çubuğu; anahtar kaydı ayrı; bölüm bağlantıları �
   assert.doesNotMatch(cubuk, /btnAnahtarKaydet/, 'anahtar düğmesi Kaydet çubuğunda değil');
 
   const baglar = [...HTML.matchAll(/<a id="gezin\w+" href="#(\w+)">/g)].map((m) => m[1]);
-  assert.deepEqual(baglar, ['bolumBaglanti', 'bolumFavoriler', 'bolumKisayollar', 'bolumGorunum', 'bolumAnahtar', 'bolumDiger']);
+  // 1.6.0: menü bağlantıları kategorilerdir (ayarlar-kategori.js); hedef kategorinin ilk bölümü
+  assert.deepEqual(baglar, ['bolumBaglanti', 'bolumFavoriler', 'bolumGorunum', 'bolumPencere', 'bolumKisayollar', 'bolumGeriBildirim', 'bolumBilgi', 'bolumEtkinlik', 'bolumYedek', 'bolumSurum']);
   for (const hedef of baglar) assert.match(HTML, new RegExp(`id="${hedef}"`));
 
   const katlananlar = [...HTML.matchAll(/<details class="bolum" id="(\w+)"/g)].map((m) => m[1]);
