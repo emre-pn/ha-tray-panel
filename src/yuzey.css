@@ -2731,6 +2731,11 @@ button.hero-hava:hover {
   border-radius: 50%;
 }
 
+/* Kapak yoksa ya da henüz gelmediyse gizli kalır; dairede renkli zemin görünür */
+.hap-kapak .kart-kapak[hidden] {
+  display: none;
+}
+
 .hap-govde {
   flex: 1 1 auto;
   min-width: 0;

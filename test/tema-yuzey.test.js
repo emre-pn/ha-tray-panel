@@ -499,4 +499,8 @@ test('1.7.0 panel düzeni: hero yalnız panelde (palette gizli); arayüz ikon ma
   // ışık satırının uç çizgisi dolgu kadar kayar (yalnız transform; --doluluk yuzey-sayfa.js'ten)
   assert.match(kural('.karo-uc', ''), /transform:\s*translateX\(calc\(var\(--doluluk, 0\) \* 100%\)\)/);
   assert.match(kural('.karo-uc', ''), /pointer-events:\s*none/);
+  // medya hapı: kapak yoksa gizli resim boş daire çizmez (blok kuralı [hidden]'ı ezmez); dairede renkli zemin kalır
+  const kapakSirasi = (secici) => YUZEY_KURALLARI.findIndex((k) => k.secici === secici && k.medya === '');
+  assert.match(kural('.hap-kapak .kart-kapak[hidden]', ''), /display:\s*none/);
+  assert.ok(kapakSirasi('.hap-kapak .kart-kapak[hidden]') > kapakSirasi('.hap-kapak .kart-kapak'), 'gizleme kuralı blok kuralından sonra gelir');
 });
