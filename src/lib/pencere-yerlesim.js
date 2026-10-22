@@ -109,8 +109,9 @@ const KOSE_ENGEL_BOSLUGU = 8; // bildirim açık panelin/paletin hemen üstüne 
  * küçükse sol üst köşeye yaslanır (pencere alan dışına taşmaz).
  *
  * `engel` (g-09): şu an açık olan hızlı panel/palet penceresinin sınırları. Varsayılan konum onunla kesişiyorsa (panel de tepsi
- * simgesinin yanında, yani sağ alt köşede açılır) bildirim panelin ÜSTÜNE taşınır; üstte yer yoksa panelin soluna; ikisine de
- * sığmıyorsa varsayılan konumda kalır (bildirim her zaman görünür olmalı). Kesişmiyorsa konum değişmez.
+ * simgesinin yanında, yani sağ alt köşede açılır) bildirim panelin ÜSTÜNE taşınır ve panelin üstünde yatayda ortalanır (çalışma alanı
+ * içinde kalacak kadar kaydırılır); üstte yer yoksa panelin soluna; ikisine de sığmıyorsa varsayılan konumda kalır (bildirim her zaman
+ * görünür olmalı). Kesişmiyorsa konum değişmez.
  * @param {{x:number,y:number,width:number,height:number}|null} [engel]
  * @returns {{x:number,y:number,width:number,height:number}}
  */
@@ -122,7 +123,11 @@ function koseKonumu(workArea, boyut = KOSE_BOYUTU, marj = KOSE_MARJI, engel = nu
   const temel = { x: Math.max(Math.round(workArea.x), x), y: Math.max(Math.round(workArea.y), y), width, height };
   if (!sinirlarGecerli(engel) || !kesisir(temel, engel)) return temel;
   const ustY = Math.round(engel.y) - height - KOSE_ENGEL_BOSLUGU;
-  if (ustY >= Math.round(workArea.y)) return { ...temel, y: ustY };
+  if (ustY >= Math.round(workArea.y)) {
+    const ortaX = Math.round(engel.x + (engel.width - width) / 2);
+    const enSag = Math.round(workArea.x + workArea.width) - width;
+    return { ...temel, x: Math.max(Math.round(workArea.x), Math.min(ortaX, enSag)), y: ustY };
+  }
   const solX = Math.round(engel.x) - width - KOSE_ENGEL_BOSLUGU;
   if (solX >= Math.round(workArea.x)) return { ...temel, x: solX };
   return temel;

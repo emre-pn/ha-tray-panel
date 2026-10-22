@@ -269,7 +269,9 @@ test('animasyonlar: hareketi azalt ayarı (data-hareket) karo geçişlerini kapa
   const kural = (secici, medya = '') => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === medya).map((k) => k.govde).join(';');
   assert.match(kural(':root[data-hareket="azalt"] .karo'), /transition:\s*none/);
   assert.match(YUZEY_CSS, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.karo\s*\{\s*transition:\s*none/);
-  assert.match(KOSE_CSS, /:root\[data-hareket="azalt"\] \.bildirim\s*\{\s*transition:\s*none/);
+  // köşe bildirimi (1.6.1): kartın kendisi canlanmaz (pencere ana süreçte solar ve hareketi azalt'a uyar); içerik hareketi yalnız data-hareket yokken
+  assert.match(KOSE_CSS, /:root:not\(\[data-hareket\]\):not\(\[data-gecis\]\) \.bildirim\.gorunur \.yazi\s*\{\s*animation:\s*yazi-gir/);
+  assert.doesNotMatch(KOSE_CSS, /(^|\n)\s*\.bildirim\s*\{[^}]*(transition|animation)/);
   // geçiş animasyonu seçilmeden (data-gecis yok) :root[data-hareket] kuralı dışında hiçbir karo geçişi yeniden tanımlanmaz
   const gecisliKaro = YUZEY_KURALLARI.filter((k) => k.secici.startsWith(':root[data-gecis] .karo') && /transition/.test(k.govde));
   assert.ok(gecisliKaro.every((k) => k.medya === HAREKET_VAR));

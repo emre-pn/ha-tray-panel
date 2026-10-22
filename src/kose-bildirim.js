@@ -12,7 +12,7 @@
  */
 
 const path = require('node:path');
-const { screen } = require('electron');
+const { screen, systemPreferences } = require('electron');
 const { yerelPencereOlustur, malzemeUygula } = require('./yerel-pencere');
 const { KOSE_BOYUTU, koseKonumu } = require('./lib/pencere-yerlesim');
 const { kisalt } = require('./lib/metin');
@@ -26,7 +26,12 @@ const SURE_BILGI_MS = 6000;
 const BILGI_METIN_SINIRI = 140;
 const BILGI_SIMGE_SINIRI = 8;
 const BILGI_KUYRUK_SINIRI = 5;
-const GIZLEME_PAYI_MS = 150; // sayfadaki solma animasyonu bitsin
+// 1.6.1: pencere bütün olarak (zemin + içerik) solar; sayfa yalnız içeriği canlandırır. Akrilik zemin pencereye aittir: kart pencere
+// içinde kayıp solunca zemin yerinde kalıyor, şekil bozuk görünüyor ve sonda boş bir kutu kalıyordu.
+const ILK_KARE_MS = 34; // pencere saydam açılır: sayfa yeni bildirimi çizene dek gizliyken kalan ÖNCEKİ bildirimin karesi görünmesin
+const GIRIS_SOLMA_MS = 140;
+const CIKIS_SOLMA_MS = 120;
+const SOLMA_ADIMI_MS = 20;
 const METIN_SINIRI = 100;
 const ILK_YUKLEME_GECIKMESI_MS = 1000;
 const OZET_BASLIK_SINIRI = 60;
@@ -64,9 +69,99 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
   let kuyruk = []; // gösterilmeyi bekleyen 'bilgi' bildirimleri
   let gizlemeZamanlayicisi = null;
   let yuklemeZamanlayicisi = null;
+  let solmaZamanlayicisi = null;
+  let opaklik = 1; // pencereye son yazılan opaklık
+  let cikiyor = false; // pencere gizlenmek üzere soluyor (görünür sayılmaz: gelen bildirim solmayı keser)
   let uygulananOlcek = 1; // sayfaya son yazılan yakınlaştırma (yeni pencerede 1)
 
   const canliMi = () => !!pencere && !pencere.isDestroyed();
+
+  /** Ayarlar'da "Hareketi azalt" ya da Windows'ta animasyon efektleri kapalıysa pencere solmadan görünür ve gizlenir. */
+  function hareketAzaltildi() {
+    try {
+      if (gorunumAl()?.hareketiAzalt === true) return true;
+    } catch {
+      /* görünüm okunamadı: sistem ayarına bakılır */
+    }
+    try {
+      return systemPreferences?.getAnimationSettings?.().prefersReducedMotion === true;
+    } catch {
+      return false;
+    }
+  }
+
+  const opaklikDestekli = () => typeof pencere.setOpacity === 'function';
+
+  function opaklikYaz(deger) {
+    opaklik = deger;
+    try {
+      pencere.setOpacity(deger);
+    } catch {
+      /* desteklenmiyor: pencere opak kalır */
+    }
+  }
+
+  function solmayiDurdur() {
+    clearTimeout(solmaZamanlayicisi);
+    solmaZamanlayicisi = null;
+  }
+
+  /** Pencere opaklığını adım adım hedefe götürür (yumuşak bitiş); bitince `bitince` çağrılır. */
+  function solmaBaslat(hedef, sureMs, bitince) {
+    solmayiDurdur();
+    const bas = opaklik;
+    const adimSayisi = Math.max(1, Math.round(sureMs / SOLMA_ADIMI_MS));
+    let adim = 0;
+    const ilerle = () => {
+      if (!canliMi()) return;
+      adim += 1;
+      const oran = 1 - (1 - adim / adimSayisi) ** 2;
+      opaklikYaz(adim >= adimSayisi ? hedef : bas + (hedef - bas) * oran);
+      if (adim < adimSayisi) {
+        solmaZamanlayicisi = setTimeout(ilerle, SOLMA_ADIMI_MS);
+        return;
+      }
+      solmaZamanlayicisi = null;
+      if (bitince) bitince();
+    };
+    solmaZamanlayicisi = setTimeout(ilerle, SOLMA_ADIMI_MS);
+  }
+
+  /** Pencereyi gösterir: önce saydam (ILK_KARE_MS), sonra solarak (hareket azaltılmışsa birden) belirir. Görünürken çağrılırsa solmayı geri alır. */
+  function pencereyiGoster() {
+    cikiyor = false;
+    solmayiDurdur();
+    if (!opaklikDestekli()) {
+      if (!pencere.isVisible()) pencere.showInactive();
+      return;
+    }
+    const belir = () => (hareketAzaltildi() ? opaklikYaz(1) : solmaBaslat(1, GIRIS_SOLMA_MS));
+    if (pencere.isVisible()) {
+      if (opaklik < 1) belir();
+      return;
+    }
+    opaklikYaz(0);
+    pencere.showInactive(); // odak almadan göster
+    solmaZamanlayicisi = setTimeout(() => {
+      solmaZamanlayicisi = null;
+      if (canliMi()) belir();
+    }, ILK_KARE_MS);
+  }
+
+  /** Pencereyi gizler: solarak (hareket azaltılmışsa ya da opaklık desteklenmiyorsa hemen). */
+  function pencereyiGizle() {
+    solmayiDurdur();
+    if (!opaklikDestekli() || hareketAzaltildi()) {
+      cikiyor = false;
+      pencere.hide();
+      return;
+    }
+    cikiyor = true;
+    solmaBaslat(0, CIKIS_SOLMA_MS, () => {
+      cikiyor = false;
+      if (canliMi()) pencere.hide();
+    });
+  }
 
   /** Ayarlar > Görünüm > Metin boyutu çarpanı (geçersizse 1). */
   function metinOlcegi() {
@@ -98,6 +193,9 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
     if (pencere !== bu) return;
     gunluk(`Köşe bildirimi penceresi sıfırlandı (${neden}); sonraki bildirimde yeniden oluşturulacak.`);
     clearTimeout(gizlemeZamanlayicisi);
+    solmayiDurdur();
+    cikiyor = false;
+    opaklik = 1;
     const kayit = bekleyen;
     const sirada = kuyruk;
     bekleyen = null;
@@ -186,7 +284,7 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
     if (!canliMi()) return;
     const siradaki = kuyruk.shift();
     if (siradaki) gosterIc(siradaki);
-    else pencere.hide();
+    else pencereyiGizle();
   }
 
   function gosterIc(kayit) {
@@ -216,9 +314,9 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       else if (ozet) yuk.ozet = ozet;
       pencere.webContents.send('kose:goster', yuk);
       gorunenBilgi = bilgi ? kayit : null;
-      if (!pencere.isVisible()) pencere.showInactive(); // odak almadan göster
+      pencereyiGoster();
       clearTimeout(gizlemeZamanlayicisi);
-      gizlemeZamanlayicisi = setTimeout(sonraki, sureMs + GIZLEME_PAYI_MS);
+      gizlemeZamanlayicisi = setTimeout(sonraki, sureMs); // süre çizgisi bitince pencere solarak gizlenir (CIKIS_SOLMA_MS)
     } catch {
       gunluk('Köşe bildirimi gösterilemedi.');
     }
@@ -261,8 +359,9 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       if (!canliMi()) olustur();
       if (!canliMi()) return false;
       if (!bilgi) bilgiyiErtele();
-      if (bilgi && (bekleyen !== null || (yuklendi && pencere.isVisible()))) {
+      if (bilgi && (bekleyen !== null || (yuklendi && pencere.isVisible() && !cikiyor))) {
         // Bir bildirim zaten görünüyor (ya da yüklenmeyi bekliyor): bilgi sırasını bekler; sıra dolarsa en eskisi düşer.
+        // Pencere gizlenmek üzere soluyorsa sıra çoktan bitmiştir: bilgi hemen gösterilir (solma geri alınır).
         if (kuyruk.length >= BILGI_KUYRUK_SINIRI) kuyruk.shift();
         kuyruk.push(kayit);
         return true;
@@ -277,6 +376,8 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
     kapat() {
       clearTimeout(gizlemeZamanlayicisi);
       clearTimeout(yuklemeZamanlayicisi);
+      solmayiDurdur();
+      cikiyor = false;
       kuyruk = [];
       bekleyen = null;
       gorunenBilgi = null;

@@ -20,8 +20,12 @@ function onbellegiTemizle() {
   }
 }
 
-/** Sahte Electron + köşe bildirimi modülü. `yuklemeSonucu`: loadFile'ın sonucu ('tamam' | 'red' | 'bekle'). */
-function kur({ yuklemeSonucu = 'tamam', malzemeAl, engelAl, gorunumAl, metinOlcegiAl } = {}) {
+/**
+ * Sahte Electron + köşe bildirimi modülü. `yuklemeSonucu`: loadFile'ın sonucu ('tamam' | 'red' | 'bekle').
+ * `opaklik`: sahte pencere setOpacity destekler (1.6.1 pencere solması; yoksa pencere eskisi gibi birden görünür/gizlenir).
+ * `sistemAzalt`: Windows'ta animasyon efektleri kapalı (systemPreferences.getAnimationSettings).
+ */
+function kur({ yuklemeSonucu = 'tamam', malzemeAl, engelAl, gorunumAl, metinOlcegiAl, opaklik = false, sistemAzalt = false } = {}) {
   const pencereler = [];
   class SahteWebContents extends EventEmitter {
     constructor() {
@@ -94,9 +98,15 @@ function kur({ yuklemeSonucu = 'tamam', malzemeAl, engelAl, gorunumAl, metinOlce
     setAlwaysOnTop() {}
     setIgnoreMouseEvents() {}
   }
+  if (opaklik) {
+    SahtePencere.prototype.setOpacity = function setOpacity(deger) {
+      (this.opakliklar ??= []).push(deger);
+    };
+  }
   const sahte = {
     app: { isPackaged: true },
     BrowserWindow: SahtePencere,
+    systemPreferences: { getAnimationSettings: () => ({ prefersReducedMotion: sistemAzalt }) },
     screen: {
       getCursorScreenPoint: () => ({ x: 1, y: 1 }),
       getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1040 } }),
@@ -250,7 +260,7 @@ test('köşe bildirimi: açık panel sağ alt köşeyi örtüyorsa bildirim pane
     o.kose.goster({ tur: 'ok', metin: 'Birinci' });
     await o.akit();
     const p = o.pencereler[0];
-    assert.deepEqual(p.sinirlar.at(-1), { x: 1920 - 320 - 16, y: panel.y - 56 - 8, width: 320, height: 56 }, 'panelin hemen üstünde');
+    assert.deepEqual(p.sinirlar.at(-1), { x: panel.x + (panel.width - 320) / 2, y: panel.y - 56 - 8, width: 320, height: 56 }, 'panelin hemen üstünde, yatayda ortalı');
 
     engel = null; // panel kapandı
     o.kose.goster({ tur: 'ok', metin: 'İkinci' });
@@ -665,4 +675,101 @@ test('köşe bildirimi: kapat() bekleyen kaydı da sıfırlar; yeniden oluşan p
   } finally {
     o.temizle();
   }
+});
+
+// --- 1.6.1 pencere solması -----------------------------------------------------------------------------------------------
+// Kart pencere içinde canlanırken akrilik zemin sabit kalıyor, bildirim bitince bir an boş kutu görünüyordu. Artık pencere
+// bütün olarak (zemin + içerik) ana süreçte solar: saydam açılır, belirir; süre sonunda solar ve gizlenir.
+
+/** Sahte saati küçük adımlarla ilerletir: solma adımları birbirini zincirleme kurar (tek büyük tick yalnız ilkini çalıştırır). */
+function adimla(t, ms) {
+  for (let gecen = 0; gecen < ms; gecen += 5) t.mock.timers.tick(5);
+}
+
+const artan = (dizi) => dizi.every((v, i) => i === 0 || v >= dizi[i - 1]);
+const azalan = (dizi) => dizi.every((v, i) => i === 0 || v <= dizi[i - 1]);
+
+test('köşe bildirimi (1.6.1): pencere saydam açılır, solarak belirir; süre bitince solarak kaybolur ve ancak sonra gizlenir', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur({ opaklik: true });
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'Salon açıldı' });
+    await o.akit();
+    const p = o.pencereler[0];
+    assert.equal(p.gorunur, true);
+    assert.deepEqual(p.opakliklar, [0], 'ilk kare saydam: gizliyken kalan önceki bildirimin karesi görünmez');
+    adimla(t, 260);
+    assert.equal(p.opakliklar.at(-1), 1, 'belirdi');
+    assert.ok(p.opakliklar.length > 3 && artan(p.opakliklar), 'adım adım: ' + p.opakliklar.join(','));
+    const girisSonu = p.opakliklar.length;
+
+    adimla(t, 1500 - 260 + 50); // süre bitti, çıkış solması sürüyor
+    assert.equal(p.gorunur, true, 'solarken pencere hâlâ görünür');
+    const cikis = p.opakliklar.slice(girisSonu - 1);
+    assert.ok(cikis.at(-1) > 0 && cikis.at(-1) < 1, 'yarı saydam: ' + cikis.join(','));
+    adimla(t, 200);
+    assert.equal(p.gorunur, false, 'solma bitince gizlendi');
+    const tumCikis = p.opakliklar.slice(girisSonu - 1);
+    assert.equal(tumCikis.at(-1), 0);
+    assert.ok(azalan(tumCikis), tumCikis.join(','));
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi (1.6.1): pencere solarak gizlenirken gelen bilgi hemen gösterilir (sıraya takılmaz), solma geri alınır', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur({ opaklik: true });
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'Salon açıldı' });
+    await o.akit();
+    const p = o.pencereler[0];
+    adimla(t, 1500 + 50); // çıkış solması sürüyor
+    assert.ok(p.opakliklar.at(-1) < 1);
+    assert.equal(o.kose.goster({ tur: 'bilgi', metin: 'Çamaşır makinesi bitti', simge: 'i' }), true);
+    assert.equal(o.mesajlar(p).at(-1).tur, 'bilgi', 'beklemeden gönderildi');
+    adimla(t, 300);
+    assert.equal(p.gorunur, true, 'eski solmanın sonundaki gizleme çalışmadı');
+    assert.equal(p.opakliklar.at(-1), 1, 'yeniden belirdi');
+    adimla(t, 6000);
+    assert.equal(p.gorunur, false, 'bilginin süresi bitince solup gizlendi');
+  } finally {
+    o.temizle();
+  }
+});
+
+for (const [ad, secenek] of [
+  ['Ayarlar > Hareketi azalt', { gorunumAl: () => ({ hareketiAzalt: true }) }],
+  ['Windows animasyon efektleri kapalı', { sistemAzalt: true }],
+]) {
+  test(`köşe bildirimi (1.6.1): ${ad} ise pencere solmaz (ilk saydam kareden sonra birden görünür, süre sonunda hemen gizlenir)`, async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const o = kur({ opaklik: true, ...secenek });
+    try {
+      o.kose.goster({ tur: 'ok', metin: 'Salon açıldı' });
+      await o.akit();
+      const p = o.pencereler[0];
+      adimla(t, 100);
+      assert.deepEqual(p.opakliklar, [0, 1], 'ara adım yok');
+      adimla(t, 1500 - 100 + 5);
+      assert.equal(p.gorunur, false, 'süre biter bitmez gizlendi');
+      assert.deepEqual(p.opakliklar, [0, 1], 'çıkışta da solma yok');
+    } finally {
+      o.temizle();
+    }
+  });
+}
+
+test('köşe bildirimi (1.6.1): kapat() sürmekte olan solmayı durdurur (yok edilmiş pencereye yazılmaz)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur({ opaklik: true });
+  o.kose.goster({ tur: 'ok', metin: 'Salon açıldı' });
+  await o.akit();
+  const p = o.pencereler[0];
+  adimla(t, 60);
+  const sayi = p.opakliklar.length;
+  o.temizle();
+  assert.equal(p.yikik, true);
+  adimla(t, 400);
+  assert.equal(p.opakliklar.length, sayi);
 });

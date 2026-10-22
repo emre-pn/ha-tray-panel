@@ -257,21 +257,29 @@ function eylemKatmaniOlustur({
     return araDegerMi(istek);
   }
 
+  /** Bildirimde görünen ad (1.6.1): favorinin karo adı (Ayarlar > Favoriler > Karo adı) varsa o, yoksa HA'daki güncel ad. */
+  function gorunenAd(sonuc, istek) {
+    const etiket = favoriAl(istek?.kimlik)?.etiket;
+    if (typeof etiket === 'string' && etiket.trim()) return etiket.trim();
+    return sonuc.ad || istek?.kimlik || '';
+  }
+
   function basariBildir(sonuc, istek) {
     if (sessizMi(istek)) return;
+    const ad = gorunenAd(sonuc, istek);
     let metin;
     let ozet;
     if (sonuc.parlaklik !== undefined) {
-      metin = t('sonuc.parlaklik', { ad: kisalt(sonuc.ad, AD_SINIRI), yuzde: sonuc.parlaklik });
+      metin = t('sonuc.parlaklik', { ad: kisalt(ad, AD_SINIRI), yuzde: sonuc.parlaklik });
       ozet = { alt: t('sonuc.ozet.parlaklik', { yuzde: sonuc.parlaklik }), acik: true };
     } else if (sonuc.servisEylemi === true) {
-      metin = gonderildiMetni(sonuc.ad, t); // 1.4.0 servis eylemi: "komut gönderildi"
+      metin = gonderildiMetni(ad, t); // 1.4.0 servis eylemi: "komut gönderildi"
       ozet = { alt: t('sonuc.ozet.komut'), acik: false };
     } else {
-      metin = basariMetni(sonuc.alan, sonuc.ad, sonuc.onceki, sonuc.yeni, t);
+      metin = basariMetni(sonuc.alan, ad, sonuc.onceki, sonuc.yeni, t);
       ozet = basariOzeti(sonuc.alan, sonuc.onceki, sonuc.yeni, t);
     }
-    geriBildirim({ tur: 'ok', metin, ozet: { baslik: kisalt(sonuc.ad, AD_SINIRI), alan: sonuc.alan, ...ozet } });
+    geriBildirim({ tur: 'ok', metin, ozet: { baslik: kisalt(ad, AD_SINIRI), alan: sonuc.alan, ...ozet } });
   }
 
   /**
@@ -301,13 +309,13 @@ function eylemKatmaniOlustur({
     if (sonuc.tur === 'ha-hatasi' && sonuc.neden === 'gecikti') {
       // h-09 (1.2.0): komut HA'ya gitti ama yanıt gecikti (uzun sahne): "Yapılamadı" denmez; sonuç bilinmiyor.
       gunluk('Eylem yanıtı gecikti: ha-hatasi/gecikti');
-      if (!sessizMi(istek)) geriBildirim({ tur: 'ok', metin: `${kisalt(sonuc.ad || istek?.kimlik || '', AD_SINIRI)}: ${hataMetni({ tur: 'gecikti' }, t)}` });
+      if (!sessizMi(istek)) geriBildirim({ tur: 'ok', metin: `${kisalt(gorunenAd(sonuc, istek), AD_SINIRI)}: ${hataMetni({ tur: 'gecikti' }, t)}` });
       if (!canliMi()) Promise.resolve(durumlariYenile()).catch(() => {});
       return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
     }
     gunluk(`Eylem başarısız: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
     if (istek?.bildirim !== 'yok') {
-      const ad = kisalt(sonuc.ad || istek?.kimlik || '', AD_SINIRI);
+      const ad = kisalt(gorunenAd(sonuc, istek), AD_SINIRI);
       const metin = hataBildirimiMetni(eylemHataMetni(sonuc, t), t);
       geriBildirim({ tur: 'hata', metin, baslik: `${adAl()} — ${ad}`, ozet: { baslik: ad, alt: metin, alan: sonuc.alan || String(istek?.kimlik || '').split('.')[0], acik: false } });
     }

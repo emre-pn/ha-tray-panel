@@ -41,7 +41,6 @@
     input_button: GUC,
   };
   const Sozluk = window.EvCeviriYuzey;
-  let solma = null;
 
   /** Ana süreç etkin dili bildirdi ('dil:degisti'): sayfa başlığı ve <html lang> çevrilir. Geçersiz dil yok sayılır. */
   function dilUygula(yuk) {
@@ -123,15 +122,13 @@
     kutu.classList.toggle('ikili', !!ozet);
     kutu.classList.toggle('simgeli', !!simge);
     kutu.classList.toggle('acik', !!ozet && ozet.acik && !hata);
-    // Kalan süre çizgisi bu bildirimin süresince erir; art arda gelen bildirimde giriş hareketi baştan oynar (sınıf kaldırılıp yeniden eklenir)
+    // Kalan süre çizgisi bu bildirimin süresince erir; art arda gelen bildirimde giriş hareketi baştan oynar (sınıf kaldırılıp yeniden eklenir).
+    // 1.6.1: sayfa süre sonunda içeriği SOLDURMAZ: pencereyi ana süreç zeminiyle birlikte soldurup gizler (kose-bildirim.js). Sayfa
+    // soldursaydı akrilik zemin bir an boş kutu olarak kalırdı.
     if (sure && sure.style && typeof sure.style.setProperty === 'function') sure.style.setProperty('--sure', sureMs + 'ms');
     kutu.classList.remove('gorunur');
     void kutu.offsetWidth;
     kutu.classList.add('gorunur');
-    clearTimeout(solma);
-    solma = setTimeout(function () {
-      kutu.classList.remove('gorunur');
-    }, sureMs);
   }
 
   if (window.evKose && typeof window.evKose.onGoster === 'function') {

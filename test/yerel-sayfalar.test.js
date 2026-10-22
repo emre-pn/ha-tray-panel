@@ -20,7 +20,8 @@ class SahteOge {
     this.id = kimlik;
     this.children = [];
     this.dinleyiciler = {};
-    this.style = {};
+    // CSS özel özelliği (--sure gibi) setProperty ile yazılır; okunurken style['--ad'] (sayılamaz: style karşılaştırmalarını bozmaz)
+    this.style = Object.defineProperty({}, 'setProperty', { value(ad, deger) { this[ad] = String(deger); } });
     this.disabled = false;
     this.attributes = {};
     this.siniflar = new Set();
@@ -186,15 +187,16 @@ function koseKur() {
   return { ...sayfa, gonder: (yuk) => dinleyici(yuk) };
 }
 
-test('kose-sayfa.js: başarı bildirimi metni textContent ile yazar, görünür yapar ve süre sonunda gizler', () => {
+test('kose-sayfa.js: başarı bildirimi metni textContent ile yazar ve görünür yapar; süre sonunda gizlemeyi ana sürece bırakır (1.6.1)', () => {
   const s = koseKur();
   s.gonder({ tur: 'ok', metin: 'Salon Lambası açıldı', sureMs: 1500 });
   assert.equal(s.oge('metin').textContent, 'Salon Lambası açıldı');
   assert.equal(s.oge('bildirim').classList.contains('gorunur'), true);
   assert.equal(s.oge('bildirim').classList.contains('hata'), false);
-  assert.equal(s.zamanlayicilar.at(-1).ms, 1500);
-  s.zamanlayicilar.at(-1).fn();
-  assert.equal(s.oge('bildirim').classList.contains('gorunur'), false);
+  assert.equal(s.oge('sure').style['--sure'], '1500ms', 'kalan süre çizgisi bildirimin süresince erir');
+  // Sayfa kendi zamanlayıcısıyla içeriği soldurmaz: akrilik zemin bir an boş kutu olarak kalırdı. Pencere ana süreçte solup gizlenir.
+  assert.equal(s.zamanlayicilar.length, 0);
+  assert.equal(s.oge('bildirim').classList.contains('gorunur'), true);
 });
 
 test('kose-sayfa.js: hata görünümü, metin 200 karaktere kısalır, süre 0,5-10 sn aralığına sıkıştırılır, geçersiz yük yok sayılır', () => {
@@ -202,11 +204,11 @@ test('kose-sayfa.js: hata görünümü, metin 200 karaktere kısalır, süre 0,5
   s.gonder({ tur: 'hata', metin: 'x'.repeat(500), sureMs: 99_999 });
   assert.equal(s.oge('metin').textContent.length, 200);
   assert.equal(s.oge('bildirim').classList.contains('hata'), true);
-  assert.equal(s.zamanlayicilar.at(-1).ms, 10_000);
+  assert.equal(s.oge('sure').style['--sure'], '10000ms');
   s.gonder({ tur: 'ok', metin: 'a', sureMs: 1 });
-  assert.equal(s.zamanlayicilar.at(-1).ms, 500);
+  assert.equal(s.oge('sure').style['--sure'], '500ms');
   s.gonder({ tur: 'ok', metin: 'b', sureMs: Number.NaN });
-  assert.equal(s.zamanlayicilar.at(-1).ms, 1500);
+  assert.equal(s.oge('sure').style['--sure'], '1500ms');
   const once = s.oge('metin').textContent;
   s.gonder(null);
   s.gonder('metin');

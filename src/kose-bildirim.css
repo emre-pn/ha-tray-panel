@@ -58,13 +58,12 @@ body {
   font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
 }
 
-:root[data-malzeme],
-:root[data-malzeme] body {
+/*
+ * Zemin (akrilik/mica üstündeki yarı saydam ton ya da opak renk) BODY'dedir ve hiç canlanmaz: pencere bütün olarak ana süreçte solar
+ * (kose-bildirim.js). Kartın kendi zemini yok; kart pencere içinde kaysaydı zeminden kopar, kenarda farklı tonda şerit kalırdı (1.6.1).
+ */
+:root[data-malzeme] {
   background: transparent;
-}
-
-:root[data-malzeme] .bildirim {
-  background: var(--bg);
 }
 
 /*
@@ -79,12 +78,6 @@ body {
   height: 100%;
   padding: 0 16px 0 11px;
   overflow: hidden;
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-}
-
-.bildirim.gorunur {
-  opacity: 1;
 }
 
 /* Başarı ✓, hata ! (g-09): renk körlüğünde de ayırt edilir; simgeyi kose-sayfa.js yazar */
@@ -225,19 +218,14 @@ body {
   background: var(--bilgi);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .bildirim {
-    transition: none;
-  }
-}
-
 /*
- * 1.6.0 işlevsel hareket (varsayılan AÇIK; "Hareketi azalt" ya da Windows animasyon ayarı kapatır): bildirim hafif yaylı kayarak gelir,
- * simge yerine oturur, kalan süre çizgisi erir. Süs geçişi (data-gecis) açıkken onun kayması geçerlidir.
+ * 1.6.0 işlevsel hareket (varsayılan AÇIK; "Hareketi azalt" ya da Windows animasyon ayarı kapatır): yazı hafif yaylı kayarak gelir,
+ * simge yerine oturur, kalan süre çizgisi erir. Süs geçişi (data-gecis) açıkken onun kayması geçerlidir. 1.6.1: yalnız İÇERİK canlanır;
+ * zemin ve pencere ana süreçte birlikte solar.
  */
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-hareket]):not([data-gecis]) .bildirim.gorunur {
-    animation: kose-gir 380ms var(--yay-sert) both;
+  :root:not([data-hareket]):not([data-gecis]) .bildirim.gorunur .yazi {
+    animation: yazi-gir 340ms var(--yay-sert) 40ms both;
   }
 
   :root:not([data-hareket]) .bildirim.gorunur .isaret {
@@ -253,10 +241,10 @@ body {
   }
 }
 
-@keyframes kose-gir {
+@keyframes yazi-gir {
   from {
     opacity: 0;
-    transform: translateX(18px);
+    transform: translateX(10px);
   }
 
   to {
@@ -331,18 +319,16 @@ body {
   box-shadow: inset 0 0 0 2px var(--metin);
 }
 
-:root[data-hareket="azalt"] .bildirim {
-  transition: none;
-}
-
-/* Kozmetik geçiş (o-34, varsayılan KAPALI): bildirim sağdan kayarak girer. Yalnız :root[data-gecis] ve hareket azaltılmamışken. */
+/* Kozmetik geçiş (o-34, varsayılan KAPALI): yazı sağdan kayarak girer. Yalnız :root[data-gecis] ve hareket azaltılmamışken. */
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-gecis] .bildirim {
+  :root[data-gecis]:not([data-hareket]) .bildirim .yazi {
+    opacity: 0;
     transform: translateX(18px);
     transition: opacity 160ms ease-out, transform 160ms ease-out;
   }
 
-  :root[data-gecis] .bildirim.gorunur {
+  :root[data-gecis]:not([data-hareket]) .bildirim.gorunur .yazi {
+    opacity: 1;
     transform: none;
   }
 }

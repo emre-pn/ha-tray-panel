@@ -1081,7 +1081,8 @@ ortamda('onay: "Çalıştır" denince tek POST gider, köşe bildirimi hemen ç�
   assert.equal(gonderilen[0].url, 'http://192.168.1.10:8123/api/services/button/press');
   assert.deepEqual(JSON.parse(gonderilen[0].govde), { entity_id: 'button.pc_bilgisayari_kapat' });
   assert.equal(gonderilen[0].basliklar.Authorization, `Bearer ${TEST_ANAHTAR}`);
-  assert.deepEqual(koseMesajlari(ortam), [{ tur: 'ok', metin: 'Düğmeye basıldı: Bilgisayarı Kapat', sureMs: 1500, malzeme: 'acrylic', ozet: { baslik: 'Bilgisayarı Kapat', alt: 'Düğmeye basıldı', alan: 'button', acik: false } }]);
+  // 1.6.1: bildirimde favorinin karo adı (etiket) görünür; HA'daki ad ("Bilgisayarı Kapat") yalnız etiket boşsa
+  assert.deepEqual(koseMesajlari(ortam), [{ tur: 'ok', metin: 'Düğmeye basıldı: PC kapat', sureMs: 1500, malzeme: 'acrylic', ozet: { baslik: 'PC kapat', alt: 'Düğmeye basıldı', alan: 'button', acik: false } }]);
   assert.deepEqual(ortam.durum.bildirimler, [], 'Windows bildirimi yalnız hatada');
   assert.equal(ortam.durum.bip, 0, 'bip varsayılan olarak kapalı');
 });
@@ -1184,7 +1185,8 @@ ortamda('geri bildirim: köşe penceresi odak almaz (focusable:false), tıklamay
   assert.equal(kose.cagri.showInactive, 1);
   assert.equal(kose.secenekler.webPreferences.contextIsolation, true);
   assert.equal(kose.secenekler.webPreferences.sandbox, true);
-  ortam.ilerle(4000); // süre dolunca gizlenir
+  // süre dolunca pencere solarak gizlenir (1.6.1): solma adımları zincirlenir, saat küçük adımlarla ilerler
+  for (let gecen = 0; gecen < 4000; gecen += 20) ortam.ilerle(20);
   assert.equal(kose.gorunur, false);
 });
 
