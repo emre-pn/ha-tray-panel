@@ -12,7 +12,8 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 
 ## Özellikler
 
-- Tepsi simgesinden açılan hızlı panel: ışıklar (hazır parlaklık düğmeleri ve kaydırıcıyla), sahneler, medya ve bilgisayar eylemleri, bir de "son kullanılanlar" satırı.
+- Tepsi simgesinden açılan hızlı panel: ışıklar (hazır parlaklık düğmeleri ve kaydırıcıyla), sahneler, medya ve bilgisayar eylemleri, bir de "son kullanılanlar" satırı. Her karonun simgesi yuvarlak bir rozette durur, ışık karosu parlaklığı kadar dolar, Home Assistant'ın yanıtı ✓ ya da ! rozetiyle görünür.
+- Her eylemden sonra köşede küçük bir bildirim: cihazın simgesi, adı ve ne olduğu (örneğin "Kapatıldı" ya da "Parlaklık %80").
 - Bulanık aramalı komut paleti (`Ctrl+Alt+P`). `masa 40` yazınca ışık %40 olur, `masa 0` kapatır.
 - Ana pencere, palet, her favori ve her HA panosu için genel kısayollar. Kısayol kutuları bastığın tuşları kendisi yazar.
 - HA panon, odağı kaybedince gizlenen dar ya da geniş bir pencerede.
@@ -31,7 +32,7 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 - İstersen Home Assistant mobil uygulaması olarak kayıt: `notify.mobile_app_*` bildirimleri düğmeleriyle bilgisayarına gelir.
 - Zor kurulumlar için bağlantı seçenekleri: özel HTTP üstbilgileri (örneğin Cloudflare Access), özel kök sertifika ya da sabitlenmiş sertifika, tarayıcıyla giriş ve seçtiğin bir klasör üzerinden ayar eşitleme.
 - Açık, koyu ve yüksek karşıtlıklı tema; hazır ya da özel renkler, metin boyutu, Windows 11 mika/akrilik görünüm; Türkçe, İngilizce, Almanca, Fransızca ve İspanyolca arayüz.
-- Ayar araması, ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu; sürüm denetimi ve uygulama içi güncelleme varsayılan olarak kapalıdır. İçe aktarma, uygulanmadan önce bir önizleme gösterir.
+- Solda kategorilere ayrılmış Ayarlar (Bağlantı, Favoriler, Görünüm ve diğerleri); arama hepsinde arar. Ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu; sürüm denetimi ve uygulama içi güncelleme varsayılan olarak kapalıdır. İçe aktarma, uygulanmadan önce bir önizleme gösterir.
 - Kurulum gerektirmeyen taşınabilir sürüm.
 
 ## Ekran görüntüleri

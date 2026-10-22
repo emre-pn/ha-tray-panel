@@ -12,7 +12,8 @@ English | [Türkçe](README.tr.md)
 
 ## Features
 
-- Tray icon with a quick panel: lights (with brightness presets and a slider), scenes, media and PC actions, plus a "recently used" row.
+- Tray icon with a quick panel: lights (with brightness presets and a slider), scenes, media and PC actions, plus a "recently used" row. Each tile shows its icon in a round badge, a light's tile fills to match its brightness, and a ✓ or ! badge shows whether Home Assistant did it.
+- A small corner notification after each action with the device's icon, its name and what happened, for example "Turned off" or "Brightness 80%".
 - Command palette (`Ctrl+Alt+P`) with fuzzy search. Typing `desk 40` sets a light to 40%, `desk 0` turns it off.
 - Global hotkeys for the main window, the palette, any favorite and any dashboard. The shortcut fields record the keys you press.
 - Your Home Assistant dashboard in a compact or wide window that hides when it loses focus.
@@ -31,7 +32,7 @@ English | [Türkçe](README.tr.md)
 - Optional Home Assistant mobile app registration, so notifications from `notify.mobile_app_*` arrive on the PC with action buttons.
 - Connection options for harder setups: custom HTTP headers (for example Cloudflare Access), a private root CA or a pinned certificate, browser sign-in, and settings sync through a folder you choose.
 - Light, dark and high-contrast themes with preset or custom colours, text size, Windows 11 mica/acrylic, and an interface in English, Turkish, German, French and Spanish.
-- Settings search, settings export/import with automatic backups, a diagnostics report without secrets, and an update check and in-app updates that are both off by default. An import shows a preview before anything is applied.
+- Settings grouped into categories on the left (Connection, Favorites, Appearance and more), with search across all of them. Settings export/import with automatic backups, a diagnostics report without secrets, and an update check and in-app updates that are both off by default. An import shows a preview before anything is applied.
 - A portable build that needs no installation. It shares its settings folder with the installed app, so avoid running 1.3.0 or older next to this version: they rewrite the settings file without the newer fields (favorites, tile fields, language). The app restores them from the saved older-version backup on its next start.
 
 ## Screenshots
