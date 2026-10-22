@@ -2,7 +2,7 @@
 
 /**
  * Harici bağımlılık olmadan (saf Node.js zlib ve Buffer kullanarak)
- * Ev Paneli için şık bir PNG ve çoklu boyutlu ICO (16, 32, 48, 256) üreten araç.
+ * Ev Paneli logosu için PNG ve çoklu boyutlu ICO (16, 32, 48, 64, 128, 256) üreten araç.
  * Normal simgenin yanında bağlantı yokken tepside gösterilen SOLUK simgeyi (ikon-soluk.png/.ico) de üretir (detay-18):
  * gri tonlama ve alfa x0,45. Komut: `npm run ikon` (GUI yok; yalnız dosya yazar).
  */
@@ -13,7 +13,7 @@ const path = require('node:path');
 const { SOLUK_ALFA, temelRgba, pngKodla } = require('../src/lib/tepsi-simgesi');
 
 /**
- * Belirtilen boyutta ev ve dalga/sinyal simgesi çizer (her satırın başında 1 bayt PNG filtresi olan ham RGBA buffer).
+ * Belirtilen boyutta logoyu (ev ve durum noktası) çizer (her satırın başında 1 bayt PNG filtresi olan ham RGBA buffer).
  * soluk: gri tonlama ve alfa x0,45 (bağlantı yokken tepsi simgesi).
  */
 function pikselDizisiUret(boyut, soluk = false) {

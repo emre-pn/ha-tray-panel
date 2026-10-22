@@ -76,65 +76,84 @@ function pngKodla(boyut, rgba) {
 
 // --- Temel simge (ev) ---------------------------------------------------------------------------------------------------------
 
+// 1.6.1 logo ("ev ve durum noktası"): 64 birimlik ızgarada mavi yuvarlak kare, içinde beyaz ev çizgisi, sağ üstte sarı nokta.
+// Nokta, karo renginde bir halkayla çatı çizgisinden ayrılır. Renkler panelin vurgu (#2563eb) ve "açık" (#fbbf24) tonlarıdır.
+const LOGO_KARO = [37, 99, 235];
+const LOGO_CIZGI = [255, 255, 255];
+const LOGO_NOKTA = [251, 191, 36];
+// Büyük boyut: ince çizgi. Tepsi boyutları (24 px ve altı): çizgi kalınlaşır ve dikey/yatay kenarlar piksel sınırına oturur
+// (16 px'te 1 piksel = 4 birim), yoksa 1,25 piksellik çizgi bulanık açık maviye döner.
+const LOGO_GEOMETRI = Object.freeze({
+  buyuk: { ev: [[15, 33], [32, 18], [49, 33], [49, 49], [15, 49]], yariKalinlik: 2.5, nokta: [46, 17], noktaR: 6.5, halkaR: 9.5 },
+  kucuk: { ev: [[16, 32], [32, 18], [48, 32], [48, 48], [16, 48]], yariKalinlik: 4, nokta: [48, 16], noktaR: 7, halkaR: 10 },
+});
+const KUCUK_LOGO_SINIRI = 24;
+const ORNEKLEME = 4; // piksel başına 4x4 alt örnek (kenar yumuşatma)
+
+/** Yuvarlak köşeli karenin (0..64, yarıçap 15) içinde mi? */
+function karoIcinde(x, y) {
+  const r = 15;
+  const dx = Math.max(r - x, 0, x - (64 - r));
+  const dy = Math.max(r - y, 0, y - (64 - r));
+  return dx * dx + dy * dy <= r * r;
+}
+
+/** Noktanın [a, b] doğru parçasına uzaklığı. */
+function parcayaUzaklik(px, py, [ax, ay], [bx, by]) {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy)));
+  return Math.hypot(px - (ax + t * vx), py - (ay + t * vy));
+}
+
+/** Ev çizgisi (yuvarlak birleşimli kapalı çokgen) üstünde mi? */
+function evCizgisinde(x, y, { ev, yariKalinlik }) {
+  for (let i = 0; i < ev.length; i++) {
+    if (parcayaUzaklik(x, y, ev[i], ev[(i + 1) % ev.length]) <= yariKalinlik) return true;
+  }
+  return false;
+}
+
+/** 64 birimlik ızgarada bir noktanın rengi; karonun dışındaysa null. */
+function logoRengi(x, y, geo) {
+  if (!karoIcinde(x, y)) return null;
+  const nokta = Math.hypot(x - geo.nokta[0], y - geo.nokta[1]);
+  if (nokta <= geo.noktaR) return LOGO_NOKTA;
+  if (nokta <= geo.halkaR) return LOGO_KARO; // noktayı çatıdan ayıran halka
+  return evCizgisinde(x, y, geo) ? LOGO_CIZGI : LOGO_KARO;
+}
+
 /**
- * Belirtilen boyutta ev ve dalga/sinyal simgesinin RGBA pikselleri (boyut x boyut x 4 bayt).
+ * Belirtilen boyutta logonun RGBA pikselleri (boyut x boyut x 4 bayt).
  * soluk: gri tonlama ve alfa x0,45 (bağlantı yokken tepsi simgesi).
  */
 function temelRgba(boyut, soluk = false) {
   const rgba = Buffer.alloc(boyut * boyut * 4);
   let ofset = 0;
-  const bgR = 15, bgG = 117, bgB = 224; // Home Assistant Mavisi (#0f75e0)
-  const fgR = 255, fgG = 255, fgB = 255; // Beyaz
-  const koseYaricap = boyut * 0.22;
-  const merkez = (boyut - 1) / 2;
+  const birim = 64 / boyut;
+  const ornekSayisi = ORNEKLEME * ORNEKLEME;
+  const geo = boyut <= KUCUK_LOGO_SINIRI ? LOGO_GEOMETRI.kucuk : LOGO_GEOMETRI.buyuk;
 
   for (let y = 0; y < boyut; y++) {
     for (let x = 0; x < boyut; x++) {
-      let r = 0, g = 0, b = 0, a = 0;
-
-      // Yuvarlatılmış kare kart arka planı
-      const dx = Math.abs(x - merkez) - (merkez - koseYaricap);
-      const dy = Math.abs(y - merkez) - (merkez - koseYaricap);
-      let mesafe = 0;
-      if (dx > 0 && dy > 0) mesafe = Math.hypot(dx, dy) - koseYaricap;
-      else mesafe = Math.max(dx, dy) - koseYaricap;
-
-      if (mesafe <= 0) {
-        // Kartın içi
-        r = bgR;
-        g = bgG;
-        b = bgB;
-        a = 255;
-
-        // Kart içine Ev Simgesi Çiz (çatı + gövde)
-        const nx = (x - merkez) / (boyut * 0.35); // -1..1 aralığı
-        const ny = (y - merkez) / (boyut * 0.35); // -1..1 aralığı
-
-        // Çatı: Üçgen
-        const catiMi = ny < 0.1 && ny > -0.85 && Math.abs(nx) < (0.85 - (ny + 0.85) * 0.95);
-        // Ev gövdesi: Dikdörtgen
-        const govdeMi = ny >= 0.05 && ny <= 0.85 && Math.abs(nx) <= 0.65;
-        // Kapı boşluğu (ortada ufak açık ton/pencere)
-        const kapiMi = ny >= 0.35 && ny <= 0.85 && Math.abs(nx) <= 0.25;
-
-        if ((catiMi || govdeMi) && !kapiMi) {
-          r = fgR;
-          g = fgG;
-          b = fgB;
-          a = 255;
-        } else if (kapiMi) {
-          r = 59;
-          g = 130;
-          b = 246; // Hafif açık mavi kapı
-          a = 255;
+      // Alt örneklerin ortalaması: renk kapsanan örneklerden, alfa kapsanan örnek oranından
+      let toplamR = 0, toplamG = 0, toplamB = 0, kapsanan = 0;
+      for (let oy = 0; oy < ORNEKLEME; oy++) {
+        for (let ox = 0; ox < ORNEKLEME; ox++) {
+          const renk = logoRengi((x + (ox + 0.5) / ORNEKLEME) * birim, (y + (oy + 0.5) / ORNEKLEME) * birim, geo);
+          if (!renk) continue;
+          toplamR += renk[0];
+          toplamG += renk[1];
+          toplamB += renk[2];
+          kapsanan++;
         }
-      } else if (mesafe < 1.2) {
-        // Kenar yumuşatma (antialiasing)
-        const alpha = Math.max(0, Math.min(1, 1 - mesafe / 1.2));
-        r = bgR;
-        g = bgG;
-        b = bgB;
-        a = Math.round(alpha * 255);
+      }
+      let r = 0, g = 0, b = 0, a = 0;
+      if (kapsanan > 0) {
+        r = Math.round(toplamR / kapsanan);
+        g = Math.round(toplamG / kapsanan);
+        b = Math.round(toplamB / kapsanan);
+        a = Math.round((kapsanan / ornekSayisi) * 255);
       }
 
       if (soluk) {
