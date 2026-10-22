@@ -87,6 +87,33 @@
     kapali: 'yuzey.baglanti.kapali',
   };
   const OK_TUSLARI = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+  // 2.0 karo simgesi (madeni): Ayarlar'da simge seçilmemişse alan adına göre çizgi ikon (lib/karo-gorunum.js IKONLAR; yoksa aşağıdakiler)
+  const ALAN_IKONU = {
+    light: 'isik',
+    switch: 'priz',
+    input_boolean: 'priz',
+    fan: 'vantilator',
+    scene: 'yildiz',
+    script: 'sahne',
+    media_player: 'muzik',
+    climate: 'termometre',
+    water_heater: 'termometre',
+    cover: 'perde',
+    humidifier: 'damla',
+    vacuum: 'supurge',
+    button: 'guc',
+  };
+  const EK_IKONLAR = {
+    termometre: 'M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0zM12 9v6',
+    perde: 'M4 4h16M5 4v12M19 4v12M5 8h14M5 12h14M5 16h14M12 16v4',
+    damla: 'M12 3.5s6 6.3 6 10.5a6 6 0 0 1-12 0c0-4.2 6-10.5 6-10.5z',
+    supurge: 'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16zM12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z',
+    nokta: 'M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z',
+  };
+  // 2.0 hareket (yalnız hareket açıkken; WAAPI): CSS'teki --yay-yumusak ile aynı eğri
+  const YAY_YUMUSAK = 'linear(0, 0.09, 0.28, 0.48, 0.66, 0.8, 0.89, 0.95, 0.99, 1.007, 1.014, 1.015, 1.01, 1.005, 1)';
+  const RULO_SECICI = '.karo-durum, .kart-deger, .kart-durum, .sensor-deger, .serit-deger, .saat-deger, .hava-sicaklik, .bilgi-deger, .istatistik-deger';
+  const RULO_MS = 300;
 
   let mod = 'panel';
   let model = { gruplar: [], sonlar: [], bilgi: null, kamera: null, sayfalar: [], eylem: null, ust: { canli: false, baglanti: 'kapali', medyaCaliyor: null, aktifCikis: null, hata: null, uyari: null, anahtarYok: false }, bildirim: null };
@@ -128,6 +155,43 @@
     if (sinif) oge.className = sinif;
     if (metin !== undefined && metin !== null) oge.textContent = String(metin);
     return oge;
+  }
+
+  /** CSS değişkeni yazar (CSSOM; satır içi stil bildirimi değil). Ortam desteklemiyorsa sessizce geçer. */
+  function stilYaz(oge, ad, deger) {
+    if (oge && oge.style && typeof oge.style.setProperty === 'function') oge.style.setProperty(ad, deger);
+  }
+
+  /** 2.0 hareketleri yalnız "hareketi azalt" kapalıyken (ayar ya da sistem: <html data-hareket>) oynar. */
+  function hareketAcik() {
+    const kok = document.documentElement;
+    if (!kok || typeof kok.hasAttribute !== 'function' || kok.hasAttribute('data-hareket')) return false;
+    return !(typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  /** 24'lük ızgarada tek yollu çizgi ikon (createElementNS; HTML ataması yok). */
+  function cizgiIkon(yol) {
+    if (typeof document.createElementNS !== 'function' || !yol) return null;
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    [['viewBox', '0 0 24 24'], ['width', '18'], ['height', '18'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '1.8'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['focusable', 'false'], ['aria-hidden', 'true']].forEach(function (o) {
+      svg.setAttribute(o[0], o[1]);
+    });
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', yol);
+    svg.appendChild(p);
+    return svg;
+  }
+
+  /** Simgesi seçilmemiş karonun varsayılan ikonu: medya / PC / yıkıcı önce, sonra alan adı. */
+  function varsayilanIkonYolu(karo) {
+    let ad;
+    if (karo.yikici) ad = 'guc';
+    else if (karo.grup === 'medya') ad = karo.altGrup === 'cikis' ? 'kulaklik' : karo.altGrup === 'ses' ? 'hoparlor' : 'muzik';
+    else if (karo.grup === 'pc') ad = 'ekran';
+    else ad = ALAN_IKONU[karo.alan];
+    const ikonlar = KaroGorunum && KaroGorunum.IKONLAR ? KaroGorunum.IKONLAR : {};
+    return (ad && ikonlar[ad]) || EK_IKONLAR[ad] || EK_IKONLAR.nokta;
   }
 
   function sinirliMetin(deger, sinir) {
@@ -317,7 +381,15 @@
     return !(yuk && yuk.parlaklik !== undefined && yuk.sonDeger !== true);
   }
 
-  function sonucIsle(sonuc, karo, oge, yuk) {
+  /** 2.0: yanıttan önce HA'nın durum yankısı karoyu yeniden çizdiyse başarı / hata işareti ekrandaki yeni karoya konur. */
+  function ekrandakiOge(karo, oge) {
+    if (!karo || !oge || !oge.classList || !oge.classList.contains('karo')) return oge;
+    const guncel = odakHaritasi.get('k:' + karo.id);
+    return guncel && guncel.classList && guncel.classList.contains('karo') ? guncel : oge;
+  }
+
+  function sonucIsle(sonuc, karo, ilkOge, yuk) {
+    const oge = ekrandakiOge(karo, ilkOge);
     if (sonuc && sonuc.ok === true) {
       if (basariGosterilmeli(karo, yuk)) basariIsaretle(oge, karo);
       return;
@@ -335,14 +407,40 @@
     }
   }
 
+  /**
+   * 2.0 bekleme: karoya basıldı, yanıt gelene kadar simgenin çevresinde yay döner. Kimliğe bağlıdır: HA'nın durum yankısı karoyu
+   * yeniden çizse de yeni düğme bekleme işaretini taşır (karoDugmesi). Kaydırıcı / ses tekrarı / kart düğmeleri bekleme göstermez.
+   */
+  const bekleyenKarolar = new Map(); // kimlik -> yanıt bekleyen istek sayısı
+
+  function beklemeBasla(karo, oge) {
+    if (!karo || karo.tekrar || !oge || !oge.classList || !oge.classList.contains('karo')) return null;
+    bekleyenKarolar.set(karo.id, (bekleyenKarolar.get(karo.id) || 0) + 1);
+    oge.classList.add('bekliyor');
+    return function () {
+      const kalan = (bekleyenKarolar.get(karo.id) || 1) - 1;
+      if (kalan > 0) {
+        bekleyenKarolar.set(karo.id, kalan);
+        return;
+      }
+      bekleyenKarolar.delete(karo.id);
+      oge.classList.remove('bekliyor');
+      const guncel = odakHaritasi.get('k:' + karo.id);
+      if (guncel && guncel !== oge && guncel.classList) guncel.classList.remove('bekliyor');
+    };
+  }
+
   function calistir(yuk, karo, oge) {
+    const beklemeBitti = beklemeBasla(karo, oge);
     return kopru.calistir(yuk).then(
       function (sonuc) {
+        if (beklemeBitti) beklemeBitti();
         sonucIsle(sonuc, karo, oge, yuk);
         return sonuc;
       },
       function () {
-        hataIsaretle(oge);
+        if (beklemeBitti) beklemeBitti();
+        hataIsaretle(ekrandakiOge(karo, oge));
         ipucuGoster(t('yuzey.ipucu.gonderilemedi'));
         return { ok: false, tur: 'gonderilemedi' };
       },
@@ -902,7 +1000,16 @@
   function karoDugmesi(karo) {
     const dugme = olustur('button', 'karo durum-' + karo.durum + (karo.yikici ? ' yikici' : '') + (karo.kullanilabilir ? '' : ' yok'));
     dugme.type = 'button';
-    if (duzen) duzen.gorunumuUygula(karo, dugme); // 1.4.0 düzen (o-31): renk sınıfı ve simge (etiketten önce)
+    // 2.0: simge yuvarlak "madeni" içinde durur (seçilen simge ya da alanın varsayılan ikonu); başarı / hata rozeti ve bekleme yayı onun üstünde
+    const madeni = olustur('span', 'karo-madeni');
+    madeni.setAttribute('aria-hidden', 'true');
+    dugme.appendChild(madeni);
+    if (duzen) duzen.gorunumuUygula(karo, dugme, madeni); // 1.4.0 düzen (o-31): renk sınıfı ve simge (etiketten önce)
+    if (madeni.children.length === 0) {
+      const ikon = cizgiIkon(varsayilanIkonYolu(karo));
+      if (ikon) madeni.appendChild(ikon);
+    }
+    if (bekleyenKarolar.has(karo.id)) dugme.classList.add('bekliyor');
     dugme.appendChild(olustur('span', 'karo-etiket', karo.etiket));
     const durum = durumMetni(karo);
     dugme.appendChild(olustur('span', 'karo-durum', durum));
@@ -982,9 +1089,29 @@
     return en;
   }
 
+  /**
+   * 2.0 ışık seviyesi dolgusu: karonun zemini parlaklık kadar dolar. Son çizilen değer kimliğe göre tutulur; HA yeni seviyeyi
+   * bildirip karo yeniden çizilince dolgu eski değerden yenisine yayla kayar (hareket azaltılmışsa doğrudan yeni değerde durur).
+   */
+  const sonDoluluk = new Map(); // kimlik -> 0..1
+
+  function doluluguYaz(kimlik, dolgu, deger, oynat) {
+    stilYaz(dolgu, '--doluluk', String(deger));
+    const onceki = sonDoluluk.get(kimlik);
+    sonDoluluk.set(kimlik, deger);
+    if (!oynat || onceki === undefined || onceki === deger || !hareketAcik() || typeof dolgu.animate !== 'function') return;
+    dolgu.animate([{ transform: 'scaleX(' + onceki + ')' }, { transform: 'scaleX(' + deger + ')' }], { duration: 420, easing: YAY_YUMUSAK });
+  }
+
   function isikKarosu(karo, detaydaMi) {
     const kutu = olustur('div', 'isik-karo');
     const ana = karoDugmesi(karo);
+    const dolgu = olustur('span', 'karo-dolgu');
+    dolgu.setAttribute('aria-hidden', 'true');
+    ana.appendChild(dolgu);
+    const acik = karo.durum === 'acik';
+    if (acik && karo.yuzde !== null && karo.yuzde >= 100) ana.classList.add('tam');
+    doluluguYaz(karo.id, dolgu, acik ? (karo.yuzde !== null ? Math.max(0.04, Math.min(1, karo.yuzde / 100)) : 1) : 0, true);
     kutu.appendChild(ana);
     const hazirlar = olustur('div', 'hazirlar');
     const yakin = enYakinHazir(karo);
@@ -1012,6 +1139,12 @@
     aralik.value = String(karo.yuzde !== null ? Math.max(1, Math.min(100, karo.yuzde)) : 50);
     aralik.setAttribute('aria-label', t('yuzey.karo.parlaklik', { etiket: karo.etiket }));
     odakKaydet('r:' + karo.id, aralik); // ok gezintisine girmez (oklar kaydırıcının kendi işidir) ama yeniden çizimde odağı korunur
+    // 2.0: kaydırıcının dolu kısmı ve karonun dolgusu sürüklerken anında izler (HA yanıtı beklenmez; yanıt gelince model yeniden çizer)
+    const seviyeyiGoster = function (deger) {
+      stilYaz(aralik, '--deger', deger + '%');
+      if (karo.durum === 'acik') doluluguYaz(karo.id, dolgu, Math.max(0.04, Math.min(1, deger / 100)), false);
+    };
+    stilYaz(aralik, '--deger', aralik.value + '%');
     const kisici = Kaydirici.kisici(function (deger, son) {
       calistir({ kimlik: karo.id, parlaklik: deger, sonDeger: son === true }, karo, aralik);
     });
@@ -1021,6 +1154,7 @@
         suruklemede = true;
         donukBaslat();
       }
+      seviyeyiGoster(Number(aralik.value));
       kisici.cagir(Number(aralik.value));
     });
     aralik.addEventListener('change', function () {
@@ -1052,6 +1186,7 @@
       enCok: 100,
       goster: function (deger) {
         aralik.value = String(deger);
+        seviyeyiGoster(deger);
       },
       gonder: function (deger, son) {
         calistir({ kimlik: karo.id, parlaklik: deger, sonDeger: son === true }, karo, aralik);
@@ -1220,7 +1355,65 @@
     return bolum;
   }
 
+  // ---------------------------------------------------------------- 2.0 dönen rakamlar
+
+  /**
+   * Yeniden çizimden önce sayı taşıyan metinler (yüzde, sıcaklık, sensör, saat...) okunur; çizimden sonra aynı sıradaki metin
+   * değiştiyse yalnız değişen haneler yuvarlanır (artışta yukarı, azalışta aşağı). Yalnız hareket açıkken ve gerçek DOM'da çalışır;
+   * birkaç yüz milisaniye sonra öğe düz metne döner (ekran okuyucu eski haneyi okumaz: giden hane aria-hidden).
+   */
+  function rakamOkumasi() {
+    if (!hareketAcik() || typeof el.icerik.querySelectorAll !== 'function') return null;
+    const sayac = {};
+    const harita = new Map();
+    el.icerik.querySelectorAll(RULO_SECICI).forEach(function (o) {
+      sayac[o.className] = (sayac[o.className] || 0) + 1;
+      harita.set(o.className + '#' + sayac[o.className], o.textContent);
+    });
+    return harita;
+  }
+
+  function sayiDegeri(metin) {
+    const m = /-?\d+(?:[.,]\d+)?/.exec(metin);
+    return m ? Number(m[0].replace(',', '.')) : 0;
+  }
+
+  function rakamlariYuvarla(onceki) {
+    if (!onceki || onceki.size === 0) return;
+    const sayac = {};
+    el.icerik.querySelectorAll(RULO_SECICI).forEach(function (o) {
+      sayac[o.className] = (sayac[o.className] || 0) + 1;
+      const eski = onceki.get(o.className + '#' + sayac[o.className]);
+      const yeni = o.textContent;
+      if (eski === undefined || eski === yeni || eski.length !== yeni.length || !/\d/.test(eski) || !/\d/.test(yeni) || o.children.length > 0) return;
+      const yon = sayiDegeri(yeni) >= sayiDegeri(eski) ? 1 : -1;
+      o.textContent = '';
+      let gecikme = 0;
+      for (let i = 0; i < yeni.length; i += 1) {
+        if (yeni[i] === eski[i]) {
+          o.appendChild(document.createTextNode(yeni[i]));
+          continue;
+        }
+        const hucre = olustur('span', 'rulo-hucre');
+        const giden = olustur('span', null, eski[i]);
+        giden.setAttribute('aria-hidden', 'true');
+        const gelen = olustur('span', 'rulo-gelen', yeni[i]);
+        hucre.appendChild(giden);
+        hucre.appendChild(gelen);
+        o.appendChild(hucre);
+        const zaman = { duration: RULO_MS, delay: gecikme, easing: 'cubic-bezier(0.2, 0, 0, 1)' };
+        giden.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(' + -100 * yon + '%)', opacity: 0 }], Object.assign({ fill: 'forwards' }, zaman));
+        gelen.animate([{ transform: 'translateY(' + 100 * yon + '%)', opacity: 0 }, { transform: 'none', opacity: 1 }], Object.assign({ fill: 'backwards' }, zaman));
+        gecikme += 30;
+      }
+      setTimeout(function () {
+        o.textContent = yeni;
+      }, RULO_MS + gecikme + 20);
+    });
+  }
+
   function panelCiz() {
+    const rakamlar = rakamOkumasi();
     const oncekiOdak = odakIstegi !== null ? odakIstegi : odakAnahtari();
     const kaydirma = el.icerik.scrollTop;
     odakIstegi = null;
@@ -1277,6 +1470,7 @@
     }
     if (parcalar.length === 0) parcalar.push(bosDurum());
     el.icerik.replaceChildren.apply(el.icerik, parcalar);
+    rakamlariYuvarla(rakamlar);
     if (typeof kaydirma === 'number') el.icerik.scrollTop = kaydirma;
     const istek = duzen ? duzen.odakIstegiAl() : null; // ayrıntı bölmesi açıldı / kapandı: odak ilgili öğeye
     odagiGeriVer(istek !== null ? istek : oncekiOdak);

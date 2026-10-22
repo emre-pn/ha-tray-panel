@@ -23,6 +23,7 @@
   const GIRIS_SURESI_MS = 700;
   const ACILIS_SURESI_MS = 400; // CSS'teki 167 ms'lik açılıştan uzun; sonra öznitelik kalkar
   const YENIDEN_BOYUT_BEKLEME_MS = 120;
+  const YAY_YUMUSAK = 'linear(0, 0.09, 0.28, 0.48, 0.66, 0.8, 0.89, 0.95, 0.99, 1.007, 1.014, 1.015, 1.01, 1.005, 1)'; // yuzey.css --yay-yumusak
 
   const sorgu = function (metin) {
     return typeof window.matchMedia === 'function' ? window.matchMedia(metin) : null;
@@ -76,6 +77,29 @@
     acilisZamanlayicisi = window.setTimeout(function () {
       kok.removeAttribute('data-acilis');
     }, ACILIS_SURESI_MS);
+    // 2.0: bölümler ve karolar sırayla yerine oturur (kozmetik "karo kayması" açıksa o oynar, ikisi üst üste binmez)
+    if (!sonuc.gecis && typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(kademeliGiris);
+  }
+
+  /**
+   * Açılışta içerik öğeleri 22 ms arayla, kısa bir yayla gelir (WAAPI; yalnız transform ve opacity). Yalnız o anki öğeler oynar:
+   * hemen ardından gelen yeniden çizim yeni öğeleri doğrudan son hâlinde gösterir (yarım kalan giriş göz kırpmaz).
+   */
+  function kademeliGiris() {
+    const icerikKabi = document.getElementById('icerik');
+    if (!icerikKabi || typeof icerikKabi.querySelectorAll !== 'function') return;
+    const ogeler = icerikKabi.querySelectorAll('.bilgi-kartlar > *, .sensor-serit, .bolum-baslik, .bolum-ust, .son-sira, .izgara > *, .kart, .bos');
+    let sira = 0;
+    ogeler.forEach(function (oge) {
+      if (typeof oge.animate !== 'function') return;
+      oge.animate([{ opacity: 0, transform: 'translateY(10px) scale(0.98)' }, { opacity: 1, transform: 'none' }], {
+        duration: 320,
+        delay: 20 + Math.min(sira, 16) * 22,
+        easing: YAY_YUMUSAK,
+        fill: 'backwards',
+      });
+      sira += 1;
+    });
   }
 
   // ---------------------------------------------------------------- kayan vurgu (palet)
@@ -147,6 +171,32 @@
     }
     if (vurguOgesi && vurguOgesi.parentNode && typeof vurguOgesi.parentNode.removeChild === 'function') vurguOgesi.parentNode.removeChild(vurguOgesi);
     sonVurguUstu = null;
+  }
+
+  // ---------------------------------------------------------------- 2.0 kayan sekme göstergesi
+
+  /**
+   * Sekme kabı (.sekmeler) kalıcıdır; yuzey-duzen.js sekmeleri yeniden kurunca seçili sekmenin konumu ve genişliği CSS değişkeni olarak
+   * yazılır ve gösterge (::before) oraya CSS geçişiyle kayar (işlevsel katman; hareket azaltılınca anında). Ölçülemezse data-gosterge
+   * kalkar ve seçili sekme kendi zeminini taşır. Yalnız konum okur; sekmelere ve odağa dokunmaz.
+   */
+  const sekmeKabi = document.getElementById('sekmeler');
+
+  function sekmeGostergesiniYerlestir() {
+    if (!sekmeKabi || !sekmeKabi.style || typeof sekmeKabi.style.setProperty !== 'function' || typeof sekmeKabi.querySelector !== 'function') return;
+    const secili = sekmeKabi.hidden ? null : sekmeKabi.querySelector('.sekme.secili');
+    if (!secili || !(secili.offsetWidth > 0)) {
+      sekmeKabi.removeAttribute('data-gosterge');
+      return;
+    }
+    sekmeKabi.style.setProperty('--sekme-x', secili.offsetLeft + 'px');
+    sekmeKabi.style.setProperty('--sekme-w', secili.offsetWidth + 'px');
+    sekmeKabi.setAttribute('data-gosterge', '');
+  }
+
+  if (sekmeKabi && typeof window.MutationObserver === 'function') {
+    new window.MutationObserver(sekmeGostergesiniYerlestir).observe(sekmeKabi, { childList: true, attributes: true, attributeFilter: ['hidden'] });
+    if (typeof window.ResizeObserver === 'function') new window.ResizeObserver(sekmeGostergesiniYerlestir).observe(sekmeKabi); // yazı boyutu / pencere genişliği
   }
 
   // ---------------------------------------------------------------- hava / mevsim efekti

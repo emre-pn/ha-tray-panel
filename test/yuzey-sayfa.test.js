@@ -3705,3 +3705,53 @@ test('yuzey-sayfa.js (o-46): "*" betiği HTML ataması, eval, ağ ve satır içi
   assert.doesNotMatch(betik, /innerHTML|insertAdjacentHTML|eval\s*\(|new Function|require\s*\(|fetch\s*\(|XMLHttpRequest|ipcRenderer/);
   assert.match(betik, /kopru\.digerCalistir\(\{ kimlik: d\.kimlik, islem: islem \}\)/, 'yük yalnız kimlik ve işlem');
 });
+
+// ---- 2.0: bekleme yayı, ışık dolgusu ------------------------------------------------------------------------------------------
+
+test('2.0 bekleme: karoya basınca yanıt gelene kadar "bekliyor"; HA yankısıyla yeniden çizilen karo da taşır; yanıt gelince kalkar', async () => {
+  let coz;
+  const sayfa = await panelAc({
+    calistirYaniti: () =>
+      new Promise((r) => {
+        coz = r;
+      }),
+  });
+  const ampul = dugmeBul(sayfa, 'Ampul');
+  assert.equal(ampul.children[0].className, 'karo-madeni', 'her karoda simge yuvarlağı');
+  ampul.gonder('click', { detail: 1 });
+  assert.ok(sinifli(ampul, 'bekliyor'));
+  // HA durum yankısı: karo yeniden çizilir, bekleme sürer
+  const degisen = JSON.parse(JSON.stringify(MODEL));
+  degisen.gruplar[0].karolar[1].durum = 'acik';
+  sayfa.durum(degisen);
+  const yeni = dugmeBul(sayfa, 'Ampul');
+  assert.notEqual(yeni, ampul, 'karo yeniden kuruldu');
+  assert.ok(sinifli(yeni, 'bekliyor'), 'yeni karo da bekliyor');
+  coz({ ok: true });
+  await akit();
+  assert.ok(!sinifli(yeni, 'bekliyor') && !sinifli(ampul, 'bekliyor'), 'yanıt gelince bekleme biter');
+  assert.ok(sinifli(yeni, 'basari'), 'başarı rozeti yanıttan sonra');
+});
+
+test('2.0 bekleme: kaydırıcı, hazır seviye ve ses tekrarı karoyu bekletmez; yanıt hata olsa da bekleme kalkar', async () => {
+  const sayfa = await panelAc({ calistirYaniti: { ok: false, tur: 'hata' } });
+  const ampul = dugmeBul(sayfa, 'Ampul');
+  ampul.gonder('click', { detail: 1 });
+  await akit();
+  assert.ok(!sinifli(ampul, 'bekliyor'));
+  assert.ok(sinifli(ampul, 'hata'));
+  hazirBul(sayfa, '%50').gonder('click', { detail: 1 });
+  const led = dugmeBul(sayfa, 'LED şerit');
+  assert.ok(!sinifli(led, 'bekliyor'), 'hazır seviye karoyu bekletmez');
+});
+
+test('2.0 ışık karosu: zemindeki seviye dolgusu süstür ve karonun içindedir; satır içi stil öznitelik değildir', async () => {
+  const sayfa = await panelAc();
+  const led = dugmeBul(sayfa, 'LED şerit');
+  const dolgu = led.bul((o) => o.className === 'karo-dolgu')[0];
+  assert.ok(dolgu, 'dolgu var');
+  assert.equal(dolgu.getAttribute('aria-hidden'), 'true');
+  assert.equal(led.textContent.includes('%60'), true, 'durum metni değişmedi');
+  assert.ok(!sinifli(led, 'tam'), '%60 tam parlaklık değil');
+  assert.equal(led.getAttribute('style'), null);
+});

@@ -897,12 +897,15 @@ test('görünüm: simge (emoji / çizgi ikon), renk sınıfı ve boyut sınıfı
   const sayfa = await panelAc({ model });
   const da = dugmeBul(sayfa, 'A');
   assert.ok(sinifli(da, 'renk-mavi') && sinifli(da, 'simgeli'));
-  const simgeA = da.children[0];
+  // 2.0: simge karonun yuvarlak "madeni"sinin içindedir; madeni etiketten önce gelir ve süstür
+  const madeniA = da.children[0];
+  assert.deepEqual([madeniA.className, madeniA.getAttribute('aria-hidden')], ['karo-madeni', 'true']);
+  const simgeA = madeniA.children[0];
   assert.deepEqual([simgeA.className, simgeA.getAttribute('aria-hidden'), simgeA.textContent], ['karo-simge emoji', 'true', '💡']);
   assert.ok(da.children[1].className.includes('karo-etiket'), 'simge etiketten önce');
 
   const db = dugmeBul(sayfa, 'B');
-  const simgeB = db.children[0];
+  const simgeB = db.children[0].children[0];
   assert.equal(simgeB.className, 'karo-simge ikon');
   const svg = simgeB.children[0];
   assert.equal(svg.etiket, 'svg');
@@ -914,6 +917,11 @@ test('görünüm: simge (emoji / çizgi ikon), renk sınıfı ve boyut sınıfı
 
   const dc = dugmeBul(sayfa, 'C');
   assert.deepEqual(siniflar(dc).filter((s) => s.startsWith('renk-') || s === 'simgeli'), []);
+  // simge seçilmemiş karo alanının varsayılan ikonunu taşır (ışık: ampul); seçilen simge gibi metinsiz SVG
+  const varsayilan = dc.children[0].children[0];
+  assert.equal(varsayilan.etiket, 'svg');
+  assert.equal(varsayilan.children[0].getAttribute('d'), KaroGorunum.IKONLAR.isik);
+  assert.equal(dc.textContent, 'C' + dc.children[2].textContent, 'madeni metin eklemez');
   const sarmaSiniflari = icerik(sayfa).bul((o) => sinifli(o, 'karo-sarma')).map(siniflar);
   assert.ok(sarmaSiniflari[0].includes('boyut-genis'));
   assert.ok(sarmaSiniflari[1].includes('boyut-kucuk'));

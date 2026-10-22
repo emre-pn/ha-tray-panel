@@ -2,6 +2,21 @@
 
 Release notes before 1.3.0 are in Turkish. / 1.3.0 öncesi sürüm notları Türkçedir.
 
+### 1.5.0 — 2026-10-22
+
+Update with "Check now" in Settings or "Check for updates" in the tray menu, or by running `Ev-Paneli-Kurulum-1.5.0.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. This release changes how the quick panel looks and moves. The code is checked with `npm test` and `npm run kontrol`, and the panel was viewed with sample data in a browser; it has not been tried in the installed app yet.
+
+**A new look for the quick panel**
+
+- **Icons in circles:** Every tile shows its icon in a round badge. A tile without a chosen icon gets one from its type: light, plug, fan, scene, media, climate, curtain and more.
+- **Easy to see what is on:** A tile that is on gets a soft tint of its colour and a filled icon circle. An unavailable tile gets a dashed edge and a crossed-out icon instead of fading out.
+- **Light level at a glance:** A light's tile fills from the left to match its brightness, and the fill follows the slider while you drag. The slider is now a wide bar with a level fill, and it stays grey while the light is off.
+- **Waiting and results:** A ring turns around a tile's icon while it waits for Home Assistant. When the answer comes, a ✓ or ! badge sits on the icon, and a tile that failed gives a short shake. Press-and-hold tiles keep their 800 ms fill and get no new motion before Home Assistant confirms.
+- **Livelier motion:** Tiles shrink a little when pressed and spring back (press-and-hold tiles do not). Changing numbers roll into place, the highlight slides between page tabs, and the panel's content comes in row by row when it opens.
+- **Calmer layout:** The header, notifications, section titles and bottom bar have fewer boxes and more space. Page tabs look like a single segmented control.
+
+All of this motion turns off with "Reduce motion" in Settings or with the Windows animation effects setting. High contrast keeps plain tile backgrounds.
+
 ### 1.4.2 — 2026-10-22
 
 Update by running `Ev-Paneli-Kurulum-1.4.2.exe` over the installed version. Your settings, favorites and token stay as they are. This release only changes how things look; the code is checked with `npm test` and `npm run kontrol`.

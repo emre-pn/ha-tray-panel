@@ -275,18 +275,24 @@ test('animasyonlar: hareketi azalt ayarı (data-hareket) karo geçişlerini kapa
   assert.ok(gecisliKaro.every((k) => k.medya === HAREKET_VAR));
 });
 
-test('işlevsel hareket (1.4.1): basma, başarı işareti ve panel açılışı varsayılan açık; hareketi azalt kapatır; yıkıcı karo basınca küçülmez', () => {
+test('işlevsel hareket (1.4.1, 2.0 yaylar): basma, başarı rozeti, bekleme yayı, sarsıntı ve panel açılışı varsayılan açık; hareketi azalt kapatır; yıkıcı karo basınca küçülmez', () => {
   const kural = (secici, medya = HAREKET_VAR) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === medya).map((k) => k.govde).join(';');
-  assert.match(kural(ISLEVSEL + ' .karo'), /transition:\s*background var\(--t-hizli\) ease-out,\s*transform var\(--t-hizli\)/);
-  assert.match(kural(ISLEVSEL + ' .karo:not(.yikici):not(.yok):active'), /transform:\s*scale\(0\.98\)/);
-  assert.match(kural(ISLEVSEL + ' .karo.basari::before'), /animation:\s*isaret-belir var\(--t-normal\) var\(--e-giris\)/);
-  assert.match(kural(ISLEVSEL + '[data-acilis] .kok'), /animation:\s*panel-ac var\(--t-normal\) var\(--e-giris\) backwards/);
+  assert.match(kural(ISLEVSEL + ' .karo'), /transition:\s*background var\(--t-hizli\) ease-out,\s*transform 320ms var\(--yay-sert\)/);
+  assert.match(kural(ISLEVSEL + ' .karo:not(.yikici):not(.yok):active'), /transform:\s*scale\(0\.97\)/);
+  assert.match(kural(ISLEVSEL + ' .karo.basari .karo-madeni::before'), /animation:\s*isaret-belir 420ms var\(--yay-zipla\)/);
+  assert.match(kural(ISLEVSEL + ' .karo.basari .karo-madeni'), /animation:\s*madeni-zipla/);
+  assert.match(kural(ISLEVSEL + ' .karo.hata'), /animation:\s*karo-sarsil/);
+  assert.match(kural(ISLEVSEL + ' .karo.bekliyor .karo-madeni::after'), /animation:\s*bekleme-don 700ms linear infinite/);
+  assert.match(kural(ISLEVSEL + ' .sekmeler::before'), /transition:\s*transform 300ms var\(--yay-sert\)/);
+  assert.match(kural(ISLEVSEL + '[data-acilis] .kok'), /animation:\s*panel-ac 280ms var\(--yay-yumusak\) backwards/);
+  // yay eğrileri hareket jetonlarındadır (renk değil)
+  for (const ad of ['--yay-yumusak', '--yay-sert', '--yay-zipla']) assert.match(kural('html', ''), new RegExp(ad + ':\\s*linear\\(0,'), ad);
   // basınca küçülen her karo kuralı yıkıcı (basılı tutulan) karoyu dışarıda bırakır
   for (const k of YUZEY_KURALLARI) {
     if (/\.karo[^,]*:active/.test(k.secici) && /transform:\s*scale/.test(k.govde)) assert.match(k.secici, /:not\(\.yikici\)/, k.secici);
   }
   // yalnız transform ve opacity canlandırılır
-  for (const ad of ['panel-ac', 'isaret-belir']) {
+  for (const ad of ['panel-ac', 'isaret-belir', 'madeni-zipla', 'karo-sarsil', 'bekleme-don', 'bekleme-belir']) {
     const bas = YUZEY_CSS.indexOf('@keyframes ' + ad);
     assert.ok(bas > 0, ad);
     const govde = YUZEY_CSS.slice(bas).split(/\n\}\n/)[0];
@@ -296,9 +302,12 @@ test('işlevsel hareket (1.4.1): basma, başarı işareti ve panel açılışı 
   // hareket jetonları renk değişkenlerinden ayrı (özel palet onları yazmaz)
   assert.match(kural('html', ''), /--t-normal:\s*167ms/);
   // yeniden çizilen karoda süren başarı işareti ikinci kez belirmez: kural kozmetik işaret kuralından sonra gelir
-  const surer = YUZEY_CSS.indexOf(':root .karo.basari.basari-surer::before');
-  assert.ok(surer > YUZEY_CSS.indexOf(':root[data-gecis] .karo.basari::before'), 'basari-surer sonra gelir');
-  assert.match(kural(':root .karo.basari.basari-surer::before', ''), /animation:\s*none/);
+  const surer = YUZEY_CSS.indexOf(':root .karo.basari.basari-surer .karo-madeni');
+  assert.ok(surer > YUZEY_CSS.indexOf(':root[data-gecis] .karo.basari .karo-madeni::before'), 'basari-surer sonra gelir');
+  assert.ok(surer > YUZEY_CSS.indexOf(ISLEVSEL + ' .karo.basari .karo-madeni::before'), 'basari-surer işlevsel rozetten de sonra gelir');
+  const surerKural = YUZEY_KURALLARI.find((k) => k.secici.startsWith(':root .karo.basari.basari-surer .karo-madeni'));
+  assert.match(surerKural.secici, /\.karo-madeni::before/, 'rozet de, simge zıplaması da ikinci kez oynamaz');
+  assert.match(surerKural.govde, /animation:\s*none/);
 });
 
 test('işlevsel hareket (1.4.1): panel açılışı yalnız panel kipinde, pencere gizliyken gelen gösterimde ve hareket azaltılmamışken oynar', () => {
@@ -426,4 +435,49 @@ test('arayüz cilası (1.4.2): transition: all yok; iç içe yarıçap tutarlı;
   assert.match(govde('.sabitle'), /position:\s*relative/);
   assert.match(govde('.bildirim-oge-kapat'), /position:\s*relative/);
   assert.match(govde('.sabitle::before,.bildirim-oge-kapat::before') || YUZEY_KURALLARI.filter((k) => /\.sabitle::before/.test(k.secici)).map((k) => k.govde).join(';'), /inset:\s*-8px/);
+});
+
+// ---- 2.0: Kumanda Merkezi görünümü ------------------------------------------------------------------------------------------------
+
+test('2.0 görünüm: yeni bloktaki renkler yalnız değişkenlerden (color-mix); açık karo tonlu, simge (madeni) dolu; yüksek karşıtlıkta ton yok', () => {
+  const bas = YUZEY_CSS.indexOf('2.0 "Kumanda Merkezi"');
+  const son = YUZEY_CSS.indexOf('Görünüm ayarları (1.4.0 grup "tema")');
+  assert.ok(bas > 0 && son > bas, '2.0 bloğu tema bloğundan önce');
+  const blok = yorumsuz(YUZEY_CSS.slice(bas, son));
+  assert.doesNotMatch(blok, /#[0-9a-f]{3,8}\b|rgba?\(/i, 'sabit renk yok');
+  assert.doesNotMatch(blok, /\b(animation|transition)\s*:/, 'durağan blokta hareket yok (hareket işlevsel katmanda)');
+  const govde = (secici, medya = '') => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === medya).map((k) => k.govde).join(';');
+  assert.match(govde('.karo.durum-acik'), /background:\s*color-mix\(in srgb, var\(--renk, var\(--acik\)\) 14%, var\(--karo\)\)/);
+  assert.match(govde('.karo.durum-acik .karo-madeni'), /background:\s*var\(--renk, var\(--acik\)\)/);
+  assert.match(govde('.karo.durum-acik .karo-madeni'), /color:\s*var\(--rozet-metin\)/);
+  assert.match(govde('.karo-dolgu'), /transform:\s*scaleX\(var\(--doluluk, 0\)\)/);
+  assert.match(govde('.karo-dolgu'), /pointer-events:\s*none/);
+  assert.match(govde(':root[data-karsitlik] .karo.durum-acik, :root[data-karsitlik] .karo.durum-acik:hover'), /background:\s*var\(--karo\)/);
+  // kullanılamayan karo soluklaşmaz (okunur kalır): opaklık yerine kesikli çerçeve ve üstü çizili simge
+  assert.doesNotMatch(govde('.karo.yok'), /opacity/);
+  assert.match(govde('.karo.yok'), /border-style:\s*dashed/);
+  assert.match(govde('.karo.yok .karo-madeni::after'), /rotate\(-45deg\)/);
+  // başarı / hata rozeti şekil taşır (✓ / !), ekran okuyucuya girmez
+  assert.match(govde('.karo.basari .karo-madeni::before, .karo.hata .karo-madeni::before'), /content:\s*"✓"\s*\/\s*""/);
+  assert.match(govde('.karo.hata .karo-madeni::before'), /content:\s*"!"\s*\/\s*""/);
+  // sekme göstergesi ölçülemezse gizli; seçili sekme kendi zeminini taşır
+  assert.match(govde('.sekmeler:not([data-gosterge])::before'), /display:\s*none/);
+  assert.match(govde('.sekme.secili'), /background:\s*var\(--karo\)/);
+});
+
+test('2.0 hareket: sekme göstergesi ve açılış kademesi görünüm betiğinde; hareketi azaltınca oynamaz, yalnız transform / opacity', () => {
+  const g = oku('src/yuzey-gorunum.js');
+  const acilis = g.slice(g.indexOf('function acilisiOynat'), g.indexOf('// ---------------------------------------------------------------- kayan vurgu'));
+  assert.match(acilis, /if \(!sonuc\.gecis && typeof window\.requestAnimationFrame === 'function'\) window\.requestAnimationFrame\(kademeliGiris\);/);
+  const kademe = acilis.slice(acilis.indexOf('function kademeliGiris'));
+  const ozellikler = [...kademe.matchAll(/\{ (opacity: [^}]+)\}/g)].map((m) => m[1]);
+  assert.ok(ozellikler.length === 2 && ozellikler.every((o) => /^opacity: [\d.]+, transform: '[^']+' $/.test(o)), ozellikler.join(' | '));
+  assert.match(g, /sekmeKabi\.style\.setProperty\('--sekme-x', secili\.offsetLeft \+ 'px'\)/);
+  const s = oku('src/yuzey-sayfa.js');
+  const hareket = s.slice(s.indexOf('function hareketAcik'), s.indexOf('function cizgiIkon'));
+  assert.match(hareket, /hasAttribute\('data-hareket'\)/);
+  assert.match(hareket, /prefers-reduced-motion: reduce/);
+  // WAAPI çağrıları hareket kapısının arkasında
+  assert.match(s, /!hareketAcik\(\) \|\| typeof dolgu\.animate !== 'function'/);
+  assert.match(s, /if \(!hareketAcik\(\) \|\| typeof el\.icerik\.querySelectorAll !== 'function'\) return null;/);
 });

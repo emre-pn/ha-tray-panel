@@ -24,6 +24,10 @@ html {
   --e-giris: cubic-bezier(0, 0, 0, 1);
   --e-cikis: cubic-bezier(1, 0, 1, 1);
   --e-ui: cubic-bezier(0.23, 1, 0.32, 1);
+  /* 2.0 yaylar (linear()): hafifçe aşıp yerine oturan kısa eğriler; basmadan dönüş, sekme göstergesi, dolum, onay rozeti */
+  --yay-yumusak: linear(0, 0.09, 0.28, 0.48, 0.66, 0.8, 0.89, 0.95, 0.99, 1.007, 1.014, 1.015, 1.01, 1.005, 1);
+  --yay-sert: linear(0, 0.12, 0.37, 0.61, 0.81, 0.94, 1.01, 1.04, 1.046, 1.038, 1.026, 1.015, 1.007, 1.002, 1);
+  --yay-zipla: linear(0, 0.13, 0.4, 0.7, 0.94, 1.09, 1.16, 1.16, 1.12, 1.07, 1.03, 1, 0.98, 0.97, 0.98, 0.99, 0.99, 1);
 }
 
 :root {
@@ -214,16 +218,15 @@ input:focus-visible,
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-  padding: 10px 12px;
-  background: var(--bg-ust);
-  border-bottom: 1px solid var(--kenar);
+  padding: 12px 14px 8px;
 }
 
 /* Başlık hiçbir durumda iki satıra kırılmaz (g-03); uzun medya bilgisi kısalır, bağlantı metni yerinde kalır */
 .baslik {
   flex: none;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
@@ -366,8 +369,7 @@ input:focus-visible,
 /* ---- bildirim şeridi (1.4.0): HA bildirimleri, düşük pil, güncelleme ve uyarı kuralları; yalnız panelde ---- */
 
 .bildirim {
-  background: var(--bg-ust);
-  border-bottom: 1px solid var(--kenar);
+  padding: 0 12px 6px;
 }
 
 .bildirim-dugme {
@@ -375,13 +377,16 @@ input:focus-visible,
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 12px;
+  padding: 6px 10px 6px 8px;
   font-size: 12px;
   text-align: left;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 999px;
 }
 
 .bildirim-dugme:hover {
-  background: var(--karo);
+  background: var(--karo-uzerinde);
 }
 
 .bildirim-baslik {
@@ -419,7 +424,7 @@ input:focus-visible,
 
 .bildirim-liste {
   max-height: 168px;
-  padding: 0 12px 6px;
+  padding: 2px 0 0;
   overflow-y: auto;
   list-style: none;
 }
@@ -434,7 +439,7 @@ input:focus-visible,
   background: var(--karo);
   border: 1px solid var(--kenar);
   border-left: 3px solid var(--vurgu);
-  border-radius: 6px;
+  border-radius: 10px;
 }
 
 .bildirim-oge.uyari {
@@ -565,26 +570,26 @@ input:focus-visible,
   flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 12px 10px;
+  padding: 4px 12px 12px;
 }
 
 .bolum {
-  margin-top: 8px;
+  margin-top: 14px;
 }
 
 .bolum-baslik {
-  margin: 0 0 6px;
+  margin: 0 2px 8px;
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--soluk);
 }
 
 /* Grup başına küçük simge (g-08): süs olduğu için CSS ile eklenir (metne ve ekran okuyucuya girmez) */
 .bolum-baslik::before {
+  display: inline-block;
   margin-right: 6px;
   letter-spacing: 0;
+  filter: grayscale(1); /* 2.0: renkli emoji yerine sade, metinle uyumlu tek ton */
 }
 
 .bolum.son .bolum-baslik::before {
@@ -649,29 +654,31 @@ input:focus-visible,
 
 .izgara {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 /* Medya grubunda alt gruplar (ses çıkışı | ses | oynat) ayrı satırlarda */
 .izgara + .izgara {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .karo {
   position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 4px;
-  min-height: 52px;
-  padding: 8px 9px;
+  justify-content: flex-start;
+  gap: 2px;
+  min-height: 78px;
+  padding: 10px;
   overflow: hidden;
   text-align: left;
   background: var(--karo);
   border: 1px solid var(--kenar);
-  border-radius: 8px;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--metin) 6%, transparent);
   transition: background var(--t-hizli) ease-out;
 }
 
@@ -706,14 +713,31 @@ input:focus-visible,
   outline-offset: -1px;
 }
 
-.karo.basari::before {
+/* 2.0: işaret karonun simgesinin (madeni) sağ alt köşesinde rozet olarak durur; hata aynı yerde "!" gösterir */
+.karo.basari .karo-madeni::before,
+.karo.hata .karo-madeni::before {
   content: "✓";
+  content: "✓" / "";
   position: absolute;
-  top: 3px;
-  right: 6px;
+  right: -5px;
+  bottom: -5px;
+  z-index: 1;
+  width: 17px;
+  height: 17px;
   font-size: 12px;
   font-weight: 700;
-  color: var(--canli);
+  line-height: 17px;
+  text-align: center;
+  color: var(--rozet-metin);
+  background: var(--canli);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--karo);
+}
+
+.karo.hata .karo-madeni::before {
+  content: "!";
+  content: "!" / "";
+  background: var(--hata);
 }
 
 /*
@@ -731,7 +755,7 @@ input:focus-visible,
 
 .karo-etiket {
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
@@ -741,16 +765,25 @@ input:focus-visible,
   color: var(--soluk);
 }
 
+/* Açık karo (2.0): çerçeve yerine tonlu zemin ve dolu simge; ton karonun rengi (varsa) ya da "açık" rengidir */
 .karo.durum-acik {
-  border-color: var(--acik);
+  background: color-mix(in srgb, var(--renk, var(--acik)) 14%, var(--karo));
+  border-color: color-mix(in srgb, var(--renk, var(--acik)) 45%, var(--kenar));
+}
+
+.karo.durum-acik:hover {
+  background: color-mix(in srgb, var(--renk, var(--acik)) 20%, var(--karo-uzerinde));
 }
 
 .karo.durum-acik .karo-durum {
+  font-weight: 600;
   color: var(--acik);
 }
 
+/* Kullanılamayan karo: soluklaşmaz (okunur kalır); kesikli çerçeve, düz zemin ve üstü çizili simge */
 .karo.yok {
-  opacity: 0.55;
+  background: var(--bg-ust);
+  border-style: dashed;
 }
 
 .karo.yikici {
@@ -772,9 +805,10 @@ input:focus-visible,
   position: absolute;
   left: 0;
   bottom: 0;
-  height: 4px;
+  height: 100%;
   width: 100%;
-  background: var(--yikici);
+  pointer-events: none;
+  background: linear-gradient(to top, var(--yikici) 0 4px, color-mix(in srgb, var(--yikici) 16%, transparent) 4px);
   transform-origin: left center;
   animation: dolum 800ms linear forwards;
 }
@@ -797,14 +831,17 @@ input:focus-visible,
   padding: 6px;
   background: var(--bg-ust);
   border: 1px solid var(--kenar);
-  border-radius: 12px; /* iç içe yarıçap (1.4.2): içteki karo ve hazır düğmeler 6 px + 6 px dolgu */
+  border-radius: 18px; /* iç içe yarıçap (1.4.2): içteki karo ve hazır düğmeler 12 px + 6 px dolgu */
 }
 
+/* Geniş ışık karosu (2.0): simge | ad | büyük yüzde; zemin, parlaklık kadar dolar (.karo-dolgu) */
 .isik-karo .karo {
-  min-height: 40px;
-  border-radius: 6px;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
+  column-gap: 10px;
+  min-height: 58px;
+  border-radius: 12px;
 }
 
 .hazirlar {
@@ -814,10 +851,11 @@ input:focus-visible,
 
 .hazir {
   flex: 1;
-  padding: 5px 0;
+  padding: 6px 0;
+  font-size: 12px;
   background: var(--karo);
   border: 1px solid var(--kenar);
-  border-radius: 6px;
+  border-radius: 12px;
 }
 
 .hazir:hover {
@@ -826,6 +864,7 @@ input:focus-visible,
 
 /* Işığın o anki seviyesine en yakın hazır düğme (g-02) */
 .hazir.vurgu {
+  background: color-mix(in srgb, var(--acik) 12%, var(--karo));
   border-color: var(--acik);
   color: var(--acik);
   font-weight: 600;
@@ -846,7 +885,33 @@ input:focus-visible,
 
 .kaydirici {
   width: 100%;
+  height: 28px;
+  appearance: none;
+  background: transparent;
   accent-color: var(--acik);
+}
+
+/* Kalın iz (2.0): dolu kısım --deger kadar (yuzey-sayfa.js yazar); tutamak ince dikey çubuk */
+.kaydirici::-webkit-slider-runnable-track {
+  height: 26px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--acik) 42%, var(--karo)) var(--deger, 50%), var(--karo) var(--deger, 50%));
+  border: 1px solid var(--kenar);
+  border-radius: 12px;
+}
+
+.kaydirici::-webkit-slider-thumb {
+  width: 6px;
+  height: 34px;
+  margin-top: -5px;
+  appearance: none;
+  background: var(--metin);
+  border-radius: 3px;
+  box-shadow: 0 0 0 3px var(--bg-ust);
+}
+
+/* Kapalı ışıkta kaydırıcı yalnız konumu gösterir: açık rengi dolgu "yanıyor" gibi okunmasın */
+.isik-karo:has(> .karo:not(.durum-acik)) .kaydirici::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--karo-uzerinde) var(--deger, 50%), var(--karo) var(--deger, 50%));
 }
 
 /*
@@ -858,11 +923,11 @@ input:focus-visible,
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+  gap: 8px;
+  padding: 10px;
   background: var(--bg-ust);
   border: 1px solid var(--kenar);
-  border-radius: 12px; /* iç içe yarıçap (1.4.2): içteki düğmeler ve kapak 4 px + 8 px dolgu */
+  border-radius: 18px; /* iç içe yarıçap (1.4.2): içteki düğmeler ve kapak 8 px + 10 px dolgu */
 }
 
 .kart.yok {
@@ -916,7 +981,7 @@ input:focus-visible,
   width: 56px;
   height: 56px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: 8px;
   background: var(--karo);
   /* Albüm kapağının kenarı zemine karışmasın: metin renginden türeyen nötr, yarı saydam iç çizgi (iki temada da) */
   outline: 1px solid color-mix(in srgb, var(--metin) 12%, transparent);
@@ -941,7 +1006,7 @@ input:focus-visible,
   overflow: hidden;
   background: var(--karo);
   border: 1px solid var(--kenar);
-  border-radius: 4px;
+  border-radius: 8px;
 }
 
 .kart-dugme:hover:not(:disabled) {
@@ -1192,21 +1257,24 @@ input:focus-visible,
 
 .alt {
   display: flex;
-  gap: 6px;
-  padding: 8px 12px 10px;
+  gap: 4px;
+  padding: 6px 10px 8px;
   border-top: 1px solid var(--kenar);
 }
 
 .alt-dugme {
   flex: 1;
   padding: 7px 0;
-  background: var(--karo);
-  border: 1px solid var(--kenar);
-  border-radius: 6px;
+  color: var(--soluk);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
 }
 
 .alt-dugme:hover {
-  background: var(--karo-uzerinde);
+  color: var(--metin);
+  background: var(--karo);
+  border-color: var(--kenar);
 }
 
 /* 1.4.0 eylem grubu (o-15): bekleyen zamanlı eylemler; her öğenin × düğmesi iptal eder */
@@ -1332,7 +1400,7 @@ input:focus-visible,
   color: var(--metin);
   background: var(--karo);
   border: 1px solid var(--kenar);
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 .arama::placeholder {
@@ -1355,7 +1423,7 @@ input:focus-visible,
   gap: 10px;
   padding: 8px 10px;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: pointer;
 }
 
@@ -2144,12 +2212,38 @@ button.bilgi-kart:hover {
 
 /* Sayfa sekmeleri (o-24): yalnız panel kipinde ve en az bir sayfa varken görünür; seçili sekme renge ek olarak alt çizgi taşır */
 .sekmeler {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
-  gap: 4px;
-  padding: 6px 12px 0;
+  gap: 2px;
+  margin: 2px 12px 6px;
+  padding: 3px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--kenar);
+  scrollbar-width: none;
+  background: var(--bg-ust);
+  border: 1px solid var(--kenar);
+  border-radius: 12px;
+}
+
+/* Kayan seçim göstergesi (2.0): seçili sekmenin konumu ve genişliği yuzey-duzen.js'te --sekme-x / --sekme-w olarak yazılır
+   (data-gosterge); yazılamazsa seçili sekme kendi zeminini taşır */
+.sekmeler::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: var(--sekme-w, 0px);
+  pointer-events: none;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 9px;
+  box-shadow: inset 0 -2px 0 var(--vurgu);
+  transform: translateX(var(--sekme-x, 0px));
+}
+
+.sekmeler:not([data-gosterge])::before {
+  display: none;
 }
 
 .sekmeler[hidden],
@@ -2158,21 +2252,21 @@ button.bilgi-kart:hover {
 }
 
 .sekme {
-  flex: none;
+  position: relative;
+  z-index: 1;
+  flex: 1 0 auto;
   max-width: 140px;
-  padding: 6px 10px;
+  padding: 5px 12px;
   overflow: hidden;
   color: var(--soluk);
   text-overflow: ellipsis;
   white-space: nowrap;
   border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
+  border-radius: 9px;
 }
 
 .sekme:hover {
   color: var(--metin);
-  background: var(--karo);
 }
 
 .sekme.secili {
@@ -2181,6 +2275,12 @@ button.bilgi-kart:hover {
   background: var(--karo);
   border-color: var(--kenar);
   box-shadow: inset 0 -2px 0 var(--vurgu);
+}
+
+.sekmeler[data-gosterge] .sekme.secili {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 /* Karo sarmalayıcısı: boyut sınıfı buraya (ya da sarmasız yıkıcı / tekrarlı karoya) verilir; "⋯" düğmesi köşede, üstüne gelince / odakta belirir */
@@ -2278,28 +2378,9 @@ button.bilgi-kart:hover {
   color: var(--renk, var(--soluk));
 }
 
-.karo.simgeli .karo-simge {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-}
-
-.karo.simgeli .karo-etiket {
-  padding-right: 24px;
-}
-
 /* Açık karoda simge vurgulanır (renk seçilmediyse vurgu rengiyle; seçilmişse seçilen renk kalır) */
 .karo.durum-acik .karo-simge {
   color: var(--renk, var(--acik));
-}
-
-.isik-karo .karo.simgeli .karo-simge {
-  position: static;
-  margin-right: 8px;
-}
-
-.isik-karo .karo.simgeli .karo-etiket {
-  padding-right: 0;
 }
 
 /* Renk (o-31): sol şerit + simge rengi. Renk tek başına bilgi taşımaz (durum metni ve çerçeve ayrıdır) */
@@ -2354,10 +2435,10 @@ button.bilgi-kart:hover {
 .ayrinti-geri,
 .ayrinti-menu {
   flex: none;
-  padding: 5px 10px;
+  padding: 5px 12px;
   background: var(--karo);
   border: 1px solid var(--kenar);
-  border-radius: 6px;
+  border-radius: 999px;
 }
 
 .ayrinti-geri:hover,
@@ -2416,6 +2497,145 @@ button.bilgi-kart:hover {
   .karo.uzun-basma::after {
     content: none; /* hareket azaltma: ilerleme çizgisi yok (ayrıntı yine 500 ms sonra açılır) */
   }
+}
+
+/* =====================================================================================================================
+ * 2.0 "Kumanda Merkezi": karo simgesi (madeni), açık karonun ton dolgusu, ışık seviyesi dolgusu, bekleme halkası, dönen rakamlar.
+ * Renkler yine yalnız değişkenlerden (color-mix ile türetilir; özel palet, malzeme ve yüksek karşıtlık kendiliğinden uyar). Burada
+ * yalnız durağan görünüm vardır; hareket aşağıdaki işlevsel katmandadır (hareket azaltılınca görünüm aynı kalır, yalnız kıpırdamaz).
+ * ===================================================================================================================== */
+
+.karo-madeni {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 8px;
+  color: var(--renk, var(--soluk));
+  background: var(--karo-uzerinde);
+  border-radius: 50%;
+}
+
+.karo-madeni svg {
+  display: block;
+}
+
+.karo-madeni .karo-simge,
+.karo.durum-acik .karo-madeni .karo-simge {
+  color: inherit;
+}
+
+.karo.durum-acik .karo-madeni {
+  color: var(--rozet-metin);
+  background: var(--renk, var(--acik));
+}
+
+.karo.yikici .karo-madeni {
+  color: var(--yikici-metin);
+  background: color-mix(in srgb, var(--yikici) 16%, var(--karo));
+}
+
+/* Kullanılamayan karonun simgesi üstü çizili (yalnız renge bağlı değil) */
+.karo.yok .karo-madeni::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--soluk);
+  border-radius: 1px;
+  transform: rotate(-45deg);
+}
+
+.boyut-kucuk .karo-madeni,
+.karo.boyut-kucuk .karo-madeni {
+  display: none;
+}
+
+.boyut-buyuk .karo-madeni,
+.karo.boyut-buyuk .karo-madeni {
+  width: 40px;
+  height: 40px;
+}
+
+.isik-karo .karo .karo-madeni {
+  width: 34px;
+  height: 34px;
+  margin: 0;
+}
+
+.isik-karo .karo .karo-durum {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Işık karosunda zemin tonu dolgudan gelir (parlaklık kadar); açık karo ayrıca boyanmaz */
+.isik-karo .karo.durum-acik {
+  background: var(--karo);
+}
+
+.isik-karo .karo.durum-acik:hover {
+  background: var(--karo-uzerinde);
+}
+
+/* Işık seviyesi dolgusu: --doluluk 0..1 (yuzey-sayfa.js yazar); içerik dolgunun üstünde kalır (karo isolation) */
+.karo-dolgu {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--renk, var(--acik)) 26%, transparent);
+  transform: scaleX(var(--doluluk, 0));
+  transform-origin: left center;
+}
+
+/* Tam parlaklıkta simge hafifçe ışır */
+.karo.tam .karo-madeni {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--renk, var(--acik)) 22%, transparent), 0 0 16px color-mix(in srgb, var(--renk, var(--acik)) 50%, transparent);
+}
+
+/* Bekleme: istek gitti, Home Assistant yanıtı bekleniyor. Simgenin çevresinde yay (hareket açıkken döner) */
+.karo.bekliyor .karo-madeni::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  margin: 0;
+  width: auto;
+  background: none;
+  border: 2px solid transparent;
+  border-top-color: var(--vurgu);
+  border-right-color: var(--vurgu);
+  border-radius: 50%;
+  transform: none;
+}
+
+/* Dönen rakamlar: değişen hane kendi hücresinde eskisi çıkarken yenisi gelir (yuzey-sayfa.js; yalnız hareket açıkken kurulur) */
+.rulo-hucre {
+  position: relative;
+  display: inline-block;
+  height: 1lh;
+  overflow: hidden;
+  vertical-align: top;
+}
+
+.rulo-hucre > span {
+  display: block;
+}
+
+.rulo-hucre > .rulo-gelen {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+:root[data-karsitlik] .karo.durum-acik,
+:root[data-karsitlik] .karo.durum-acik:hover {
+  background: var(--karo);
 }
 
 /* =====================================================================================================================
@@ -2588,20 +2808,71 @@ button.bilgi-kart:hover {
 
 /* ---- İşlevsel hareket (1.4.1): varsayılan AÇIK; hareketi azalt (ayar ya da sistem) kapatır ---- */
 @media (prefers-reduced-motion: no-preference) {
+  /* Basma: hızla küçülür, bırakınca yayla yerine oturur (basılı tutulan yıkıcı karo küçülmez) */
   :root:not([data-hareket]) .karo {
-    transition: background var(--t-hizli) ease-out, transform var(--t-hizli) var(--e-ui);
+    transition: background var(--t-hizli) ease-out, transform 320ms var(--yay-sert);
   }
 
   :root:not([data-hareket]) .karo:not(.yikici):not(.yok):active {
-    transform: scale(0.98);
+    transform: scale(0.97);
+    transition: background var(--t-hizli) ease-out, transform 90ms var(--e-ui);
   }
 
-  :root:not([data-hareket]) .karo.basari::before {
-    animation: isaret-belir var(--t-normal) var(--e-giris) both;
+  :root:not([data-hareket]) .karo.basari .karo-madeni::before {
+    animation: isaret-belir 420ms var(--yay-zipla) both;
+  }
+
+  :root:not([data-hareket]) .karo.basari .karo-madeni {
+    animation: madeni-zipla 450ms var(--yay-zipla);
+  }
+
+  :root:not([data-hareket]) .karo.hata {
+    animation: karo-sarsil 340ms linear;
+  }
+
+  :root:not([data-hareket]) .karo.bekliyor .karo-madeni::after {
+    animation: bekleme-don 700ms linear infinite, bekleme-belir var(--t-hizli) ease-out 150ms backwards;
+  }
+
+  :root:not([data-hareket]) .sekmeler::before {
+    transition: transform 300ms var(--yay-sert), width 300ms var(--yay-sert);
   }
 
   :root:not([data-hareket])[data-acilis] .kok {
-    animation: panel-ac var(--t-normal) var(--e-giris) backwards;
+    animation: panel-ac 280ms var(--yay-yumusak) backwards;
+  }
+}
+
+@keyframes madeni-zipla {
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes karo-sarsil {
+  20% {
+    transform: translateX(-5px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes bekleme-don {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes bekleme-belir {
+  from {
+    opacity: 0;
   }
 }
 
@@ -2673,7 +2944,7 @@ button.bilgi-kart:hover {
   }
 
   /* Simge büyümesi: başarı işareti büyüyerek belirir; grup simgesi üstüne gelince büyür */
-  :root[data-gecis] .karo.basari::before {
+  :root[data-gecis] .karo.basari .karo-madeni::before {
     animation: isaret-gir 260ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
   }
 
@@ -2743,8 +3014,9 @@ button.bilgi-kart:hover {
   }
 }
 
-/* Başarı işareti yeniden çizimden sonra da süresi dolana kadar durur (src/yuzey-sayfa.js basari-surer); ikinci kez belirmez */
-:root .karo.basari.basari-surer::before {
+/* Başarı işareti yeniden çizimden sonra da süresi dolana kadar durur (src/yuzey-sayfa.js basari-surer); ikinci kez belirmez, simge ikinci kez zıplamaz */
+:root .karo.basari.basari-surer .karo-madeni,
+:root .karo.basari.basari-surer .karo-madeni::before {
   animation: none;
 }
 

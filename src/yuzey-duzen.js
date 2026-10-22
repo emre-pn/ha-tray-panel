@@ -413,12 +413,13 @@
     // ---- karo görünümü ve etkileşim
 
     /** Karo düğmesine renk sınıfı ve simge (etiketten ÖNCE çağrılır: simge ilk çocuk olur). Boyut `karoyuSar` ile verilir. */
-    function gorunumuUygula(karo, dugme) {
+    /** `simgeKabi` (2.0): simgenin konacağı öğe (karonun yuvarlak "madeni"si); verilmezse simge düğmeye eklenir. */
+    function gorunumuUygula(karo, dugme, simgeKabi) {
       if (karo.renk) dugme.classList.add('renk-' + karo.renk);
       const simge = karo.simge ? simgeDugumu(ortak.belge, karo.simge) : null;
       if (simge) {
         dugme.classList.add('simgeli');
-        dugme.appendChild(simge);
+        (simgeKabi || dugme).appendChild(simge);
       }
     }
 
