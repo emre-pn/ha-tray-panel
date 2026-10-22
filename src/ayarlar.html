@@ -2615,12 +2615,12 @@
       <div class="form-grubu">
         <label for="ustKart2" data-i18n="ayar.bilgi.kart2.etiket">İkinci kart</label>
         <select id="ustKart2"></select>
-        <div class="ipucu" data-i18n="ayar.bilgi.kart.ipucu">Panelin en üstünde iki kart gösterilebilir: saat ve tarih, hava durumu, bir medya oynatıcı ya da seçtiğin herhangi bir sensör. Saat, hava ve sensör kartları yalnızca bilgi gösterir; üzerine tıklayınca hiçbir şey çalışmaz. Medya kartı oynatıcının kendi düğmelerini taşır.</div>
+        <div class="ipucu" data-i18n="ayar.bilgi.kart.ipucu">Panelin en üstünde saat ve tarih her zaman görünür; bu iki yuva yanlarına ne geleceğini seçer: hava durumu (saatin sağında), bir medya oynatıcı (altında küçük çalan parça şeridi) ya da seçtiğin bir sensör. “Saat ve tarih” seçimi ayrıca kart eklemez. Saat, hava ve sensör yalnızca bilgi gösterir; üzerine tıklayınca hiçbir cihaz çalışmaz. Medya şeridi oynatıcının kendi düğmelerini taşır.</div>
       </div>
       <div class="form-grubu">
         <label for="havaVarligi" data-i18n="ayar.bilgi.hava.etiket">Hava durumu varlığı</label>
         <select id="havaVarligi"></select>
-        <div class="ipucu" data-i18n="ayar.bilgi.hava.ipucu">Hava durumu kartı bu varlığın şu anki durumunu gösterir; altında günlük ya da saatlik tahmin de çıkabilir (aşağıdaki seçenek).</div>
+        <div class="ipucu" data-i18n="ayar.bilgi.hava.ipucu">Hava durumu saatin sağında bu varlığın şu anki durumunu gösterir; üzerine tıklayınca günlük ya da saatlik tahmin açılır (aşağıdaki seçenek).</div>
       </div>
       <div class="form-grubu">
         <label for="havaTahmini" data-i18n="ayar.bilgi.tahmin.etiket">Hava tahmini</label>
@@ -2629,12 +2629,12 @@
           <option value="saatlik" data-i18n="ayar.bilgi.tahmin.saatlik">Saatlik (8 saat)</option>
           <option value="kapali" data-i18n="ayar.bilgi.tahmin.kapali">Gösterme</option>
         </select>
-        <div class="ipucu" id="havaTahminiIpucu" data-i18n="ayar.bilgi.tahmin.ipucu">Hava durumu kartı seçiliyken panelde kartın altında tahmin şeridi görünür; panelde Günlük ve Saatlik arasında geçebilirsin. Tahmin yalnızca panel açıkken Home Assistant’tan okunur (10 dakikada bir en fazla) ve varlığın tahmin desteklemesi gerekir.</div>
+        <div class="ipucu" id="havaTahminiIpucu" data-i18n="ayar.bilgi.tahmin.ipucu">Hava durumu seçiliyken panelde hava durumuna tıklayınca tahmin açılır; orada Günlük ve Saatlik arasında geçebilirsin. Tahmin yalnızca panel açıkken Home Assistant’tan okunur (10 dakikada bir en fazla) ve varlığın tahmin desteklemesi gerekir.</div>
       </div>
       <div class="form-grubu">
         <label for="birincilMedya" data-i18n="ayar.bilgi.medya.etiket">Medya oynatıcı varlığı</label>
         <select id="birincilMedya" aria-describedby="birincilMedyaIpucu"></select>
-        <div class="ipucu" id="birincilMedyaIpucu" data-i18n="ayar.bilgi.medya.ipucu">Üst karta “Medya oynatıcı” seçersen panelin en üstünde bu oynatıcının şimdi çalan kartı görünür: albüm kapağı, oynat / duraklat, ses ve kaynak. Yalnızca medya oynatıcılar listelenir.</div>
+        <div class="ipucu" id="birincilMedyaIpucu" data-i18n="ayar.bilgi.medya.ipucu">Üst karta “Medya oynatıcı” seçersen saatin altında bu oynatıcının küçük çalan parça şeridi görünür: albüm kapağı, parça adı, oynat / duraklat ve sonraki. Şeride tıklayınca ses ve kaynakla tam kart açılır. Yalnızca medya oynatıcılar listelenir.</div>
       </div>
       <div class="form-grubu">
         <label class="checkbox-etiket">

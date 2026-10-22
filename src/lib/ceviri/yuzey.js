@@ -377,6 +377,13 @@
       '{etiket} — mantén pulsado para ejecutar'],
     ['yuzey.karo.parlaklik', '{etiket} parlaklığı', '{etiket} brightness', 'Helligkeit von {etiket}', 'Luminosité de {etiket}', 'Brillo de {etiket}'],
     ['yuzey.bolum.son', 'Son kullanılanlar', 'Recently used', 'Zuletzt verwendet', 'Récemment utilisés', 'Usados recientemente'],
+    // 1.7.0 panel bölüm başlıkları (çoğul; oda grubunda odanın adı kalır). Ayarlar ve paletteki grup adı (ana.js grup.*) değişmez.
+    ['yuzey.grup.isik', 'Işıklar', 'Lights', 'Lichter', 'Lumières', 'Luces'],
+    ['yuzey.grup.iklim', 'İklim ve cihazlar', 'Climate and devices', 'Klima und Geräte', 'Climat et appareils', 'Clima y dispositivos'],
+    ['yuzey.grup.perde', 'Perdeler', 'Curtains', 'Vorhänge', 'Rideaux', 'Cortinas'],
+    ['yuzey.grup.sahne', 'Sahneler', 'Scenes', 'Szenen', 'Scènes', 'Escenas'],
+    ['yuzey.grup.sensor', 'Sensörler', 'Sensors', 'Sensoren', 'Capteurs', 'Sensores'],
+    ['yuzey.hero.etiket', 'Özet', 'Overview', 'Übersicht', 'Aperçu', 'Resumen'],
     ['yuzey.bolum.favoriler', 'Favoriler', 'Favorites', 'Favoriten', 'Favoris', 'Favoritos'],
 
     // --- Boş durum ---
@@ -484,7 +491,7 @@
 
     // --- Bilgi bölümleri (src/yuzey-bilgi.js): üst kartlar, sensör şeridi ve karoları, yapılacaklar, takvim, geçmiş grafiği ---
     ['yuzey.bilgi.bosDeger', '—', '—', '—', '—', '—'],
-    ['yuzey.bilgi.kartlar.etiket', 'Saat ve hava durumu', 'Clock and weather', 'Uhr und Wetter', 'Horloge et météo', 'Reloj y tiempo'],
+    ['yuzey.bilgi.kartlar.etiket', 'Üst kartlar', 'Top cards', 'Obere Karten', 'Cartes du haut', 'Tarjetas superiores'],
     ['yuzey.bilgi.serit.etiket', 'Sensör şeridi', 'Sensor strip', 'Sensorleiste', 'Bandeau de capteurs', 'Barra de sensores'],
     ['yuzey.bilgi.bolum.sensor', 'Sensörler', 'Sensors', 'Sensoren', 'Capteurs', 'Sensores'],
     ['yuzey.bilgi.bolum.takvim', 'Yaklaşan etkinlikler', 'Upcoming events', 'Anstehende Termine', 'Événements à venir', 'Próximos eventos'],

@@ -483,3 +483,20 @@ test('2.0 hareket: sekme göstergesi ve açılış kademesi görünüm betiğind
   assert.match(s, /!hareketAcik\(\) \|\| typeof dolgu\.animate !== 'function'/);
   assert.match(s, /if \(!hareketAcik\(\) \|\| typeof el\.icerik\.querySelectorAll !== 'function'\) return null;/);
 });
+
+// ---- 1.7.0: panel düzeni (hero, hap, satırlar) ------------------------------------------------------------------------------------
+
+test('1.7.0 panel düzeni: hero yalnız panelde (palette gizli); arayüz ikon maskeleri yalnız data: SVG; bölüm başlıklarında süs emojisi yok; ekolayzer işlevsel katmanda', () => {
+  const gizliler = YUZEY_KURALLARI.filter((k) => /display:\s*none/.test(k.govde) && k.medya === '').flatMap((k) => k.secici.split(',').map(bosluksuz));
+  assert.ok(gizliler.includes('.mod-palet .hero'), 'komut paletinde hero görünmez');
+  const maskeler = [...yorumsuz(YUZEY_CSS).matchAll(/mask(?:-image)?:\s*url\("([^"]+)"\)/g)].map((m) => m[1]);
+  assert.ok(maskeler.length >= 5, 'zil, ok, geri al, ev, ayar');
+  for (const m of maskeler) assert.match(m, /^data:image\/svg\+xml,/, 'yalnız gömülü SVG (CSP img-src data:)');
+  assert.doesNotMatch(yorumsuz(YUZEY_CSS), /\.bolum-baslik::before\s*\{[^}]*content:\s*"[^"]/, 'başlık simgesi yok');
+  const kural = (secici, medya = HAREKET_VAR) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === medya).map((k) => k.govde).join(';');
+  assert.match(kural(ISLEVSEL + ' .medya-hap.caliyor .hap-eq i'), /animation:\s*hap-eq/);
+  assert.match(kural('.hap-eq i', ''), /transform:\s*scaleY\(0\.35\)/, 'hareket kapalıyken çubuklar durağan');
+  // ışık satırının uç çizgisi dolgu kadar kayar (yalnız transform; --doluluk yuzey-sayfa.js'ten)
+  assert.match(kural('.karo-uc', ''), /transform:\s*translateX\(calc\(var\(--doluluk, 0\) \* 100%\)\)/);
+  assert.match(kural('.karo-uc', ''), /pointer-events:\s*none/);
+});

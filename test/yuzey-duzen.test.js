@@ -974,7 +974,18 @@ test('görünüm: yıkıcı ve tekrarlayan karo sarmasızdır, boyut sınıfı d
   const dl = dugmeBul(sayfa, 'LED şerit');
   assert.ok(sinifli(dl, 'renk-sari') && sinifli(dl, 'simgeli'));
   assert.equal(icerik(sayfa).bul((o) => sinifli(o, 'isik-karo')).length, 1);
-  assert.equal(icerik(sayfa).bul((o) => sinifli(o, 'hazir')).length, 4, 'hazır seviyeler yerinde');
+  // 1.7.0: panelde ışık kompakt satırdır (hazır seviyeler ve kaydırıcı yok); satırın "⋯" düğmesi ayrıntıyı açar
+  const satir = icerik(sayfa).bul((o) => sinifli(o, 'isik-karo'))[0];
+  assert.ok(sinifli(satir, 'satir') && sinifli(satir, 'kontrollu'), 'satır sınıfları');
+  assert.equal(icerik(sayfa).bul((o) => sinifli(o, 'hazir')).length, 0, 'satırda hazır seviye yok');
+  assert.equal(icerik(sayfa).bul((o) => o.type === 'range').length, 0, 'satırda kaydırıcı yok');
+  satir.bul((o) => sinifli(o, 'karo-kontrol'))[0].gonder('click');
+  assert.equal(ayrintiVarMi(sayfa), true);
+  assert.equal(icerik(sayfa).bul((o) => sinifli(o, 'hazir')).length, 4, 'hazır seviyeler ayrıntı bölmesinde');
+  assert.equal(icerik(sayfa).bul((o) => o.type === 'range').length, 1, 'kaydırıcı ayrıntı bölmesinde');
+  const ayrintidaki = dugmeBul(sayfa, 'LED şerit');
+  assert.ok(sinifli(ayrintidaki, 'renk-sari') && sinifli(ayrintidaki, 'simgeli'), 'ayrıntıdaki ışık düğmesi de simge / renk taşır');
+  assert.equal(icerik(sayfa).bul((o) => sinifli(o, 'isik-karo') && sinifli(o, 'satir')).length, 0, 'ayrıntıda tam karo çizilir, kompakt satır değil');
 });
 
 // ---------------------------------------------------------------- düzen modülü yokken geri dönüş

@@ -229,17 +229,17 @@ test('g-13: Ctrl + / Ctrl − / Ctrl 0 panelde sayfa yakınlaştırmasını ve p
   try {
     const p = await panelAc(o);
     const boyutlar = () => p.sinirlar.at(-1);
-    assert.deepEqual([boyutlar().width, boyutlar().height], [360, 420]);
+    assert.deepEqual([boyutlar().width, boyutlar().height], [396, 420]);
 
     const a = o.tus(p, { key: '+' });
     assert.equal(a.onlendi, true, 'tuş sayfaya gitmez');
     assert.deepEqual(p.webContents.zoomlar, [1.15]);
-    assert.deepEqual([boyutlar().width, boyutlar().height], [414, 483]);
+    assert.deepEqual([boyutlar().width, boyutlar().height], [455, 483]);
 
     o.tus(p, { key: '=' });
     o.tus(p, { key: '+' });
     assert.deepEqual(p.webContents.zoomlar.slice(-2), [1.3, 1.5]);
-    assert.deepEqual([boyutlar().width, boyutlar().height], [540, 630]);
+    assert.deepEqual([boyutlar().width, boyutlar().height], [594, 630]);
     assert.ok(boyutlar().x >= 8 && boyutlar().x + boyutlar().width <= 1920 - 8, 'çalışma alanında kalır');
     assert.ok(boyutlar().y >= 8 && boyutlar().y + boyutlar().height <= 1040 - 8);
 
@@ -247,7 +247,7 @@ test('g-13: Ctrl + / Ctrl − / Ctrl 0 panelde sayfa yakınlaştırmasını ve p
     assert.equal(p.webContents.zoomlar.at(-1), 1.3);
     o.tus(p, { key: '0' });
     assert.equal(p.webContents.zoomlar.at(-1), 1);
-    assert.deepEqual([boyutlar().width, boyutlar().height], [360, 420]);
+    assert.deepEqual([boyutlar().width, boyutlar().height], [396, 420]);
 
     const sayi = p.webContents.zoomlar.length;
     const yine = o.tus(p, { key: '0' });
@@ -307,7 +307,7 @@ test('g-13: yakınlaştırma pencere gizli/yeniden oluşturulsa da korunur; gizl
     o.tus(p, { key: '+' }); // 1.3
     o.yonetici.gizle('kapat');
     o.yonetici.panelAcKapat('tepsi');
-    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [468, 546], 'yeniden gösterimde 1.3 ölçek');
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [515, 546], 'yeniden gösterimde 1.3 ölçek');
 
     // sayfa süreci çöker: yeni pencere oluşur, did-finish-load'da yakınlaştırma yeniden uygulanır
     p.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
@@ -317,7 +317,7 @@ test('g-13: yakınlaştırma pencere gizli/yeniden oluşturulsa da korunur; gizl
     const yeni = o.pencereler[1];
     assert.ok(yeni && yeni !== p);
     assert.deepEqual(yeni.webContents.zoomlar, [1.3]);
-    assert.equal(yeni.sinirlar.at(-1).width, 468);
+    assert.equal(yeni.sinirlar.at(-1).width, 515);
   } finally {
     o.temizle();
   }
@@ -329,7 +329,7 @@ test('g-13: yakınlaştırma desteği olmayan ortamda (setZoomFactor yok) hata v
     const p = await panelAc(o);
     const olay = o.tus(p, { key: '+' });
     assert.equal(olay.onlendi, true);
-    assert.equal(p.sinirlar.at(-1).width, 414);
+    assert.equal(p.sinirlar.at(-1).width, 455);
     assert.deepEqual(o.gunlukler, []);
   } finally {
     o.temizle();
@@ -354,7 +354,7 @@ test('g-13: eski pencerenin geç gelen tuş olayı yeni pencereyi etkilemez; pen
     o.tus(yeni, { key: '+' });
     assert.equal(yeni.sinirlar.length, gizliSayi, 'gizliyken setBounds yok');
     o.yonetici.panelAcKapat('tepsi');
-    assert.equal(yeni.sinirlar.at(-1).width, 414, 'gösterilince uygulanır');
+    assert.equal(yeni.sinirlar.at(-1).width, 455, 'gösterilince uygulanır');
   } finally {
     o.temizle();
   }
@@ -367,7 +367,7 @@ test('g-09: gorunenSinirlar yalnız panel/palet görünürken pencerenin sınır
     const p = await panelAc(o);
     const sinir = o.yonetici.gorunenSinirlar();
     assert.deepEqual(sinir, p.getBounds());
-    assert.equal(sinir.width, 360);
+    assert.equal(sinir.width, 396);
     o.yonetici.gizle('kapat');
     assert.equal(o.yonetici.gorunenSinirlar(), null, 'gizliyken engel değildir');
     o.yonetici.panelAcKapat('tepsi');
@@ -645,7 +645,7 @@ test('o-25 metin boyutu: panel Ayarlar\'daki ölçekle açılır (sayfa yakınla
     const p = await panelAc(o);
     await akit();
     assert.deepEqual(p.webContents.zoomlar.at(-1), 1.3, 'sayfa 130% ile açılır');
-    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [468, 546]);
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [515, 546]);
 
     o.tus(p, { key: '+' });
     assert.equal(p.webContents.zoomlar.at(-1), 1.5);
@@ -654,7 +654,7 @@ test('o-25 metin boyutu: panel Ayarlar\'daki ölçekle açılır (sayfa yakınla
     assert.equal(p.webContents.zoomlar.at(-1), 1.15, 'taban altına inilebilir');
     o.tus(p, { key: '0' });
     assert.equal(p.webContents.zoomlar.at(-1), 1.3, 'Ctrl 0 tabana (130%) döner, 100%\'e değil');
-    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [468, 546]);
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [515, 546]);
   } finally {
     o.temizle();
   }
@@ -665,7 +665,7 @@ test('o-25 metin boyutu: geçersiz ya da hatalı ölçek 1 sayılır; palet de t
     const o = kur({ metinOlcegiAl: () => kotu });
     try {
       const p = await panelAc(o);
-      assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [360, 420], String(kotu));
+      assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [396, 420], String(kotu));
       assert.equal(p.webContents.zoomlar.length, 0, 'ölçek 1 iken yakınlaştırma çağrısı yok');
     } finally {
       o.temizle();
@@ -674,7 +674,7 @@ test('o-25 metin boyutu: geçersiz ya da hatalı ölçek 1 sayılır; palet de t
   const hatali = kur({ metinOlcegiAl: () => { throw new Error('x'); } });
   try {
     const p = await panelAc(hatali);
-    assert.equal(p.sinirlar.at(-1).width, 360);
+    assert.equal(p.sinirlar.at(-1).width, 396);
   } finally {
     hatali.temizle();
   }
@@ -702,7 +702,7 @@ test('o-25 metin boyutu: Ayarlar\'da değişince açık panel yeni tabana gelir 
     olcek = 1.15;
     o.yonetici.metinOlcegiUygula();
     assert.equal(p.webContents.zoomlar.at(-1), 1.15, 'elle seçim bırakılır, yeni taban uygulanır');
-    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [414, 483], 'görünür pencere yeniden yerleştirilir');
+    assert.deepEqual([p.sinirlar.at(-1).width, p.sinirlar.at(-1).height], [455, 483], 'görünür pencere yeniden yerleştirilir');
 
     // gizliyken değişiklik bir sonraki gösterimde uygulanır
     o.yonetici.gizle('kapat');
@@ -710,7 +710,7 @@ test('o-25 metin boyutu: Ayarlar\'da değişince açık panel yeni tabana gelir 
     o.yonetici.metinOlcegiUygula();
     o.yonetici.panelAcKapat('tepsi');
     assert.equal(p.webContents.zoomlar.at(-1), 1.5);
-    assert.equal(p.sinirlar.at(-1).width, 540);
+    assert.equal(p.sinirlar.at(-1).width, 594);
   } finally {
     o.temizle();
   }

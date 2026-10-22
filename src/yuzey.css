@@ -570,6 +570,8 @@ input:focus-visible,
   flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--kenar) transparent;
   padding: 4px 12px 12px;
 }
 
@@ -582,74 +584,6 @@ input:focus-visible,
   font-size: 12px;
   font-weight: 600;
   color: var(--soluk);
-}
-
-/* Grup başına küçük simge (g-08): süs olduğu için CSS ile eklenir (metne ve ekran okuyucuya girmez) */
-.bolum-baslik::before {
-  display: inline-block;
-  margin-right: 6px;
-  letter-spacing: 0;
-  filter: grayscale(1); /* 2.0: renkli emoji yerine sade, metinle uyumlu tek ton */
-}
-
-.bolum.son .bolum-baslik::before {
-  content: "🕘";
-  content: "🕘" / "";
-}
-
-.grup-isik .bolum-baslik::before {
-  content: "💡";
-  content: "💡" / "";
-}
-
-.grup-iklim .bolum-baslik::before {
-  content: "🌡";
-  content: "🌡" / "";
-}
-
-.grup-perde .bolum-baslik::before {
-  content: "🪟";
-  content: "🪟" / "";
-}
-
-.grup-kamera .bolum-baslik::before {
-  content: "📷";
-  content: "📷" / "";
-}
-
-.grup-yardimci .bolum-baslik::before {
-  content: "⚙";
-  content: "⚙" / "";
-}
-
-.grup-sahne .bolum-baslik::before {
-  content: "🎬";
-  content: "🎬" / "";
-}
-
-.grup-pc .bolum-baslik::before {
-  content: "🖥";
-  content: "🖥" / "";
-}
-
-.grup-medya .bolum-baslik::before {
-  content: "🔊";
-  content: "🔊" / "";
-}
-
-.grup-sensor .bolum-baslik::before {
-  content: "🌡";
-  content: "🌡" / "";
-}
-
-.grup-diger .bolum-baslik::before {
-  content: "▪";
-  content: "▪" / "";
-}
-
-.grup-onayli .bolum-baslik::before {
-  content: "🔒";
-  content: "🔒" / "";
 }
 
 .izgara {
@@ -671,7 +605,7 @@ input:focus-visible,
   align-items: flex-start;
   justify-content: flex-start;
   gap: 2px;
-  min-height: 78px;
+  min-height: 84px;
   padding: 10px;
   overflow: hidden;
   text-align: left;
@@ -924,10 +858,10 @@ input:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px;
+  padding: 12px;
   background: var(--bg-ust);
   border: 1px solid var(--kenar);
-  border-radius: 18px; /* iç içe yarıçap (1.4.2): içteki düğmeler ve kapak 8 px + 10 px dolgu */
+  border-radius: 20px; /* iç içe yarıçap (1.4.2): içteki düğmeler ve kapak 8 px + 12 px dolgu */
 }
 
 .kart.yok {
@@ -1838,16 +1772,6 @@ button.bilgi-kart:hover {
   font-weight: 400;
 }
 
-.bilgi-liste .bolum-baslik::before {
-  content: "☑";
-  content: "☑" / "";
-}
-
-.bilgi-takvim .bolum-baslik::before {
-  content: "📅";
-  content: "📅" / "";
-}
-
 /* Yapılacaklar */
 .liste-oge {
   display: flex;
@@ -2481,6 +2405,7 @@ button.bilgi-kart:hover {
 }
 
 .mod-palet .ust,
+.mod-palet .hero,
 .mod-palet .serit,
 .mod-palet .bildirim,
 .mod-palet .dis-onay,
@@ -2511,9 +2436,10 @@ button.bilgi-kart:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  margin-bottom: 8px;
+  width: 34px;
+  height: 34px;
+  margin-bottom: auto;
+  padding-bottom: 0;
   color: var(--renk, var(--soluk));
   background: var(--karo-uzerinde);
   border-radius: 50%;
@@ -2636,6 +2562,521 @@ button.bilgi-kart:hover {
 :root[data-karsitlik] .karo.durum-acik,
 :root[data-karsitlik] .karo.durum-acik:hover {
   background: var(--karo);
+}
+
+/* ---------------------------------------------------------------------------------------------------------------------
+ * 1.7.0 "Kumanda Merkezi" panel düzeni (onaylı taslak): ince üst çubuk, hero (saat + hava + medya hapı), ikonlu bildirim hapı,
+ * kuyu biçimli sekmeler, ikonlu sensör çipleri, kompakt ışık satırları ve ikonlu alt çubuk. Arayüz ikonları ya lib/ikon-seti.js
+ * (betikle kurulan parçalar) ya da CSS maskesidir (HTML'deki sabit öğeler; data: SVG, CSP img-src data: izin verir, renk currentColor).
+ * --------------------------------------------------------------------------------------------------------------------- */
+
+/* Üst çubuk: solda bağlantı noktası + durum, sağda iğne; uygulama adı ekran okuyucuda kalır, görünmez (pencerenin adı zaten var) */
+.mod-panel .ust {
+  min-height: 38px;
+  padding: 6px 12px 0;
+  gap: 4px 8px;
+}
+
+.mod-panel .baslik {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.mod-panel .baglanti {
+  order: -1;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0;
+}
+
+/* Medya hapı hero'dayken üst çubuktaki çalan parça yazısı tekrar etmez */
+.kok:has(.hero .medya-hap) .ust .medya {
+  display: none;
+}
+
+.sabitle {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+}
+
+.sabitle.basili,
+.sabitle[aria-pressed="true"] {
+  background: var(--karo-uzerinde);
+}
+
+/* Hero: saat solda büyük, hava sağda; altında (açıksa) tahmin ve medya hapı */
+.hero {
+  flex: 0 0 auto;
+  padding: 2px 12px 0;
+}
+
+.hero-ust {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 2px 4px 10px;
+}
+
+.hero .saat-deger {
+  font-family: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.hero .saat-tarih {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--soluk);
+}
+
+.hero-hava {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-items: end;
+  column-gap: 8px;
+  min-width: 0;
+  max-width: 200px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  text-align: right;
+  border-radius: 10px;
+}
+
+button.hero-hava:hover {
+  background: var(--karo);
+}
+
+.hero-hava .hava-ikon {
+  display: block;
+  color: var(--acik);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.hero-hava .hava-sicaklik {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.hero-hava .hava-durum {
+  grid-column: 1 / -1;
+  max-width: 100%;
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--soluk);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-hava.bos {
+  display: block;
+  font-size: 12px;
+  color: var(--soluk);
+}
+
+.hero .bilgi-tahmin {
+  border-radius: 14px;
+}
+
+/* Medya hapı: kapak | ekolayzer + parça · sanatçı | çal/duraklat | sonraki */
+.medya-hap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 5px 6px 5px 5px;
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--metin) 6%, transparent);
+}
+
+/* Oynatıcı seçilmemiş / alınamıyor: hapın yerinde kısa not */
+.hap-bos {
+  margin-bottom: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--soluk);
+  background: var(--karo);
+  border: 1px solid var(--kenar);
+  border-radius: 999px;
+}
+
+.hap-kapak {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  overflow: hidden;
+  background: conic-gradient(from 210deg, var(--renk-mor), var(--renk-mavi), var(--renk-turuncu), var(--renk-mor));
+  border-radius: 50%;
+}
+
+.hap-kapak .kart-kapak {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.hap-govde {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 2px;
+  overflow: hidden;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 8px;
+}
+
+.hap-baslik {
+  font-weight: 600;
+  color: var(--metin);
+}
+
+.hap-ikinci {
+  color: var(--soluk);
+}
+
+.hap-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.hap-eq i {
+  width: 3px;
+  height: 100%;
+  background: var(--vurgu);
+  border-radius: 2px;
+  transform: scaleY(0.35);
+  transform-origin: bottom;
+}
+
+.medya-hap .kart-dugme.yuvarlak {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  padding: 0;
+  color: var(--metin);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+}
+
+.medya-hap .kart-dugme.yuvarlak:hover:not(:disabled) {
+  background: var(--karo-uzerinde);
+}
+
+.medya-hap .kart-dugme.yuvarlak svg {
+  display: block;
+}
+
+/* Bildirim hapı: zil | sayı | özet | ok (başlık ekran okuyucuda kalır) */
+.bildirim {
+  padding: 0 12px 8px;
+}
+
+.bildirim-dugme {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--metin) 6%, transparent);
+}
+
+.bildirim-zil,
+.bildirim-ok {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  font-size: 0;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15z'/%3E%3Cpath d='M10 20.5a2 2 0 0 0 4 0'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+.bildirim-zil {
+  color: var(--soluk);
+}
+
+.bildirim-ok {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+.bildirim-dugme[aria-expanded="true"] .bildirim-ok {
+  transform: rotate(180deg);
+}
+
+.bildirim-baslik {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bildirim-dugme {
+  position: relative;
+}
+
+.bildirim-rozet {
+  min-width: 20px;
+  padding: 0 6px;
+  line-height: 20px;
+  border-radius: 10px;
+}
+
+.bildirim-ozet {
+  color: var(--metin);
+}
+
+/* Sekmeler: kuyu zemin, gölgeli kayan gösterge (alt çizgi yok) */
+.sekmeler {
+  margin: 2px 12px 10px;
+  background: color-mix(in srgb, var(--bg) 82%, black);
+  border: 0;
+  border-radius: 10px;
+}
+
+.sekmeler::before {
+  border: 0;
+  border-radius: 7px;
+  box-shadow: 0 1px 3px color-mix(in srgb, black 45%, transparent);
+}
+
+.sekme {
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 0;
+  border-radius: 7px;
+}
+
+.sekmeler:not([data-gosterge]) .sekme.secili {
+  box-shadow: 0 1px 3px color-mix(in srgb, black 45%, transparent);
+}
+
+/* Sensör çipleri: ikon + değer (tam ad title / aria-label'da) */
+.serit-oge {
+  align-items: center;
+  padding: 4px 10px 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--metin) 6%, transparent);
+}
+
+.serit-ikon {
+  flex: none;
+  display: block;
+  color: var(--soluk);
+}
+
+/* "Odayı kapat": hayalet düğme */
+.oda-kapat {
+  padding: 3px 10px;
+  background: transparent;
+}
+
+.oda-kapat:hover:not(:disabled) {
+  background: var(--karo);
+}
+
+/*
+ * Kompakt ışık satırı (panel listesi): simge | ad + Açık/Kapalı | yüzde | ⋯. Zemin parlaklık kadar dolar; dolgunun ucunda ince parlak
+ * çizgi (.karo-uc; --doluluk'u yuzey-sayfa.js doluluguYaz yazar). Ayrıntı bölmesindeki ışık karosu (hazırlar, kaydırıcı, renkler) eski
+ * düzende kalır.
+ */
+.isik-karo.satir {
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 14px;
+}
+
+.isik-karo.satir .karo {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "m e y" "m d y";
+  align-content: center;
+  row-gap: 2px;
+  column-gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px 10px 10px;
+  border-radius: 14px;
+  touch-action: pan-y;
+}
+
+.isik-karo.satir.kontrollu .karo {
+  padding-right: 44px;
+}
+
+.isik-karo.satir .karo-madeni {
+  grid-area: m;
+}
+
+.isik-karo.satir .karo-etiket {
+  grid-area: e;
+  align-self: end;
+  font-size: 13px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.isik-karo.satir .karo .karo-durum {
+  grid-area: d;
+  align-self: start;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--soluk);
+}
+
+.isik-karo.satir .karo.durum-acik .karo-durum {
+  font-weight: 600;
+  color: var(--metin);
+}
+
+.isik-karo.satir .karo-durum::first-letter {
+  text-transform: uppercase;
+}
+
+.isik-karo.satir .karo.durum-acik {
+  border-color: var(--kenar);
+}
+
+.isik-karo.satir .karo-ipucu {
+  grid-column: 2;
+}
+
+.karo-yuzde {
+  grid-area: y;
+  min-width: 44px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.karo-uc {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  z-index: -1;
+  width: 100%;
+  pointer-events: none;
+  transform: translateX(calc(var(--doluluk, 0) * 100%));
+}
+
+.karo-uc::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 3px;
+  background: var(--renk, var(--acik));
+  border-radius: 3px;
+  opacity: 0;
+}
+
+.karo.durum-acik .karo-uc::before {
+  opacity: 0.9;
+}
+
+.isik-karo.satir .karo-kontrol {
+  top: calc(50% - 11px);
+  right: 10px;
+  bottom: auto;
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.65;
+}
+
+.isik-karo.satir .karo-kontrol:hover,
+.isik-karo.satir .karo-kontrol:focus-visible {
+  opacity: 1;
+  background: var(--karo-uzerinde);
+}
+
+/* İçerik alanı panel açılınca klavye için odak alır; bütün listenin çevresinde halka göstermez (yüksek karşıtlık kendi kuralını korur) */
+.mod-panel .icerik:focus-visible {
+  outline-color: transparent;
+}
+
+/* İklim kartı: açıkken mavi ton; büyük hedef sıcaklık ve yuvarlak − / + */
+.kart-iklim:has(.kart-dugme.guc[aria-pressed="true"]) {
+  background: color-mix(in srgb, var(--vurgu) 12%, var(--bg-ust));
+  border-color: color-mix(in srgb, var(--vurgu) 35%, var(--kenar));
+}
+
+.kart-iklim .kart-sayisal .kart-dugme {
+  width: 36px;
+  height: 36px;
+  min-width: 0;
+  padding: 0;
+  background: var(--karo-uzerinde);
+  border-radius: 50%;
+}
+
+.kart-iklim .kart-deger.buyuk {
+  font-family: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Alt çubuk: ikon + etiket, iki yana yaslı */
+.alt {
+  justify-content: space-between;
+  padding: 8px 12px 10px;
+}
+
+.alt-dugme {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 0;
+  border-radius: 8px;
+}
+
+.alt-dugme::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7z'/%3E%3Cpath d='M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+#geriAl::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14L4 9l5-5'/%3E%3Cpath d='M4 9h10a6 6 0 0 1 0 12h-3'/%3E%3C/svg%3E");
+}
+
+#haAc::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 11L12 3.5l8.5 7.5'/%3E%3Cpath d='M5.5 9.5V20.5h13V9.5'/%3E%3Cpath d='M10 20.5v-5h4v5'/%3E%3C/svg%3E");
 }
 
 /* =====================================================================================================================
@@ -2842,8 +3283,36 @@ button.bilgi-kart:hover {
     transition: transform 300ms var(--yay-sert), width 300ms var(--yay-sert);
   }
 
+  /* 1.7.0: çalan medyanın ekolayzer çubukları (yalnız transform) ve bildirim hapının oku */
+  :root:not([data-hareket]) .medya-hap.caliyor .hap-eq i {
+    animation: hap-eq 900ms ease-in-out infinite alternate;
+  }
+
+  :root:not([data-hareket]) .medya-hap.caliyor .hap-eq i:nth-child(2) {
+    animation-duration: 700ms;
+    animation-delay: -200ms;
+  }
+
+  :root:not([data-hareket]) .medya-hap.caliyor .hap-eq i:nth-child(3) {
+    animation-duration: 1100ms;
+    animation-delay: -500ms;
+  }
+
+  :root:not([data-hareket]) .bildirim-ok {
+    transition: transform 200ms var(--e-ui);
+  }
+
   :root:not([data-hareket])[data-acilis] .kok {
     animation: panel-ac 280ms var(--yay-yumusak) backwards;
+  }
+}
+
+@keyframes hap-eq {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
   }
 }
 
@@ -2947,18 +3416,9 @@ button.bilgi-kart:hover {
     animation-delay: 125ms;
   }
 
-  /* Simge büyümesi: başarı işareti büyüyerek belirir; grup simgesi üstüne gelince büyür */
+  /* Simge büyümesi: başarı işareti büyüyerek belirir */
   :root[data-gecis] .karo.basari .karo-madeni::before {
     animation: isaret-gir 260ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
-  }
-
-  :root[data-gecis] .bolum-baslik::before {
-    display: inline-block;
-    transition: transform 160ms ease-out;
-  }
-
-  :root[data-gecis] .bolum:hover .bolum-baslik::before {
-    transform: scale(1.3);
   }
 
   :root[data-gecis] .icerik {

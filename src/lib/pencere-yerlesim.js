@@ -134,7 +134,7 @@ function koseKonumu(workArea, boyut = KOSE_BOYUTU, marj = KOSE_MARJI, engel = nu
 }
 
 // Hızlı panel ve komut paleti (hiz-01, hiz-02): küçük çerçevesiz pencereler.
-const PANEL_BOYUTU = { width: 360, height: 420 };
+const PANEL_BOYUTU = { width: 396, height: 420 }; // 1.7.0: onaylı taslağın genişliği
 const PALET_BOYUTU = { width: 560, height: 96 };
 const YUZEY_YUKSEKLIK_SINIRI = { en_az: 120, en_cok: 640 };
 const YUZEY_KENAR_BOSLUGU = 8;

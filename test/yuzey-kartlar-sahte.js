@@ -20,9 +20,16 @@ const BETIKLER = [
   ['lib/ceviri/yuzey.js', oku('src/lib/ceviri/yuzey.js')],
   ['lib/arama.js', oku('src/lib/arama.js')],
   ['lib/kaydirici.js', oku('src/lib/kaydirici.js')],
+  ['lib/ikon-seti.js', oku('src/lib/ikon-seti.js')], // 1.7.0 arayüz ikonları (yuzey.html'de kartlardan önce yüklenir)
   ['yuzey-kartlar.js', oku('src/yuzey-kartlar.js')],
   ['yuzey-kamera.js', oku('src/yuzey-kamera.js')], // 1.4.0 cihaz (o-48): sayfa bu modülü window.EvYuzeyKamera ile bulur
   ['yuzey-sayfa.js', oku('src/yuzey-sayfa.js')],
+];
+// 1.7.0: ışık satırında hazır seviyeler, kaydırıcı ve renkler yalnız ayrıntı bölmesindedir; ayrıntıyı "⋯" düğmesi açar. Bölme yuzey-duzen.js
+// ile gelir; ama düzen modülü karoları sarar (karo-sarma, "⋯") ve öteki testleri değiştirir: yalnız `duzen: true` isteyen sayfa yükler.
+const DUZEN_BETIKLERI = [
+  ['lib/karo-gorunum.js', oku('src/lib/karo-gorunum.js')],
+  ['yuzey-duzen.js', oku('src/yuzey-duzen.js')],
 ];
 
 class SahteOge {
@@ -48,6 +55,7 @@ class SahteOge {
     this._deger = '';
     this._metin = '';
     this.odakSayisi = 0;
+    this.yakalayanlar = new Set();
     const kap = this;
     this.classList = {
       add: (c) => {
@@ -103,8 +111,10 @@ class SahteOge {
     delete this.attributes[ad];
   }
 
-  addEventListener(ad, isleyici) {
+  addEventListener(ad, isleyici, secenek) {
     (this.dinleyiciler[ad] ??= []).push(isleyici);
+    // Yakalama evresi dinleyicisi (üçüncü bağımsız değişken true ya da { capture: true }) gonder'de öğenin öteki dinleyicilerinden önce çalışır
+    if (secenek === true || (secenek && secenek.capture === true)) this.yakalayanlar.add(isleyici);
   }
 
   focus() {
@@ -115,8 +125,13 @@ class SahteOge {
   scrollIntoView() {}
 
   gonder(tip, ek = {}) {
-    const olay = { type: tip, target: this, preventDefault() { this.onlendi = true; }, ...ek };
-    for (const isleyici of this.dinleyiciler[tip] ?? []) isleyici(olay);
+    const olay = { type: tip, target: this, preventDefault() { this.onlendi = true; }, stopImmediatePropagation() { this.durduruldu = true; }, ...ek };
+    const hepsi = this.dinleyiciler[tip] ?? [];
+    const sira = [...hepsi.filter((i) => this.yakalayanlar.has(i)), ...hepsi.filter((i) => !this.yakalayanlar.has(i))];
+    for (const isleyici of sira) {
+      if (olay.durduruldu) break;
+      isleyici(olay);
+    }
     return olay;
   }
 
@@ -198,7 +213,7 @@ const modelYap = (...karolar) => ({
  * `dil`: durumAl yanıtındaki etkin dil. `calistirYaniti`: sabit yanıt ya da (yuk) => yanıt/söz.
  * Dönen nesne: oge(kimlik), cagrilar, zaman, durum(model), calistirmalar() ...
  */
-function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, kartlarYok = false, kameraYaniti = null, etkilesim, gorunum, temaRenk = false, sabitleYaniti = (istenen) => ({ ok: true, sabit: istenen }) } = {}) {
+function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, kartlarYok = false, duzen = false, kameraYaniti = null, etkilesim, gorunum, temaRenk = false, sabitleYaniti = (istenen) => ({ ok: true, sabit: istenen }) } = {}) {
   const odak = { aktif: null };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
@@ -262,6 +277,10 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
           },
         }
       : {}),
+    sagTik: async (kimlik) => {
+      cagrilar.push(['sagTik', kimlik]);
+      return { ok: true };
+    },
     kapat: () => cagrilar.push(['kapat']),
     boyut: (h) => cagrilar.push(['boyut', h]),
     haAc: async () => cagrilar.push(['haAc']),
@@ -281,6 +300,7 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
       return oge;
     },
     createElement: (etiket) => new SahteOge(etiket, null, odak),
+    createElementNS: (adAlani, etiket) => new SahteOge(etiket, null, odak), // 1.7.0 svg ikonları (lib/ikon-seti.js)
     addEventListener: (ad, fn) => (belgeDinleyicileri[ad] ??= []).push(fn),
     get activeElement() {
       return odak.aktif;
@@ -299,6 +319,7 @@ function sayfayiKur({ model, mod = 'panel', calistirYaniti = { ok: true }, dil, 
   vm.createContext(sandbox);
   for (const [ad, kaynak] of BETIKLER) {
     if (kartlarYok && ad === 'yuzey-kartlar.js') continue;
+    if (duzen && ad === 'yuzey-sayfa.js') for (const [duzenAd, duzenKaynak] of DUZEN_BETIKLERI) vm.runInContext(duzenKaynak, sandbox, { filename: duzenAd });
     vm.runInContext(kaynak, sandbox, { filename: ad });
   }
   // yuzey.html'de lib/tema-renk.js sayfa betiğinden SONRA yüklenir; ilk durum-al yanıtı gelmeden hazırdır (temaRenk: true)
@@ -364,10 +385,25 @@ const dugmeAra = (sayfa, aria) => dugmeler(sayfa, (o) => o.attributes['aria-labe
 const kartlar = (sayfa) => sayfa.bul((o) => o.sinifVar('kart'));
 const paletSatirlari = (sayfa) => sayfa.bul((o) => o.sinifVar('palet-satir'));
 
+/**
+ * 1.7.0: ışık satırı kompakttır; hazır seviyeler, kaydırıcı ve renkler satırdaki "⋯" (karo-kontrol) düğmesiyle açılan ayrıntı bölmesindedir.
+ * Bu yardımcı o düğmeye basar (`duzen: true` ile kurulmuş sayfa gerekir) ve ayrıntı bölmesini döner.
+ */
+function ayrintiAc(sayfa, etiket) {
+  // Işığın satırı: adı `etiket` olan karo düğmesini taşıyan kapsayıcı (arayüz dili ne olursa olsun çalışsın diye ipucu metnine bakılmaz)
+  const satir = sayfa.bul((o) => o.sinifVar('isik-karo') && o.bul((c) => c.sinifVar('karo-etiket') && c.textContent === etiket).length > 0)[0];
+  const dugme = satir && satir.bul((o) => o.sinifVar('karo-kontrol'))[0];
+  assert.ok(dugme, `${etiket}: "⋯" düğmesi yok (duzen: true ile kurulmuş mu?)`);
+  dugme.gonder('click');
+  const bolme = sayfa.bul((o) => o.sinifVar('ayrinti'))[0];
+  assert.ok(bolme, `${etiket}: ayrıntı bölmesi açılmadı`);
+  return bolme;
+}
+
 /** Basılı tutma: pointerdown, süre geçir, (bırakmadan) tamam. */
 function basiliTut(sayfa, oge, ms = 900) {
   oge.gonder('pointerdown', { button: 0 });
   sayfa.zaman.ilerle(ms);
 }
 
-module.exports = { SahteOge, sahteZaman, karo, modelYap, sayfayiKur, akit, panelAc, paletAc, sorguYaz, enter, dugmeler, dugmeAra, kartlar, paletSatirlari, basiliTut };
+module.exports = { SahteOge, sahteZaman, karo, modelYap, sayfayiKur, akit, panelAc, paletAc, sorguYaz, enter, dugmeler, dugmeAra, kartlar, paletSatirlari, basiliTut, ayrintiAc };

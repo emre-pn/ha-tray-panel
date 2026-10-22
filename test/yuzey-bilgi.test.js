@@ -271,10 +271,10 @@ test('hizliEkleSatiri: "liste süt" / "list milk" / "todo ..." ayardaki kullanı
 
 // ---- üst kartlar ve sensör şeridi -------------------------------------------------------------------------------------
 
-test('saat kartı: saat ve tarih yazılır, her dakika başında kendini günceller; tarih "yok" ise gizlenir', () => {
+test('saat (1.7.0 hero): saat ve tarih yazılır, her dakika başında kendini günceller; tarih "yok" ise gizlenir', () => {
   const { modul, zaman } = ortamKur();
   modul.ayarla(modelOlustur());
-  const ust = modul.ustParcalar();
+  const ust = modul.heroParcalari();
   const saatDegeri = bulSinif(ust, 'saat-deger')[0];
   const tarih = bulSinif(ust, 'saat-tarih')[0];
   assert.equal(saatDegeri.textContent, Bicim.saatMetni(BASLANGIC, { saatBicimi: '24' }));
@@ -285,29 +285,30 @@ test('saat kartı: saat ve tarih yazılır, her dakika başında kendini güncel
   // tarih biçimi yok
   const { modul: m2 } = ortamKur();
   m2.ayarla(modelOlustur({ ayar: { ...AYAR, tarihBicimi: 'yok' } }));
-  const t2 = bulSinif(m2.ustParcalar(), 'saat-tarih')[0];
+  const t2 = bulSinif(m2.heroParcalari(), 'saat-tarih')[0];
   assert.equal(t2.hidden, true);
   assert.equal(t2.textContent, '');
 });
 
-test('hava kartı: durum, sıcaklık, nem ve rüzgâr; varlık seçilmemiş / alınamamış durumlar ayrı söylenir; ham durum adı sızmaz', () => {
+test('hava (1.7.0 hero): yuvarlanmış sıcaklık, durum ve nem görünür; tam değer ve rüzgâr erişilebilir adda; seçilmemiş / alınamamış durumlar ayrı söylenir; ham durum adı sızmaz', () => {
   const { modul } = ortamKur();
   modul.ayarla(modelOlustur());
-  const kart = bulSinif(modul.ustParcalar(), 'kart-hava')[0];
-  assert.match(kart.textContent, /24,5 °C/);
-  assert.match(kart.textContent, /Parçalı bulutlu/);
-  assert.match(kart.textContent, /Nem %40/);
-  assert.match(kart.textContent, /Rüzgâr 12 km\/h/);
-  assert.doesNotMatch(kart.textContent, /partlycloudy|yuzey\.bilgi/);
-  const simge = bulSinif(kart, 'hava-simge')[0];
+  const kart = bulSinif(modul.heroParcalari(), 'hero-hava')[0];
+  assert.match(kart.textContent, /25°/);
+  assert.match(kart.textContent, /Parçalı bulutlu · Nem %40/);
+  assert.match(kart.attributes['aria-label'], /24,5 °C/);
+  assert.match(kart.attributes['aria-label'], /Rüzgâr 12 km\/h/);
+  assert.doesNotMatch(kart.textContent + kart.attributes['aria-label'], /partlycloudy|yuzey\.bilgi/);
+  const simge = bulSinif(kart, 'hava-ikon')[0];
   assert.equal(simge.attributes['aria-hidden'], 'true', 'simge süstür');
+  assert.equal(bulSinif(modul.ustParcalar(), 'hero-hava').length + bulSinif(modul.ustParcalar(), 'saat-deger').length, 0, 'içerikte saat / hava yok');
 
   const secilmedi = ortamKur();
   secilmedi.modul.ayarla(modelOlustur({ kartlar: [{ yuva: 1, tur: 'hava', karo: null, secilmedi: true }] }));
-  assert.match(metin(secilmedi.modul.ustParcalar()), /Hava durumu varlığı seçilmedi/);
+  assert.match(metin(secilmedi.modul.heroParcalari()), /Hava durumu varlığı seçilmedi/);
   const yok = ortamKur();
   yok.modul.ayarla(modelOlustur({ kartlar: [{ yuva: 1, tur: 'hava', karo: { ...HAVA, ulasilamiyor: true }, secilmedi: false }] }));
-  assert.match(metin(yok.modul.ustParcalar()), /Hava durumu alınamadı/);
+  assert.match(metin(yok.modul.heroParcalari()), /Hava durumu alınamadı/);
 });
 
 test('hava kartı: yalnız mevcut durum gösterilir (tahmin okuması yok)', () => {
@@ -343,7 +344,7 @@ test('varlık kartı ve sensör şeridi: değer + birim, ikili sensör sözcükl
   assert.doesNotMatch(metin(ust), /yuzey\.bilgi/, 'eksik sözlük anahtarı yok');
 
   const satirlar = kayit.satirlar.map((s) => s.length);
-  assert.deepEqual(satirlar, [1, 4], 'klavye satırları: kart, şerit');
+  assert.deepEqual(satirlar, [4, 1], 'klavye satırları (1.7.0): şerit, kart');
   oge[0].gonder('click');
   assert.equal(modul.detayAcikMi(), true);
   assert.deepEqual(kayit.odakIstekleri, ['bi:geri']);

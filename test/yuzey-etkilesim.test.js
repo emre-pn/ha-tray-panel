@@ -3,7 +3,9 @@
 /**
  * Hızlı panelin 1.4.0 etkileşimleri (sahte DOM, sahte saat; test/yuzey-kartlar-sahte.js):
  *  - o-20 fare tekerleği: ışık parlaklığı ve medya sesi her çentikte ±5; sayfa kaydırmasıyla çakışmaz, kapalı ışığı açmaz,
- *    tekerlek bırakılınca SON değer gider, ayarla kapatılabilir;
+ *    tekerlek bırakılınca SON değer gider, ayarla kapatılabilir. 1.7.0: panelde ışık kompakt satırdır (kaydırıcısı yok); tekerlek satırın
+ *    üstünde çalışır, parlaklık yüzde göstergesinde (.karo-yuzde) görünür, kaydırılabilir panelde yalnız o göstergenin üstünde çalışır;
+ *  - 1.7.0 ışık satırı: yatay sürükleme (8 px eşik), sürükleme sonrası tıklamanın yutulması, Shift + ← / → ±10;
  *  - o-23 panel sabitleme: başlıktaki iğne düğmesi ayarı ana süreçte değiştirir (renderer yalnız ister), başarısızsa eski hâlinde kalır.
  * Ana süreç tarafı (dışarı tıklama, Esc, IPC denetimi, ayar yazımı) test/ana-surec.test.js içindedir.
  */
@@ -19,7 +21,10 @@ const TV = karo('media_player.tv', 'Salon TV', { grup: 'medya', grupEtiketi: 'Me
 const ETKILESIM = { tekerlek: true, sabit: false };
 
 const isikKutulari = (sayfa) => sayfa.bul((o) => o.sinifVar('isik-karo'));
-const aralikOgesi = (kutu) => kutu.bul((o) => o.type === 'range')[0];
+/** 1.7.0 kompakt satırın parlaklık göstergesi (kaydırıcı artık yalnız ayrıntı bölmesindedir). */
+const yuzdeOgesi = (kutu) => kutu.bul((o) => o.sinifVar('karo-yuzde'))[0];
+/** Satırın ana düğmesi (aç / kapat, sürükleme ve klavye bunun üstündedir). */
+const anaDugme = (kutu) => kutu.bul((o) => o.etiket === 'button' && o.sinifVar('karo'))[0];
 const tekerlek = (oge, deltaY, ek = {}) => oge.gonder('wheel', { deltaY, deltaMode: 0, ctrlKey: false, shiftKey: false, ...ek });
 const sabitleDugmesi = (sayfa) => sayfa.oge('sabitle');
 /** Bu sayfanın son gönderimleri: { parlaklik, sonDeger } */
@@ -30,17 +35,18 @@ const parlakliklar = (sayfa) => sayfa.calistirmalar().map((c) => [c.parlaklik, c
 test('tekerlek: ışıkta yukarı +5, aşağı −5; göstergede hemen görünür, sayfa kaydırması engellenir, tekerlek durunca SON değer bir kez gider', async () => {
   const sayfa = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
   const kutu = isikKutulari(sayfa)[0];
-  const aralik = aralikOgesi(kutu);
-  assert.equal(aralik.value, '60');
+  assert.equal(kutu.bul((o) => o.type === 'range').length, 0, '1.7.0: satırda kaydırıcı yok; parlaklık yüzde göstergesinde');
+  const yuzde = yuzdeOgesi(kutu);
+  assert.equal(yuzde.textContent, '%60');
   const ilk = tekerlek(kutu, -100);
   assert.equal(ilk.onlendi, true, 'sayfa kaydırması engellendi (karo üstünde tekerlek karonundur)');
-  assert.equal(aralik.value, '65');
+  assert.equal(yuzde.textContent, '%65');
   sayfa.zaman.ilerle(40);
   tekerlek(kutu, -100);
-  assert.equal(aralik.value, '70');
+  assert.equal(yuzde.textContent, '%70');
   sayfa.zaman.ilerle(40);
   tekerlek(kutu, 100);
-  assert.equal(aralik.value, '65', 'aşağı çevirmek azaltır');
+  assert.equal(yuzde.textContent, '%65', 'aşağı çevirmek azaltır');
   const araSayisi = sayfa.calistirmalar().length;
   assert.ok(araSayisi >= 1 && araSayisi <= 3, `ara gönderimler kısılır (${araSayisi})`);
   assert.ok(sayfa.calistirmalar().every((c) => c.sonDeger !== true), 'tekerlek sürerken kesin değer gitmedi');
@@ -64,7 +70,7 @@ test('tekerlek: uçta kırpılır (1 ve 100); değişmeyen değer istek üretmez
   tekerlek(isikKutulari(alt)[0], 100);
   alt.zaman.ilerle(400);
   assert.equal(alt.calistirmalar().length, oncekiSayi, 'zaten alt sınırda (1): yeni istek yok');
-  assert.equal(aralikOgesi(isikKutulari(alt)[0]).value, '1');
+  assert.equal(yuzdeOgesi(isikKutulari(alt)[0]).textContent, '%1');
 
   const ust = await panelAc({ model: modelYap({ ...ISIK, yuzde: 100 }), etkilesim: ETKILESIM });
   tekerlek(isikKutulari(ust)[0], -100);
@@ -103,7 +109,7 @@ test('tekerlek: Ctrl (yakınlaştırma) ve Shift (yatay kaydırma) ile çevrilir
   assert.equal(tekerlek(kutu, -100, { shiftKey: true }).onlendi, undefined);
   sayfa.zaman.ilerle(1000);
   assert.deepEqual(sayfa.calistirmalar(), []);
-  assert.equal(aralikOgesi(kutu).value, '60');
+  assert.equal(yuzdeOgesi(kutu).textContent, '%60');
 });
 
 test('tekerlek: ayardan kapatılınca (karoTekerlegi) hiçbir şey olmaz; Ayarlar\'dan açılınca çalışır (yuzey:etkilesim)', async () => {
@@ -128,18 +134,20 @@ test('tekerlek: etkileşim bilgisi hiç gelmezse (eski ana süreç) varsayılan 
   assert.equal(tekerlek(isikKutulari(sayfa)[0], -100).onlendi, true);
 });
 
-test('tekerlek: panel kaydırılabiliyorsa yalnız kaydırıcının üstünde çalışır — karo üstünden geçerken sayfa kaydırması bozulmaz', async () => {
+test('tekerlek: panel kaydırılabiliyorsa yalnız satırın yüzde göstergesinin üstünde çalışır — satır üstünden geçerken sayfa kaydırması bozulmaz', async () => {
   const sayfa = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
   const icerik = sayfa.oge('icerik');
   icerik.scrollHeight = 1200;
   icerik.clientHeight = 420;
   const kutu = isikKutulari(sayfa)[0];
-  const aralik = aralikOgesi(kutu);
-  aralik.contains = (oge) => oge === aralik;
-  assert.equal(tekerlek(kutu, -100, { target: kutu }).onlendi, undefined, 'karo gövdesi: sayfa kayar');
+  const yuzde = yuzdeOgesi(kutu);
+  yuzde.contains = (oge) => oge === yuzde;
+  assert.equal(tekerlek(kutu, -100, { target: kutu }).onlendi, undefined, 'satır gövdesi: sayfa kayar');
+  assert.equal(tekerlek(kutu, -100, { target: anaDugme(kutu) }).onlendi, undefined, 'satırın ana düğmesi: sayfa kayar');
+  assert.equal(yuzde.textContent, '%60', 'değer değişmedi');
   sayfa.zaman.ilerle(500);
-  assert.equal(tekerlek(kutu, -100, { target: aralik }).onlendi, true, 'kaydırıcı üstü: değer değişir');
-  assert.equal(aralik.value, '65');
+  assert.equal(tekerlek(kutu, -100, { target: yuzde }).onlendi, true, 'yüzde göstergesi üstü: değer değişir');
+  assert.equal(yuzde.textContent, '%65');
   sayfa.zaman.ilerle(400);
   assert.deepEqual(parlakliklar(sayfa).at(-1), [65, true]);
 });
@@ -151,7 +159,7 @@ test('tekerlek: kaydırma sürerken (400 ms dolmadan) karo dizi başlatamaz; diz
   assert.equal(tekerlek(kutuA, -100).onlendi, true);
   sayfa.zaman.ilerle(100);
   assert.equal(tekerlek(kutuB, -100).onlendi, undefined, 'dizi A\'dayken B karosu devralmaz');
-  assert.equal(aralikOgesi(kutuB).value, '40');
+  assert.equal(yuzdeOgesi(kutuB).textContent, '%40');
   sayfa.zaman.ilerle(1000);
   assert.deepEqual(parlakliklar(sayfa).filter((x) => x[0] === 45), [], 'B hiçbir istek üretmedi');
   assert.ok(sayfa.calistirmalar().every((c) => c.kimlik === 'light.led_serit'));
@@ -204,6 +212,186 @@ test('tekerlek: ulaşılamayan medya cihazında ve tekerlek kapalıyken ses değ
   kapali.zaman.ilerle(1000);
   assert.deepEqual(uzak.calistirmalar(), []);
   assert.deepEqual(kapali.calistirmalar(), []);
+});
+
+// --- 1.7.0: kompakt ışık satırı (sürükleme, tıklamanın yutulması, Shift + ok) -------------------------------------------------
+
+/** Satırın ana düğmesine genişliği 200 px (x: 100..300) olan sahte bir sınır kutusu verir: x konumu yüzdeye çevrilir ((x − 100) / 2). */
+const satirKur = (kutu) => {
+  const ana = anaDugme(kutu);
+  ana.getBoundingClientRect = () => ({ left: 100, width: 200, top: 0, height: 48 });
+  return ana;
+};
+const basis = (ana, x, y = 20, ek = {}) => ana.gonder('pointerdown', { clientX: x, clientY: y, pointerId: 1, button: 0, ...ek });
+const hareket = (ana, x, y = 20, ek = {}) => ana.gonder('pointermove', { clientX: x, clientY: y, pointerId: 1, ...ek });
+const birak = (ana, x, y = 20) => ana.gonder('pointerup', { clientX: x, clientY: y, pointerId: 1 });
+/** Yalnız parlaklık istekleri: [parlaklik, sonDeger] */
+const parlaklikIstekleri = (sayfa) => sayfa.calistirmalar().filter((c) => c.parlaklik !== undefined).map((c) => [c.parlaklik, c.sonDeger === true]);
+/** Yalnız aç / kapat istekleri ({ kimlik }); parlaklık istekleri hariç */
+const acKapatlar = (sayfa) => sayfa.calistirmalar().filter((c) => c.parlaklik === undefined);
+
+test('ışık satırı: yatay sürükleme 8 px eşiğini geçince parlaklığı ayarlar; ara değerler kısılır, bırakınca SON değer beklemeden gider; sürükleme sırasında model çizimi ertelenir', async () => {
+  const sayfa = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
+  const kutu = isikKutulari(sayfa)[0];
+  const ana = satirKur(kutu);
+  const yuzde = yuzdeOgesi(kutu);
+  basis(ana, 160);
+  hareket(ana, 167); // 7 px: eşik altı, tıklama sayılır
+  assert.equal(yuzde.textContent, '%60');
+  assert.deepEqual(sayfa.calistirmalar(), [], 'eşik geçilmeden istek yok');
+  hareket(ana, 175); // 15 px: sürükleme başladı; (175 − 100) / 200 = %38
+  assert.equal(yuzde.textContent, '%38', 'gösterge fareyi hemen izler');
+  assert.deepEqual(parlakliklar(sayfa), [[38, false]], 'ilk değer hemen gider');
+  hareket(ana, 200); // %50
+  hareket(ana, 250); // %75
+  hareket(ana, 260); // %80
+  assert.equal(yuzde.textContent, '%80');
+  assert.equal(parlakliklar(sayfa).length, 1, 'kalan ara değerler 200 ms pencerede birikir');
+  sayfa.durum(modelYap({ ...ISIK, yuzde: 61 }));
+  assert.equal(isikKutulari(sayfa)[0], kutu, 'sürükleme sürerken öğe yenilenmedi (satır elden gitmez)');
+  birak(ana, 260);
+  assert.deepEqual(parlakliklar(sayfa).at(-1), [80, true], 'bırakınca son değer gider');
+  assert.equal(parlakliklar(sayfa).filter((x) => x[1]).length, 1, 'tek kesin değer');
+  sayfa.zaman.ilerle(600);
+  assert.equal(parlakliklar(sayfa).filter((x) => x[1]).length, 1, 'sonradan ikinci kesin değer gitmez');
+  assert.ok(sayfa.calistirmalar().every((c) => Number.isInteger(c.parlaklik) && c.parlaklik >= 1 && c.parlaklik <= 100));
+  assert.notEqual(isikKutulari(sayfa)[0], kutu, 'bırakılınca bekleyen model çizildi');
+  assert.deepEqual(acKapatlar(sayfa), [], 'sürükleme ışığı aç / kapat yapmadı');
+});
+
+test('ışık satırı: sürüklemenin sonundaki tıklama aç / kapat sayılmaz (yutulur); sürüklemesiz tıklama ışığı değiştirir', async () => {
+  const sayfa = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
+  const ana = satirKur(isikKutulari(sayfa)[0]);
+  basis(ana, 160);
+  hareket(ana, 200);
+  birak(ana, 200);
+  const tik = ana.gonder('click', { detail: 1 });
+  assert.equal(tik.durduruldu, true, 'tıklama düğmenin kendi dinleyicisine ulaşmadı');
+  assert.equal(tik.onlendi, true);
+  assert.deepEqual(acKapatlar(sayfa), [], 'ışık kapanmadı');
+  // yutma yalnız bir tıklamalıktır
+  ana.gonder('click', { detail: 1 });
+  assert.deepEqual(acKapatlar(sayfa), [{ kimlik: 'light.led_serit' }], 'bir sonraki bağımsız tıklama çalışır');
+  ana.gonder('keyup', { key: 'ArrowRight' }); // ızgarada gezinme
+  ana.gonder('keyup', { key: 'Shift' });
+  sayfa.zaman.ilerle(600);
+  assert.equal(parlaklikIstekleri(sayfa).filter((x) => x[1]).length, 1, 'sonraki tuş bırakışları sürüklemenin son değerini yeniden göndermez');
+
+  // sürüklemesiz basış-bırakış (eşik altı) normal tıklamadır
+  const duz = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
+  const duzAna = satirKur(isikKutulari(duz)[0]);
+  basis(duzAna, 160);
+  hareket(duzAna, 163);
+  birak(duzAna, 163);
+  const duzTik = duzAna.gonder('click', { detail: 1 });
+  assert.equal(duzTik.durduruldu, undefined);
+  assert.deepEqual(duz.calistirmalar(), [{ kimlik: 'light.led_serit' }]);
+
+  // yutma bayrağı bir sonraki olay turunda kendiliğinden düşer (click hiç gelmediyse bile)
+  const yitik = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
+  const yitikAna = satirKur(isikKutulari(yitik)[0]);
+  basis(yitikAna, 160);
+  hareket(yitikAna, 200);
+  birak(yitikAna, 200);
+  yitik.zaman.ilerle(1);
+  yitikAna.gonder('click', { detail: 1 });
+  assert.deepEqual(acKapatlar(yitik), [{ kimlik: 'light.led_serit' }], 'tıklama gelmeden süre dolduysa sonraki tıklama yutulmaz');
+});
+
+test('ışık satırı: dikey hareket, sağ tuş, başka işaretçi ve ulaşılamayan ışık sürüklemeyi başlatmaz; uçlarda 1-100 arasına kırpılır', async () => {
+  const sayfa = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
+  const kutu = isikKutulari(sayfa)[0];
+  const ana = satirKur(kutu);
+  const yuzde = yuzdeOgesi(kutu);
+  basis(ana, 160, 20);
+  hareket(ana, 190, 80); // 30 px yatay, 60 px dikey: panelin kaydırılması
+  birak(ana, 190, 80);
+  assert.equal(yuzde.textContent, '%60');
+  assert.deepEqual(sayfa.calistirmalar(), [], 'dikey harekette istek yok');
+  assert.equal(ana.gonder('click', { detail: 1 }).durduruldu, undefined, 'dikey harekette tıklama yutulmaz');
+
+  basis(ana, 160, 20, { button: 2 }); // sağ tuş
+  hareket(ana, 220);
+  birak(ana, 220);
+  basis(ana, 160);
+  ana.gonder('pointermove', { clientX: 220, clientY: 20, pointerId: 2 }); // başka işaretçi
+  birak(ana, 220);
+  assert.deepEqual(parlaklikIstekleri(sayfa), [], 'sağ tuş ve yabancı işaretçi parlaklık değiştirmez');
+
+  basis(ana, 160);
+  hareket(ana, 400); // sınırın ötesi: %100'e kırpılır
+  assert.equal(yuzde.textContent, '%100');
+  hareket(ana, 0); // sınırın gerisi: %1'e kırpılır
+  assert.equal(yuzde.textContent, '%1');
+  birak(ana, 0);
+  assert.deepEqual(parlaklikIstekleri(sayfa).at(-1), [1, true]);
+  assert.ok(sayfa.calistirmalar().every((c) => c.parlaklik === undefined || (c.parlaklik >= 1 && c.parlaklik <= 100)));
+
+  const uzak = await panelAc({ model: modelYap({ ...ISIK, kullanilabilir: false, ulasilamiyor: true }), etkilesim: ETKILESIM });
+  const uzakAna = satirKur(isikKutulari(uzak)[0]);
+  basis(uzakAna, 160);
+  hareket(uzakAna, 220);
+  birak(uzakAna, 220);
+  uzak.zaman.ilerle(1000);
+  assert.deepEqual(uzak.calistirmalar(), [], 'ulaşılamayan ışıkta sürükleme etkisiz');
+});
+
+test('ışık satırı: Shift + ← / → parlaklığı ±10 değiştirir, tuş bırakılınca SON değer gider; oklar tek başına, Ctrl / Alt / Meta ile ya da başka tuşla etkisizdir', async () => {
+  const sayfa = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
+  const kutu = isikKutulari(sayfa)[0];
+  const ana = anaDugme(kutu);
+  const yuzde = yuzdeOgesi(kutu);
+  assert.equal(ana.attributes['aria-keyshortcuts'], 'Shift+ArrowLeft Shift+ArrowRight', 'kısayol ekran okuyucuya bildirilir');
+  const sag = ana.gonder('keydown', { key: 'ArrowRight', shiftKey: true });
+  assert.equal(sag.onlendi, true, 'Shift + ok sayfayı kaydırmaz / ızgarada gezinmez');
+  assert.equal(yuzde.textContent, '%70');
+  ana.gonder('keydown', { key: 'ArrowRight', shiftKey: true, repeat: true });
+  assert.equal(yuzde.textContent, '%80', 'basılı tutunca tekrar eden tuş basışı da adım atar');
+  ana.gonder('keydown', { key: 'ArrowLeft', shiftKey: true });
+  assert.equal(yuzde.textContent, '%70');
+  assert.equal(parlakliklar(sayfa).length, 1, 'ara değerler kısılır: yalnız ilk değer hemen gider');
+  ana.gonder('keyup', { key: 'ArrowLeft' });
+  assert.deepEqual(parlakliklar(sayfa).at(-1), [70, true], 'tuş bırakılınca son değer beklemeden gider');
+  assert.equal(parlakliklar(sayfa).filter((x) => x[1]).length, 1);
+  ana.gonder('keyup', { key: 'Shift' });
+  ana.gonder('keyup', { key: 'ArrowRight' });
+  sayfa.zaman.ilerle(600);
+  assert.equal(parlakliklar(sayfa).filter((x) => x[1]).length, 1, 'sonraki tuş bırakışları aynı değeri yeniden göndermez');
+
+  // etkisiz birleşimler
+  const once = sayfa.calistirmalar().length;
+  for (const ek of [{ key: 'ArrowRight' }, { key: 'ArrowRight', shiftKey: true, ctrlKey: true }, { key: 'ArrowRight', shiftKey: true, altKey: true }, { key: 'ArrowRight', shiftKey: true, metaKey: true }, { key: 'ArrowUp', shiftKey: true }, { key: 'a', shiftKey: true }]) {
+    assert.equal(ana.gonder('keydown', ek).onlendi, undefined, JSON.stringify(ek));
+  }
+  assert.equal(yuzde.textContent, '%70');
+  assert.equal(sayfa.calistirmalar().length, once);
+
+  // uçlarda kırpılır
+  for (let i = 0; i < 5; i += 1) ana.gonder('keydown', { key: 'ArrowRight', shiftKey: true });
+  assert.equal(yuzde.textContent, '%100');
+  for (let i = 0; i < 12; i += 1) ana.gonder('keydown', { key: 'ArrowLeft', shiftKey: true });
+  assert.equal(yuzde.textContent, '%1');
+  ana.gonder('keyup', { key: 'Shift' });
+  sayfa.zaman.ilerle(250); // önceki kesin değerden 200 ms dolmadan gelen bırakma pencere sonunda gider
+  assert.deepEqual(parlakliklar(sayfa).at(-1), [1, true]);
+});
+
+test('ışık satırı: kapalı ışıkta Shift + → %10\'dan başlar ve ışığı açar; ulaşılamayan ışıkta Shift + ok etkisizdir', async () => {
+  const sayfa = await panelAc({ model: modelYap(AMPUL), etkilesim: ETKILESIM });
+  const kutu = isikKutulari(sayfa)[0];
+  const ana = anaDugme(kutu);
+  assert.equal(yuzdeOgesi(kutu).textContent, '—', 'kapalı ışıkta yüzde yok');
+  ana.gonder('keydown', { key: 'ArrowRight', shiftKey: true });
+  assert.equal(yuzdeOgesi(kutu).textContent, '%10');
+  ana.gonder('keyup', { key: 'ArrowRight' });
+  assert.deepEqual(parlakliklar(sayfa).at(-1), [10, true]);
+
+  const uzak = await panelAc({ model: modelYap({ ...ISIK, kullanilabilir: false, ulasilamiyor: true }), etkilesim: ETKILESIM });
+  const uzakAna = anaDugme(isikKutulari(uzak)[0]);
+  assert.equal(uzakAna.gonder('keydown', { key: 'ArrowRight', shiftKey: true }).onlendi, undefined);
+  uzakAna.gonder('keyup', { key: 'ArrowRight' });
+  uzak.zaman.ilerle(1000);
+  assert.deepEqual(uzak.calistirmalar(), []);
 });
 
 // --- o-23: sabitleme düğmesi ---------------------------------------------------------------------------------------------

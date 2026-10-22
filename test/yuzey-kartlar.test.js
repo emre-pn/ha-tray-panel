@@ -9,7 +9,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { karo, modelYap, panelAc, dugmeler, dugmeAra, kartlar, basiliTut } = require('./yuzey-kartlar-sahte');
+const { karo, modelYap, panelAc, dugmeler, dugmeAra, kartlar, basiliTut, ayrintiAc } = require('./yuzey-kartlar-sahte');
 
 const IKLIM_OZ = { mod: 'cool', modlar: ['off', 'cool', 'heat', 'auto'], hedefSicaklik: 24, enAz: 16, enCok: 30, adim: 0.5, mevcutSicaklik: 26.5, hvacEylemi: 'cooling', mevcutNem: 55 };
 const KLIMA = karo('climate.salon', 'Salon klima', { grup: 'iklim', grupEtiketi: 'İklim', varsayilanEylem: false, onayliServisler: ['set_hvac_mode'], ozellik: IKLIM_OZ });
@@ -219,8 +219,14 @@ const RENKLI = karo('light.masa', 'Masa', {
   ozellik: { renkModlari: ['color_temp', 'hs'], enAzKelvin: 2200, enCokKelvin: 6500, renkSicakligi: 2800, rgb: null },
 });
 
-test('ışık rengi: beyaz tonu ve renk paleti parlaklık kontrollü ışıkta çıkar; düğmeler cihazın aralığına kırpılmış kelvin ve palet rgb değeri gönderir', async () => {
-  const sayfa = await panelAc({ model: modelYap(RENKLI) });
+// 1.7.0: kompakt ışık satırında renk yoktur; beyaz tonu ve palet "⋯" ile açılan ayrıntı bölmesinde çıkar (duzen: true ile kurulan sayfa)
+const renkOgesiMi = (o) => o.sinifVar('kart-renk') || /beyaz/i.test(o.attributes['aria-label'] ?? '');
+
+test('ışık rengi: beyaz tonu ve renk paleti parlaklık kontrollü ışıkta yalnız ayrıntı bölmesinde çıkar (satırda yok); düğmeler cihazın aralığına kırpılmış kelvin ve palet rgb değeri gönderir', async () => {
+  const sayfa = await panelAc({ model: modelYap(RENKLI), duzen: true });
+  assert.equal(dugmeler(sayfa, renkOgesiMi).length, 0, 'kompakt satırda beyaz tonu / renk paleti yok');
+  assert.equal(sayfa.bul((o) => o.sinifVar('kart-renkler')).length, 0);
+  ayrintiAc(sayfa, 'Masa');
   const tonlar = dugmeler(sayfa, (o) => /beyaz/i.test(o.attributes['aria-label'] ?? ''));
   assert.deepEqual(tonlar.map((d) => d.textContent), ['Sıcak beyaz', 'Doğal beyaz', 'Soğuk beyaz']);
   assert.deepEqual(tonlar.filter(secili).map((d) => d.textContent), ['Sıcak beyaz'], '2800 K sıcak beyaza en yakın');
@@ -240,7 +246,8 @@ test('ışık rengi: beyaz tonu ve renk paleti parlaklık kontrollü ışıkta �
 
 test('ışık rengi: cihazın üst kelvin sınırı düşükse "Soğuk beyaz" o sınıra kırpılır', async () => {
   const dar = varyant(RENKLI, 'light.dar', 'Dar', { ozellik: { renkModlari: ['color_temp'], enAzKelvin: 2000, enCokKelvin: 5000, renkSicakligi: null, rgb: null } });
-  const sayfa = await panelAc({ model: modelYap(dar) });
+  const sayfa = await panelAc({ model: modelYap(dar), duzen: true });
+  ayrintiAc(sayfa, 'Dar');
   dugmeAra(sayfa, 'Dar: Soğuk beyaz (5000 K)').gonder('click', { detail: 1 });
   assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'light.dar', servis: 'turn_on', veri: { color_temp_kelvin: 5000 } }]);
   assert.equal(dugmeler(sayfa, (o) => o.sinifVar('kart-renk')).length, 0, 'yalnız beyaz tonu destekleyen ışıkta renk paleti yok');
@@ -248,19 +255,23 @@ test('ışık rengi: cihazın üst kelvin sınırı düşükse "Soğuk beyaz" o 
 
 test('ışık rengi: rengi desteklemeyen ışıkta bölüm tamamen gizlenir; yalnız renk (tonsuz) destekleyen ışıkta yalnız palet çıkar', async () => {
   const sade = varyant(RENKLI, 'light.sade', 'Sade', { ozellik: { renkModlari: ['brightness'], enAzKelvin: null, enCokKelvin: null, renkSicakligi: null, rgb: null } });
-  const sayfa = await panelAc({ model: modelYap(sade) });
+  const sayfa = await panelAc({ model: modelYap(sade), duzen: true });
+  assert.equal(sayfa.bul((o) => o.type === 'range').length, 0, 'kompakt satırda kaydırıcı yok');
+  ayrintiAc(sayfa, 'Sade');
   assert.equal(sayfa.bul((o) => o.sinifVar('kart-renkler')).length, 0);
   assert.equal(dugmeler(sayfa, (o) => /beyaz|Mavi/.test(o.attributes['aria-label'] ?? '')).length, 0);
-  assert.ok(sayfa.bul((o) => o.type === 'range').length >= 1, 'parlaklık kaydırıcısı eskisi gibi var');
+  assert.ok(sayfa.bul((o) => o.type === 'range').length >= 1, 'parlaklık kaydırıcısı ayrıntıda eskisi gibi var');
 
   const yalnizRenk = varyant(RENKLI, 'light.rgb', 'Rgb', { ozellik: { renkModlari: ['rgb'], enAzKelvin: null, enCokKelvin: null, renkSicakligi: null, rgb: [1, 2, 3] } });
-  const r = await panelAc({ model: modelYap(yalnizRenk) });
+  const r = await panelAc({ model: modelYap(yalnizRenk), duzen: true });
+  ayrintiAc(r, 'Rgb');
   assert.equal(dugmeler(r, (o) => /beyaz/i.test(o.attributes['aria-label'] ?? '')).length, 0);
   assert.equal(dugmeler(r, (o) => o.sinifVar('kart-renk')).length, 8);
 });
 
-test('ışık rengi: renk düğmesi metin taşımaz (dolgu CSS sınıfından), erişilebilir adı vardır; ışık yoksa ya da parlaklık kontrolü kapalıysa düz karo kalır', async () => {
-  const sayfa = await panelAc({ model: modelYap(RENKLI) });
+test('ışık rengi: renk düğmesi metin taşımaz (dolgu CSS sınıfından), erişilebilir adı vardır; parlaklık kontrolü kapalıysa düz karo kalır', async () => {
+  const sayfa = await panelAc({ model: modelYap(RENKLI), duzen: true });
+  ayrintiAc(sayfa, 'Masa');
   const kirmizi = dugmeAra(sayfa, 'Masa: Kırmızı');
   assert.equal(kirmizi.textContent, '');
   assert.ok(kirmizi.sinifVar('kart-renk-kirmizi'));
@@ -713,7 +724,7 @@ test('kart gruplarına ayrılır: İklim ve Yardımcılar başlıkları görün�
   };
   const sayfa = await panelAc({ model });
   const basliklar = sayfa.bul((o) => o.className === 'bolum-baslik').map((o) => o.textContent);
-  assert.deepEqual(basliklar, ['İklim', 'Yardımcılar']);
+  assert.deepEqual(basliklar, ['İklim ve cihazlar', 'Yardımcılar'], '1.7.0: iklim grubunun bölüm başlığı "İklim ve cihazlar"; yardımcılar eski adıyla');
   assert.equal(kartlar(sayfa).length, 3);
 });
 
@@ -739,13 +750,17 @@ test('başarısız servis (onay ister) panelde ipucuyla söylenir; ana süreç "
 });
 
 test('İngilizce arayüz: kart metinleri ve erişilebilir adlar İngilizce yazılır', async () => {
-  const sayfa = await panelAc({ model: modelYap(KLIMA, ZAMANLAYICI, RENKLI), dil: 'en' });
+  const sayfa = await panelAc({ model: modelYap(KLIMA, ZAMANLAYICI, RENKLI), dil: 'en', duzen: true });
   assert.match(metin(sayfa), /Cool · cooling/);
   assert.match(metin(sayfa), /Now 26[.,]5°/);
   assert.ok(dugmeAra(sayfa, 'Salon klima: switch to Heat mode'));
   assert.ok(dugmeAra(sayfa, 'Mutfak: cancel'));
-  assert.deepEqual(dugmeler(sayfa, (o) => /white/i.test(o.attributes['aria-label'] ?? '')).map((d) => d.textContent), ['Warm white', 'Neutral white', 'Cool white']);
   assert.match(metin(sayfa), /Dashed buttons run when held for about a second/);
+  assert.deepEqual(dugmeler(sayfa, (o) => /white/i.test(o.attributes['aria-label'] ?? '')).map((d) => d.textContent), [], 'beyaz tonları satırda değil, ayrıntıdadır');
+  const kontrol = ayrintiAc(sayfa, 'Masa');
+  assert.equal(sayfa.bul((o) => o.sinifVar('karo-kontrol'))[0], undefined, 'ayrıntı açıkken satır çizilmez');
+  assert.equal(kontrol.attributes['aria-label'], 'Masa controls', 'ayrıntı bölmesinin adı İngilizce');
+  assert.deepEqual(dugmeler(sayfa, (o) => /white/i.test(o.attributes['aria-label'] ?? '')).map((d) => d.textContent), ['Warm white', 'Neutral white', 'Cool white']);
 });
 
 test('Almanca, Fransızca ve İspanyolca arayüz: kart metinleri, sayı ve yüzde yazımı ve erişilebilir adlar o dilde yazılır', async () => {
@@ -756,14 +771,19 @@ test('Almanca, Fransızca ve İspanyolca arayüz: kart metinleri, sayı ve yüzd
     es: { durum: /Enfriar · enfriando/, simdi: /Ahora 26,5° · Humedad 55 %/, mod: 'Salon klima: cambiar al modo “Calentar”', iptal: 'Mutfak: cancelar', tonlar: ['Blanco cálido', 'Blanco neutro', 'Blanco frío'], hatirlat: /borde discontinuo/ },
   };
   for (const [dil, b] of Object.entries(beklenen)) {
-    const sayfa = await panelAc({ model: modelYap(KLIMA, ZAMANLAYICI, RENKLI), dil });
+    const sayfa = await panelAc({ model: modelYap(KLIMA, ZAMANLAYICI, RENKLI), dil, duzen: true });
     assert.match(metin(sayfa), b.durum, dil);
     assert.match(metin(sayfa), b.simdi, dil);
     assert.ok(dugmeAra(sayfa, b.mod), `${dil}: ${b.mod}`);
     assert.ok(dugmeAra(sayfa, b.iptal), `${dil}: ${b.iptal}`);
-    assert.deepEqual(dugmeler(sayfa, (o) => b.tonlar.some((ton) => (o.attributes['aria-label'] ?? '').includes(ton))).map((d) => d.textContent), b.tonlar, dil);
     assert.match(metin(sayfa), b.hatirlat, dil);
-    assert.doesNotMatch(metin(sayfa), /yuzey\.[a-z]/, `${dil}: çözülmemiş sözlük anahtarı kalmamalı`);
+    assert.doesNotMatch(metin(sayfa), /yuzey\.[a-z]/, `${dil}: çözülmemiş sözlük anahtarı kalmamalı (panel)`);
+    // 1.7.0: beyaz tonları ışık satırında değil, "⋯" ile açılan ayrıntı bölmesindedir
+    const tonDugmeleri = () => dugmeler(sayfa, (o) => b.tonlar.some((ton) => (o.attributes['aria-label'] ?? '').includes(ton)));
+    assert.deepEqual(tonDugmeleri().map((d) => d.textContent), [], `${dil}: satırda beyaz tonu yok`);
+    ayrintiAc(sayfa, 'Masa');
+    assert.deepEqual(tonDugmeleri().map((d) => d.textContent), b.tonlar, dil);
+    assert.doesNotMatch(metin(sayfa), /yuzey\.[a-z]/, `${dil}: çözülmemiş sözlük anahtarı kalmamalı (ayrıntı)`);
   }
 });
 

@@ -32,7 +32,15 @@ const SAATLIK = Array.from({ length: 14 }, (_, k) => ({
 }));
 const tahminOkuma = (istek) => ({ ok: true, veri: istek.tahmin === 'hourly' ? SAATLIK : GUNLUK });
 const ayarli = (havaTahmini, ek = {}) => modelOlustur({ ayar: { ...AYAR, havaTahmini }, ...ek });
-const tahminBolumu = (modul) => bulSinif(modul.ustParcalar(), 'bilgi-tahmin')[0];
+// 1.7.0: tahmin hero'da, hava satırına tıklayınca açılır (heroParcalari); yardımcı kapalıysa açar, açıksa olduğu gibi bırakır
+const tahminAc = (modul) => {
+  const hava = bulSinif(modul.heroParcalari(), 'hero-hava')[0];
+  if (hava && hava.getAttribute('aria-expanded') === 'false') hava.gonder('click');
+};
+const tahminBolumu = (modul) => {
+  tahminAc(modul);
+  return bulSinif(modul.heroParcalari(), 'bilgi-tahmin')[0];
+};
 
 // ---- ayar alanı ve model --------------------------------------------------------------------------------------------------
 
@@ -284,7 +292,8 @@ test('ilk kullanılabilir hava kartı için tek şerit: iki hava kartı olsa da 
   modul.ayarla(ayarli('gunluk', { kartlar: [{ yuva: 1, tur: 'hava', karo: HAVA, secilmedi: false }, { yuva: 2, tur: 'hava', karo: ikinci, secilmedi: false }] }));
   await akit();
   assert.deepEqual(kayit.okumalar.map((o) => o.kimlik), ['weather.ev']);
-  assert.equal(bulSinif(modul.ustParcalar(), 'bilgi-tahmin').length, 1);
+  tahminAc(modul);
+  assert.equal(bulSinif(modul.heroParcalari(), 'bilgi-tahmin').length, 1);
 });
 
 test('tahmin satırı sayısı sınırlıdır: 48+ satır gelse de günlükte 5, saatlikte 8 öğe çizilir; metin düğümleri yalnız yazı', async () => {
@@ -296,11 +305,26 @@ test('tahmin satırı sayısı sınırlıdır: 48+ satır gelse de günlükte 5,
   assert.doesNotMatch(metin(tahminBolumu(modul)), /<|>/);
 });
 
-test('tahmin şeridi hava kartının altında durur (kartlar bölümünden sonra, sensör şeridinden önce)', async () => {
+test('1.7.0: tahmin hero bölümünde saat / hava satırının altında açılır; kapalı başlar, havaya tıklayınca açılır, yeniden tıklayınca kapanır; panel yeniden gösterilince kapalı', async () => {
   const sicaklik = karo('sensor.salon', 'Salon', 'sensor', { deger: '21', sayi: 21, birim: '°C', sinif: 'temperature', hassasiyet: null, enAz: null, enCok: null });
-  const { modul } = ortamKur({ okuma: { hava: tahminOkuma } });
+  const { modul, kayit } = ortamKur({ okuma: { hava: tahminOkuma } });
   modul.ayarla(ayarli('gunluk', { serit: [sicaklik] }));
   await akit();
-  const adlar = modul.ustParcalar().map((p) => p.className);
-  assert.deepEqual(adlar, ['bilgi-kartlar', 'bilgi-tahmin', 'sensor-serit']);
+  const adlar = () => modul.heroParcalari().map((p) => p.className);
+  const hava = () => bulSinif(modul.heroParcalari(), 'hero-hava')[0];
+  assert.deepEqual(adlar(), ['hero-ust']);
+  assert.equal(hava().etiket, 'button');
+  assert.equal(hava().getAttribute('aria-expanded'), 'false');
+  assert.deepEqual(modul.ustParcalar().map((p) => p.className), ['sensor-serit'], 'içerikte tahmin yok');
+  const cizim = kayit.cizimler;
+  hava().gonder('click');
+  assert.ok(kayit.cizimler > cizim, 'tıklama yeniden çizim ister');
+  assert.deepEqual(adlar(), ['hero-ust', 'bilgi-tahmin']);
+  assert.equal(hava().getAttribute('aria-expanded'), 'true');
+  assert.deepEqual(kayit.odakIstekleri.slice(-1), ['bi:hero:hava'], 'odak hava düğmesinde kalır');
+  hava().gonder('click');
+  assert.deepEqual(adlar(), ['hero-ust']);
+  hava().gonder('click');
+  modul.gosterildi();
+  assert.deepEqual(adlar(), ['hero-ust'], 'panel yeniden açılınca tahmin kapalı başlar');
 });

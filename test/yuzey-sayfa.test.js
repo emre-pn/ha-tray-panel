@@ -26,6 +26,8 @@ const BILGI_BICIM = oku('src/lib/bilgi-bicim.js');
 const GRAFIK = oku('src/lib/grafik.js');
 const YUZEY_BILGI = oku('src/yuzey-bilgi.js');
 const YUZEY_EYLEM = oku('src/yuzey-eylem.js');
+const KARO_GORUNUM = oku('src/lib/karo-gorunum.js');
+const YUZEY_DUZEN = oku('src/yuzey-duzen.js');
 
 class SahteOge {
   /** `odak`: sayfanın { aktif } kaydı (document.activeElement); focus() buraya yazar, DOM'dan çıkarılan odaklı öğe odağı yitirir. */
@@ -201,7 +203,7 @@ const MODEL = {
  * `dil`: durumAl yanıtındaki etkin arayüz dili (verilmezse yanıtta yoktur: sayfa Türkçe kalır). Sayfadaki data-i18n / data-i18n-attr
  * öğeleri HTML'den okunur (document.querySelectorAll), böylece sayfayiCevir gerçek sayfadaki gibi çalışır.
  */
-function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true }, malzeme, aramaYama, dil, okuYaniti = (istek) => ({ ok: true, veri: istek.tur === 'gecmis' ? {} : [] }), bildirimYaniti = { ok: true }, eylemBetigi = false, geriAlYaniti = { ok: true }, geriAlKopru = true, geciktirYaniti = { ok: true }, geciktirKopru = true, gecikmeliIptalYaniti = { ok: true }, odaKapatYaniti = { ok: true }, odaKapatKopru = true, digerYaniti = { ok: true, liste: [] }, digerCalistirYaniti = { ok: true }, digerFavoriYaniti = { ok: true }, digerKopru = true } = {}) {
+function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true }, malzeme, aramaYama, dil, okuYaniti = (istek) => ({ ok: true, veri: istek.tur === 'gecmis' ? {} : [] }), bildirimYaniti = { ok: true }, eylemBetigi = false, geriAlYaniti = { ok: true }, geriAlKopru = true, geciktirYaniti = { ok: true }, geciktirKopru = true, duzen = false, gecikmeliIptalYaniti = { ok: true }, odaKapatYaniti = { ok: true }, odaKapatKopru = true, digerYaniti = { ok: true, liste: [] }, digerCalistirYaniti = { ok: true }, digerFavoriYaniti = { ok: true }, digerKopru = true } = {}) {
   const odak = { aktif: null };
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
@@ -255,6 +257,10 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
     bildirimKapat: async (anahtar) => {
       cagrilar.push(['bildirimKapat', anahtar]);
       return typeof bildirimYaniti === 'function' ? bildirimYaniti(anahtar) : bildirimYaniti;
+    },
+    sagTik: async (kimlik) => {
+      cagrilar.push(['sagTik', kimlik]);
+      return { ok: true };
     },
     kapat: () => cagrilar.push(['kapat']),
     boyut: (h) => cagrilar.push(['boyut', h]),
@@ -341,6 +347,11 @@ function sayfayiKur({ model = MODEL, mod = 'panel', calistirYaniti = { ok: true 
   vm.runInContext(GRAFIK, sandbox, { filename: 'lib/grafik.js' });
   vm.runInContext(YUZEY_BILGI, sandbox, { filename: 'yuzey-bilgi.js' });
   if (eylemBetigi) vm.runInContext(YUZEY_EYLEM, sandbox, { filename: 'yuzey-eylem.js' });
+  // 1.7.0: ışık satırında hazır seviyeler / kaydırıcı / renkler yalnız ayrıntı bölmesindedir; bölme düzen modülüyle gelir (yalnız `duzen: true` isteyen testler yükler)
+  if (duzen) {
+    vm.runInContext(KARO_GORUNUM, sandbox, { filename: 'lib/karo-gorunum.js' });
+    vm.runInContext(YUZEY_DUZEN, sandbox, { filename: 'yuzey-duzen.js' });
+  }
   vm.runInContext(BETIK, sandbox, { filename: 'yuzey-sayfa.js' });
   return {
     oge: (kimlik) => ogeler.get(kimlik),
@@ -376,6 +387,20 @@ const dugmeBul = (sayfa, metin) => sayfa.oge('icerik').bul((o) => o.etiket === '
 const hazirBul = (sayfa, metin) => sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('hazir') && o.textContent === metin)[0];
 const paletSatirlari = (sayfa) => sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('palet-satir'));
 const etiketler = (sayfa) => sayfa.oge('icerik').bul((o) => o.className === 'karo-etiket').map((o) => o.textContent);
+/**
+ * 1.7.0: ışığın kompakt satırındaki "⋯" düğmesine basar, ayrıntı bölmesini döner (sayfa `duzen: true` ile kurulmuş olmalı).
+ * Bölmede `isikKarosu(karo, true)` çizilir: hazır seviyeler, kaydırıcı ve renkler. Kapatmak için ayrintiKapat(sayfa).
+ */
+function ayrintiAc(sayfa, etiket) {
+  const satir = sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('isik-karo') && o.bul((c) => c.className === 'karo-etiket' && c.textContent === etiket).length > 0)[0];
+  const dugme = satir && satir.bul((o) => o.className.split(' ').includes('karo-kontrol'))[0];
+  assert.ok(dugme, `${etiket}: satırda "⋯" düğmesi yok (duzen: true ile kurulmuş mu?)`);
+  dugme.gonder('click');
+  const bolme = sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('ayrinti'))[0];
+  assert.ok(bolme, `${etiket}: ayrıntı bölmesi açılmadı`);
+  return bolme;
+}
+const ayrintiKapat = (sayfa) => sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('ayrinti-geri'))[0].gonder('click');
 
 async function panelAc(secenek) {
   const sayfa = sayfayiKur(secenek);
@@ -401,7 +426,7 @@ test('panel: kimlikler HTML ile uyumlu; gruplar, "Son kullanılanlar", bağlant�
   assert.equal(sayfa.oge('medya').hidden, false);
   assert.equal(sayfa.oge('medya').textContent, '♪ Çalıyor · Kulaklık');
   const baslıklar = sayfa.oge('icerik').bul((o) => o.className === 'bolum-baslik').map((o) => o.textContent);
-  assert.deepEqual(baslıklar, ['Son kullanılanlar', 'Işık', 'Sahne', 'PC', 'Medya']);
+  assert.deepEqual(baslıklar, ['Son kullanılanlar', 'Işıklar', 'Sahneler', 'PC', 'Medya'], '1.7.0: ışık ve sahne başlıkları çoğul; PC / Medya eski adıyla');
   assert.deepEqual(etiketler(sayfa), ['LED şerit', 'Ampul', 'Film', 'PC kapat', 'Ses +']);
 });
 
@@ -433,8 +458,12 @@ test('panel: zararsız karoya tıklamak tek istek gönderir; yanıt onay-gerekli
   assert.equal(sayfa.oge('ipucu').textContent, '', 'ipucu kısa sürede silinir');
 });
 
-test('ışık karosu: hazır seviyeler son değerle gider; kaydırıcı sürüklenirken kısılır, bırakınca son değer beklemeden gider', async () => {
-  const sayfa = await panelAc();
+test('ışık karosu: hazır seviyeler son değerle gider; kaydırıcı sürüklenirken kısılır, bırakınca son değer beklemeden gider (1.7.0: yalnız "⋯" ile açılan ayrıntı bölmesinde)', async () => {
+  const sayfa = await panelAc({ duzen: true });
+  // kompakt satırda hazır seviye düğmeleri ve kaydırıcı yok; ayrıntı bölmesi açılınca çizilir
+  assert.equal(sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('hazir')).length, 0, 'satırda hazır seviye yok');
+  assert.equal(sayfa.oge('icerik').bul((o) => o.type === 'range').length, 0, 'satırda kaydırıcı yok');
+  ayrintiAc(sayfa, 'LED şerit');
   const hazirlar = sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('hazir'));
   assert.deepEqual(hazirlar.map((h) => h.textContent), ['%10', '%20', '%50', '%100'], 'hiz-09: hazır seviyeler');
   assert.deepEqual(hazirlar.filter((h) => h.className.split(' ').includes('vurgu')).map((h) => h.textContent), ['%50'], 'g-02: vurgu ışığın o anki seviyesine (%60) en yakın düğmede, sabit %20\'de değil');
@@ -458,16 +487,21 @@ test('ışık karosu: hazır seviyeler son değerle gider; kaydırıcı sürükl
   assert.deepEqual(son, { kimlik: 'light.led_serit', parlaklik: 70, sonDeger: true });
 });
 
-test('ışık kaydırıcısı: sürükleme sırasında change gelmeden blur/pointerup olursa donuk kilidi çözülür', async () => {
-  const sayfa = await panelAc();
+test('ışık kaydırıcısı (ayrıntı bölmesi): sürükleme sırasında change gelmeden blur/pointerup olursa donuk kilidi çözülür', async () => {
+  const sayfa = await panelAc({ duzen: true });
+  ayrintiAc(sayfa, 'LED şerit');
   const aralik = sayfa.oge('icerik').bul((o) => o.type === 'range')[0];
   aralik.value = 80;
   aralik.gonder('input');
+  // ayrıntı açıkken "Son kullanılanlar" çizilmez: model güncellemesinin uygulandığı kaydırıcının yeni değerinden anlaşılır
+  const yeniModel = { ...MODEL, gruplar: [{ kod: 'isik', etiket: 'Işık', karolar: [{ ...ISIK, yuzde: 30 }, AMPUL] }, ...MODEL.gruplar.slice(1)] };
+  sayfa.durum(yeniModel);
+  assert.equal(sayfa.oge('icerik').bul((o) => o.type === 'range')[0], aralik, 'sürükleme sürerken model çizimi ertelenir (kaydırıcı elden gitmez)');
   sayfa.pencereOlayi('blur');
-  sayfa.durum({ ...MODEL, sonlar: [] });
   await akit();
-  const sonlar = sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('son-sira'));
-  assert.equal(sonlar.length, 0, 'donuk kilidi çözüldü ve model uygulandı');
+  const yeni = sayfa.oge('icerik').bul((o) => o.type === 'range')[0];
+  assert.notEqual(yeni, aralik, 'donuk kilidi çözüldü ve bekleyen model uygulandı');
+  assert.equal(yeni.value, '30');
 });
 
 test('yıkıcı karo: düz tıklama HİÇBİR istek göndermez; basılı tutma başlayınca yalnız "başladı" bildirilir, istek ~0,8 sn sonra basili:true ile gider', async () => {
@@ -968,8 +1002,9 @@ test('çizim: model değişmediyse DOM yeniden kurulmaz (klavye odağı/basış 
   assert.ok(yeni.className.includes('durum-acik'));
 });
 
-test('ışık kaydırıcısı: ok tuşu basılı tutulunca (her adımda input + change) HA saniyede en çok ~5 son değerle yüklenir; son değer kaybolmaz', async () => {
-  const sayfa = await panelAc();
+test('ışık kaydırıcısı (ayrıntı bölmesi): ok tuşu basılı tutulunca (her adımda input + change) HA saniyede en çok ~5 son değerle yüklenir; son değer kaybolmaz', async () => {
+  const sayfa = await panelAc({ duzen: true });
+  ayrintiAc(sayfa, 'LED şerit');
   const aralik = sayfa.oge('icerik').bul((o) => o.type === 'range')[0];
   for (let v = 61; v <= 90; v += 1) {
     aralik.value = v;
@@ -1253,8 +1288,8 @@ test('h-06: "Son kullanılanlar" düğmesi ve palet satırı da çift tıkta tek
 
 // ---- h-07, k-09: odak korunur, ok tuşu gezintisi --------------------------------------------
 
-test('h-07: yeniden çizimde odaktaki karo, hazır seviye düğmesi, "Son" düğmesi ve kaydırıcı aynı öğe olarak yeniden odaklanır', async () => {
-  const sayfa = await panelAc();
+test('h-07: yeniden çizimde odaktaki karo, "Son" düğmesi, (ayrıntı bölmesinde) hazır seviye düğmesi ve kaydırıcı aynı öğe olarak yeniden odaklanır', async () => {
+  const sayfa = await panelAc({ duzen: true });
   let tur = 0;
   const degisen = () => {
     tur += 1; // her çağrıda farklı model: HA her turda yeni parlaklık bildirir
@@ -1272,10 +1307,14 @@ test('h-07: yeniden çizimde odaktaki karo, hazır seviye düğmesi, "Son" düğ
     assert.notEqual(yeni, eski, `${aciklama}: öğe yeniden kuruldu`);
     assert.equal(sayfa.odakta(), yeni, `${aciklama}: odak yeni öğede`);
   };
-  dene(() => dugmeBul(sayfa, 'Ampul'), 'karo');
-  dene(() => hazirBul(sayfa, '%50'), 'hazır seviye');
+  dene(() => dugmeBul(sayfa, 'Ampul'), 'karo (ışık satırı)');
+  dene(() => dugmeBul(sayfa, 'LED şerit'), 'karo (açık ışık satırı)');
   dene(() => sonlariBul(sayfa)[0], 'son kullanılan');
-  dene(() => sayfa.oge('icerik').bul((o) => o.type === 'range')[0], 'ışık kaydırıcısı (ok tuşuyla ayar sürer)');
+  // hazır seviyeler ve kaydırıcı yalnız ayrıntı bölmesindedir; HA yeni parlaklık bildirince bölme yeniden çizilir, odak korunur
+  ayrintiAc(sayfa, 'LED şerit');
+  dene(() => hazirBul(sayfa, '%50'), 'hazır seviye (ayrıntı)');
+  dene(() => sayfa.oge('icerik').bul((o) => o.type === 'range')[0], 'ışık kaydırıcısı (ayrıntı; ok tuşuyla ayar sürer)');
+  assert.ok(sayfa.oge('icerik').bul((o) => o.className.split(' ').includes('ayrinti')).length === 1, 'yeniden çizimler ayrıntı bölmesini kapatmadı');
 });
 
 test('h-07: odak panel içinde değilse çalmaz; odaktaki karo modelden kalkarsa odak içerik alanına düşer; kaydırma konumu korunur', async () => {
@@ -1306,14 +1345,13 @@ test('h-07: odak panel içinde değilse çalmaz; odaktaki karo modelden kalkarsa
   assert.equal(sayfa.odakta(), sayfa.oge('icerik'));
 });
 
-test('k-09: panelde ok tuşları ızgarada gezinir (Sol/Sağ sırayla, Yukarı/Aşağı satırlar arası, Home/End satır, Ctrl+Home/End tüm panel)', async () => {
+test('k-09: panelde ok tuşları ızgarada gezinir (Sol/Sağ sırayla, Yukarı/Aşağı satırlar arası, Ctrl+Home/End tüm panel); ışık satırı tek öğelik bir satırdır', async () => {
   const sayfa = await panelAc();
   const icerik = sayfa.oge('icerik');
   const bas = (tus, hedef, ek = {}) => sayfa.belgeOlayi('keydown', { key: tus, target: hedef ?? sayfa.odakta(), ...ek });
   const son = sonlariBul(sayfa)[0];
   const led = dugmeBul(sayfa, 'LED şerit');
   const ampul = dugmeBul(sayfa, 'Ampul');
-  const hazir = (m) => hazirBul(sayfa, m);
   const film = sayfa.oge('icerik').bul((o) => o.etiket === 'button' && o.textContent.startsWith('Film') && !sinifli(o, 'son-oge'))[0];
   const pc = dugmeBul(sayfa, 'PC kapat');
   const ses = dugmeBul(sayfa, 'Ses +');
@@ -1325,16 +1363,14 @@ test('k-09: panelde ok tuşları ızgarada gezinir (Sol/Sağ sırayla, Yukarı/A
   bas('ArrowDown');
   assert.equal(sayfa.odakta(), led, 'Son kullanılanlar satırından ışık karosuna');
   bas('ArrowDown');
-  assert.equal(sayfa.odakta(), hazir('%10'), 'ışık karosundan hazır seviye satırına (kaydırıcı atlanır)');
+  assert.equal(sayfa.odakta(), ampul, '1.7.0: ışık satırından doğrudan sonraki ışık satırına (hazır seviye satırı ayrıntıya taşındı)');
+  bas('ArrowUp');
+  assert.equal(sayfa.odakta(), led);
   bas('ArrowRight');
-  bas('ArrowRight');
-  assert.equal(sayfa.odakta(), hazir('%50'));
-  bas('ArrowDown');
-  assert.equal(sayfa.odakta(), ampul);
+  assert.equal(sayfa.odakta(), ampul, 'tek öğelik satırın sonunda Sağ sonraki satırın başına geçer');
   bas('ArrowLeft');
-  assert.equal(sayfa.odakta(), hazir('%100'), 'satır başında Sol bir önceki satırın sonuna geçer');
-  bas('ArrowRight');
-  assert.equal(sayfa.odakta(), ampul, 'satır sonunda Sağ sonraki satırın başına geçer');
+  assert.equal(sayfa.odakta(), led, 'satır başında Sol bir önceki satırın sonuna geçer');
+  bas('ArrowDown');
   bas('ArrowDown');
   assert.equal(sayfa.odakta(), film);
   bas('ArrowDown');
@@ -1347,19 +1383,56 @@ test('k-09: panelde ok tuşları ızgarada gezinir (Sol/Sağ sırayla, Yukarı/A
   bas('ArrowUp');
   assert.equal(sayfa.odakta(), pc);
 
-  sayfa.odakVer(hazir('%50'));
   bas('Home');
-  assert.equal(sayfa.odakta(), hazir('%10'));
+  assert.equal(sayfa.odakta(), pc, 'tek öğelik satırda Home satırın kendisinde kalır');
   bas('End');
-  assert.equal(sayfa.odakta(), hazir('%100'));
+  assert.equal(sayfa.odakta(), pc);
   bas('End', undefined, { ctrlKey: true });
   assert.equal(sayfa.odakta(), ses, 'Ctrl+End son öğe');
   bas('Home', undefined, { ctrlKey: true });
   assert.equal(sayfa.odakta(), son, 'Ctrl+Home ilk öğe');
 });
 
+test('k-09: ışığın ayrıntı bölmesinde ok tuşları gezinir (üst satır: Geri / menü, ışık düğmesi, hazır seviye satırı; kaydırıcı atlanır); Home/End satırın başına / sonuna götürür', async () => {
+  const sayfa = await panelAc({ duzen: true });
+  ayrintiAc(sayfa, 'LED şerit');
+  const icerik = sayfa.oge('icerik');
+  const bas = (tus, ek = {}) => sayfa.belgeOlayi('keydown', { key: tus, target: sayfa.odakta(), ...ek });
+  const geri = icerik.bul((o) => o.className.split(' ').includes('ayrinti-geri'))[0];
+  const menu = icerik.bul((o) => o.className.split(' ').includes('ayrinti-menu'))[0];
+  const led = dugmeBul(sayfa, 'LED şerit');
+  const hazir = (m) => hazirBul(sayfa, m);
+  assert.equal(sayfa.odakta(), geri, 'ayrıntı açılınca odak Geri düğmesine gider');
+  bas('ArrowRight');
+  assert.equal(sayfa.odakta(), menu);
+  bas('ArrowDown');
+  assert.equal(sayfa.odakta(), led, 'üst satırdan ışığın ana düğmesine');
+  bas('ArrowDown');
+  assert.equal(sayfa.odakta(), hazir('%10'), 'ışık düğmesinden hazır seviye satırına (kaydırıcı atlanır)');
+  bas('ArrowRight');
+  bas('ArrowRight');
+  assert.equal(sayfa.odakta(), hazir('%50'));
+  bas('Home');
+  assert.equal(sayfa.odakta(), hazir('%10'));
+  bas('End');
+  assert.equal(sayfa.odakta(), hazir('%100'));
+  const kenar = bas('ArrowDown');
+  assert.equal(sayfa.odakta(), hazir('%100'), 'son satırda Aşağı yerinde kalır');
+  assert.equal(kenar.onlendi, true, 'kenarda bile içerik alanı kaymaz');
+  bas('ArrowUp');
+  assert.equal(sayfa.odakta(), led);
+  bas('ArrowUp');
+  assert.equal(sayfa.odakta(), geri);
+  // Esc önce ayrıntıyı kapatır (panel kapanmaz); odak satırın ışık düğmesine döner
+  bas('Escape');
+  assert.equal(kapatSayisi(sayfa), 0);
+  assert.equal(icerik.bul((o) => o.className.split(' ').includes('ayrinti')).length, 0);
+  assert.equal(sayfa.odakta(), dugmeBul(sayfa, 'LED şerit'));
+});
+
 test('k-09: kaydırıcıda oklar kaydırıcının kendi işidir; Shift/Alt/Ctrl+ok ve diğer tuşlar gezinmeyi tetiklemez; Esc kapatmaya devam eder', async () => {
-  const sayfa = await panelAc();
+  const sayfa = await panelAc({ duzen: true });
+  ayrintiAc(sayfa, 'LED şerit');
   const aralik = sayfa.oge('icerik').bul((o) => o.type === 'range')[0];
   sayfa.odakVer(aralik);
   for (const tus of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']) {
@@ -1367,6 +1440,7 @@ test('k-09: kaydırıcıda oklar kaydırıcının kendi işidir; Shift/Alt/Ctrl+
     assert.notEqual(olay.onlendi, true, `${tus}: kaydırıcının varsayılanı engellenmez`);
     assert.equal(sayfa.odakta(), aralik);
   }
+  ayrintiKapat(sayfa);
   const ampul = dugmeBul(sayfa, 'Ampul');
   sayfa.odakVer(ampul);
   for (const ek of [{ shiftKey: true }, { altKey: true }, { ctrlKey: true }, { metaKey: true }]) {
@@ -1575,7 +1649,8 @@ test('g-02: vurgu ışığın o anki seviyesine en yakın hazır düğmededir (e
   ];
   for (const [ek, beklenen] of durumlar) {
     const isik = karo('light.led_serit', 'LED şerit', { grup: 'isik', grupEtiketi: 'Işık', parlaklikKontrol: true, ...ek });
-    const sayfa = await panelAc({ model: { gruplar: [{ kod: 'isik', etiket: 'Işık', karolar: [isik] }], sonlar: [], ust: {} } });
+    const sayfa = await panelAc({ model: { gruplar: [{ kod: 'isik', etiket: 'Işık', karolar: [isik] }], sonlar: [], ust: {} }, duzen: true });
+    ayrintiAc(sayfa, 'LED şerit'); // 1.7.0: hazır seviyeler yalnız ayrıntı bölmesindedir
     const hazirlar = sayfa.oge('icerik').bul((o) => sinifli(o, 'hazir'));
     assert.deepEqual(hazirlar.filter((h) => sinifli(h, 'vurgu')).map((h) => h.textContent), beklenen ? [beklenen] : [], JSON.stringify(ek));
     assert.deepEqual(hazirlar.filter((h) => sinifli(h, 'sik')).map((h) => h.textContent), ['%20'], 'sık kullanılan işareti ayrı sınıfta');
@@ -1647,7 +1722,7 @@ test('g-07: panelde "Onaylı" grubu en alta (Diğer\'in altına) çizilir', asyn
     ust: {},
   };
   const sayfa = await panelAc({ model });
-  assert.deepEqual(sayfa.oge('icerik').bul((o) => o.className === 'bolum-baslik').map((o) => o.textContent), ['Işık', 'Diğer', 'Onaylı']);
+  assert.deepEqual(sayfa.oge('icerik').bul((o) => o.className === 'bolum-baslik').map((o) => o.textContent), ['Işıklar', 'Diğer', 'Onaylı']);
   const bolumler = sayfa.oge('icerik').bul((o) => o.etiket === 'section');
   assert.match(bolumler.at(-1).className, /\bgrup-onayli\b/);
 });
@@ -1664,7 +1739,7 @@ test('g-08: yıkıcı karoda kalıcı "basılı tut" alt yazısı vardır, diğe
 });
 
 test('g-08: başarılı eylemden sonra karoda 1 sn "basari" (yeşil çerçeve); hata/çok sık/ara değerler/tekrarlı karo işaretlenmez; yıkıcı tamamlanınca da işaret', async () => {
-  const sayfa = await panelAc();
+  const sayfa = await panelAc({ duzen: true });
   const ampul = dugmeBul(sayfa, 'Ampul');
   ampul.gonder('click', { detail: 1 });
   await akit();
@@ -1674,6 +1749,8 @@ test('g-08: başarılı eylemden sonra karoda 1 sn "basari" (yeşil çerçeve); 
   sayfa.zaman.ilerle(2);
   assert.equal(sinifli(ampul, 'basari'), false, '1 sn sonra kalkar');
 
+  // 1.7.0: hazır seviyeler ve kaydırıcı ayrıntı bölmesindedir
+  ayrintiAc(sayfa, 'LED şerit');
   const hazir = hazirBul(sayfa, '%20');
   hazir.gonder('click');
   await akit();
@@ -1684,6 +1761,7 @@ test('g-08: başarılı eylemden sonra karoda 1 sn "basari" (yeşil çerçeve); 
   aralik.gonder('input'); // ara değer: sonDeger:false
   await akit();
   assert.equal(sinifli(aralik, 'basari'), false, 'kaydırıcı ara değerleri yanıp sönmez');
+  ayrintiKapat(sayfa);
 
   const ses = dugmeBul(sayfa, 'Ses +');
   ses.gonder('click', { detail: 0 });
@@ -1704,16 +1782,53 @@ test('g-08: başarılı eylemden sonra karoda 1 sn "basari" (yeşil çerçeve); 
   assert.equal(sinifli(h, 'hata'), true);
 });
 
-test('g-08: her grubun başlığına CSS ile (süs, ekran okuyucuya girmeden) küçük simge eklenir; metin değişmez', async () => {
+test('g-08 (1.7.0): bölüm başlıklarında süs simgesi yoktur (CSS ::before / ::after emoji kuralları kaldırıldı); başlık düz metindir ve metni değişmez', async () => {
   const css = oku('src/yuzey.css');
   const { GRUPLAR } = require('../src/lib/favoriler');
+  const baslikSusleri = kurallar(css).filter((k) => /\.bolum-baslik/.test(k.secici) && /::?(?:before|after)/.test(k.secici));
+  assert.deepEqual(baslikSusleri.map((k) => k.secici), [], 'başlıklara CSS ile simge eklenmez');
   for (const kod of [...GRUPLAR.map((g) => g.kod), 'onayli']) {
-    const govde = kuralGovdesi(css, `.grup-${kod} .bolum-baslik::before`);
-    assert.match(govde, /content:\s*"[^"]+"\s*\/\s*""/, `${kod}: simge alt metinsiz (süs)`);
+    assert.equal(kuralGovdesi(css, `.grup-${kod} .bolum-baslik::before`), '', `${kod}: eski başlık simgesi kuralı kalmadı`);
   }
-  assert.match(kuralGovdesi(css, '.bolum.son .bolum-baslik::before'), /content/);
+  assert.equal(kuralGovdesi(css, '.bolum.son .bolum-baslik::before'), '', 'Son kullanılanlar başlığında da simge yok');
+  assert.doesNotMatch(css, /content:\s*"[^"]*(?:\u{1F4A1}|\u{1F3AC}|\u{1F5A5}|\u{1F3B5}|\u2611|\u{1F4C5})/u, 'eski başlık emojileri CSS\'te kalmadı');
   const sayfa = await panelAc();
-  assert.deepEqual(sayfa.oge('icerik').bul((o) => o.className === 'bolum-baslik').map((o) => o.textContent), ['Son kullanılanlar', 'Işık', 'Sahne', 'PC', 'Medya']);
+  const basliklar = sayfa.oge('icerik').bul((o) => o.className === 'bolum-baslik');
+  assert.deepEqual(basliklar.map((o) => o.textContent), ['Son kullanılanlar', 'Işıklar', 'Sahneler', 'PC', 'Medya']);
+  assert.ok(basliklar.every((o) => o.children.length === 0 && o.etiket === 'h2'), 'başlık yalnız metin taşıyan h2 (simge öğesi yok)');
+});
+
+test('1.7.0 bölüm başlıkları: hazır gruplar çoğul / yeni adla yazılır (beş dilde); PC, Medya, Yardımcılar, Diğer, Onaylı, bilinmeyen grup ve oda grubu kendi etiketiyle kalır', async () => {
+  const bir = (kod, etiket, ek = {}) => ({ kod, etiket, ...ek, karolar: [karo(`switch.${kod.replace(/\W/g, '')}`, `Karo ${kod}`)] });
+  const gruplar = () => [
+    bir('isik', 'Işık'),
+    bir('iklim', 'İklim'),
+    bir('perde', 'Perde'),
+    bir('sahne', 'Sahne'),
+    bir('sensor', 'Sensör'),
+    bir('pc', 'PC'),
+    bir('medya', 'Medya'),
+    bir('yardimci', 'Yardımcılar'),
+    bir('diger', 'Diğer'),
+    bir('onayli', 'Onaylı'),
+    bir('oda-0123abcd', 'Salon', { oda: true }),
+    bir('garip', 'Özel grup'),
+  ];
+  const beklenen = {
+    tr: ['Işıklar', 'İklim ve cihazlar', 'Perdeler', 'Sahneler', 'Sensörler'],
+    en: ['Lights', 'Climate and devices', 'Curtains', 'Scenes', 'Sensors'],
+    de: ['Lichter', 'Klima und Geräte', 'Vorhänge', 'Szenen', 'Sensoren'],
+    fr: ['Lumières', 'Climat et appareils', 'Rideaux', 'Scènes', 'Capteurs'],
+    es: ['Luces', 'Clima y dispositivos', 'Cortinas', 'Escenas', 'Sensores'],
+  };
+  for (const [dil, adlar] of Object.entries(beklenen)) {
+    const sayfa = await panelAc({ model: { gruplar: gruplar(), sonlar: [], ust: {} }, ...(dil === 'tr' ? {} : { dil }) });
+    assert.deepEqual(yazilar(sayfa, 'bolum-baslik'), [...adlar, 'PC', 'Medya', 'Yardımcılar', 'Diğer', 'Onaylı', 'Salon', 'Özel grup'], dil);
+  }
+  // dil çalışma anında değişince başlıklar yeni dilde yeniden yazılır
+  const sayfa = await panelAc({ model: { gruplar: gruplar(), sonlar: [], ust: {} } });
+  sayfa.dilDegisti({ dil: 'en' });
+  assert.deepEqual(yazilar(sayfa, 'bolum-baslik').slice(0, 5), beklenen.en);
 });
 
 // ---- g-13: yazı boyutu (pencere ölçeklenince yükseklik yeniden ölçülür) ------------------------------
@@ -1960,10 +2075,11 @@ function gorunurMetinler(sayfa) {
   const ekle = (m) => {
     if (m) metinler.push(String(m));
   };
-  for (const kimlik of ['baslik', 'medya', 'baglanti', 'eski', 'serit', 'ipucu', 'paletSerit', 'haAc', 'ayarlarAc']) {
+  for (const kimlik of ['baslik', 'medya', 'baglanti', 'eski', 'serit', 'hero', 'ipucu', 'paletSerit', 'haAc', 'ayarlarAc']) {
     ekle(sayfa.oge(kimlik).textContent);
     ekle(sayfa.oge(kimlik).title);
   }
+  ekle(sayfa.oge('hero').attributes['aria-label']);
   ekle(sayfa.oge('arama').attributes.placeholder);
   ekle(sayfa.oge('arama').attributes['aria-label']);
   ekle(sayfa.htmlBasligi().textContent);
@@ -1981,7 +2097,7 @@ const turkceKalan = (sayfa) => gorunurMetinler(sayfa).filter((m) => TURKCE_HARF.
 const yazilar = (sayfa, sinif) => sayfa.oge('icerik').bul((o) => o.className === sinif).map((o) => o.textContent);
 
 test('dil en: sabit ve dinamik panel metinleri İngilizce; Türkçe harfli görünür metin kalmaz (favori adları ve HA verisi hariç)', async () => {
-  const sayfa = await panelAc({ model: EN_MODEL, dil: 'en' });
+  const sayfa = await panelAc({ model: EN_MODEL, dil: 'en', duzen: true });
   assert.equal(sayfa.kok.nitelikler.lang, 'en');
   assert.equal(sayfa.htmlBasligi().textContent, 'Home Panel — Quick Panel');
   assert.equal(sayfa.oge('baslik').textContent, 'Home Panel');
@@ -1994,11 +2110,19 @@ test('dil en: sabit ve dinamik panel metinleri İngilizce; Türkçe harfli gör�
   assert.equal(sayfa.oge('baglanti').textContent, 'Live');
   assert.equal(sayfa.oge('medya').textContent, '♪ Playing · Headphones');
   assert.equal(sayfa.oge('medya').title, '♪ Playing · Headphones');
-  assert.deepEqual(yazilar(sayfa, 'bolum-baslik'), ['Recently used', 'Light', 'Scene', 'PC']);
-  assert.deepEqual(yazilar(sayfa, 'karo-durum'), ['60%', 'off', '', ''], 'durum metinleri: açık seviyesi, kapalı, nötr');
+  assert.equal(sayfa.oge('hero').attributes['aria-label'], 'Overview', '1.7.0: hero bölümünün adı');
+  assert.deepEqual(yazilar(sayfa, 'bolum-baslik'), ['Recently used', 'Lights', 'Scenes', 'PC']);
+  assert.deepEqual(yazilar(sayfa, 'karo-durum'), ['on', 'off', '', ''], 'durum metinleri: açık, kapalı, nötr');
+  assert.deepEqual(yazilar(sayfa, 'karo-yuzde'), ['60%'], '1.7.0: parlaklık kontrollü ışığın satırında seviye ayrı gösterilir (Ampul düz karodur)');
   assert.deepEqual(yazilar(sayfa, 'karo-ipucu'), ['hold to confirm']);
   assert.equal(dugmeBul(sayfa, 'Shut down PC').title, 'Shut down PC — hold to run');
+  assert.deepEqual(sayfa.oge('icerik').bul((o) => o.etiket === 'input'), [], 'satırda kaydırıcı yok');
+  assert.deepEqual(turkceKalan(sayfa), []);
+  // kaydırıcı ve hazır seviyeler ayrıntı bölmesindedir: orada da Türkçe sızmaz
+  const bolme = ayrintiAc(sayfa, 'LED strip');
+  assert.equal(bolme.attributes['aria-label'], 'LED strip controls');
   assert.equal(sayfa.oge('icerik').bul((o) => o.etiket === 'input')[0].attributes['aria-label'], 'LED strip brightness');
+  assert.deepEqual(yazilar(sayfa, 'ayrinti-baslik'), ['LED strip']);
   assert.deepEqual(turkceKalan(sayfa), []);
 });
 
@@ -2131,9 +2255,12 @@ for (const anahtar of Object.keys(YENI_DIL_METINLERI.fr)) {
 }
 
 test('dil de/fr/es: sabit ve dinamik panel metinleri o dilde; yüzde "60 %" yazılır; Türkçeye özgü harf kalmaz', async () => {
+  const heroAdi = { de: 'Übersicht', fr: 'Aperçu', es: 'Resumen' };
+  const acikMetni = { de: 'an', fr: 'activé', es: 'encendido' };
   for (const [dil, b] of Object.entries(YENI_DIL_METINLERI)) {
-    const sayfa = await panelAc({ model: EN_MODEL, dil });
+    const sayfa = await panelAc({ model: EN_MODEL, dil, duzen: true });
     assert.equal(sayfa.kok.nitelikler.lang, dil);
+    assert.equal(sayfa.oge('hero').attributes['aria-label'], heroAdi[dil], `${dil}: hero bölümünün adı`);
     assert.equal(sayfa.htmlBasligi().textContent, b.baslik, dil);
     assert.equal(sayfa.oge('baslik').textContent, 'Home Panel', `${dil}: uygulama adı çevrilmez`);
     assert.equal(sayfa.oge('haAc').textContent, b.haAc, dil);
@@ -2143,12 +2270,18 @@ test('dil de/fr/es: sabit ve dinamik panel metinleri o dilde; yüzde "60 %" yaz�
     assert.equal(sayfa.oge('baglanti').textContent, b.canli, dil);
     assert.equal(sayfa.oge('medya').textContent, b.medya, dil);
     assert.equal(yazilar(sayfa, 'bolum-baslik')[0], b.son, dil);
-    assert.deepEqual(yazilar(sayfa, 'karo-durum'), [b.yuzde, b.kapali, '', ''], `${dil}: durum metinleri`);
+    assert.deepEqual(yazilar(sayfa, 'karo-durum'), [acikMetni[dil], b.kapali, '', ''], `${dil}: durum metinleri`);
+    assert.deepEqual(yazilar(sayfa, 'karo-yuzde'), [b.yuzde], `${dil}: 1.7.0 satırda yüzde ayrı yazılır, dilin kuralıyla ("60 %")`);
     assert.deepEqual(yazilar(sayfa, 'karo-ipucu'), [b.ipucu], dil);
     assert.equal(dugmeBul(sayfa, 'Shut down PC').title, b.pcBaslik, dil);
-    assert.equal(sayfa.oge('icerik').bul((o) => o.etiket === 'input')[0].attributes['aria-label'], b.parlaklik, dil);
+    assert.deepEqual(sayfa.oge('icerik').bul((o) => o.etiket === 'input'), [], `${dil}: satırda kaydırıcı yok`);
     assert.deepEqual(turkceOzelKalan(sayfa), [], `${dil}: Türkçeye özgü harf kalmamalı`);
     assert.doesNotMatch(gorunurMetinler(sayfa).join('\n'), /\b(?:yuzey|offline|kose|masaustu)\.[a-z]/i, `${dil}: çözülmemiş sözlük anahtarı kalmamalı`);
+    // kaydırıcı ayrıntı bölmesindedir
+    ayrintiAc(sayfa, 'LED strip');
+    assert.equal(sayfa.oge('icerik').bul((o) => o.etiket === 'input')[0].attributes['aria-label'], b.parlaklik, dil);
+    assert.deepEqual(turkceOzelKalan(sayfa), [], `${dil}: ayrıntı bölmesinde de Türkçeye özgü harf kalmamalı`);
+    assert.doesNotMatch(gorunurMetinler(sayfa).join('\n'), /\b(?:yuzey|offline|kose|masaustu)\.[a-z]/i, `${dil}: ayrıntıda çözülmemiş sözlük anahtarı kalmamalı`);
   }
   // arama ipucundaki örnek, dilin kendi örneği (Fransızcada « » aralarında bölünmez boşlukla)
   assert.equal((await panelAc({ model: EN_MODEL, dil: 'de' })).oge('arama').attributes.placeholder, YENI_DIL_METINLERI.de.arama);
@@ -2372,16 +2505,24 @@ const bilgiOkuma = (istek) => {
 };
 const sinifVar = (o, ad) => `${o.className} ${o.attributes.class ?? ''}`.split(/\s+/).includes(ad);
 const bulSinif = (sayfa, ad) => sayfa.oge('icerik').bul((o) => sinifVar(o, ad));
+/** 1.7.0: saat, hava ve medya hapı içerikte değil #hero bölümündedir */
+const heroSinif = (sayfa, ad) => sayfa.oge('hero').bul((o) => sinifVar(o, ad));
 
 test('bilgi: panel bölümleri sırayla çizilir (kartlar, şerit, son kullanılanlar, gruplar, sensörler, yapılacaklar, takvim); okumalar yalnız panel açıkken istenir', async () => {
   const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
   await akit();
   sayfa.zaman.ilerle(100);
   const basliklar = yazilar(sayfa, 'bolum-baslik');
-  assert.deepEqual(basliklar, ['Son kullanılanlar', 'Işık', 'Sahne', 'PC', 'Medya', 'Sensörler', 'Yapılacaklar: Alışveriş · 1 açık', 'Yaklaşan etkinlikler']);
+  assert.deepEqual(basliklar, ['Son kullanılanlar', 'Işıklar', 'Sahneler', 'PC', 'Medya', 'Sensörler', 'Yapılacaklar: Alışveriş · 1 açık', 'Yaklaşan etkinlikler']);
+  // 1.7.0: saat ve hava hero'dadır; içerik sensör şeridiyle başlar (varlık kartı olmadığından kart bölümü yok)
   const govdeSirasi = sayfa.oge('icerik').children.map((c) => c.className);
-  assert.deepEqual(govdeSirasi.slice(0, 3), ['bilgi-kartlar', 'sensor-serit', 'bolum son']);
-  assert.match(bulSinif(sayfa, 'kart-hava')[0].textContent, /24 °C/);
+  assert.deepEqual(govdeSirasi.slice(0, 2), ['sensor-serit', 'bolum son']);
+  assert.equal(sayfa.oge('hero').hidden, false);
+  assert.deepEqual(sayfa.oge('hero').children.map((c) => c.className), ['hero-ust']);
+  assert.deepEqual(sayfa.oge('hero').children[0].children.map((c) => c.className), ['hero-saat', 'hero-hava'], 'saat her zaman ilk, hava yanında');
+  assert.match(heroSinif(sayfa, 'hero-hava')[0].textContent, /24°/);
+  assert.equal(bulSinif(sayfa, 'saat-deger').length + bulSinif(sayfa, 'hero-hava').length + bulSinif(sayfa, 'kart-hava').length, 0, 'içerikte saat / hava yok');
+  assert.ok(HTML.indexOf('id="serit"') < HTML.indexOf('id="hero"') && HTML.indexOf('id="hero"') < HTML.indexOf('id="icerik"'), 'hero, hata şeridinden sonra ve içerikten önce');
   const turler = sayfa.okumalar().map((o) => o.tur).sort();
   assert.deepEqual(turler, ['gecmis', 'takvim', 'yapilacak']);
   assert.deepEqual(sayfa.okumalar().find((o) => o.tur === 'gecmis'), { tur: 'gecmis', kimlikler: ['sensor.salon_sicaklik', 'sensor.kumanda_pil'], saat: 6 });
@@ -2392,16 +2533,22 @@ test('bilgi: model bilgi taşımıyorsa panel eskisi gibi çizilir ve hiçbir ok
   const sayfa = await panelAc({ model: MODEL, okuYaniti: bilgiOkuma });
   await akit();
   assert.deepEqual(sayfa.okumalar(), []);
-  assert.deepEqual(yazilar(sayfa, 'bolum-baslik'), ['Son kullanılanlar', 'Işık', 'Sahne', 'PC', 'Medya']);
+  assert.deepEqual(yazilar(sayfa, 'bolum-baslik'), ['Son kullanılanlar', 'Işıklar', 'Sahneler', 'PC', 'Medya']);
+  assert.equal(sayfa.oge('hero').hidden, true, 'bilgi modeli yoksa hero boş ve gizli');
+  assert.equal(sayfa.oge('hero').children.length, 0);
 });
 
-test('bilgi: saat kartı sayfanın zamanlayıcısıyla dakikada bir güncellenir', async () => {
+test('bilgi: saat (hero) sayfanın zamanlayıcısıyla dakikada bir güncellenir; üst kart yuvasında saat seçili olmasa da hero\'da durur', async () => {
   const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
-  const once = bulSinif(sayfa, 'saat-deger')[0].textContent;
+  const once = heroSinif(sayfa, 'saat-deger')[0].textContent;
   assert.match(once, /^\d{2}:\d{2}$/);
   sayfa.zaman.ilerle(61_000);
-  const sonra = bulSinif(sayfa, 'saat-deger')[0].textContent;
+  const sonra = heroSinif(sayfa, 'saat-deger')[0].textContent;
   assert.notEqual(sonra, once);
+
+  const saatsiz = await panelAc({ model: { ...MODEL, bilgi: { ...BILGI, kartlar: [{ yuva: 1, tur: 'hava', karo: B_HAVA, secilmedi: false }] } }, okuYaniti: bilgiOkuma });
+  assert.deepEqual(saatsiz.oge('hero').children[0].children.map((c) => c.className), ['hero-saat', 'hero-hava'], 'saat kartı yuvada olmasa da saat hero\'nun ilk parçasıdır');
+  assert.equal(heroSinif(saatsiz, 'hero-ust').length, 1);
 });
 
 test('bilgi: sensöre tıklayınca geçmiş görünümü açılır, Esc önce onu kapatır (panel kapanmaz), ikinci Esc paneli kapatır', async () => {
@@ -2543,15 +2690,17 @@ test('dil: İngilizce arayüzde bilgi bölümleri İngilizce yazılır (başlık
   assert.ok(basliklar.includes('Sensors'));
   assert.ok(basliklar.includes('Upcoming events'));
   assert.ok(basliklar.includes('To-do: Alışveriş · 1 open'));
-  assert.match(bulSinif(sayfa, 'kart-hava')[0].textContent, /Sunny/);
-  assert.match(bulSinif(sayfa, 'kart-hava')[0].textContent, /Humidity 40%/);
+  assert.ok(basliklar.includes('Lights') && basliklar.includes('Scenes'), '1.7.0 çoğul bölüm başlıkları');
+  assert.equal(sayfa.oge('hero').attributes['aria-label'], 'Overview');
+  assert.match(heroSinif(sayfa, 'hero-hava')[0].textContent, /Sunny · Humidity 40%/);
   assert.match(bulSinif(sayfa, 'bilgi-takvim')[0].textContent, /No upcoming events/);
   const kart = bulSinif(sayfa, 'sensor-karo').find((k) => /Kumanda pil/.test(k.textContent));
   assert.match(kart.textContent, /! low battery/);
   assert.match(kart.textContent, /12%/);
   sayfa.dilDegisti({ dil: 'tr' });
   assert.ok(yazilar(sayfa, 'bolum-baslik').includes('Sensörler'));
-  assert.match(bulSinif(sayfa, 'kart-hava')[0].textContent, /Güneşli/);
+  assert.match(heroSinif(sayfa, 'hero-hava')[0].textContent, /Güneşli/);
+  assert.equal(sayfa.oge('hero').attributes['aria-label'], 'Özet');
 });
 
 test('bilgi: sayfada yeni betikler yuzey-sayfa.js\'den önce yüklenir ve HTML\'de satır içi betik yok', () => {
@@ -3783,15 +3932,21 @@ test('2.0 bekleme: karoya basınca yanıt gelene kadar "bekliyor"; HA yankısıy
 });
 
 test('2.0 bekleme: kaydırıcı, hazır seviye ve ses tekrarı karoyu bekletmez; yanıt hata olsa da bekleme kalkar', async () => {
-  const sayfa = await panelAc({ calistirYaniti: { ok: false, tur: 'hata' } });
+  const sayfa = await panelAc({ calistirYaniti: { ok: false, tur: 'hata' }, duzen: true });
   const ampul = dugmeBul(sayfa, 'Ampul');
   ampul.gonder('click', { detail: 1 });
   await akit();
   assert.ok(!sinifli(ampul, 'bekliyor'));
   assert.ok(sinifli(ampul, 'hata'));
+  // 1.7.0: hazır seviye ve kaydırıcı ayrıntı bölmesindedir; ışığın ana düğmesi de ayrıntıda durur
+  ayrintiAc(sayfa, 'LED şerit');
   hazirBul(sayfa, '%50').gonder('click', { detail: 1 });
+  const aralik = sayfa.oge('icerik').bul((o) => o.type === 'range')[0];
+  aralik.value = 70;
+  aralik.gonder('input');
   const led = dugmeBul(sayfa, 'LED şerit');
   assert.ok(!sinifli(led, 'bekliyor'), 'hazır seviye karoyu bekletmez');
+  assert.ok(!sinifli(aralik, 'bekliyor') && !sinifli(led, 'bekliyor'), 'kaydırıcı da karoyu bekletmez');
 });
 
 test('2.0 ışık karosu: zemindeki seviye dolgusu süstür ve karonun içindedir; satır içi stil öznitelik değildir', async () => {

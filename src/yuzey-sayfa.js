@@ -40,6 +40,7 @@
     eski: document.getElementById('eski'),
     sabitle: document.getElementById('sabitle'),
     serit: document.getElementById('serit'),
+    hero: document.getElementById('hero'), // 1.7.0: saat + hava + medya hapı (yalnız panel; içerik kaydırılınca yerinde kalır)
     sekmeler: document.getElementById('sekmeler'),
     bildirim: document.getElementById('bildirim'),
     bildirimDugme: document.getElementById('bildirimDugme'),
@@ -722,6 +723,10 @@
           medyaKarti: function (karo) {
             return kartlar && kartlar.kartMi(karo) ? kartlar.kartCiz(karo) : null;
           },
+          // 1.7.0 hero'daki medya hapı (yuzey-kartlar.js medyaHapi): kapak, çalan parça, çal/duraklat ve sonraki
+          medyaHapi: function (karo, s) {
+            return kartlar && typeof kartlar.medyaHapi === 'function' ? kartlar.medyaHapi(karo, s) : null;
+          },
           medyaKaroDuzelt: function (karo) {
             return karoDuzeltici ? karoDuzeltici(karo) : null;
           },
@@ -749,6 +754,7 @@
           },
           Grafik: Grafik,
           Bicim: BilgiBicim,
+          Ikon: window.EvIkonSeti || null, // 1.7.0 arayüz ikonları (lib/ikon-seti.js)
           izgaraKolon: IZGARA_KOLON,
         })
       : null;
@@ -1098,24 +1104,32 @@
    */
   const sonDoluluk = new Map(); // kimlik -> 0..1
 
-  function doluluguYaz(kimlik, dolgu, deger, oynat) {
+  function doluluguYaz(kimlik, dolgu, deger, oynat, uc) {
     stilYaz(dolgu, '--doluluk', String(deger));
+    if (uc) stilYaz(uc, '--doluluk', String(deger)); // 1.7.0 kompakt satır: dolgunun bittiği yerdeki çizgi
     const onceki = sonDoluluk.get(kimlik);
     sonDoluluk.set(kimlik, deger);
     if (!oynat || onceki === undefined || onceki === deger || !hareketAcik() || typeof dolgu.animate !== 'function') return;
     dolgu.animate([{ transform: 'scaleX(' + onceki + ')' }, { transform: 'scaleX(' + deger + ')' }], { duration: 420, easing: YAY_YUMUSAK });
+    if (uc && typeof uc.animate === 'function') uc.animate([{ transform: 'translateX(' + onceki * 100 + '%)' }, { transform: 'translateX(' + deger * 100 + '%)' }], { duration: 420, easing: YAY_YUMUSAK });
   }
 
   function isikKarosu(karo, detaydaMi) {
-    const kutu = olustur('div', 'isik-karo');
+    const kutu = olustur('div', 'isik-karo' + (detaydaMi === true ? '' : ' satir'));
     const ana = karoDugmesi(karo);
     const dolgu = olustur('span', 'karo-dolgu');
     dolgu.setAttribute('aria-hidden', 'true');
     ana.appendChild(dolgu);
+    const uc = detaydaMi === true ? null : olustur('span', 'karo-uc'); // kompakt satırda dolgunun ucundaki ince parlak çizgi
+    if (uc) {
+      uc.setAttribute('aria-hidden', 'true');
+      ana.appendChild(uc);
+    }
     const acik = karo.durum === 'acik';
     if (acik && karo.yuzde !== null && karo.yuzde >= 100) ana.classList.add('tam');
-    doluluguYaz(karo.id, dolgu, acik ? (karo.yuzde !== null ? Math.max(0.04, Math.min(1, karo.yuzde / 100)) : 1) : 0, true);
+    doluluguYaz(karo.id, dolgu, acik ? (karo.yuzde !== null ? Math.max(0.04, Math.min(1, karo.yuzde / 100)) : 1) : 0, true, uc);
     kutu.appendChild(ana);
+    if (detaydaMi !== true) return isikSatiri(karo, kutu, ana, dolgu, uc);
     const hazirlar = olustur('div', 'hazirlar');
     const yakin = enYakinHazir(karo);
     const hazirDugmeleri = [];
@@ -1197,7 +1211,142 @@
     });
     const renkler = kartlar ? kartlar.isikRengi(karo) : null; // 1.4.0 (o-02): beyaz tonu + renk paleti; cihaz renk desteklemiyorsa null
     if (renkler) kutu.appendChild(renkler);
-    if (duzen && detaydaMi !== true) duzen.karoyuBagla(karo, ana, kutu); // 1.4.0 düzen (o-16): uzun basma, Shift+Enter, sağ tık, "⋯" (ayrıntı bölmesinde değil)
+    return kutu;
+  }
+
+  const SURUKLEME_ESIGI = 8; // px: bundan kısa yatay hareket tıklamadır (aç / kapat)
+  const SATIR_OK_ADIMI = 10; // Shift + ← / → parlaklık adımı
+
+  /**
+   * 1.7.0 kompakt ışık satırı (panel listesi): simge | ad + Açık/Kapalı | yüzde | ⋯. Zemin parlaklık kadar dolar. Tıklama aç / kapat;
+   * satırın üstünde yatay sürükleme parlaklığı ayarlar (8 px eşik, bırakınca son değer gider, sürüklemeden sonra tıklama yutulur);
+   * tekerlek ±5 (panel kaydırılabiliyorsa yalnız yüzde üstünde); Shift + ← / → ±10. Hazır seviyeler, kaydırıcı ve renkler "⋯" ile açılan
+   * ayrıntı bölmesindedir (isikKarosu(karo, true)).
+   */
+  function isikSatiri(karo, kutu, ana, dolgu, uc) {
+    const acik = karo.durum === 'acik';
+    const kullanilabilir = function () {
+      return karo.kullanilabilir === true && !karo.ulasilamiyor;
+    };
+    // Durum satırı açık/kapalı der; yüzde sağda ayrı ve büyük durur
+    Array.prototype.forEach.call(ana.children || [], function (c) {
+      if (c.className === 'karo-durum' && acik && !karo.ulasilamiyor) c.textContent = t('yuzey.durum.acik');
+    });
+    const yuzde = olustur('span', 'karo-yuzde', acik && karo.yuzde !== null ? t('yuzey.yuzde', { n: karo.yuzde }) : '—');
+    yuzde.setAttribute('aria-hidden', 'true'); // değer aria'da düğmenin adında / durumunda zaten var
+    ana.appendChild(yuzde);
+    let gosterilen = karo.yuzde !== null ? karo.yuzde : null;
+    const goster = function (deger) {
+      gosterilen = deger;
+      yuzde.textContent = t('yuzey.yuzde', { n: deger });
+      doluluguYaz(karo.id, dolgu, Math.max(0.04, Math.min(1, deger / 100)), false, uc);
+    };
+    const kisici = Kaydirici.kisici(function (deger, son) {
+      calistir({ kimlik: karo.id, parlaklik: deger, sonDeger: son === true }, karo, ana);
+    });
+
+    // Sürükleme: yalnız yatay ve eşiği geçince; dikey hareket panelin kaydırılmasına kalır
+    let surukleme = null; // { x, y, kimlik, basladi, deger }
+    let tikiYut = false;
+    const degerHesapla = function (x) {
+      const r = typeof ana.getBoundingClientRect === 'function' ? ana.getBoundingClientRect() : null;
+      if (!r || !(r.width > 0)) return null;
+      return Math.max(1, Math.min(100, Math.round(((x - r.left) / r.width) * 100)));
+    };
+    ana.addEventListener('pointerdown', function (olay) {
+      if ((olay.button !== 0 && olay.button !== undefined) || !kullanilabilir()) return;
+      surukleme = { x: olay.clientX, y: olay.clientY, kimlik: olay.pointerId, basladi: false, deger: null };
+    });
+    ana.addEventListener('pointermove', function (olay) {
+      if (!surukleme || olay.pointerId !== surukleme.kimlik) return;
+      if (!surukleme.basladi) {
+        const dx = Math.abs(olay.clientX - surukleme.x);
+        if (dx < SURUKLEME_ESIGI || dx < Math.abs(olay.clientY - surukleme.y)) return;
+        surukleme.basladi = true;
+        donukBaslat();
+        if (typeof ana.setPointerCapture === 'function') {
+          try {
+            ana.setPointerCapture(olay.pointerId);
+          } catch {
+            /* imleç zaten bırakıldı */
+          }
+        }
+      }
+      const deger = degerHesapla(olay.clientX);
+      if (deger === null || deger === surukleme.deger) return;
+      surukleme.deger = deger;
+      goster(deger);
+      kisici.cagir(deger);
+    });
+    const birak = function (olay) {
+      if (!surukleme || (olay && olay.pointerId !== undefined && olay.pointerId !== surukleme.kimlik)) return;
+      const bitti = surukleme;
+      surukleme = null;
+      if (!bitti.basladi) return;
+      tikiYut = true;
+      setTimeout(function () {
+        tikiYut = false;
+      }, 0);
+      if (bitti.deger !== null) kisici.son(bitti.deger);
+      donukBitir();
+    };
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (ad) {
+      ana.addEventListener(ad, birak);
+    });
+    // Sürüklemenin sonundaki tıklama aç / kapat sayılmaz (yakalama evresi: düğmenin kendi tıklama dinleyicisinden önce)
+    ana.addEventListener(
+      'click',
+      function (olay) {
+        if (!tikiYut) return;
+        tikiYut = false;
+        olay.stopImmediatePropagation();
+        olay.preventDefault();
+      },
+      true,
+    );
+    tekrarlayicilar.push(function () {
+      birak();
+    });
+
+    // Klavye: Shift + ← / → parlaklık (oklar tek başına ızgarada gezinir); son değer yalnız ilk tuş bırakışında bir kez gider
+    let okBekliyor = false;
+    ana.addEventListener('keydown', function (olay) {
+      if (!olay.shiftKey || olay.altKey || olay.ctrlKey || olay.metaKey || (olay.key !== 'ArrowLeft' && olay.key !== 'ArrowRight')) return;
+      if (!kullanilabilir()) return;
+      olay.preventDefault();
+      const temel = gosterilen !== null && karo.durum === 'acik' ? gosterilen : 0;
+      const deger = Math.max(1, Math.min(100, temel + (olay.key === 'ArrowRight' ? SATIR_OK_ADIMI : -SATIR_OK_ADIMI)));
+      goster(deger);
+      okBekliyor = true;
+      kisici.cagir(deger);
+    });
+    ana.addEventListener('keyup', function (olay) {
+      if (olay.key === 'Shift' || olay.key === 'ArrowLeft' || olay.key === 'ArrowRight') {
+        if (!okBekliyor || gosterilen === null) return;
+        okBekliyor = false;
+        kisici.son(gosterilen);
+      }
+    });
+    ana.setAttribute('aria-keyshortcuts', 'Shift+ArrowLeft Shift+ArrowRight');
+
+    // o-20: tekerlek ±5 (yalnız açık ve ulaşılabilir ışıkta); panel kaydırılabiliyorsa yalnız yüzdenin üstünde
+    tekerlekBagla(kutu, {
+      dar: yuzde,
+      kullanilabilir: function () {
+        return karo.durum === 'acik' && kullanilabilir();
+      },
+      oku: function () {
+        return gosterilen;
+      },
+      enAz: 1,
+      enCok: 100,
+      goster: goster,
+      gonder: function (deger, son) {
+        calistir({ kimlik: karo.id, parlaklik: deger, sonDeger: son === true }, karo, ana);
+      },
+    });
+    panelSatirlari.push([ana]);
+    if (duzen) duzen.karoyuBagla(karo, ana, kutu); // 1.4.0 düzen (o-16): uzun basma, Shift+Enter, sağ tık, "⋯" (ayrıntı)
     return kutu;
   }
 
@@ -1445,6 +1594,21 @@
     });
   }
 
+  // 1.7.0 bölüm başlıkları çoğuldur ('Işıklar', 'Sahneler'...); oda grubu ve sözlükte olmayan grup kendi adını taşır
+  const BOLUM_BASLIKLARI = { isik: 'yuzey.grup.isik', iklim: 'yuzey.grup.iklim', perde: 'yuzey.grup.perde', sahne: 'yuzey.grup.sahne', sensor: 'yuzey.grup.sensor' };
+
+  function bolumBasligi(g) {
+    return g.oda !== true && Object.prototype.hasOwnProperty.call(BOLUM_BASLIKLARI, g.kod) ? t(BOLUM_BASLIKLARI[g.kod]) : g.etiket;
+  }
+
+  /** 1.7.0 hero yuvası: üst kartlardaki saat, hava (açılır tahminle) ve medya hapı; seçilmemişse yuva gizli kalır. */
+  function heroCiz() {
+    if (!el.hero) return;
+    const parcalar = bilgi ? bilgi.heroParcalari() : [];
+    el.hero.replaceChildren.apply(el.hero, parcalar);
+    el.hero.hidden = parcalar.length === 0;
+  }
+
   function panelCiz() {
     const rakamlar = rakamOkumasi();
     const oncekiOdak = odakIstegi !== null ? odakIstegi : odakAnahtari();
@@ -1453,6 +1617,7 @@
     tekrarlayicilar = [];
     odakHaritasi = new Map();
     panelSatirlari = [];
+    heroCiz(); // ok gezintisi yukarıdan aşağı: hero satırları içerikten önce
     // Sensör geçmişi görünümü (bilgi) açıksa panelin yerini alır (Geri / Esc ile kapanır).
     const detayParcalari = bilgi && bilgi.detayAcikMi() ? bilgi.detayParcalari() : [];
     if (detayParcalari.length > 0) {
@@ -1479,7 +1644,7 @@
       if (son) parcalar.push(son);
       model.gruplar.forEach(function (g) {
         const bolum = olustur('section', 'bolum grup-' + g.kod);
-        const baslik = olustur('h2', 'bolum-baslik', g.etiket);
+        const baslik = olustur('h2', 'bolum-baslik', bolumBasligi(g));
         const odaUst = g.oda === true && eylemBolumu ? eylemBolumu.odaBasligi(g, baslik, odakKaydet) : null; // 1.4.0 (o-14): oda grubunda "Odayı kapat"
         if (odaUst) {
           bolum.appendChild(odaUst.kap);

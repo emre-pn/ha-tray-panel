@@ -154,9 +154,11 @@ test('kapak: aynı oynatıcı iki yerde (grup + üst kart) tek istek paylaşır;
   };
   const sayfa = await panelAc({ model, okuYaniti: kapakOku() });
   assert.equal(kapakIstekleri(sayfa).length, 1, 'aynı karo + aynı anahtar = tek istek');
-  assert.equal(resimler(sayfa).length, 2);
-  assert.ok(resimler(sayfa).every((r) => r.src === RESIM));
-  const tum = JSON.stringify(sayfa.bul(() => true).map((o) => [o.attributes, o.title, o.src]));
+  const heroResimleri = sayfa.oge('hero').bul((o) => o.etiket === 'img');
+  assert.equal(resimler(sayfa).length, 1, 'grup kartında bir kapak');
+  assert.equal(heroResimleri.length, 1, '1.7.0: hero bölümündeki medya hapında bir kapak');
+  assert.ok(resimler(sayfa).concat(heroResimleri).every((r) => r.src === RESIM));
+  const tum = JSON.stringify(sayfa.bul(() => true).concat(sayfa.oge('hero').bul(() => true)).map((o) => [o.attributes, o.title, o.src]));
   assert.ok(!/media_player_proxy|token|192\.168|http:/.test(tum.replace(RESIM, '')));
 });
 
@@ -253,27 +255,41 @@ function ustKartModeli(kartlar, ek = {}) {
   return { ...modelYap(...(ek.karolar ?? [])), bilgi: { ayar: AYAR, kartlar, serit: [], sensorler: [], takvimler: [], listeler: [], hizliListe: '' } };
 }
 
-test('medya üst kartı: oynatıcının kendi kartı (kapak, parça, düğmeler) iki sütunu kaplayan sarmalayıcıda çizilir; düğmeler servis gönderir', async () => {
+const heroHapi = (sayfa) => sayfa.oge('hero').bul((o) => sinifli(o, 'medya-hap') || sinifli(o, 'hap-bos'))[0];
+
+test('medya hapı (1.7.0 hero): kapak, çalan parça ve sanatçı, oynat / sonraki servis gönderir; gövdeye tıklayınca tam medya kartı içeriğin başında açılır', async () => {
   const tv = oynatici();
   const sayfa = await panelAc({ model: ustKartModeli([{ yuva: 1, tur: 'medya', karo: tv, secilmedi: false }, { yuva: 2, tur: 'saat', karo: null, secilmedi: false }]), okuYaniti: kapakOku() });
-  const sarmalayici = bulSinif(sayfa, 'bilgi-medya');
-  assert.equal(sarmalayici.length, 1);
-  assert.ok(sinifli(sarmalayici[0], 'bilgi-kart'));
-  assert.equal(sarmalayici[0].bul((o) => sinifli(o, 'kart-medya')).length, 1, 'cihaz medya kartı içeride');
-  assert.equal(sarmalayici[0].bul((o) => o.etiket === 'img' && o.src === RESIM).length, 1, 'albüm kapağı üst kartta da var');
-  assert.match(sarmalayici[0].textContent, /Güzel Şarkı — Sanatçı/);
-  assert.match(sayfa.oge('icerik').textContent, /\d\d:\d\d/, 'yandaki saat kartı korunur');
+  const hap = heroHapi(sayfa);
+  assert.ok(hap, 'hap hero bölümünde');
+  assert.ok(sinifli(hap, 'caliyor'));
+  assert.equal(hap.bul((o) => o.etiket === 'img' && o.src === RESIM).length, 1, 'albüm kapağı hapta');
+  assert.match(hap.textContent, /Güzel Şarkı · Sanatçı/);
+  assert.match(sayfa.oge('hero').textContent, /\d\d:\d\d/, 'saat de hero bölümünde');
+  assert.equal(bulSinif(sayfa, 'bilgi-medya').length, 0, 'tam kart kapalı başlar');
   for (const [aria, servis] of [['Salon TV: oynat / duraklat', 'media_play_pause'], ['Salon TV: sonraki parça', 'media_next_track']]) {
-    dugme(sayfa, aria).gonder('click', { detail: 1 });
+    hap.bul((o) => o.etiket === 'button' && o.attributes['aria-label'] === aria)[0].gonder('click', { detail: 1 });
     sayfa.zaman.ilerle(500);
     assert.deepEqual(sayfa.calistirmalar().at(-1), { kimlik: 'media_player.tv', servis }, aria);
   }
+  const govde = () => heroHapi(sayfa).bul((o) => sinifli(o, 'hap-govde'))[0];
+  assert.equal(govde().attributes['aria-expanded'], 'false');
+  govde().gonder('click', { detail: 1 });
+  await akit();
+  const sarmalayici = bulSinif(sayfa, 'bilgi-medya');
+  assert.equal(sarmalayici.length, 1);
+  assert.equal(sarmalayici[0].bul((o) => sinifli(o, 'kart-medya')).length, 1, 'cihaz medya kartı içeride');
+  assert.match(sarmalayici[0].textContent, /Güzel Şarkı — Sanatçı/);
+  assert.equal(govde().attributes['aria-expanded'], 'true');
+  govde().gonder('click', { detail: 1 });
+  await akit();
+  assert.equal(bulSinif(sayfa, 'bilgi-medya').length, 0, 'yeniden tıklayınca kapanır');
 });
 
 test('medya üst kartı: oynatıcı seçilmediyse / alınamıyorsa / ulaşılamıyorsa kısa not; oynatıcı olmayan karo çizilmez', async () => {
   const notu = async (kart) => {
     const sayfa = await panelAc({ model: ustKartModeli([kart]), okuYaniti: kapakOku() });
-    return { sayfa, metin: bulSinif(sayfa, 'bilgi-medya')[0]?.textContent };
+    return { sayfa, metin: heroHapi(sayfa)?.textContent };
   };
   assert.equal((await notu({ yuva: 1, tur: 'medya', karo: null, secilmedi: true })).metin, 'Medya oynatıcı seçilmedi');
   assert.equal((await notu({ yuva: 1, tur: 'medya', karo: null, secilmedi: false })).metin, 'Medya oynatıcı kullanılamıyor');
@@ -302,14 +318,23 @@ test('medya üst kartı: bilgi modülü tek başına (kart hook\'u yok) güvenli
 
   const hookSuz = bilgiSahte.ortamKur();
   hookSuz.modul.ayarla(ham);
-  assert.equal(bilgiSahte.metin(bilgiSahte.bulSinif(hookSuz.modul.ustParcalar(), 'bilgi-medya')), 'Medya oynatıcı kullanılamıyor');
+  assert.equal(bilgiSahte.metin(bilgiSahte.bulSinif(hookSuz.modul.heroParcalari(), 'hap-bos')), 'Medya oynatıcı kullanılamıyor');
+  let hapAyari = null;
   const hookluyla = bilgiSahte.ortamKur({
     ek: {
       medyaKaroDuzelt: (k) => ({ ...k }),
       medyaKarti: (k) => hookSuz.ctx.olustur('div', 'kart kart-medya', `kart:${k.id}`),
+      medyaHapi: (k, s) => {
+        hapAyari = s;
+        return hookSuz.ctx.olustur('div', 'medya-hap', `hap:${k.id}`);
+      },
     },
   });
   hookluyla.modul.ayarla(ham);
+  assert.equal(bilgiSahte.metin(bilgiSahte.bulSinif(hookluyla.modul.heroParcalari(), 'medya-hap')), 'hap:media_player.tv');
+  assert.equal(hapAyari.acik, false);
+  assert.equal(bilgiSahte.bulSinif(hookluyla.modul.ustParcalar(), 'bilgi-medya').length, 0, 'tam kart hapın gövdesiyle açılır');
+  hapAyari.ac();
   const parca = bilgiSahte.bulSinif(hookluyla.modul.ustParcalar(), 'bilgi-medya');
   assert.equal(parca.length, 1);
   assert.equal(bilgiSahte.metin(parca), 'kart:media_player.tv');

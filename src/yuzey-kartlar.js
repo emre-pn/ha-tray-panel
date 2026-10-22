@@ -20,6 +20,7 @@
   const Arama = window.EvArama;
   const Kaydirici = window.EvKaydirici;
   const Dil = window.EvDil || null;
+  const Ikon = window.EvIkonSeti || null; // 1.7.0 arayüz ikonları (lib/ikon-seti.js); yoksa düğmeler metin simgesiyle çizilir
   if (!Arama || !Kaydirici) return;
 
   // Her zaman kart olarak çizilen alanlar (tek tıklama eylemi yok). Vantilatör, nem alıcı ve ışık yalnız kendi denetimi varsa kart olur.
@@ -1495,6 +1496,53 @@
       return (karo.etiket + ' ' + ek).trim();
     }
 
+    /**
+     * 1.7.0 medya hapı (panelin üst bölümü): kapak, çalan parça ve iki düğme (çal/duraklat, sonraki). Tam kart (ses, kaynak, atlama)
+     * hapın gövdesine tıklayınca açılır (yuzey-bilgi.js). Düğmeler kartınkilerle aynı eylem yolundan gider (onay, kısma, hata).
+     * @param {object} karo medya oynatıcı karosu
+     * @param {{acik: boolean, ac: Function}} s gövde tıklaması: tam kartı açar / kapatır
+     */
+    function medyaHapi(karo, s) {
+      const oz = ozellikAl(karo);
+      const caliyor = oz.durum === 'playing';
+      const hap = olustur('div', 'medya-hap' + (caliyor ? ' caliyor' : '') + (karo.kullanilabilir ? '' : ' yok'));
+      hap.setAttribute('role', 'group');
+      hap.setAttribute('aria-label', karo.etiket);
+      const kapak = kapakOgesi(karo, oz);
+      const kapakKutusu = olustur('span', 'hap-kapak');
+      kapakKutusu.setAttribute('aria-hidden', 'true');
+      if (kapak) kapakKutusu.appendChild(kapak);
+      hap.appendChild(kapakKutusu);
+      const govde = olustur('button', 'hap-govde');
+      govde.type = 'button';
+      govde.setAttribute('aria-expanded', s && s.acik ? 'true' : 'false');
+      const durum = karo.ulasilamiyor ? t('yuzey.durum.ulasilamiyor') : MEDYA_DURUMLARI.indexOf(oz.durum) >= 0 ? t('yuzey.medya.durum.' + oz.durum) : '';
+      const baslik = typeof oz.baslik === 'string' && oz.baslik !== '' ? oz.baslik : karo.etiket;
+      const ikinci = typeof oz.sanatci === 'string' && oz.sanatci !== '' ? oz.sanatci : durum;
+      govde.setAttribute('aria-label', [karo.etiket, baslik !== karo.etiket ? baslik : '', ikinci].filter(Boolean).join(' · '));
+      const eq = olustur('span', 'hap-eq');
+      eq.setAttribute('aria-hidden', 'true');
+      for (let i = 0; i < 3; i += 1) eq.appendChild(olustur('i'));
+      govde.appendChild(eq);
+      govde.appendChild(olustur('b', 'hap-baslik', baslik));
+      if (ikinci) govde.appendChild(olustur('span', 'hap-ikinci', ' · ' + ikinci));
+      b.odakKaydet('c:' + karo.id + ':hap', govde);
+      govde.addEventListener('click', function () {
+        if (s && typeof s.ac === 'function') s.ac();
+      });
+      hap.appendChild(govde);
+      const oynat = eylemDugmesi(karo, 'hap-oynat', { metin: '', aria: t('yuzey.medya.oynat', { etiket: karo.etiket }), servis: 'media_play_pause', sinif: 'yuvarlak' });
+      const sonraki = eylemDugmesi(karo, 'hap-sonraki', { metin: '', aria: t('yuzey.medya.sonraki', { etiket: karo.etiket }), servis: 'media_next_track', sinif: 'yuvarlak' });
+      [[oynat, caliyor ? 'duraklat' : 'oynat'], [sonraki, 'ileri']].forEach(function (c) {
+        const svg = Ikon ? Ikon.ikon(document, c[1], 16) : null;
+        if (svg) c[0].appendChild(svg);
+        else c[0].textContent = c[1] === 'ileri' ? '⏭' : '⏯';
+        hap.appendChild(c[0]);
+      });
+      b.satirEkle([govde, oynat, sonraki]);
+      return hap;
+    }
+
     /** Alanın palet / komut satırı komut sözlüğü var mı? (salt okunur sensör, hava durumu... için "komut yazın" ipucu anlamsızdır) */
     function komutluMu(karo) {
       return !!karo && Arama.komutluAlanMi(karo.alan);
@@ -1504,6 +1552,7 @@
       kartMi: kartMi,
       komutluMu: komutluMu,
       kartCiz: kartCiz,
+      medyaHapi: medyaHapi,
       isikRengi: isikRengi,
       ozet: ozet,
       rozetMetni: rozetMetni,

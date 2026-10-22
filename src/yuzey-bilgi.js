@@ -201,6 +201,7 @@
     const doc = ctx.doc;
     const Grafik = ctx.Grafik;
     const Bicim = ctx.Bicim;
+    const Ikon = ctx.Ikon || null; // 1.7.0 arayüz ikonları (lib/ikon-seti.js); yoksa metin simgeleri
     const t = function (anahtar, degisken) { return ctx.t(anahtar, degisken); };
     const el = ctx.olustur;
 
@@ -216,6 +217,8 @@
     const tahminler = new Map(); // 'kimlik|tur' -> { t, durum: 'tamam' | 'hata', ogeler }   (hava tahmini)
     let tahminTuru = null; // paneldeki "Günlük / Saatlik" seçimi (null: ayardaki değer); ayar değişince bırakılır
     let tahminAyari = ''; // en son görülen havaTahmini ayarı
+    let tahminAcik = false; // 1.7.0: tahmin, hero'daki havaya tıklayınca açılır (panel her açılışta kapalı başlar)
+    let medyaAcik = false; // 1.7.0: medya hapının gövdesine tıklayınca tam medya kartı içeriğin başında açılır
     const taslak = new Map(); // liste kimliği -> yazılmakta olan metin
     const tazeIstenen = new Set(); // sonraki okumada önbelleği atlanacak listeler (palet hızlı eklemesinden sonra)
     const bitenAcik = new Set(); // "Tamamlananlar" açılmış listeler
@@ -474,43 +477,6 @@
       }, kalan + 50);
     }
 
-    // ------------------------------------------------------------ üst kartlar ve şerit
-
-    function saatKarti() {
-      const kart = el('div', 'bilgi-kart kart-saat');
-      const deger = el('span', 'saat-deger', '');
-      const tarih = el('span', 'saat-tarih', '');
-      kart.appendChild(deger);
-      kart.appendChild(tarih);
-      saatOgeleri = { deger: deger, tarih: tarih };
-      saatiGuncelle();
-      return kart;
-    }
-
-    function havaKarti(k) {
-      const kart = el('div', 'bilgi-kart kart-hava');
-      if (k.secilmedi) {
-        kart.appendChild(el('span', 'kart-not', t('yuzey.bilgi.hava.secilmedi')));
-        return kart;
-      }
-      const o = k.karo && !k.karo.ulasilamiyor && k.karo.kullanilabilir ? k.karo.ozellik : null;
-      if (!o) {
-        kart.appendChild(el('span', 'kart-not', t('yuzey.bilgi.hava.yok')));
-        return kart;
-      }
-      const simge = el('span', 'hava-simge', Bicim.HAVA_SIMGELERI[o.durum] || '');
-      simge.setAttribute('aria-hidden', 'true');
-      kart.appendChild(simge);
-      const sicaklik = sonluMu(o.sicaklik) ? Bicim.sayiBicimle(o.sicaklik, { dil: dil() }) + (o.birim ? ' ' + o.birim : '') : t('yuzey.bilgi.bosDeger');
-      kart.appendChild(el('span', 'hava-sicaklik', sicaklik));
-      if (o.durum && Object.prototype.hasOwnProperty.call(HAVA_METIN, o.durum)) kart.appendChild(el('span', 'hava-durum', t(HAVA_METIN[o.durum])));
-      const ek = [];
-      if (sonluMu(o.nem)) ek.push(t('yuzey.bilgi.hava.nem', { n: Bicim.yuzdeMetni(o.nem, { hassasiyet: 0, dil: dil() }) }));
-      if (sonluMu(o.ruzgar)) ek.push(t('yuzey.bilgi.hava.ruzgar', { n: Bicim.sayiBicimle(o.ruzgar, { hassasiyet: 0, dil: dil() }), birim: o.ruzgarBirim || '' }).trim());
-      if (ek.length > 0) kart.appendChild(el('span', 'hava-ek', ek.join(' · ')));
-      return kart;
-    }
-
     // ------------------------------------------------------------ hava tahmini şeridi
 
     function tahminSayisi(n, ek) {
@@ -609,6 +575,8 @@
       return bolum;
     }
 
+    // ------------------------------------------------------------ üst kartlar ve şerit
+
     /** Sensör düğmesi (kart ve şerit ortak): tıklayınca geçmiş açılır. */
     function sensorDugmesi(karo, sinif, anahtar) {
       const neden = dikkat(karo);
@@ -650,16 +618,19 @@
       return kart;
     }
 
+    /**
+     * Üst kartlar (1.7.0): saat, hava ve medya panelin başındaki hero bölümündedir (heroParcalari); burada yalnız sensör (varlık) kartları
+     * ve medya hapından açılan tam medya kartı kalır. Gösterilecek kart yoksa null.
+     */
     function kartBolumu() {
+      const kartlar = bilgi.kartlar.filter(function (k) { return k.tur === 'varlik' || (k.tur === 'medya' && medyaAcik); });
+      if (kartlar.length === 0) return null;
       const bolum = el('section', 'bilgi-kartlar');
       bolum.setAttribute('aria-label', t('yuzey.bilgi.kartlar.etiket'));
       const dugmeler = [];
-      saatOgeleri = null;
-      bilgi.kartlar.forEach(function (k) {
+      kartlar.forEach(function (k) {
         let kart;
-        if (k.tur === 'saat') kart = saatKarti();
-        else if (k.tur === 'hava') kart = havaKarti(k);
-        else if (k.tur === 'medya') kart = medyaUstKarti(k);
+        if (k.tur === 'medya') kart = medyaUstKarti(k);
         else {
           kart = varlikKarti(k.karo);
           dugmeler.push(kart);
@@ -667,8 +638,107 @@
         bolum.appendChild(kart);
       });
       if (dugmeler.length > 0) ctx.satirEkle(dugmeler);
-      saatSurucusunuKur();
       return bolum;
+    }
+
+    // ------------------------------------------------------------ 1.7.0 hero: saat + hava (+ açılır tahmin) ve medya hapı
+
+    function ikonOgesi(ad, boyut, sinif) {
+      return Ikon && ad ? Ikon.ikon(doc, ad, boyut, sinif) : null;
+    }
+
+    function heroSaat() {
+      const kutu = el('div', 'hero-saat');
+      const deger = el('div', 'saat-deger', '');
+      const tarih = el('div', 'saat-tarih', '');
+      kutu.appendChild(deger);
+      kutu.appendChild(tarih);
+      saatOgeleri = { deger: deger, tarih: tarih };
+      saatiGuncelle();
+      return kutu;
+    }
+
+    /** Hero'nun hava tarafı: ikon, sıcaklık, "Durum · Nem %n". Tahmin açıksa düğmedir (tıklayınca tahmin açılır / kapanır). */
+    function heroHava(k) {
+      const o = !k.secilmedi && k.karo && !k.karo.ulasilamiyor && k.karo.kullanilabilir ? k.karo.ozellik : null;
+      if (!o) return el('div', 'hero-hava bos', t(k.secilmedi ? 'yuzey.bilgi.hava.secilmedi' : 'yuzey.bilgi.hava.yok'));
+      const tahminVar = !!tahminHedefi();
+      const kutu = el(tahminVar ? 'button' : 'div', 'hero-hava');
+      const durumMetni = o.durum && Object.prototype.hasOwnProperty.call(HAVA_METIN, o.durum) ? t(HAVA_METIN[o.durum]) : '';
+      const sicaklik = sonluMu(o.sicaklik) ? Bicim.sayiBicimle(Math.round(o.sicaklik), { hassasiyet: 0, dil: dil() }) + '°' : t('yuzey.bilgi.bosDeger');
+      const simge = ikonOgesi(Ikon ? Ikon.havaIkonAdi(o.durum) : null, 30, 'hava-ikon');
+      if (simge) kutu.appendChild(simge);
+      else if (o.durum && Bicim.HAVA_SIMGELERI[o.durum]) {
+        const yedek = el('span', 'hava-ikon', Bicim.HAVA_SIMGELERI[o.durum]);
+        yedek.setAttribute('aria-hidden', 'true');
+        kutu.appendChild(yedek);
+      }
+      kutu.appendChild(el('span', 'hava-sicaklik', sicaklik));
+      const alt = [];
+      if (durumMetni) alt.push(durumMetni);
+      if (sonluMu(o.nem)) alt.push(t('yuzey.bilgi.hava.nem', { n: Bicim.yuzdeMetni(o.nem, { hassasiyet: 0, dil: dil() }) }));
+      if (alt.length > 0) kutu.appendChild(el('span', 'hava-durum', alt.join(' · ')));
+      const tamSicaklik = sonluMu(o.sicaklik) ? Bicim.sayiBicimle(o.sicaklik, { dil: dil() }) + (o.birim ? ' ' + o.birim : '') : '';
+      // Rüzgâr hero'da yer kaplamaz; erişilebilir adda ve ipucunda söylenir
+      const ruzgar = sonluMu(o.ruzgar) ? t('yuzey.bilgi.hava.ruzgar', { n: Bicim.sayiBicimle(o.ruzgar, { hassasiyet: 0, dil: dil() }), birim: o.ruzgarBirim || '' }).trim() : '';
+      const betim = [durumMetni, tamSicaklik].concat(alt.slice(durumMetni ? 1 : 0), [ruzgar]).filter(Boolean).join(', ');
+      if (tahminVar) {
+        kutu.type = 'button';
+        kutu.setAttribute('aria-expanded', tahminAcik ? 'true' : 'false');
+        kutu.setAttribute('aria-label', betim + ' — ' + t('yuzey.bilgi.hava.tahmin.baslik'));
+        kutu.title = t('yuzey.bilgi.hava.tahmin.baslik');
+        ctx.odakKaydet('bi:hero:hava', kutu);
+        kutu.addEventListener('click', function () {
+          tahminAcik = !tahminAcik;
+          if (tahminAcik) tahminIste();
+          ctx.odakIste('bi:hero:hava');
+          ctx.yenidenCiz();
+        });
+        ctx.satirEkle([kutu]);
+      } else {
+        kutu.setAttribute('role', 'group');
+        kutu.setAttribute('aria-label', betim);
+        kutu.title = betim;
+      }
+      return kutu;
+    }
+
+    function medyaHapi(k) {
+      const ac = function () {
+        medyaAcik = !medyaAcik;
+        ctx.odakIste('c:' + (k.karo ? k.karo.id : '') + ':hap');
+        ctx.yenidenCiz();
+      };
+      const hap = k.karo && !k.karo.ulasilamiyor && typeof ctx.medyaHapi === 'function' ? ctx.medyaHapi(k.karo, { acik: medyaAcik, ac: ac }) : null;
+      if (hap) return hap;
+      return el('div', 'hap-bos', t(k.secilmedi ? 'yuzey.bilgi.medya.secilmedi' : 'yuzey.bilgi.medya.yok'));
+    }
+
+    /**
+     * Panelin başındaki hero bölümü (1.7.0, yalnız panel): saat her zaman solda (taslaktaki gibi hero'nun sabit parçası; varlık ya da
+     * istek gerektirmez), üst kart yuvasında hava seçiliyse sağda hava; altında tahmin (açıksa) ve medya yuvası seçiliyse medya hapı.
+     * Bilgi modeli yoksa boş dizi. Sensör (varlık) kartları içerikte kalır (kartBolumu).
+     */
+    function heroParcalari() {
+      saatOgeleri = null;
+      if (!bilgi) {
+        saatSurucusunuKur();
+        return [];
+      }
+      const bul = function (tur) { return bilgi.kartlar.find(function (k) { return k.tur === tur; }) || null; };
+      const havaK = bul('hava');
+      const medyaK = bul('medya');
+      const ust = el('div', 'hero-ust');
+      ust.appendChild(heroSaat());
+      if (havaK) ust.appendChild(heroHava(havaK));
+      const parcalar = [ust];
+      if (havaK && tahminAcik) {
+        const tahmin = tahminBolumu();
+        if (tahmin) parcalar.push(tahmin);
+      }
+      if (medyaK) parcalar.push(medyaHapi(medyaK));
+      saatSurucusunuKur();
+      return parcalar;
     }
 
     function seritBolumu() {
@@ -682,7 +752,10 @@
           isaret.setAttribute('aria-hidden', 'true'); // renge ek şekil; uyarı metni aria-label'dadır
           s.dugme.appendChild(isaret);
         }
-        s.dugme.appendChild(el('span', 'serit-etiket', karo.etiket));
+        // 1.7.0 çip: ikon + değer; tam ad title / aria-label'dadır (sensorDugmesi)
+        const simge = ikonOgesi(Ikon ? Ikon.sensorIkonAdi(karo.ozellik) : null, 14, 'serit-ikon');
+        if (simge) s.dugme.appendChild(simge);
+        else s.dugme.appendChild(el('span', 'serit-etiket', karo.etiket));
         s.dugme.appendChild(el('span', 'serit-deger', s.deger));
         bolum.appendChild(s.dugme);
         dugmeler.push(s.dugme);
@@ -691,15 +764,13 @@
       return bolum;
     }
 
+    /** İçeriğin başı: sensör çipleri, sensör (varlık) kartları ve açılmış tam medya kartı. Saat, hava ve tahmin hero'dadır. */
     function ustParcalar() {
       if (!bilgi) return [];
       const parcalar = [];
-      saatOgeleri = null;
-      if (bilgi.kartlar.length > 0) parcalar.push(kartBolumu());
-      else saatSurucusunuKur();
-      const tahmin = tahminBolumu();
-      if (tahmin) parcalar.push(tahmin);
       if (bilgi.serit.length > 0) parcalar.push(seritBolumu());
+      const kartlar = kartBolumu();
+      if (kartlar) parcalar.push(kartlar);
       return parcalar;
     }
 
@@ -1280,6 +1351,7 @@
       },
       /** yuzey-sayfa.js modelDuzelt içinde çağırır; sınırlı model ya da null. */
       modelDuzelt: modelDuzelt,
+      heroParcalari,
       ustParcalar,
       altParcalar,
       detayParcalari,
@@ -1305,6 +1377,8 @@
       gosterildi() {
         detay = null;
         yazim = 0;
+        tahminAcik = false;
+        medyaAcik = false;
         [gecmis, takvim, listeler, tahminler].forEach(function (harita) {
           Array.from(harita.keys()).forEach(function (k) {
             if (harita.get(k).durum === 'hata') harita.delete(k);

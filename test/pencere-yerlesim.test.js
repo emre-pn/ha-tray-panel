@@ -318,16 +318,16 @@ test('yakinlastirmaDegeri: taban (Ayarlar > Metin boyutu) sıfırlamanın dönec
 
 test('yuzeyBoyutu: ölçek 1 eski davranışla aynı; ölçekle genişlik ve yükseklik büyür, çalışma alanına sığacak biçimde kırpılır', () => {
   const alan = { x: 0, y: 0, width: 1920, height: 1040 };
-  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1, alan), { width: 360, height: 420 });
+  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1, alan), { width: 396, height: 420 });
   assert.deepEqual(yuzeyBoyutu(PALET_BOYUTU, 96, 1, alan), { width: 560, height: 120 }, 'palet yüksekliği en az 120');
-  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1.5, alan), { width: 540, height: 630 });
-  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 2, alan), { width: 720, height: 840 });
-  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 500, 2, alan), { width: 720, height: 1000 }, 'en çok sınırı da ölçekle büyür (640 * 2)');
+  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1.5, alan), { width: 594, height: 630 });
+  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 2, alan), { width: 792, height: 840 });
+  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 500, 2, alan), { width: 792, height: 1000 }, 'en çok sınırı da ölçekle büyür (640 * 2)');
   assert.equal(yuzeyBoyutu(PANEL_BOYUTU, 600, 2, alan).height, 1024, 'çalışma alanından 16 piksel pay kalır');
   const dar = { x: 0, y: 0, width: 800, height: 600 };
   assert.deepEqual(yuzeyBoyutu(PALET_BOYUTU, 300, 2, dar), { width: 784, height: 584 }, 'genişlik çalışma alanına kırpılır');
-  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1.234, alan), { width: 360, height: 420 }, 'bilinmeyen ölçek 1 sayılır');
-  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1), { width: 360, height: 420 }, 'çalışma alanı olmadan da çalışır');
+  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1.234, alan), { width: 396, height: 420 }, 'bilinmeyen ölçek 1 sayılır');
+  assert.deepEqual(yuzeyBoyutu(PANEL_BOYUTU, 420, 1), { width: 396, height: 420 }, 'çalışma alanı olmadan da çalışır');
 });
 
 test('yuzeyYuksekligiKirp: ölçek verilmezse eski sınırlar (120..640); ölçek en çok sınırını büyütür, küçültmez', () => {
