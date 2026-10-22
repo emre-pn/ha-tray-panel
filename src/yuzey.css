@@ -266,6 +266,7 @@ input:focus-visible,
 
 /* Panel sabitleme (o-23): bağlantı göstergesinin yanındaki küçük iğne düğmesi; basılıyken vurgu rengiyle dolar */
 .sabitle {
+  position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -277,6 +278,21 @@ input:focus-visible,
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
+}
+
+/*
+ * Tıklama alanı (1.4.2): 24 px'lik iğne ve 22 px'lik kapat düğmesi görünüşü değişmeden çevresindeki boşluktan da tıklanır
+ * (iğne 40 px, kapat 34 px; komşu denetimlerle çakışmaz: başlık boşluğu 10 px, bildirim satırı dolgusu 6 px).
+ */
+.sabitle::before,
+.bildirim-oge-kapat::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.bildirim-oge-kapat::before {
+  inset: -6px;
 }
 
 .sabitle:hover {
@@ -374,6 +390,7 @@ input:focus-visible,
 }
 
 .bildirim-rozet {
+  font-variant-numeric: tabular-nums;
   flex: none;
   min-width: 18px;
   padding: 0 5px;
@@ -449,16 +466,19 @@ input:focus-visible,
 }
 
 .bildirim-zaman {
+  font-variant-numeric: tabular-nums;
   margin-left: 6px;
   font-weight: 400;
   color: var(--soluk);
 }
 
 .bildirim-metin {
+  text-wrap: pretty;
   overflow-wrap: anywhere;
 }
 
 .bildirim-oge-kapat {
+  position: relative;
   flex: none;
   width: 22px;
   height: 22px;
@@ -716,6 +736,7 @@ input:focus-visible,
 }
 
 .karo-durum {
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
   color: var(--soluk);
 }
@@ -776,11 +797,12 @@ input:focus-visible,
   padding: 6px;
   background: var(--bg-ust);
   border: 1px solid var(--kenar);
-  border-radius: 8px;
+  border-radius: 12px; /* iç içe yarıçap (1.4.2): içteki karo ve hazır düğmeler 6 px + 6 px dolgu */
 }
 
 .isik-karo .karo {
   min-height: 40px;
+  border-radius: 6px;
   flex-direction: row;
   align-items: center;
 }
@@ -840,7 +862,7 @@ input:focus-visible,
   padding: 8px;
   background: var(--bg-ust);
   border: 1px solid var(--kenar);
-  border-radius: 8px;
+  border-radius: 12px; /* iç içe yarıçap (1.4.2): içteki düğmeler ve kapak 4 px + 8 px dolgu */
 }
 
 .kart.yok {
@@ -862,6 +884,7 @@ input:focus-visible,
 }
 
 .kart-durum {
+  font-variant-numeric: tabular-nums;
   flex: 1;
   min-width: 0;
   font-size: 12px;
@@ -893,8 +916,11 @@ input:focus-visible,
   width: 56px;
   height: 56px;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--karo);
+  /* Albüm kapağının kenarı zemine karışmasın: metin renginden türeyen nötr, yarı saydam iç çizgi (iki temada da) */
+  outline: 1px solid color-mix(in srgb, var(--metin) 12%, transparent);
+  outline-offset: -1px;
 }
 
 .kart-kapak[hidden] {
@@ -915,7 +941,7 @@ input:focus-visible,
   overflow: hidden;
   background: var(--karo);
   border: 1px solid var(--kenar);
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
 .kart-dugme:hover:not(:disabled) {
@@ -993,6 +1019,7 @@ input:focus-visible,
 }
 
 .kart-deger {
+  font-variant-numeric: tabular-nums;
   min-width: 56px;
   font-size: 12px;
   text-align: center;
@@ -1122,10 +1149,12 @@ input:focus-visible,
 }
 
 .bos-metin {
+  text-wrap: balance;
   font-weight: 600;
 }
 
 .bos-alt {
+  text-wrap: pretty;
   margin-top: 4px;
   font-size: 12px;
 }
@@ -1182,6 +1211,7 @@ input:focus-visible,
 
 /* 1.4.0 eylem grubu (o-15): bekleyen zamanlı eylemler; her öğenin × düğmesi iptal eder */
 .gecikmeli-serit {
+  font-variant-numeric: tabular-nums;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -1376,6 +1406,7 @@ input:focus-visible,
 }
 
 .rozet {
+  font-variant-numeric: tabular-nums;
   padding: 1px 7px;
   font-size: 12px;
   background: var(--vurgu);
@@ -1492,6 +1523,7 @@ button.bilgi-kart:hover {
 
 .hava-ek,
 .kart-not {
+  text-wrap: pretty;
   flex: 1 0 100%;
   font-size: 12px;
   color: var(--soluk);
@@ -1556,6 +1588,7 @@ button.bilgi-kart:hover {
 }
 
 .tahmin-zaman {
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
   color: var(--soluk);
 }
@@ -2736,7 +2769,7 @@ button.bilgi-kart:hover {
   padding: 6px;
   background: var(--karo);
   border: 1px solid var(--kenar);
-  border-radius: 8px;
+  border-radius: 12px; /* iç içe yarıçap (1.4.2): içteki çerçeve 6 px + 6 px dolgu */
 }
 
 .kamera-ad {
@@ -2820,6 +2853,7 @@ button.bilgi-kart:hover {
 }
 
 .kamera-yas {
+  font-variant-numeric: tabular-nums;
   margin-left: auto;
   font-size: 11px;
   color: var(--soluk);

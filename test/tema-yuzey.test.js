@@ -401,3 +401,29 @@ test('hiçbir yeni ayar dışarıya çıkış açmaz: tema alanları ağ ile ilg
   const varsayilan = JSON.parse(oku('varsayilan-ayarlar.json'));
   assert.notEqual(varsayilan.animasyonlar, true);
 });
+
+// ---- 1.4.2: arayüz cilası -------------------------------------------------------------------------------------------------------
+
+test('arayüz cilası (1.4.2): transition: all yok; iç içe yarıçap tutarlı; değişen sayılar sabit genişlikte; küçük düğmelerin tıklama alanı geniş', () => {
+  for (const f of ['src/yuzey.css', 'src/kose-bildirim.css', 'src/itme-kart.css', 'src/masaustu-karo.css', 'src/ayarlar.html', 'src/offline.html']) {
+    assert.doesNotMatch(oku(f), /transition:\s*all\b|will-change:\s*all\b/, f);
+  }
+  const govde = (secici) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === '').map((k) => k.govde).join(';');
+  const yaricap = (secici) => Number((/border-radius:\s*(\d+)px/.exec(govde(secici)) || [])[1]);
+  const dolgu = (secici) => Number((/padding:\s*(\d+)px/.exec(govde(secici)) || [])[1]);
+  // dış = iç + dolgu
+  assert.equal(yaricap('.isik-karo'), yaricap('.isik-karo .karo') + dolgu('.isik-karo'));
+  assert.equal(yaricap('.isik-karo'), yaricap('.hazir') + dolgu('.isik-karo'));
+  assert.equal(yaricap('.kart'), yaricap('.kart-dugme') + dolgu('.kart'));
+  assert.equal(yaricap('.kart'), yaricap('.kart-kapak') + dolgu('.kart'));
+  assert.equal(yaricap('.kamera-karo'), yaricap('.kamera-cerceve') + dolgu('.kamera-karo'));
+  for (const s of ['.karo-durum', '.kart-durum', '.kart-deger', '.rozet', '.bildirim-rozet', '.bildirim-zaman', '.tahmin-zaman', '.gecikmeli-serit', '.kamera-yas']) {
+    assert.match(govde(s), /font-variant-numeric:\s*tabular-nums/, s);
+  }
+  // albüm kapağının iç çizgisi renk değişkeninden türer (sabit renk yok)
+  assert.match(govde('.kart-kapak'), /outline:\s*1px solid color-mix\(in srgb, var\(--metin\) 12%, transparent\)/);
+  // tıklama alanı: görünmez sözde öğe düğmenin çevresine taşar
+  assert.match(govde('.sabitle'), /position:\s*relative/);
+  assert.match(govde('.bildirim-oge-kapat'), /position:\s*relative/);
+  assert.match(govde('.sabitle::before,.bildirim-oge-kapat::before') || YUZEY_KURALLARI.filter((k) => /\.sabitle::before/.test(k.secici)).map((k) => k.govde).join(';'), /inset:\s*-8px/);
+});

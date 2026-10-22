@@ -2,9 +2,21 @@
 
 Release notes before 1.3.0 are in Turkish. / 1.3.0 öncesi sürüm notları Türkçedir.
 
+### 1.4.2 — 2026-10-22
+
+Update by running `Ev-Paneli-Kurulum-1.4.2.exe` over the installed version. Your settings, favorites and token stay as they are. This release only changes how things look; the code is checked with `npm test` and `npm run kontrol`.
+
+**Polish**
+
+- **Rounded corners that fit:** Cards, the light group and camera cards use a slightly larger outer radius so the buttons and tiles inside sit evenly in their corners.
+- **Numbers that hold still:** Tile states, card values, badges, notification times, the forecast, delayed actions, the camera age and desktop tiles use fixed-width digits, so text no longer shifts when a number changes.
+- **Easier small buttons:** The pin and the notification close buttons, and the close button on mobile notification cards, can be clicked from a larger area around them without looking any different.
+- **Tidier text:** Notification text, card notes, empty-state messages and help text in Settings wrap without leaving a single word on the last line.
+- **Album covers:** A faint edge keeps the cover from blending into the card.
+
 ### 1.4.1 — 2026-10-22
 
-Update by running `Ev-Paneli-Kurulum-1.4.1.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. The code is checked with `npm test` and `npm run kontrol`; the new motion has not been tried in a real window yet.
+Update by running `Ev-Paneli-Kurulum-1.4.1.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. The code is checked with `npm test` and `npm run kontrol`, and the new motion was tried on Windows 11.
 
 **Look and feel**
 

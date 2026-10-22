@@ -100,11 +100,11 @@ test('offline.js geri sayım bitince kendi başına "tekrar dene" çağırmıyor
   assert.ok(sayac.length > 50 && !sayac.includes('tekrarDene'));
 });
 
-test('package.json test ve kontrol betiklerini tanımlıyor; sürüm 1.4.1 ve README ile tutarlı', () => {
+test('package.json test ve kontrol betiklerini tanımlıyor; sürüm 1.4.2 ve README ile tutarlı', () => {
   const paket = JSON.parse(oku('package.json'));
   assert.equal(paket.scripts.test, 'node --test');
   assert.equal(paket.scripts.kontrol, 'node araclar/kontrol.js');
-  assert.equal(paket.version, '1.4.1');
+  assert.equal(paket.version, '1.4.2');
   assert.equal(JSON.parse(oku('package-lock.json')).version, paket.version, 'package-lock.json sürümü package.json ile aynı olmalı');
   const readme = belgeler();
   assert.ok(readme.includes(`Ev-Paneli-Kurulum-${paket.version}.exe`), 'README kurulum dosyası adı sürümle uyuşmuyor');
