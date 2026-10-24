@@ -306,15 +306,18 @@ function surumDenetleyicisiOlustur({
     denetle,
     /** Bu sürüm için bildirim gösterildi (aynı sürüm için bir daha bildirilmez). */
     bildirildi(surum) {
-      const s = surumCoz(surum);
+      const s = surumAyristir(surum); // ön sürüm de olabilir ("Ön sürümleri de göster"): denetle() aynı metni karşılaştırır
       if (!s) return;
-      durumAl().bildirilen = surumMetni(s);
+      durumAl().bildirilen = surumMetniOn(s);
       durumuYaz();
     },
     /** Kayıtlı bilgi (ağa çıkmaz). yeniSurum: önceki bir denetimde görülen ve çalışandan yeni olan sürüm. */
     bilgi() {
       const d = durumAl();
-      return { acik: !!acikMi(), sonDenetim: d.sonDenetim > 0 ? d.sonDenetim : null, yeniSurum: d.sonSurum && yeniMi(d.sonSurum) ? d.sonSurum : null };
+      // Ön sürümler kapatıldıysa önceki denetimden kalan ön sürüm "yeni sürüm" sayılmaz (kapalıyken ön sürüm hiçbir zaman önerilmez).
+      const onSurumMu = d.sonSurum ? surumAyristir(d.sonSurum)?.on != null : false;
+      const gorunur = d.sonSurum && (!onSurumMu || onSurumlerMi() === true) && yeniMi(d.sonSurum);
+      return { acik: !!acikMi(), sonDenetim: d.sonDenetim > 0 ? d.sonDenetim : null, yeniSurum: gorunur ? d.sonSurum : null };
     },
   };
 }

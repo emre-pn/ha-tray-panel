@@ -19,6 +19,19 @@ test('geçerli kısayollar', () => {
   assert.ok(kisayolGecerliMi(VARSAYILAN_KISAYOL));
 });
 
+test('prototip anahtarları değiştirici adı sayılmaz: "constructor+H" gibi kısayollar geçersizdir ve çıplak tuşa normalleşmez', () => {
+  const kotuler = ['constructor+H', '__proto__+K', 'Ctrl+constructor+H', 'Shift+constructor+H', 'toString+H', 'hasOwnProperty+Control+H', 'Control+valueOf+H', 'Control+Alt+__proto__+H', 'Constructor+H', 'CONSTRUCTOR+H'];
+  for (const k of kotuler) {
+    assert.equal(kisayolGecerliMi(k), false, k);
+    assert.equal(kisayolNormallestir(k), null, k);
+    const sonuc = kisayolDogrula(k);
+    assert.equal(sonuc.gecerli, false, k);
+    assert.equal(sonuc.neden, 'bicim', k);
+  }
+  assert.equal(kisayolNormallestir('control+alt+h'), 'Control+Alt+H', 'gerçek takma adlar çalışmaya devam eder');
+  assert.equal(kisayolNormallestir('Ctrl+Win+H'), 'Control+Super+H');
+});
+
 test('geçersiz kısayollar: tek F tuşu, yalnız Shift, kara liste, biçim hataları', () => {
   for (const k of ['F9', 'Shift+A', 'Shift+F9', 'Alt+F4', 'Control+Control+H', 'Ctrl+Control+H', '', '   ', 'Control+', '+H', 'H', 'Control+Alt+Ö', 'Control+Alt+H+J', 'Control+Alt+Tab', 'Alt+Hyper+H']) {
     assert.ok(!kisayolGecerliMi(k), JSON.stringify(k));
@@ -119,7 +132,7 @@ test('h-25: AltGr ile çakışan Türkçe Q tuşları uyarıda adıyla sayılır
   const genel = kisayolUyarilari('Control+Alt+H');
   assert.equal(genel.length, 1);
   assert.ok(genel[0].includes('Q (@), E (€), T (₺), 7 ({), 8 ([), 9 (]), 0 (})'), genel[0]);
-  assert.doesNotMatch(genel[0], /AltGr+H/);
+  assert.doesNotMatch(genel[0], /AltGr\+H/);
 });
 
 // --- k-01: tuş basışından kısayol ------------------------------------------------------------------

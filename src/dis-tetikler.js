@@ -92,7 +92,7 @@ function varsayilanZaman() {
  * @param {() => {program: string, onek: string[]}} bag.hedefAl Jump List / kısayol / protokolün çalıştıracağı dosya ve ön argümanlar
  * @param {() => string} [bag.masaustuAl] masaüstü klasörü
  * @param {() => boolean} [bag.panelOnayGoster] izin sorusunu panelde gösterir (gösterilemezse false: iletişim kutusuna düşülür)
- * @param {(soru: object) => Promise<string>} [bag.onayDiyalogu] yedek iletişim kutusu ('izin' | 'herZaman' | 'reddet')
+ * @param {(soru: object, secenek?: { signal: AbortSignal }) => Promise<string>} [bag.onayDiyalogu] yedek iletişim kutusu ('izin' | 'herZaman' | 'reddet'); soru bitince signal iptal edilir
  * @param {() => void} [bag.onayBitti] soru (herhangi bir yoldan: yanıt, zaman aşımı, kapanış) bitti; panel soruyu kaldırır
  * @param {(b: object) => void} [bag.geriBildirim]
  * @param {Function} bag.t
@@ -150,11 +150,18 @@ function disTetiklerOlustur({
   function onaySor(soru) {
     return new Promise((coz) => {
       const bilet = crypto.randomUUID();
-      const kayit = { bilet, soru: { ...soru }, acildi: simdi(), zamanlayici: null };
+      // Yedek iletişim kutusunun kapatma yolu: zaman aşımı / durdur() soruyu bitirince açık kutu da kapanır (geç "İzin ver" sessizce yutulmaz,
+      // aynı bağlantıya tekrar tıklanınca ikinci kutu üst üste yığılmaz).
+      const kayit = { bilet, soru: { ...soru }, acildi: simdi(), zamanlayici: null, iptal: new AbortController() };
       kayit.bitir = (karar) => {
         if (bekleyen !== kayit) return;
         zaman.clearTimeout(kayit.zamanlayici);
         bekleyen = null;
+        try {
+          kayit.iptal.abort();
+        } catch {
+          /* iptal edilemese de karar verilir */
+        }
         coz(ONAY_KARARLARI.includes(karar) ? karar : 'reddet');
         try {
           onayBitti();
@@ -176,7 +183,7 @@ function disTetiklerOlustur({
         return;
       }
       Promise.resolve()
-        .then(() => onayDiyalogu(kayit.soru))
+        .then(() => onayDiyalogu(kayit.soru, { signal: kayit.iptal.signal }))
         .then(
           (karar) => kayit.bitir(karar),
           () => kayit.bitir('reddet'),

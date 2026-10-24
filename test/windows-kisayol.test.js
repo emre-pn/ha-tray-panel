@@ -15,10 +15,34 @@ test('dosyaAdiDuzelt: yasak karakterler, ayrılmış adlar, sondaki nokta; boş 
   assert.equal(dosyaAdiDuzelt('a<b>c:d"e/f\\g|h?i*j'), 'a b c d e f g h i j');
   assert.equal(dosyaAdiDuzelt('  Salon...  '), 'Salon');
   assert.equal(dosyaAdiDuzelt('CON'), 'CON_');
-  assert.equal(dosyaAdiDuzelt('nul.txt'), 'nul.txt_');
+  assert.equal(dosyaAdiDuzelt('nul.txt'), 'nul_.txt');
   assert.equal(dosyaAdiDuzelt('???'), null);
   assert.equal(dosyaAdiDuzelt(42), null);
   assert.equal([...dosyaAdiDuzelt('ş'.repeat(80))].length, 60);
+});
+
+test('dosyaAdiDuzelt: ayrılmış aygıt adı ilk noktadan öncesine bakılır; alt çizgi o parçanın sonuna eklenir, sonuç artık ayrılmış değildir', () => {
+  assert.equal(dosyaAdiDuzelt('Con. Salon'), 'Con_. Salon');
+  assert.equal(dosyaAdiDuzelt('Aux.Isik'), 'Aux_.Isik');
+  assert.equal(dosyaAdiDuzelt('NUL .txt'), 'NUL_.txt');
+  assert.equal(dosyaAdiDuzelt('com1.x'), 'com1_.x');
+  assert.equal(dosyaAdiDuzelt('LPT³.log'), 'LPT³_.log');
+  assert.equal(dosyaAdiDuzelt('nul.'), 'nul_', 'sondaki nokta önce atılır');
+  assert.equal(dosyaAdiDuzelt('Salon'), 'Salon');
+  assert.equal(dosyaAdiDuzelt('Console'), 'Console');
+  assert.equal(dosyaAdiDuzelt('Con'), 'Con_');
+  assert.equal(dosyaAdiDuzelt('Salon.Con'), 'Salon.Con', 'ayrılmış parça yalnız ilk noktadan ÖNCE aranır');
+  // sınır: ek karakterle de 60 kod noktasını aşmaz
+  const uzun = dosyaAdiDuzelt('con.' + 'ş'.repeat(80));
+  assert.ok([...uzun].length <= 60 && uzun.startsWith('con_.'), uzun);
+  // her sonuç, ilk noktadan önceki parçada aygıt adı taşımaz; bosKisayolAdi bu adla .lnk üretir
+  const AYRILMIS = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i;
+  for (const ham of ['Con. Salon', 'nul.x', 'NUL .txt', 'prn', 'COM1', 'lpt2.a.b', 'aux ']) {
+    const ad = dosyaAdiDuzelt(ham);
+    assert.ok(ad && !AYRILMIS.test(ad.split('.')[0].trimEnd()), ham + ' -> ' + ad);
+    const lnk = bosKisayolAdi(ad, () => false);
+    assert.ok(lnk.endsWith('.lnk') && !AYRILMIS.test(lnk.split('.')[0].trimEnd()), lnk);
+  }
 });
 
 test('bosKisayolAdi: var olan dosyanın üzerine yazılmaz; (2), (3)... denenir', () => {

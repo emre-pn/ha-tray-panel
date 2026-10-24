@@ -5,7 +5,7 @@
  * Ağ yoktur: not dosyası uygulamayla birlikte paketlenir. Çıktı renderer'da yalnız textContent ile yazılır (HTML değildir).
  */
 
-const { surumCoz } = require('./surum-denetimi');
+const { surumCoz, surumAyristir } = require('./surum-denetimi');
 
 const BASLIK_DESENI = /^#{2,4}\s+\[?v?(\d{1,5}\.\d{1,5}\.\d{1,5})\]?(.*)$/;
 const HERHANGI_BASLIK = /^#{1,6}\s/;
@@ -33,7 +33,7 @@ function duzMetin(satir) {
  * @returns {{ bulundu: boolean, baslik: string, metin: string }} bulunamazsa { bulundu: false, baslik: '', metin: '' }
  */
 function yenilikleriAyikla(icerik, surum, sinir = SINIRLAR) {
-  const hedef = surumCoz(surum);
+  const hedef = surumAyristir(surum); // ön sürüm ekini ('1.5.0-beta.1') yok sayar: ön sürüm çalıştıran kullanıcı 1.5.0 bölümünü görür
   const bos = { bulundu: false, baslik: '', metin: '' };
   if (!hedef || typeof icerik !== 'string') return bos;
   const satirlar = icerik.split(/\r?\n/);

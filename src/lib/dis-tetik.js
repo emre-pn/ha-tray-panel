@@ -20,7 +20,7 @@
  * Kural tabanlı tetikler (PC olayı, toplantı ışığı) için ayrıca "geri yükle": aç/kapat öncesi karonun durumu (açık/kapalı, parlaklık)
  * bellekte saklanır, geriYukle onu geri kurar (diske yazılmaz, ANLIK_OMRU_MS sonra unutulur). Anlık kaynak başınadır (pc-olayi ve toplanti
  * birbirinin anlığını görmez), var olan tüketilmemiş anlığın üzerine yazılmaz ve eylem BAŞARISIZ olursa (hiçbir çağrı başaramadıysa) silinir:
- * hiç uygulanmamış bir eylemin eski durumu saatler sonra geri yüklenmez.
+ * hiç uygulanmamış bir eylemin eski durumu saatler sonra geri yüklenmez. Geri yükleme BAŞARISIZ olursa anlık korunur (bir sonraki geri yükleme yeniden dener).
  */
 
 const { DIS_KAYNAKLAR, disKaynakIzni } = require('./eylem-sinifi');
@@ -204,7 +204,13 @@ function disTetikKapisiOlustur({ ayarlarAl, karolarAl, eylem, onaySor = null, iz
 
   /** Eylemden ÖNCE çağrılır; anlık sonucu beklenen çağrıya bağlanır (anlikSonuclandir). Girdi yoksa null. */
   function anlikKaydet(anahtar, karo) {
-    const mevcut = anlikAl(anahtar);
+    let mevcut = anlikAl(anahtar);
+    // Başarısız geri yüklemede geri konan anlık yalnız araya olay girmeden gelen geri yüklemede yeniden denenir; yeni bir kilit/uyku
+    // olayı cihazın O ANKİ durumunu almalı (bayat anlık saatler sonra kapalı ışığı kendiliğinden açardı).
+    if (mevcut && mevcut.yenidenDene) {
+      anliklar.delete(anahtar);
+      mevcut = null;
+    }
     if (mevcut) {
       mevcut.bekleyen += 1;
       return mevcut; // kilit + uyku arka arkaya: ilk (asıl) durum korunur
@@ -374,13 +380,23 @@ function disTetikKapisiOlustur({ ayarlarAl, karolarAl, eylem, onaySor = null, iz
     }
     const anahtar = `${kaynak}|${h.karo.id}`;
     let anlik = null;
+    let tuketilen = null; // geriYukle'nin aldığı anlık: komut başarısız olursa geri konur
     if (KURAL_KAYNAKLARI.includes(kaynak)) {
-      if (h.islem === 'geriYukle') anliklar.delete(anahtar);
-      else if (h.islem === 'ac' || h.islem === 'kapat' || h.islem === 'baslat') anlik = anlikKaydet(anahtar, h.karo);
+      if (h.islem === 'geriYukle') {
+        tuketilen = anliklar.get(anahtar) ?? null;
+        anliklar.delete(anahtar); // eşzamanlı ikinci geri yükleme aynı anlığı iki kez uygulamasın
+      } else if (h.islem === 'ac' || h.islem === 'kapat' || h.islem === 'baslat') anlik = anlikKaydet(anahtar, h.karo);
     }
     const yuk = { kimlik: h.karo.id, kaynak, bildirim: bildirimKipi(kaynak, a), ...h.is };
     const sonuc = await sonucla(kaynak, h.karo, eylem.distenCalistir(yuk)); // distenCalistir aynı tikte çağrılır (uykuya geçerken istek çıkabilsin)
     anlikSonuclandir(anahtar, anlik, sonuc.ok === true);
+    // Geri yükleme başarısız (ağ henüz yok, HA yanıt vermiyor, hız sınırı): anlık korunur, bir sonraki geri yükleme yeniden dener.
+    // Bu arada yeni bir anlık yazıldıysa (yeni kilit) o geçerlidir; özgün zaman damgası kalır, ANLIK_OMRU_MS yine geçerlidir.
+    // Geri konan anlık "yenidenDene" işaretini taşır: sonraki kapat/ac/baslat olayı onu yeniden kullanmaz, yeni anlık alır.
+    if (tuketilen && sonuc.ok !== true && !anliklar.has(anahtar)) {
+      tuketilen.yenidenDene = true;
+      anliklar.set(anahtar, tuketilen);
+    }
     return sonuc;
   }
 

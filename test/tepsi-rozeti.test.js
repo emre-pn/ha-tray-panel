@@ -15,6 +15,7 @@ function kur({ ayar = { tepsiRozeti: 'isik', tepsiRozetSensoru: '' }, acikIsik =
     an: 0,
     ayar,
     acikIsik,
+    acikIsikCagri: 0, // acikIsikAl kaç kez çağrıldı (tüm favorilerden karo kurar: pahalı)
     soluk,
     durumlar,
     olcek,
@@ -24,6 +25,7 @@ function kur({ ayar = { tepsiRozeti: 'isik', tepsiRozetSensoru: '' }, acikIsik =
     zamanlayicilar: new Map(),
     sonKimlik: 0,
     tepsiVar,
+    dil: 'tr', // dilAl'ın döndürdüğü etkin arayüz dili
     imge, // null: varsayılan sahte; işlev: createFromBuffer yerine
   };
   const zaman = {
@@ -50,8 +52,12 @@ function kur({ ayar = { tepsiRozeti: 'isik', tepsiRozetSensoru: '' }, acikIsik =
     tepsiAl: () => (o.tepsiVar ? o.tepsi : null),
     ayarlarAl: () => o.ayar,
     durumAl: (kimlik) => o.durumlar[kimlik],
-    acikIsikAl: () => o.acikIsik,
+    acikIsikAl: () => {
+      o.acikIsikCagri += 1;
+      return o.acikIsik;
+    },
     solukAl: () => o.soluk,
+    dilAl: () => o.dil,
     normalIkon: NORMAL,
     solukIkon: SOLUK,
     gunluk: (m) => o.gunlukler.push(m),
@@ -90,6 +96,25 @@ test('kapali (varsayılan): simge hiç değişmez, hiçbir resim üretilmez', ()
   ayarsiz.an = 5000;
   ayarsiz.rozet.guncelle();
   assert.deepEqual(ayarsiz.tepsiResimleri, []);
+});
+
+test('açık ışık sayısı (tüm favorilerden karo kurar) yalnız isik modunda hesaplanır; kapali ve sensor modunda hiç çağrılmaz', () => {
+  const kapali = kur({ ayar: { tepsiRozeti: 'kapali' }, acikIsik: 5 });
+  kapali.rozet.baslangic();
+  kapali.an = 5000;
+  kapali.rozet.guncelle();
+  assert.equal(kapali.acikIsikCagri, 0, 'varsayılan kapali modda sonuç çöpe gidecekken hesaplanmaz');
+  const sensor = kur({ ayar: { tepsiRozeti: 'sensor', tepsiRozetSensoru: 'sensor.sicaklik' }, acikIsik: 5, durumlar: { 'sensor.sicaklik': { entity_id: 'sensor.sicaklik', state: '21.5', attributes: { friendly_name: 'Salon', unit_of_measurement: '°C' } } } });
+  sensor.rozet.baslangic();
+  sensor.an = 5000;
+  sensor.rozet.guncelle();
+  assert.equal(sensor.acikIsikCagri, 0);
+  const isik = kur({ acikIsik: 3 });
+  isik.rozet.baslangic();
+  isik.an = 5000;
+  isik.rozet.guncelle();
+  assert.ok(isik.acikIsikCagri > 0, 'isik modunda sayı hâlâ okunur');
+  assert.equal(isik.tepsiResimleri.length, 1, 've rozet çizilir');
 });
 
 test('isik: açık ışık sayısı rozetli PNG olarak yazılır; PNG simgePng ile aynıdır, ölçek 1x', () => {
@@ -239,10 +264,30 @@ test('KAPI KURALI: kapı/kilit/alarm sözcüklü ya da sensör olmayan varlık r
   }
 });
 
+test('ipucuEki: float artığı olan sensör hassasiyetle yazılır; ipucu kısa kalır, diğer sensörler ve dil ayracı korunur; geçersiz dil tr sayılır', () => {
+  const durumlar = {
+    'sensor.salon': sensor('sensor.salon', '23.600000381469727', { friendly_name: 'Salon sıcaklığı', unit_of_measurement: '°C', suggested_display_precision: 1 }),
+    'sensor.mutfak': sensor('sensor.mutfak', '19.5', { friendly_name: 'Mutfak sıcaklığı', unit_of_measurement: '°C' }),
+    'sensor.nem': sensor('sensor.nem', '45', { friendly_name: 'Nem', unit_of_measurement: '%' }),
+  };
+  const o = kur({ ayar: { tepsiRozeti: 'sensor', tepsiRozetSensoru: 'sensor.salon', tepsiRozetSensorleri: ['sensor.mutfak', 'sensor.nem'] }, durumlar });
+  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 23,6 °C · Mutfak sıcaklığı: 19,5 °C · Nem: %45');
+  o.dil = 'en';
+  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 23.6 °C · Mutfak sıcaklığı: 19.5 °C · Nem: 45%');
+  o.dil = 'fr';
+  assert.match(o.rozet.ipucuEki(), /^Salon sıcaklığı: 23,6 °C · /);
+  assert.ok(o.rozet.ipucuEki().length < 120, 'tepsi ipucu 120 karakter sınırında diğer sensörleri kesmez');
+  o.dil = 5; // geçersiz dil tr sayılır
+  assert.match(o.rozet.ipucuEki(), /^Salon sıcaklığı: 23,6 °C · Mutfak sıcaklığı: 19,5 °C/);
+});
+
 test('ipucuEki: yalnız sensor modunda, bağlantı varken ve rozeti olan sensörde "Ad: değer birim"', () => {
   const durumlar = { 'sensor.salon': sensor('sensor.salon', '21.5', { friendly_name: 'Salon sıcaklığı', unit_of_measurement: '°C' }) };
   const o = kur({ ayar: { tepsiRozeti: 'sensor', tepsiRozetSensoru: 'sensor.salon' }, durumlar });
-  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 21.5 °C');
+  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 21,5 °C', 'etkin dil tr: virgül');
+  o.dil = 'en';
+  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 21.5 °C', 'dil değişince ayraç değişir');
+  o.dil = 'tr';
   o.soluk = true;
   assert.equal(o.rozet.ipucuEki(), null, 'bağlantı yokken değer güvenilmez');
   o.soluk = false;
@@ -432,9 +477,12 @@ test('çoklu sensör: kimlikler tekrarsız ve en çok 3; ek liste dizi değilse 
 
 test('çoklu sensör: tepsi ipucu geçerli sensörlerin hepsini sırayla yazar; bağlantı yokken ve sensor modu dışında yok', () => {
   const o = kur({ ayar: COKLU_AYAR, durumlar: COKLU_DURUMLAR });
-  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 21 °C · Telefon pili: 80 % · Nem: 45 %');
+  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 21 °C · Telefon pili: %80 · Nem: %45');
+  o.dil = 'en';
+  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 21 °C · Telefon pili: 80% · Nem: 45%');
+  o.dil = 'tr';
   o.durumlar['sensor.pil'] = sensor('sensor.pil', 'unavailable', { friendly_name: 'Telefon pili' });
-  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 21 °C · Nem: 45 %', 'çizilemeyen sensör ipucuna girmez');
+  assert.equal(o.rozet.ipucuEki(), 'Salon sıcaklığı: 21 °C · Nem: %45', 'çizilemeyen sensör ipucuna girmez');
   o.soluk = true;
   assert.equal(o.rozet.ipucuEki(), null);
   o.soluk = false;

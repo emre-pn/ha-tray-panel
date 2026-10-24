@@ -107,7 +107,7 @@ test('satiriTemizle: URL olmayan genel ana bilgisayar adları (FQDN) da maskelen
   const korunan = [
     '2026-10-16T09:00:02.123Z Ayarlar yazıldı: ayarlar.json',
     'Yedek alındı: ayarlar.v6-yedek-1760000000123.json',
-    'Günlük döndü: ev-paneli.log ve ev-paneli.log.1'.replace('.log.1', '.tmp'),
+    'Günlük döndü: ev-paneli.log ve ev-paneli.log.1',
     'Ev Paneli 1.4.0 (Electron 41.0.0, Node 24.1.0, Windows 10.0.26300) main.js ve Ev Paneli.exe',
     'Işık 3.5 saniye bekledi, sürüm v1.4.0-beta.2',
   ];

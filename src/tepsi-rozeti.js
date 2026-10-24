@@ -39,17 +39,25 @@ const DONUS_MS = 5000;
  * @param {string} g.normalIkon assets/ikon.ico yolu
  * @param {string} g.solukIkon assets/ikon-soluk.ico yolu
  * @param {(m: string) => void} [g.gunluk]
+ * @param {() => string} [g.dilAl] etkin arayüz dili (ipucundaki sensör değerinin ondalık ayracı için; varsayılan 'tr')
  * @param {() => number} [g.simdi]
  * @param {object} [g.zaman] { setTimeout, clearTimeout }
  * @param {number} [g.aralikMs]
  */
-function tepsiRozetiOlustur({ nativeImage, screen, tepsiAl, ayarlarAl, durumAl, acikIsikAl, solukAl, normalIkon, solukIkon, gunluk = () => {}, simdi, zaman, aralikMs }) {
+function tepsiRozetiOlustur({ nativeImage, screen, tepsiAl, ayarlarAl, durumAl, acikIsikAl, solukAl, normalIkon, solukIkon, gunluk = () => {}, dilAl = () => 'tr', simdi, zaman, aralikMs }) {
   let sonSoluk = null;
   let rozetHatasiBildirildi = false;
   let sira = 0; // dönüşte şu an gösterilen geçerli sensörün sırası (geçerli sensör sayısına göre döner)
   let donusZamanlayicisi = null;
   const zamanlayici = zaman ?? { setTimeout: (f, ms) => globalThis.setTimeout(f, ms), clearTimeout: (id) => globalThis.clearTimeout(id) };
 
+  const dilOku = () => {
+    try {
+      return dilAl();
+    } catch {
+      return 'tr';
+    }
+  };
   const mod = () => {
     const m = ayarlarAl()?.tepsiRozeti;
     return ROZET_MODLARI.includes(m) ? m : 'kapali';
@@ -110,8 +118,9 @@ function tepsiRozetiOlustur({ nativeImage, screen, tepsiAl, ayarlarAl, durumAl, 
       if (mod() === 'sensor') {
         const adaylar = sensorRozetleri();
         rozet = adaylar.length > 0 ? adaylar[sira % adaylar.length] : null;
-      } else {
-        rozet = rozetBelirle({ mod: mod(), acikIsik: acikIsikAl(), sensorVarligi: null });
+      } else if (mod() === 'isik') {
+        // açık ışık sayısı tüm favorilerden karo kurar: yalnız rozet 'isik' modundayken hesaplanır (varsayılan 'kapali' iken değil)
+        rozet = rozetBelirle({ mod: 'isik', acikIsik: acikIsikAl(), sensorVarligi: null });
       }
     }
     const boyut = tepsiSimgeBoyutu(birincilOlcekAl(screen));
@@ -171,7 +180,7 @@ function tepsiRozetiOlustur({ nativeImage, screen, tepsiAl, ayarlarAl, durumAl, 
     ipucuEki() {
       if (mod() !== 'sensor' || solukAl() === true) return null;
       const parcalar = sensorKimlikleri()
-        .map((kimlik) => sensorIpucuEki(durumAl(kimlik)))
+        .map((kimlik) => sensorIpucuEki(durumAl(kimlik), { dil: dilOku() }))
         .filter((p) => typeof p === 'string' && p !== '');
       return parcalar.length > 0 ? parcalar.join(' · ') : null;
     },

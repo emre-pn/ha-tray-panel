@@ -758,7 +758,11 @@ test('ayar yedeği: yeni modül electron kullanmaz, günlüğe yalnız sabit met
 // 1.1.1: yetki kesici (geçersiz anahtarla Home Assistant ip_ban tetiklenmesin)
 // ---------------------------------------------------------------------------
 
-const blok = (kaynak, baslangic, uzunluk = 900) => kaynak.slice(kaynak.indexOf(baslangic), kaynak.indexOf(baslangic) + uzunluk);
+const blok = (kaynak, baslangic, uzunluk = 900) => {
+  const i = kaynak.indexOf(baslangic);
+  assert.notEqual(i, -1, `çapa bulunamadı: ${baslangic}`);
+  return kaynak.slice(i, i + uzunluk);
+};
 
 test('yetki kesici: kimlikli isteğin başlığı, REST çağrısı ve WebSocket yalnız bilinen dosyalarda (yeni bir ağ yolu kesiciyi atlayamaz)', () => {
   for (const dosya of [...srcDosyalari, ...libDosyalari]) {
@@ -836,7 +840,8 @@ test('yetki kesici: main.js kesiciyi HA istemcisine ve canlı bağlantıya bağl
   const ws = oku('src/ha-ws.js');
   assert.match(blok(ws, "case 'auth_invalid':", 300), /yetki\.reddedildi\(oturum\.parmakIzi, oturum\.taban\)/);
   assert.match(oku('src/ha-istemcisi.js'), /yetkiKesici\.girisBasarili\(kokenTuru\(taban\)\)/, 'auth_ok yalnız o kökenin sayacını sıfırlar (tur 5, K8)');
-  assert.match(oku('src/eylem.js'), /haIstek\(`\/api\/states\/\$\{kimlik\}`, \{ oncelik: 'yuksek' \}\)/, 'eylem öncesi durum okuması yüksek öncelikli (tur 5, K10)');
+  assert.match(oku('src/eylem.js'), /guncelDurum\(kimlik, \{ oncelik = 'yuksek' \} = \{\}\)/, 'eylem öncesi durum okuması varsayılan olarak yüksek öncelikli (tur 5, K10)');
+  assert.match(oku('src/eylem.js'), /haIstek\(`\/api\/states\/\$\{kimlik\}`, \{ oncelik \}\)/);
   assert.match(ws, /await yetki\.gecit\(taban, anahtar\)/);
   // K1: WS auth iletisi küresel kapıdan geçer: kapı auth gönderilmeden ALINIR, auth yanıtı/kapanışta bırakılır
   const authAdimi = blok(ws, 'async function authAdimi', 2600);
@@ -1041,4 +1046,164 @@ test('çevrimdışı sayfası (g-11): Tekrar Dene otomatik odaklanır; başka ö
   assert.equal(bagl.btnDene.disabled, true);
   assert.equal(bagl.hataKodu.hidden, true);
   assert.equal(bagl.btnDene.odak, false);
+});
+
+// ---- Belge ve şablon tutarlılığı (b-92 ...) ----
+
+test('b-92: hata bildirimi şablonundaki "Interface language" listesi uygulamanın desteklediği her dili sunuyor', () => {
+  const EvDil = require('../src/lib/dil');
+  const DIL_ADLARI = { tr: 'Türkçe', en: 'English', de: 'Deutsch', fr: 'Français', es: 'Español' };
+  const sablon = oku('.github/ISSUE_TEMPLATE/bug_report.yml');
+  const blok = sablon.match(/id: language[\s\S]*?options:\n((?: {8}- .*\n)+)/);
+  assert.ok(blok, 'language açılır listesi bulunamadı');
+  const secenekler = blok[1].split('\n').map((s) => s.replace(/^\s+- /, '').trim()).filter(Boolean);
+  for (const dil of EvDil.DILLER) {
+    assert.ok(DIL_ADLARI[dil], `${dil} için test tablosunda dil adı yok; ekle`);
+    assert.ok(secenekler.includes(DIL_ADLARI[dil]), `bug_report.yml dil listesinde ${DIL_ADLARI[dil]} yok`);
+  }
+  assert.equal(secenekler.length, EvDil.DILLER.length, 'listede desteklenmeyen fazladan seçenek var');
+});
+
+test('b-93: 1.4.0 notu ayar şemasının 5\'ten 6\'ya çıktığını ve göç öncesi yedeği söylüyor ("hâlâ 6" denmiyor)', () => {
+  const metin = belgeler();
+  assert.ok(!/schema is still 6/i.test(metin), 'CHANGELOG: şema 1.4.0\'da 5\'ten 6\'ya çıktı, "still 6" yanlış');
+  assert.ok(!/Ayar şeması 6 olarak kalır/.test(metin), 'KILAVUZ: şema 1.4.0\'da 5\'ten 6\'ya çıktı');
+  assert.match(oku('CHANGELOG.md'), /schema goes from 5 to 6[^\n]*ayarlar\.v5-yedek\.json/);
+  assert.match(oku('docs/KILAVUZ.md'), /Ayar şeması 5'ten 6'ya çıkar[^\n]*ayarlar\.v5-yedek\.json/);
+});
+
+test('b-94: README, KILAVUZ ve CHANGELOG içindeki sayfa içi ve belgeler arası #bağlantılar var olan bir başlığa gidiyor', () => {
+  // GitHub başlık bağlantısı: küçük harf, emoji/noktalama silinir (harf, rakam, boşluk, tire, alt çizgi kalır), boşluk -> tire; aynı başlık tekrarlanırsa -1, -2 eklenir.
+  const baslikBaglantilari = (metin) => {
+    const sayac = new Map();
+    const kume = new Set();
+    let kodBlogu = false;
+    for (const satir of metin.split('\n')) {
+      if (/^\s*```/.test(satir)) { kodBlogu = !kodBlogu; continue; }
+      const b = !kodBlogu && satir.match(/^#{1,6}\s+(.*?)\s*#*\s*$/);
+      if (!b) continue;
+      const duz = b[1].replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[`*~]/g, '');
+      const temel = duz.toLowerCase().replace(/[^\p{L}\p{N}\p{M}_\- ]/gu, '').replace(/ /g, '-');
+      const n = sayac.get(temel) ?? 0;
+      sayac.set(temel, n + 1);
+      kume.add(n === 0 ? temel : `${temel}-${n}`);
+    }
+    return kume;
+  };
+  const DOSYALAR = ['README.md', 'README.tr.md', 'docs/KILAVUZ.md', 'CHANGELOG.md'];
+  const basliklar = new Map(DOSYALAR.map((d) => [d, baslikBaglantilari(oku(d))]));
+  let sayi = 0;
+  for (const dosya of DOSYALAR) {
+    let kodBlogu = false;
+    for (const satir of oku(dosya).split('\n')) {
+      if (/^\s*```/.test(satir)) { kodBlogu = !kodBlogu; continue; }
+      if (kodBlogu) continue;
+      for (const e of satir.matchAll(/\]\(([^)\s]*)#([^)\s]*)\)/g)) {
+        const [, yol, capa] = e;
+        if (/^[a-z]+:/i.test(yol)) continue; // dış adres
+        const hedef = yol === '' ? dosya : path.posix.normalize(path.posix.join(path.posix.dirname(dosya), yol));
+        assert.ok(basliklar.has(hedef), `${dosya}: bağlantı ${hedef} dosyasına gidiyor ama o dosya denetlenmiyor`);
+        assert.ok(basliklar.get(hedef).has(capa), `${dosya}: "${e[0]}" bağlantısının hedef başlığı ${hedef} içinde yok`);
+        sayi += 1;
+      }
+    }
+  }
+  assert.ok(sayi >= 8, `denetim bağlantı bulamadı (${sayi})`);
+});
+
+test('b-95: README\'ler basılı tutma süresini koddaki 800 ms ile aynı (0,8 sn) anlatıyor; "bir saniye" denmiyor', () => {
+  assert.match(oku('src/lib/eylem-hatti.js'), /BASILI_SURE_MS\s*=\s*800\b/);
+  assert.match(oku('README.md'), /press-and-hold \(about 0\.8 seconds\)/);
+  assert.match(oku('README.tr.md'), /yaklaşık 0,8 saniye basılı tutmak/);
+  assert.ok(!/one second|bir saniye/i.test(oku('README.md') + oku('README.tr.md')), 'README basılı tutma süresini yuvarlıyor');
+});
+
+test('b-96: iki dilli README eşleşiyor: madde sayısı eşit, taşınabilir sürüm maddesi iki dilde de eski sürüm (1.3.0) uyarısını taşıyor', () => {
+  const maddeler = (d) => oku(d).split('\n').filter((s) => s.startsWith('- '));
+  const en = maddeler('README.md');
+  const tr = maddeler('README.tr.md');
+  assert.equal(tr.length, en.length, 'README.md ve README.tr.md madde sayıları farklı');
+  const tasinabilirEn = en.find((s) => /portable build/i.test(s));
+  const tasinabilirTr = tr.find((s) => /taşınabilir sürüm/i.test(s));
+  assert.ok(tasinabilirEn && tasinabilirTr, 'taşınabilir sürüm maddesi bulunamadı');
+  for (const madde of [tasinabilirEn, tasinabilirTr]) assert.ok(madde.includes('1.3.0'), `taşınabilir sürüm maddesinde 1.3.0 uyarısı yok: ${madde.slice(0, 60)}`);
+});
+
+test('b-97: KILAVUZ pencere konumunun "Taşıdığım yeri hatırla" ile saklanabildiğini söylüyor; "konum saklanmaz" denmiyor ve ayar alanları listeli', () => {
+  const kilavuz = oku('docs/KILAVUZ.md');
+  assert.ok(!/konum saklanmaz|konumu hatırlanmaz/.test(kilavuz), 'KILAVUZ konum kaydını yok sayıyor');
+  assert.match(kilavuz, /"Taşıdığım yeri hatırla"/);
+  for (const alan of ['pencereKonumu', 'pencereKonumlari', 'tercihEkran']) {
+    assert.ok(kilavuz.includes(`\`${alan}\``), `KILAVUZ ayar dosyası listesinde ${alan} yok`);
+    assert.ok(oku('src/lib/ayar-alanlari.js').includes(`'${alan}'`), `${alan} ayar alanı kodda yok (belge eskimiş)`);
+  }
+  assert.match(oku('src/lib/pencere-yerlesim.js'), /KONUM_MODLARI = Object\.freeze\(\['imlec', 'hatirla'\]\)/);
+});
+
+test('b-99: KILAVUZ\'daki "Ayarlar > X" yollarının ilk parçası gerçek Ayarlar bölüm başlığı ya da gezinti kategorisi (Windows/HA yolları hariç)', () => {
+  const tr = (s) => s.trim().toLocaleLowerCase('tr-TR');
+  const bilinen = new Set();
+  const ekle = (metin) => {
+    bilinen.add(tr(metin));
+    bilinen.add(tr(metin.split(' (')[0])); // "Mobil bildirimler (Home Assistant)" -> "Mobil bildirimler"
+    bilinen.add(tr(metin.split(',')[0])); // "Eylemler, geri al ve geçmiş" -> "Eylemler"
+  };
+  for (const e of oku('src/ayarlar.html').matchAll(/<h([23])\b[^>]*>([^<]+)<\/h\1>/g)) ekle(e[2]);
+  for (const e of oku('src/lib/ceviri/ayarlar.js').matchAll(/\['ayar\.gezin\.[a-z]+', '([^']+)'/g)) ekle(e[1]);
+  assert.ok(bilinen.has('panel ve pencere') && bilinen.has('pencere ve panel davranışı') && bilinen.has('bağlantı'), 'başlık listesi okunamadı');
+  assert.ok(!bilinen.has('düzen') && !bilinen.has('hızlı panel ve komut paleti'), 'olmayan başlıklar listede olmamalı');
+  const HA_YOLLARI = new Set(['cihazlar ve hizmetler']); // Home Assistant'ın kendi arayüzü
+  const kilavuz = oku('docs/KILAVUZ.md');
+  let sayi = 0;
+  for (const e of kilavuz.matchAll(/Ayarlar > ([^>"`'’(),:;.*\n]+)/g)) {
+    if (/Windows\s*\**\s*$/.test(kilavuz.slice(Math.max(0, e.index - 12), e.index))) continue; // Windows Ayarlar > Uygulamalar ...
+    const ilk = tr(e[1]);
+    if (ilk === '' || HA_YOLLARI.has(ilk)) continue; // "Ayarlar > "Düğme adı"" gibi doğrudan düğme/etiket anımları
+    assert.ok(bilinen.has(ilk), `KILAVUZ: "Ayarlar > ${e[1].trim()}" yolunun ilk parçası Ayarlar'da böyle bir bölüm değil`);
+    sayi += 1;
+  }
+  assert.ok(sayi >= 15, `denetim yeterince yol bulamadı (${sayi})`);
+});
+
+test('b-100: KILAVUZ üç tema seçeneğini (koyu, Windows temasını izle, açık) anlatıyor; hepsi koddaki temaZorla değerleriyle eşleşiyor', () => {
+  const Gorunum = require('../src/lib/gorunum');
+  assert.deepEqual([...Gorunum.TEMA_DEGERLERI].sort(), ['acik', 'koyu', 'sistem']);
+  const html = oku('src/ayarlar.html');
+  const kilavuz = oku('docs/KILAVUZ.md');
+  for (const [deger, etiket] of [['koyu', 'Her zaman koyu'], ['sistem', 'Windows temasını izle'], ['acik', 'Her zaman açık']]) {
+    assert.match(html, new RegExp(`<option value="${deger}"[^>]*>${etiket}`), `ayarlar.html'de ${etiket} seçeneği yok`);
+    assert.ok(kilavuz.includes(`"${etiket}"`), `KILAVUZ "${etiket}" seçeneğini anlatmıyor`);
+  }
+});
+
+test('b-101: KILAVUZ izin satırı, ana süreçte verilen her izni (IZINLI_IZINLER) anıyor', () => {
+  const kaynak = oku('src/main.js').match(/const IZINLI_IZINLER = new Set\(\[([^\]]*)\]\)/);
+  assert.ok(kaynak, 'IZINLI_IZINLER bulunamadı');
+  const izinler = [...kaynak[1].matchAll(/'([^']+)'/g)].map((e) => e[1]);
+  const SOZCUK = { notifications: 'bildirim', fullscreen: 'tam ekran' };
+  const satir = oku('docs/KILAVUZ.md').split('\n').find((s) => /izinler engellenir/.test(s));
+  assert.ok(satir, 'KILAVUZ izin satırı bulunamadı');
+  assert.ok(izinler.length >= 2);
+  for (const izin of izinler) {
+    assert.ok(SOZCUK[izin], `${izin} izni için test tablosunda belge sözcüğü yok; KILAVUZ'a da ekle`);
+    assert.ok(satir.includes(SOZCUK[izin]), `KILAVUZ izin satırı "${SOZCUK[izin]}" iznini anmıyor`);
+  }
+});
+
+test('b-102: KILAVUZ "Neler engellenir" satırı, süzgeçteki her yasak cihaz sınıfını (YASAK_CIHAZ_SINIFLARI) anıyor', () => {
+  const { YASAK_CIHAZ_SINIFLARI } = require('../src/lib/suzgec');
+  assert.ok(YASAK_CIHAZ_SINIFLARI.size >= 9, 'yasak cihaz sınıfı kümesi küçüldü (kural yalnız sıkılaşır)');
+  const satir = oku('docs/KILAVUZ.md').split('\n').find((s) => s.startsWith('- **Neler engellenir:**'));
+  assert.ok(satir, 'KILAVUZ "Neler engellenir" satırı bulunamadı');
+  for (const sinif of YASAK_CIHAZ_SINIFLARI) assert.ok(satir.includes(`\`${sinif}\``), `KILAVUZ yasak cihaz sınıfı \`${sinif}\` sınıfını saymıyor`);
+});
+
+test('b-103: KILAVUZ ayar klasöründeki kalıcı dosyaları (ayarlar.json.bak, duzen-gecmisi, sertifika-guveni, bildirim-kapatilan) anlatıyor ve bozuk dosyada son iyi kopyadan geri yüklemeyi söylüyor', () => {
+  const kilavuz = oku('docs/KILAVUZ.md');
+  const main = oku('src/main.js');
+  for (const dosya of ['ayarlar.json.bak', 'duzen-gecmisi.json', 'sertifika-guveni.json', 'bildirim-kapatilan.json']) {
+    assert.ok(main.includes(dosya.replace(/\.bak$/, '')), `${dosya} kodda geçmiyor (belge eskimiş olabilir)`);
+    assert.ok(kilavuz.includes(`\\Ev Paneli\\${dosya}\``), `KILAVUZ "Ayar Dosyası ve Konumlar" listesinde ${dosya} yok`);
+  }
+  assert.match(kilavuz, /sağlam bir `ayarlar\.json\.bak` \(son iyi kopya\) varsa ayarlar ondan geri yüklenir, yoksa varsayılan ayarlarla başlanır/);
 });

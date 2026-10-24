@@ -17,7 +17,7 @@ const KAROLAR = [
   { id: 'button.pc_kapat', etiket: 'PC kapat', ad: 'PC kapat', alan: 'button', sinif: 'yikici', durum: 'notr', yuzde: null, varsayilanEylem: true, onayliServisler: ['press'] },
 ];
 
-function ortam(ayar = {}, { anahtar = true } = {}) {
+function ortam(ayar = {}, { anahtar = true, onayDiyalogu = undefined } = {}) {
   const ayarlar = { ...ayar };
   const kayitlar = [];
   const jumpListler = [];
@@ -69,6 +69,7 @@ function ortam(ayar = {}, { anahtar = true } = {}) {
     hedefAl: () => ({ program: 'C:\\EvPaneli\\Ev Paneli.exe', onek: [] }),
     masaustuAl: () => 'C:\\Masaustu',
     panelOnayGoster: () => panelGosterilsin,
+    onayDiyalogu,
     geriBildirim: (b) => bildirimler.push(b),
     t: (k, d2) => (d2 ? `${k}:${JSON.stringify(d2)}` : k),
     regSorgula: async () => '',
@@ -231,6 +232,32 @@ test('evpaneli:// izni: panel gösterilemezse yedek iletişim kutusu yoksa redde
   const o = ortam({ tetikProtokol: true });
   o.panelYok();
   assert.equal((await o.d.protokoldan('evpaneli://eylem?ad=Film')).tur, 'reddedildi');
+});
+
+test('evpaneli:// izni: yedek iletişim kutusu zaman aşımında ve durdur() ile iptal sinyalini alır; ikinci bağlantı yığılmaz', async () => {
+  const sinyaller = [];
+  const onayDiyalogu = (soru, secenek) => {
+    sinyaller.push(secenek?.signal);
+    return new Promise(() => {}); // kullanıcı hiç yanıtlamaz
+  };
+  const o = ortam({ tetikProtokol: true }, { onayDiyalogu });
+  o.panelYok();
+  const s = o.d.protokoldan('evpaneli://eylem?ad=Film');
+  await bekle();
+  assert.equal(sinyaller.length, 1);
+  assert.equal(sinyaller[0].aborted, false, 'soru açıkken kutu açık kalır');
+  o.zamanlayicilar.findLast((z) => z.ms === ONAY_SURESI_MS).fn();
+  assert.equal((await s).tur, 'reddedildi');
+  assert.equal(sinyaller[0].aborted, true, 'zaman aşımında açık kutu kapatılır');
+  // durdur() bekleyen soruyu bitirirken kutuyu da kapatır
+  const s2 = o.d.protokoldan('evpaneli://eylem?ad=Film');
+  await bekle();
+  assert.equal(sinyaller.length, 2);
+  assert.equal(sinyaller[1].aborted, false);
+  o.d.durdur();
+  assert.equal((await s2).tur, 'reddedildi');
+  assert.equal(sinyaller[1].aborted, true);
+  assert.deepEqual(o.eylemler, []);
 });
 
 test('yerel API: açılınca jeton üretilir ve sunucu başlar; port değişince yeniden başlar; kapanınca durur; jeton yalnız panoya gider', async () => {

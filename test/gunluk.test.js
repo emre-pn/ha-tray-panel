@@ -111,3 +111,29 @@ test('gunlukOlustur: konsola da (sırsız) yazabilir', (t) => {
   gunlukOlustur({ konsol: true }).yaz('Bearer TEST_ANAHTAR_000');
   assert.deepEqual(satirlar, ['[Ev Paneli] Bearer [gizli]']);
 });
+
+test('gunlukOlustur: döndürme başarısız olursa (dosya kilitli) satır yine eklenir, yedek silinmez, yeniden deneme beklemeyle seyrekleşir; kilit kalkınca döndürülür', () => {
+  const fs = sahteFs();
+  const yol = path.join('D', 'ev-paneli.log');
+  const yedek = path.join('D', 'ev-paneli.1.log');
+  fs.dosyalar.set(yedek, 'ESKI YEDEK\n');
+  let kilitli = true;
+  let renameDenemesi = 0;
+  const gercekRename = fs.renameSync;
+  fs.renameSync = (eski, yeni) => {
+    renameDenemesi += 1;
+    if (kilitli) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    gercekRename(eski, yeni);
+  };
+  const g = gunlukOlustur({ dizin: 'D', fs, enFazlaBayt: 200, simdi: () => new Date(0) });
+  for (let i = 0; i < 30; i += 1) g.yaz(`satir numarasi ${i}`);
+  assert.ok(fs.dosyalar.get(yol).includes('satir numarasi 29'), 'kilitliyken de satırlar eklenir');
+  assert.equal(fs.dosyalar.get(yedek), 'ESKI YEDEK\n', 'yedek silinmedi');
+  assert.ok(renameDenemesi >= 1 && renameDenemesi <= 2, `her satırda yeniden denenmedi (${renameDenemesi})`);
+  kilitli = false;
+  for (let i = 30; i < 130; i += 1) g.yaz(`satir numarasi ${i}`);
+  assert.ok(fs.dosyalar.get(yedek).includes('satir numarasi'), 'kilit kalkınca döndürme yapıldı');
+  assert.ok(!fs.dosyalar.get(yedek).includes('ESKI YEDEK'));
+  assert.ok(fs.dosyalar.get(yol).includes('satir numarasi 129'));
+  assert.equal(fs.dosyalar.size, 2);
+});

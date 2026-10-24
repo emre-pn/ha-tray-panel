@@ -56,6 +56,17 @@ test('sürüm "v" önekli, başlık köşeli parantezli ya da tarihsiz olsa da b
   assert.deepEqual(yenilikleriAyikla('### 1.3.01 — x\n- y', '1.3.0'), yok, '1.3.01 ile 1.3.0 karışmaz');
 });
 
+test('ön sürüm çalıştıran kullanıcı: "1.4.0-beta.2" için 1.4.0 bölümü bulunur; bozuk sürüm bulunamadı kalır', () => {
+  const hedef = yenilikleriAyikla(ORNEK, '1.4.0');
+  assert.equal(hedef.bulundu, true);
+  assert.deepEqual(yenilikleriAyikla(ORNEK, '1.4.0-beta.2'), hedef);
+  assert.deepEqual(yenilikleriAyikla(ORNEK, 'v1.3.0-rc.1'), yenilikleriAyikla(ORNEK, '1.3.0'));
+  const yok = { bulundu: false, baslik: '', metin: '' };
+  assert.deepEqual(yenilikleriAyikla(ORNEK, 'x'), yok);
+  assert.deepEqual(yenilikleriAyikla(ORNEK, '1.4.0-'), yok);
+  assert.deepEqual(yenilikleriAyikla(ORNEK, '9.9.9-beta.1'), yok);
+});
+
 test('sınırlar: uzun satır kısaltılır, çok satır ve çok karakter "…" ile kesilir', () => {
   const uzun = `### 2.0.0 — d\n- ${'a'.repeat(2000)}`;
   const k = yenilikleriAyikla(uzun, '2.0.0');

@@ -42,10 +42,9 @@ test('o-51: publish yalnız bu deponun yayınlanmış sürümleri (app-update.ym
   assert.doesNotMatch(yml, /^\s*(token|private|host|url|channel|publishAutoUpdate|vPrefixedTagName):/m, 'başka sağlayıcı/ayar ya da gizli bilgi yok');
 });
 
-test('o-51: publish bloğu electron-builder şemasına uyar (node_modules kuruluysa)', () => {
-  const sema = path.join(KOK, 'node_modules', 'app-builder-lib', 'scheme.json');
-  if (!fs.existsSync(sema)) return;
-  const taslak = JSON.parse(fs.readFileSync(sema, 'utf8')).definitions.GithubOptions;
+const SEMA_YOLU = path.join(KOK, 'node_modules', 'app-builder-lib', 'scheme.json');
+test('o-51: publish bloğu electron-builder şemasına uyar (node_modules kuruluysa)', { skip: !fs.existsSync(SEMA_YOLU) }, () => {
+  const taslak = JSON.parse(fs.readFileSync(SEMA_YOLU, 'utf8')).definitions.GithubOptions;
   const [yayin] = ustListe(oku('electron-builder.yml'), 'publish');
   for (const [ad, deger] of Object.entries(yayin)) {
     const ozellik = taslak.properties[ad];

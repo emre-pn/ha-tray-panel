@@ -157,7 +157,7 @@ if (location.protocol === 'file:') {
     // --- Bağlantı katmanı (1.4.0 bağlantı grubu: o-55, o-56, o-57, o-58) ---
     // Durum: { ok, ustbilgi: { adlar, enCok }, ... }. Üstbilgi DEĞERLERİ hiçbir yanıtta dönmez; yalnız adlar.
     baglantiDurumuGetir: () => ipcRenderer.invoke('baglanti:durum'),
-    // Yük: [{ ad, deger }] (deger null: kayıtlı değer korunur). Yanıt { ok, adlar } | { ok:false, hatalar:[{sira, neden}] | sifreleme, hata }
+    // Yük: [{ ad, deger }] (deger null: kayıtlı değer korunur). Yanıt { ok, adlar } | { ok:false, hatalar:[{sira, neden}] | sifreleme, hata } (hata: şifreleme yoksa ya da dosya yazılamadıysa gösterilecek ileti)
     ustbilgileriKaydet: (liste) => ipcRenderer.invoke('baglanti:ustbilgi-kaydet', liste),
     ustbilgileriSil: () => ipcRenderer.invoke('baglanti:ustbilgi-sil'),
     // Kayıtlı adresleri ANAHTAR GÖNDERMEDEN (üstbilgilerle) yoklar; yanıt { ok, sonuclar: [{ tur, ulasilabilir, neden, mesaj }] }

@@ -214,6 +214,7 @@ test('süren bayat okuma, araya giren yaz ile ÖNBELLEĞİ ezemez', async () => 
     ac = coz;
   });
   const bayat = depo.anahtarAl(); // eski anahtarı çözerken bekliyor
+  await new Promise((coz) => setImmediate(coz)); // çözme gerçekten kapıda beklesin; kapı bundan önce kaldırılırsa bekleme hiç devreye girmez
   durum.kapi = null;
   await depo.yaz('TEST_YENI_ANAHTAR_222');
   ac();

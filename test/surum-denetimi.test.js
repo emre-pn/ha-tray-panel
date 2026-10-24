@@ -319,3 +319,56 @@ test('onSurumlerMi açıkken sürüm LİSTESİ okunur (sabit adres, aynı kısı
   const yedek = kur({ mevcut: '1.5.0-beta.1', yanitlar: [yanit({ govde: surumGovdesi('v1.5.0') })] });
   assert.equal((await yedek.denetleyici.denetle()).sonuc, 'yeni', 'ön sürümde çalışan kullanıcıya kararlı sürüm önerilir');
 });
+
+/** Ön sürüm bayrağı değiştirilebilen denetleyici (onSurumlerMi canlı okunur). */
+function onSurumluKur({ mevcut = '1.4.0', surumler = [] } = {}) {
+  const ortam = { saat: T0, kayit: null, bayrak: true, etiketler: [...surumler] };
+  const liste = () => JSON.stringify(ortam.etiketler.map((e) => ({ tag_name: e, html_url: `https://github.com/emre-pn/ha-tray-panel/releases/tag/${e}`, draft: false, prerelease: /-/.test(e) })));
+  const denetleyici = surumDenetleyicisiOlustur({
+    fetch: async (url) => yanit({ govde: liste(), url }),
+    mevcutSurum: mevcut,
+    acikMi: () => true,
+    onSurumlerMi: () => ortam.bayrak,
+    depo: { oku: () => ortam.kayit, yaz: (d) => { ortam.kayit = JSON.parse(JSON.stringify(d)); } },
+    simdi: () => ortam.saat,
+    zamanAsimi: () => undefined,
+  });
+  return { ortam, denetleyici };
+}
+
+test('ön sürüm için bildirildi() kaydı yazılır: aynı ön sürüm her gün yeniden bildirilmez, daha yüksek ön sürüm yine bildirilir', async () => {
+  const { ortam, denetleyici } = onSurumluKur({ surumler: ['v1.5.0-beta.1'] });
+  const ilk = await denetleyici.denetle();
+  assert.equal(ilk.sonuc, 'yeni');
+  assert.equal(ilk.bildirimGerek, true);
+  denetleyici.bildirildi('1.5.0-beta.1');
+  assert.equal(ortam.kayit.bildirilen, '1.5.0-beta.1');
+  ortam.saat += GUN + 1;
+  const ikinci = await denetleyici.denetle();
+  assert.equal(ikinci.sonuc, 'yeni');
+  assert.equal(ikinci.bildirimGerek, false, 'aynı ön sürüm için ikinci bildirim yok');
+  ortam.etiketler.unshift('v1.5.0-beta.2');
+  ortam.saat += GUN + 1;
+  const ucuncu = await denetleyici.denetle();
+  assert.equal(ucuncu.surum, '1.5.0-beta.2');
+  assert.equal(ucuncu.bildirimGerek, true);
+  // bozuk metin kaydı değiştirmez
+  denetleyici.bildirildi('x.y');
+  denetleyici.bildirildi(null);
+  assert.equal(ortam.kayit.bildirilen, '1.5.0-beta.1');
+});
+
+test('bilgi().yeniSurum ön sürüm tercihine uyar: ön sürümler kapatılınca kalan ön sürüm kaydı gösterilmez, kararlı sürüm kalır', async () => {
+  const { ortam, denetleyici } = onSurumluKur({ surumler: ['v1.5.0-beta.1'] });
+  await denetleyici.denetle();
+  assert.equal(denetleyici.bilgi().yeniSurum, '1.5.0-beta.1');
+  ortam.bayrak = false;
+  assert.equal(denetleyici.bilgi().yeniSurum, null, 'ön sürümler kapalıyken rozet yok');
+  ortam.bayrak = true;
+  assert.equal(denetleyici.bilgi().yeniSurum, '1.5.0-beta.1', 'yeniden açılınca geri gelir');
+  // kararlı sürüm kayıtlı ve bayrak kapalı: korunur
+  const kararli = onSurumluKur({ surumler: ['v1.5.0'] });
+  await kararli.denetleyici.denetle();
+  kararli.ortam.bayrak = false;
+  assert.equal(kararli.denetleyici.bilgi().yeniSurum, '1.5.0');
+});

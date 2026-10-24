@@ -14,7 +14,7 @@ const AYRILMIS_ADLAR = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i;
 
 /**
  * Windows dosya adı: yasak karakterler (< > : " / \ | ? * ve denetim) boşluğa çevrilir, boşluklar sadeleşir, sondaki nokta ve
- * boşluk atılır; ayrılmış adlara (CON, NUL...) alt çizgi eklenir. Boş kalırsa null.
+ * boşluk atılır; ayrılmış adlara (CON, NUL...) ilk noktadan önceki parçanın sonuna alt çizgi eklenir (nul.txt -> nul_.txt). Boş kalırsa null.
  * @param {unknown} ad
  */
 function dosyaAdiDuzelt(ad) {
@@ -26,7 +26,12 @@ function dosyaAdiDuzelt(ad) {
   m = [...m].slice(0, DOSYA_ADI_SINIRI).join('');
   m = m.replace(/[. ]+$/, '');
   if (m === '') return null;
-  if (AYRILMIS_ADLAR.test(m.split('.')[0])) m = `${m}_`;
+  // Windows ilk noktadan ÖNCEKİ parçası ayrılmış olan her adı (uzantı olsa da, nokta öncesi boşluk olsa da) aygıt adı sayar:
+  // "nul.txt", "Con. Salon", "NUL .txt". Alt çizgi bu parçanın sonuna eklenir ("nul_.txt"); adın sonuna eklemek adı ayrılmış bırakırdı.
+  if (AYRILMIS_ADLAR.test(m.split('.')[0].trimEnd())) {
+    m = m.replace(/^[^.]*/, (parca) => `${parca.trimEnd()}_`);
+    m = [...m].slice(0, DOSYA_ADI_SINIRI).join('').replace(/[. ]+$/, ''); // ek karakter sınırı aşmasın
+  }
   return m;
 }
 

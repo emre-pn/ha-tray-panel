@@ -12,6 +12,7 @@ const path = require('node:path');
 const SATIR_SINIRI = 400;
 const VARSAYILAN_DOSYA = 'ev-paneli.log';
 const VARSAYILAN_BOYUT_SINIRI = 256 * 1024;
+const DONME_BEKLEME_YAZIMI = 50; // döndürme başarısız olunca bu kadar yazım boyunca yeniden denenmez
 
 /** Günlüğe yazılacak metinden sırları ayıklar ve tek satıra, en çok 400 karaktere indirir. */
 function sirTemizle(metin) {
@@ -43,6 +44,7 @@ function gunlukOlustur({
   const eskiYol = yol ? yol.replace(/\.log$/, '.1.log') : null;
   let dizinHazir = false;
   let boyut = null; // bellekteki dosya boyutu (ilk yazımda diskten okunur)
+  let donmeBekle = 0;
 
   function yaz(mesaj) {
     const temiz = sirTemizle(mesaj);
@@ -62,9 +64,16 @@ function gunlukOlustur({
         }
       }
       if (boyut > 0 && boyut + Buffer.byteLength(satir) > enFazlaBayt) {
-        fs.rmSync(eskiYol, { force: true });
-        fs.renameSync(yol, eskiYol);
-        boyut = 0;
+        if (donmeBekle > 0) donmeBekle -= 1;
+        else {
+          // Yeniden adlandırma var olan yedeğin üzerine yazar (önce silmek, döndürme başarısız olunca yedeği boş yere kaybettirirdi).
+          try {
+            fs.renameSync(yol, eskiYol);
+            boyut = 0;
+          } catch {
+            donmeBekle = DONME_BEKLEME_YAZIMI; // dosya kilitli (antivirüs, izleyici...): satır yine eklenir, her satırda yeniden denenmez
+          }
+        }
       }
       fs.appendFileSync(yol, satir, 'utf8');
       boyut += Buffer.byteLength(satir);

@@ -17,6 +17,7 @@
 const zlib = require('node:zlib');
 const { alanAl, guvenliVarlikMi, guvenliMetin } = require('./suzgec');
 const { guvenliOzellikler } = require('./varlik-ozellik');
+const { sensorSayisiMetni } = require('./bilgi-bicim');
 
 const SOLUK_ALFA = 0.45;
 const IZGARA = 16; // rozet çizim ızgarası (birim)
@@ -249,15 +250,18 @@ function rozetBelirle({ mod, acikIsik = null, sensorVarligi = null }) {
 
 /**
  * Sensör rozetinin tepsi ipucu eki: "Salon sıcaklığı: 21,5 °C" (ad ve değer süzgeçten geçmiş, kısa). Rozet yoksa null.
- * Ondalık ayracı yerel dile bırakılır: ham değer metni olduğu gibi yazılır.
+ * Değer panelle aynı biçimlenir (bilgi-bicim.js sensorSayisiMetni): sensörün gösterim hassasiyetiyle yuvarlanır (HA'nın float artığı
+ * "23.600000381469727" ipucunu uzatıp 120 karakter sınırında diğer sensörleri keserdi) ve ondalık ayracı etkin dile uyar.
+ * @param {object|null|undefined} varlik
+ * @param {{ dil?: string }} [secenek] etkin arayüz dili ('tr' | 'en' | 'de' | 'fr' | 'es')
  */
-function sensorIpucuEki(varlik) {
+function sensorIpucuEki(varlik, { dil = 'tr' } = {}) {
   if (!sensorRozeti(varlik)) return null;
   const ozellik = guvenliOzellikler(varlik);
   const ad = guvenliMetin(varlik.attributes?.friendly_name, 40);
-  const deger = typeof ozellik?.deger === 'string' ? ozellik.deger : null;
+  const deger = sensorSayisiMetni(ozellik, { dil }); // rozet var: durum sayı; birim metnin içindedir
   if (!ad || !deger) return null;
-  return `${ad}: ${deger}${ozellik.birim ? ` ${ozellik.birim}` : ''}`;
+  return `${ad}: ${deger}`;
 }
 
 function yaziGenisligi(metin) {

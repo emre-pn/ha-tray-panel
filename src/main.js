@@ -61,7 +61,7 @@ const { adresSinayiciOlustur } = require('./lib/adres-sina');
 const { sayfaYanitiBozukMu } = require('./lib/yoklama');
 const { bekleSn } = require('./lib/geri-cekilme');
 const { yolGecerliMi, sayfaYolu, gizliKalmaAsildiMi, gecmisOffseti } = require('./lib/gezinti');
-const { PENCERE_BOYUTLARI, ortala, pencereKaydiHesapla, anaPencereHedefi, pencereKonumKaydiHesapla, tercihEkranBul, tercihKaydiOlustur, opaklikOrani } = require('./lib/pencere-yerlesim');
+const { PENCERE_BOYUTLARI, pencereKaydiHesapla, anaPencereHedefi, pencereKonumKaydiHesapla, tercihEkranBul, tercihKaydiOlustur, opaklikOrani } = require('./lib/pencere-yerlesim');
 const { ODAK_KAYBI_GECIKME_MS, tiklamaKarari, odakKaybiGizlensinMi } = require('./lib/pencere-davranisi');
 const { tusEylemi, yakinlastirmaDegistir } = require('./lib/tus-eylemi');
 const { oturumAcilisiDurumu } = require('./lib/oturum-acilisi');
@@ -844,6 +844,7 @@ const oauthYoneticisi = oauthYoneticisiOlustur({
     if (manuelAnahtarDeposu.varMi() || manuelAnahtarDeposu.karantinadaMi()) await manuelAnahtarDeposu.sil();
     if (eskiParmak) yetkiKesici.temizle(eskiParmak);
     haIstemcisi.dogrulamayiSifirla();
+    haOkuma.sifirla(); // yeni oturum (başka yetkiler olabilir): kapanmış okuma uçları ve eski önbellek unutulur
     await yetkiDurumunuTazele();
     ws.yenidenBaglan();
     durumlariYenile({ zorla: true });
@@ -854,6 +855,7 @@ const oauthYoneticisi = oauthYoneticisiOlustur({
     bildir(t('bildirim.oturumSonlandi'), uygulamaAdi(), AYARLARI_AC);
     ws.durdur();
     haIstemcisi.dogrulamayiSifirla();
+    haOkuma.sifirla();
     depo.sifirla();
     cihazOnbellegi = null;
     yetkiDurumunuTazele();
@@ -886,6 +888,7 @@ const tepsiRozeti = tepsiRozetiOlustur({
   durumAl: (kimlik) => depo.al(kimlik),
   acikIsikAl: () => acikIsikSayisi(favoriKarolari()),
   solukAl: () => baglantiTuru === null,
+  dilAl: () => etkinDil,
   normalIkon: IKON_ICO,
   solukIkon: IKON_SOLUK,
   gunluk,
@@ -999,6 +1002,7 @@ function anahtarYoneticisiniSifirla() {
   const degisti = anahtarYonetici !== null;
   anahtarYonetici = null;
   anahtarYoneticiOlcumu = null;
+  haOkuma.sifirla(); // anahtar kaydedildi/silindi: eski anahtarın kapattığı okuma uçları ve önbelleği yeni anahtara geçmez
   if (degisti) ayarlaraAnahtarYoneticisiniBildir();
 }
 
@@ -1098,6 +1102,7 @@ const eylem = eylemKatmaniOlustur({
   ayarlarAl: () => ayarlar,
   depo,
   canliMi: () => ws.canliMi(),
+  izlenenMi: (kimlik) => (ws.canliMi() ? ws.izleniyorMu(kimlik) : izlenenKimlikler().has(kimlik)), // canlıda depoyu yalnız WS olayları güncel tutar; REST yedeğinde izlenen küme tazelenir
   haIstek,
   son,
   geriBildirim,
@@ -1289,8 +1294,10 @@ function disTetikHedefi() {
 }
 
 /** evpaneli:// izni panelde gösterilemezse yedek iletişim kutusu (Enter ve Esc = Reddet). */
-async function disOnayDiyalogu(soru) {
+async function disOnayDiyalogu(soru, { signal } = {}) {
   const { response } = await dialog.showMessageBox({
+    // Soru zaman aşımına uğrayınca ya da durdurulunca kutu kapanır (iptal = reddet).
+    ...(signal ? { signal } : {}),
     type: 'question',
     title: t('dis.onayBaslik'),
     message: t('dis.onaySoru', { ad: soru.ad }),
@@ -1589,7 +1596,7 @@ function bildirimAkisiniBaslat() {
 // Varsayılan KAPALI ve açık rıza ile: Ayarlar > Mobil bildirimler > "Kaydol" (onay penceresiyle) bu bilgisayarı HA'ya mobile_app cihazı olarak
 // kaydeder (src/lib/mobil-kayit.js). Webhook kimliği safeStorage dosyasındadır (ayara/günlüğe/dışa aktarmaya girmez). Gelen bildirimler WS itme
 // kanalından alınır, Kapı Kuralı süzgecinden geçer: düğmesizler Windows bildirimi, düğmeliler küçük kart olur (src/itme-kart.js). Düğmeye basınca
-// webhook'a TEK ileti (mobile_app_notification_action olayı) gider. Hiçbir sensör/konum/cihaz bilgisi HA'ya yollanmaz. Kayıt POST'u haIstek'ten
+// webhook'a TEK ileti (mobile_app_notification_action olayı) gider. Kayıtta yalnız cihaz adı, uygulama sürümü ve Windows sürümü gider (mobil-kayit.js kayitGovdesi); sensör/konum yollanmaz. Kayıt POST'u haIstek'ten
 // (bu dosyada POST yok), webhook ha-istemcisi.js webhookGonder'den geçer (yetki kesici, kapı, tek deneme).
 const mobilDeposu = anahtarDeposuOlustur({
   dosyaYolu: path.join(app.getPath('userData'), 'mobil-kayit.dat'),
@@ -1752,8 +1759,10 @@ async function mobilKaydol(girdi) {
     }
     ayarlar.mobilBildirimler = true; // kullanıcı kaydolmayı onayladı: kanal açılır (Ayarlar'daki kutu da buna göre güncellenir)
     ayarlar.mobilCihazAdi = cihazAdi;
-    ayarlariYaz();
+    const yazildi = ayarlariYaz();
     await mobilKayit.baslat();
+    // HA'daki kayıt ve yerel webhook kaydı tamam; ama ayar diske gitmediyse bir sonraki açılışta kanal kapalı gelir: "kaydoldu" denmez
+    if (!yazildi) return { ...mobilDurumu(), ok: false, hata: t('bildirim.ayarYazilamadi'), mobilBildirimler: true, mobilCihazAdi: cihazAdi };
     return { ...mobilDurumu(), ok: true, sonuc: 'kaydoldu', mobilBildirimler: true, mobilCihazAdi: cihazAdi };
   } catch {
     gunluk('Mobil kayıt tamamlanamadı.');
@@ -1776,7 +1785,7 @@ async function mobilKaydiSil() {
     const sonuc = await mobilKayit.kaydiSil();
     if (!sonuc.ok) return { ...mobilDurumu(), ok: false, hata: t('mobil.hata.silinemedi') };
     ayarlar.mobilBildirimler = false;
-    ayarlariYaz();
+    if (!ayarlariYaz()) return { ...mobilDurumu(), ok: false, hata: t('bildirim.ayarYazilamadi'), mobilBildirimler: false }; // yerel kayıt gitti, ayar diske yazılamadı
     return { ...mobilDurumu(), ok: true, sonuc: 'silindi', mobilBildirimler: false };
   } catch {
     gunluk('Mobil kayıt silinemedi.');
@@ -2067,7 +2076,7 @@ function tusEylemiCalistir(eylem) {
       gecmiseGit(1);
       break;
     case 'boyut-degistir':
-      pencereBoyutuDegistir(ayarlar.pencereBoyutu === 'hizli' ? 'genis' : 'hizli');
+      pencereBoyutuDegistir(ayarlar.pencereBoyutu === 'hizli' ? 'genis' : 'hizli', { tepsiden: true });
       break;
     default:
   }
@@ -2080,7 +2089,10 @@ function yakinlastir(yon) {
   ayarlar.yakinlastirma = seviye;
   anaPencere.webContents.setZoomLevel(seviye);
   clearTimeout(yakinlastirmaKayitZamanlayicisi);
-  yakinlastirmaKayitZamanlayicisi = setTimeout(() => ayarlariYaz(), 500);
+  yakinlastirmaKayitZamanlayicisi = setTimeout(() => {
+    yakinlastirmaKayitZamanlayicisi = null;
+    ayarlariYaz();
+  }, 500);
 }
 
 /** Geri/ileri (navigationHistory). Uygulamanın kendi durum sayfaları (file:) atlanır. */
@@ -2170,12 +2182,28 @@ function anaPencereOpaklikUygula() {
   }
 }
 
-/** 'hizli' <-> 'genis'. Görünür pencere hemen yeniden boyutlanır; gizliyse bir sonraki gösterimde uygulanır. */
-function pencereBoyutuDegistir(mod) {
+/**
+ * Tepsi menüsü ve kısayol gibi kullanıcı eylemlerinde ayar diske yazılamadıysa bellekteki değer eskiye döner ve kullanıcıya söylenir
+ * (menü her açılışta ayarlardan kurulduğundan işaret de eski değere döner). Sessiz kalırsa oturum bitince tercih kaybolur.
+ */
+function ayarYazimiHatasiniBildir() {
+  geriBildirim({ tur: 'hata', metin: t('bildirim.ayarYazilamadi') });
+}
+
+/**
+ * 'hizli' <-> 'genis'. Görünür pencere hemen yeniden boyutlanır; gizliyse bir sonraki gösterimde uygulanır.
+ * `tepsiden`: tepsi menüsü / kısayol; yazım başarısızsa mod eskiye döner ve hata bildirilir (Ayarlar kaydı kendi toplu yazımını ve hatasını bildirir).
+ */
+function pencereBoyutuDegistir(mod, { tepsiden = false } = {}) {
   if (!PENCERE_BOYUTLARI.includes(mod) || mod === ayarlar.pencereBoyutu) return;
   pencereDurumunuKaydet({ zorla: true }); // eski modun son boyutu saklansın
+  const onceki = ayarlar.pencereBoyutu;
   ayarlar.pencereBoyutu = mod;
-  ayarlariYaz();
+  if (!ayarlariYaz() && tepsiden) {
+    ayarlar.pencereBoyutu = onceki;
+    ayarYazimiHatasiniBildir();
+    return;
+  }
   if (anaPencere && !anaPencere.isDestroyed() && anaPencere.isVisible() && !anaPencere.isMinimized()) {
     const s = anaPencere.getBounds();
     pencereyiYerlestir({ x: Math.round(s.x + s.width / 2), y: Math.round(s.y + s.height / 2) });
@@ -2183,8 +2211,13 @@ function pencereBoyutuDegistir(mod) {
 }
 
 function odakKaybindaGizleAyarla(acik) {
+  const onceki = ayarlar.odakKaybindaGizle;
   ayarlar.odakKaybindaGizle = !!acik;
-  ayarlariYaz();
+  if (!ayarlariYaz()) {
+    ayarlar.odakKaybindaGizle = onceki;
+    ayarYazimiHatasiniBildir();
+    return;
+  }
   if (!ayarlar.odakKaybindaGizle) odakKaybiZamanlayicisiniIptalEt();
 }
 
@@ -2391,9 +2424,9 @@ function basligiGuncelle() {
  * Dikkat gerektiren sensör sayısı (zayıf pil, açık sorun/duman/gaz/su sensörü): favori sensör karoları + bilgi bölümündeki sensörler.
  * Ayar kapalıysa (sensorTepsiIpucu) ya da hiç sensör yoksa 0; sayı olmayan/ulaşılamayan sensör uyarı sayılmaz.
  */
-function sensorUyarisi() {
+function sensorUyarisi(favoriler) {
   if (ayarlar?.sensorTepsiIpucu !== true) return 0;
-  const karolar = [...favoriKarolari(), ...bilgiKarolari(bilgiModeliOlustur({ ayarlar, durumAl: (kimlik) => depo.al(kimlik), t }))];
+  const karolar = [...favoriler, ...bilgiKarolari(bilgiModeliOlustur({ ayarlar, durumAl: (kimlik) => depo.al(kimlik), t }))];
   return sensorUyariSayisi(karolar, ayarlar.pilEsigi);
 }
 
@@ -2404,13 +2437,14 @@ function sensorUyarisi() {
  */
 function tepsiyiGuncelle() {
   if (!tepsi || tepsi.isDestroyed()) return;
+  const favoriler = favoriKarolari(); // tüm favorilerden karo kurmak pahalı: ipucundaki iki sayı için bir kez
   const ipucu = ipucuMetni({
     ad: uygulamaAdi(),
     t,
     durum: baglantiDurumMetni(),
     uyari: yetkiKisaMetni(), // yetki kesici açık
-    acikIsik: acikIsikSayisi(favoriKarolari()),
-    sensorUyari: sensorUyarisi(), // o-04: yalnız "Tepsi ipucunda sensör uyarısı" açıksa (varsayılan kapalı)
+    acikIsik: acikIsikSayisi(favoriler),
+    sensorUyari: sensorUyarisi(favoriler), // o-04: yalnız "Tepsi ipucunda sensör uyarısı" açıksa (varsayılan kapalı)
     canli: ws.canliMi() || (baglantiTuru !== null && depo.sonHata === null), // REST yedeği sağlıklıysa sayı en çok 1 dk eski: "son bilinen" denmez
     gelistirme: !app.isPackaged, // kurulu sürümle karışmasın (hata-23)
     ek: tepsiRozeti.ipucuEki(), // o-27: rozet 'sensor' modunda seçili sensörün kısa değeri
@@ -2444,6 +2478,11 @@ function durumSayfasiAcikMi() {
   return anaPencere.webContents.getURL().startsWith('file:');
 }
 
+/** Ayarlar > Görünüm > "Hareketi azalt" açıksa durum sayfasına gönderilen alan (sayfa kozmetik animasyonları durdurur); kapalıyken hiçbir alan eklenmez. */
+function hareketAlani() {
+  return ayarlar.hareketiAzalt === true ? { hareket: 'azalt' } : {};
+}
+
 /**
  * Durum sayfasını (offline.html) gösterir. Sayfa zaten açıksa yeniden yüklemek yerine yerinde günceller:
  * artan bekleme (2-4-8-15 sn) her denemede sayfayı baştan yükleyip titretmesin (hata-05).
@@ -2460,11 +2499,12 @@ function durumSayfasiGoster(durum, ek = {}) {
       yerel: ayarlar.yerelAdres || '',
       dis: ayarlar.disAdres || '',
       dil: etkinDil,
+      ...hareketAlani(),
     });
     return;
   }
   durumSayfasiHazir = false;
-  const query = { durum, yerel: ayarlar.yerelAdres || '', dis: ayarlar.disAdres || '', dil: etkinDil, ...ek };
+  const query = { durum, yerel: ayarlar.yerelAdres || '', dis: ayarlar.disAdres || '', dil: etkinDil, ...hareketAlani(), ...ek };
   anaPencere.loadFile(OFFLINE_HTML, { query }).catch(() => {});
 }
 
@@ -2879,12 +2919,20 @@ function otomatikBaslatUygula({ zorla = false } = {}) {
   }
 }
 
-/** Kullanıcı kutuyu elle değiştirdi (tepsi/ayarlar): Windows'ta kapatılmış olsa bile yeniden yazılır. */
+/**
+ * Kullanıcı kutuyu elle değiştirdi (tepsi/ayarlar): Windows'ta kapatılmış olsa bile yeniden yazılır. Ayar diske yazılamazsa değer eskiye
+ * döner ve Windows kaydına dokunulmaz (kayıt ile ayar dosyası ayrışmasın: sonraki açılış eski değerle kaydı geri kapatırdı); false döner.
+ */
 function otomatikBaslatAyarla(acik) {
-  if (tasinabilirMi()) return; // taşınabilir derleme kurulu sürümle ortak ayar dosyasını kullanır; başlangıç tercihine dokunmaz (o-45)
+  if (tasinabilirMi()) return true; // taşınabilir derleme kurulu sürümle ortak ayar dosyasını kullanır; başlangıç tercihine dokunmaz (o-45)
+  const onceki = ayarlar.otomatikBaslat;
   ayarlar.otomatikBaslat = !!acik;
-  ayarlariYaz();
+  if (!ayarlariYaz()) {
+    ayarlar.otomatikBaslat = onceki;
+    return false;
+  }
   otomatikBaslatUygula({ zorla: true });
+  return true;
 }
 
 /**
@@ -3054,6 +3102,9 @@ function izlenenleriYenile() {
   disTetikler.favorilerDegisti(); // Jump List görevleri
 }
 
+/** Hazır listedeki karonun etiketi o anki arayüz dilinde ('hazir.<kimlik>' çevirisi); çeviri yoksa Türkçe varsayılan. Hazır liste uygulama ve Ayarlar'dan favori kaydı ortak kullanır. */
+const hazirEtiketiAl = (kimlik, varsayilan) => (t.var(`hazir.${kimlik}`) ? t(`hazir.${kimlik}`) : varsayilan);
+
 /**
  * Hazır ilk karolar (hiz-07): HA'daki GERÇEK varlık listesi tek bir OKUMA isteğiyle (GET /api/states; yazma yok) alınır;
  * hazır listedeki, HA'da var olan ve güvenlik kuralından geçen karolar mevcut favorilerin SONUNA eklenir. Mevcut favoriler
@@ -3069,7 +3120,7 @@ function hazirListeyiUygula({ zorla = false, yalnizca = null, deneme = 0 } = {})
     try {
       const varliklar = await haIstek('/api/states');
       if (!Array.isArray(varliklar)) throw new HaHatasi('sunucu');
-      const sonuc = hazirListeUygula(ayarlar.favoriler, varliklar, { yalnizca, etiketAl: (kimlik, varsayilan) => (t.var(`hazir.${kimlik}`) ? t(`hazir.${kimlik}`) : varsayilan) });
+      const sonuc = hazirListeUygula(ayarlar.favoriler, varliklar, { yalnizca, etiketAl: hazirEtiketiAl });
       ayarlar.favoriler = onayiDuzelt(sonuc.favoriler);
       ayarlar.hazirListeSurumu = HAZIR_LISTE_SURUMU;
       const yazildi = ayarlariYaz();
@@ -3482,7 +3533,7 @@ function tanilamaRaporu() {
     anahtarYonetici: anahtarDeposu.varMi() ? anahtarYonetici : null, // o-43
     hataliDeneme: yetkiKesici.hataliDenemeSayisi(),
     yetkiKaydiSorunu: yetkiKesici.kayitSorunu(),
-    sonBasari,
+    sonBasari: ws.canliMi() ? Date.now() : sonBasari, // canlı soket açıkken son temas şimdidir (sonBasari yalnız bağlanma anını tutar)
     gunlukSatirlari: gunlukSonSatirlari({ fs, yol: gunlukKaydi.yol, eskiYol: gunlukKaydi.eskiYol }),
     disTetikler: disTetikler.tanilamaOzeti(), // 1.4.0 dis grubu: yalnız açık/kapalı ve sayılar (jeton, ad, bağlantı yok)
   });
@@ -3722,6 +3773,7 @@ function ekranaTasiMenusu() {
  * bağlı değilse hiçbir şey değişmez. Ekran söküldüğünde tercih silinmez: pencere imlecin ekranında açılır, ekran dönünce tercih geçerli olur.
  */
 function tercihEkraniAyarla(ekranId) {
+  const onceki = ayarlar.tercihEkran;
   if (ekranId === null) {
     ayarlar.tercihEkran = {};
   } else {
@@ -3729,7 +3781,11 @@ function tercihEkraniAyarla(ekranId) {
     if (!ekran) return;
     ayarlar.tercihEkran = tercihKaydiOlustur(ekran);
   }
-  ayarlariYaz();
+  if (!ayarlariYaz()) {
+    ayarlar.tercihEkran = onceki;
+    ayarYazimiHatasiniBildir();
+    return;
+  }
   anaPencereyiTercihEkranaTasi();
 }
 
@@ -3796,7 +3852,7 @@ function tepsiMenusuOlustur() {
       label: t('menu.genisPencere'),
       type: 'checkbox',
       checked: ayarlar.pencereBoyutu === 'genis',
-      click: (oge) => pencereBoyutuDegistir(oge.checked ? 'genis' : 'hizli'),
+      click: (oge) => pencereBoyutuDegistir(oge.checked ? 'genis' : 'hizli', { tepsiden: true }),
     },
     ...ekranaTasiMenusu(),
     {
@@ -3810,7 +3866,9 @@ function tepsiMenusuOlustur() {
       type: 'checkbox',
       checked: oturum.durum === 'gelistirme' ? ayarlar.otomatikBaslat : ayarlar.otomatikBaslat && oturum.durum === 'etkin',
       enabled: app.isPackaged && !tasinabilirMi(),
-      click: (oge) => otomatikBaslatAyarla(oge.checked),
+      click: (oge) => {
+        if (!otomatikBaslatAyarla(oge.checked)) ayarYazimiHatasiniBildir();
+      },
     },
     { type: 'separator' },
     { label: t('menu.cikis'), click: cik },
@@ -3939,16 +3997,25 @@ async function ayarOzeti() {
  * 1.4.0: ayar-alanlari.js tablosundaki bir alan "Ayarları Kaydet" (ya da içe aktarma) ile DEĞİŞİNCE çağrılacak dinleyiciler.
  * Kullanım (özellik ajanları): ekAyarDinle('panelHerZamanUstte', (yeni, eski) => yuzey.ustteTut(yeni));
  * Dinleyici hatası kaydı durdurmaz (günlüğe sabit metin yazılır).
+ * `birKez`: aynı işlev birkaç alana bağlıysa ve argüman kullanmıyorsa tek kayıtta (tek yayımda) BİR kez çalışır; alan sayısı kadar
+ * abonelik yenileme / yeniden bağlanma / model kurma yapılmaz.
  */
 const ekAyarDinleyicileri = new Map(); // ad -> Function[]
-function ekAyarDinle(ad, dinleyici) {
+const ekAyarBirKezDinleyicileri = new Set(); // birKez ile kaydedilmiş işlevler
+function ekAyarDinle(ad, dinleyici, { birKez = false } = {}) {
   if (typeof dinleyici !== 'function') return;
   if (!ekAyarDinleyicileri.has(ad)) ekAyarDinleyicileri.set(ad, []);
   ekAyarDinleyicileri.get(ad).push(dinleyici);
+  if (birKez) ekAyarBirKezDinleyicileri.add(dinleyici);
 }
 function ekAyarDegisimleriniYay(degisenler) {
+  const cagrilanlar = new Set(); // bu yayımda çalışmış birKez işlevleri
   for (const { ad, eski, yeni } of degisenler) {
     for (const dinleyici of ekAyarDinleyicileri.get(ad) ?? []) {
+      if (ekAyarBirKezDinleyicileri.has(dinleyici)) {
+        if (cagrilanlar.has(dinleyici)) continue;
+        cagrilanlar.add(dinleyici);
+      }
       try {
         dinleyici(yeni, eski);
       } catch {
@@ -3969,7 +4036,7 @@ function bilgiIzleneniYenile() {
   tepsiyiGuncelle();
 }
 for (const ad of ['sensorSeridi', 'ustKart1', 'ustKart2', 'havaVarligi', 'birincilMedya', 'takvimler', 'yapilacakListeleri', 'hizliListe']) {
-  ekAyarDinle(ad, bilgiIzleneniYenile);
+  ekAyarDinle(ad, bilgiIzleneniYenile, { birKez: true });
 }
 for (const ad of ['saatBicimi', 'tarihBicimi', 'takvimGunSayisi', 'sensorGrafik', 'sensorGrafikSaat', 'pilEsigi', 'sensorTepsiIpucu', 'havaTahmini', 'medyaKapagi']) {
   ekAyarDinle(ad, () => {
@@ -4004,9 +4071,9 @@ ekAyarDinle('panelOpaklik', () => {
   anaPencereOpaklikUygula();
 });
 ekAyarDinle('tercihEkran', () => anaPencereyiTercihEkranaTasi());
-ekAyarDinle('tepsiRozeti', tepsiRozetiAyariDegisti);
-ekAyarDinle('tepsiRozetSensoru', tepsiRozetiAyariDegisti);
-ekAyarDinle('tepsiRozetSensorleri', tepsiRozetiAyariDegisti);
+ekAyarDinle('tepsiRozeti', tepsiRozetiAyariDegisti, { birKez: true });
+ekAyarDinle('tepsiRozetSensoru', tepsiRozetiAyariDegisti, { birKez: true });
+ekAyarDinle('tepsiRozetSensorleri', tepsiRozetiAyariDegisti, { birKez: true });
 ekAyarDinle('masaustuKarolari', () => masaustuKarolari.esitle());
 ekAyarDinle('masaustuKaroUstte', () => masaustuKarolari.ustteDegisti());
 // Grup "tema" (o-25, o-29, o-34): görünüm ayarları değişince açık pencereler güncellenir. Sayfaların kendi görünümü (renkler, animasyon)
@@ -4147,6 +4214,7 @@ function ipcKaydet() {
     otomatikBaslatUygula({ zorla: otomatikZorla });
     if (adresDegisti) {
       haIstemcisi.secimiSifirla();
+      haOkuma.sifirla(); // adres başka bir Home Assistant'a çevrilmiş olabilir: eski sunucunun geçmiş/takvim/alan verisi gösterilmesin
       denemeSayaci = 0;
       baglan();
       if (!canliDegisti) ws.yenidenBaglan(); // canlı bağlantı yeni adresle yeniden kurulur
@@ -4292,7 +4360,7 @@ function ipcKaydet() {
   // Windows Başlangıç ayarlarından kapatılmışsa kullanıcı açıkça isterse yeniden etkinleştirilir (pencere-08).
   ipcMain.handle('otomatik-baslat:etkinlestir', async (olay) => {
     if (!ayarlardan(olay)) return izinYok();
-    otomatikBaslatAyarla(true);
+    if (!otomatikBaslatAyarla(true)) return { ok: false, hata: t('bildirim.ayarYazilamadi') };
     return { ok: true, ...(await ayarOzeti()) };
   });
 
@@ -4431,7 +4499,8 @@ function ipcKaydet() {
       const cihazlar = durumlar
         // GÜVENLİK KURALI: kilit/alarm/kapı burada elenir, renderer'a hiç gitmez. 1.4.0: yalnız karo olabilen alanlar
         // (src/lib/alan-kaydi.js karoAlaniMi; iklim, medya, sensör... dahil; yapılacaklar/takvim kendi ayarlarıyla seçilir).
-        .filter((v) => guvenliVarlikMi(v) && karoAlaniMi(alanAl(v.entity_id)))
+        // Ucuz alan denetimi önce (binlerce varlıkta pahalı süzgeç yalnız aday alanlara çalışır); guvenliVarlikMi yine ZORUNLU son kapıdır.
+        .filter((v) => v && karoAlaniMi(alanAl(v.entity_id)) && guvenliVarlikMi(v))
         .map((v) => {
           const alan = alanAl(v.entity_id);
           const siniflama = eylemSinifi(v, {}); // favori ayarından bağımsız varsayılan sınıf (hata-04)
@@ -4456,7 +4525,7 @@ function ipcKaydet() {
       const guvenli = new Map(cihazlar.map((c) => [c.entity_id, c.ad]));
       // o-07 / o-10: yapılacaklar listesi ve takvim favori (karo) olamaz; Ayarlar'daki bilgi seçimleri için ayrı, Kapı Kuralı'ndan geçmiş liste.
       const bilgiVarliklari = durumlar
-        .filter((v) => guvenliVarlikMi(v) && ['calendar', 'todo'].includes(alanAl(v.entity_id)))
+        .filter((v) => v && ['calendar', 'todo'].includes(alanAl(v.entity_id)) && guvenliVarlikMi(v))
         .map((v) => ({ entity_id: v.entity_id, ad: varlikAdi(v), alan: alanAl(v.entity_id), alanEtiketi: t(`alan.${alanAl(v.entity_id)}`) }))
         .sort((a, b) => alanSirasi(a.alan) - alanSirasi(b.alan) || a.ad.localeCompare(b.ad, etkinDil));
       cihazOnbellegi = { guvenli, tumKimlikler };
@@ -4470,7 +4539,7 @@ function ipcKaydet() {
       }
       // o-48: kamera onay listesi için ayrı aday listesi (kamera karo/favori olamaz). Kapı/zil/diafon/giriş adlı kameralar buraya hiç gelmez.
       // Zaten onaylı olup şu an HA'da bulunamayan ya da süzgece takılan kimlikler `kameraIzinleri` ayarında kalır ama listede görünmez; kaydedince düşer.
-      return { ok: true, cihazlar, eksik, engelli, bilgiVarliklari, kameraAdaylari: kameraAdaylari(durumlar) };
+      return { ok: true, cihazlar, eksik, engelli, bilgiVarliklari, kameraAdaylari: kameraAdaylari(durumlar, etkinDil) };
     } catch (hata) {
       return { ok: false, hata: t('ana.cihazListesiAlinamadi', { hata: hataMetni(hata, t) }) };
     }
@@ -4488,6 +4557,7 @@ function ipcKaydet() {
       secilen: girdi,
       guvenliListe: cihazOnbellegi.guvenli,
       tumKimlikler: cihazOnbellegi.tumKimlikler,
+      etiketAl: hazirEtiketiAl,
     });
     ayarlar.favoriler = onayiDuzelt(yeni);
     if (engelli.length > 0) {
@@ -4646,6 +4716,12 @@ function baslat() {
 
   app.on('before-quit', () => {
     cikiliyor = true;
+    // Yakınlaştırma 500 ms gecikmeli yazılır; bekleyen yazım varsa süreç ölmeden diske gider (pencere boyutu değişmediyse aşağıdaki kayıt yazmaz).
+    if (yakinlastirmaKayitZamanlayicisi !== null) {
+      clearTimeout(yakinlastirmaKayitZamanlayicisi);
+      yakinlastirmaKayitZamanlayicisi = null;
+      ayarlariYaz();
+    }
     pencereDurumunuKaydet({ zorla: true });
     oauthYoneticisi.kapat(); // açık giriş dinleyicisi kalmaz (o-57)
     if (esitlemeYoneticisi) esitlemeYoneticisi.kapat(); // klasör izleyicisi ve zamanlayıcılar bırakılır (o-58)

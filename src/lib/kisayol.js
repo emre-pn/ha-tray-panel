@@ -109,7 +109,9 @@
     if (tus === null || !KISAYOL_TUSU_DESENI.test(tus)) return null;
     const degistiriciler = [];
     for (const parca of parcalar) {
-      const ad = DEGISTIRICI_TAKMA_ADLARI[parca.toLowerCase()];
+      const kucuk = parca.toLowerCase();
+      // Object.hasOwn: 'constructor' / '__proto__' gibi prototip anahtarları sahte değiştirici sayılıp çıplak tuşa (ör. 'H') normalleşmesin
+      const ad = Object.hasOwn(DEGISTIRICI_TAKMA_ADLARI, kucuk) ? DEGISTIRICI_TAKMA_ADLARI[kucuk] : undefined;
       if (!ad || degistiriciler.includes(ad)) return null; // bilinmeyen ad ya da yinelenen değiştirici
       degistiriciler.push(ad);
     }

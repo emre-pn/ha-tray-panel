@@ -169,8 +169,24 @@ test('rozetBelirle: kapali -> yok; isik -> ışık sayısı; sensor -> sensör; 
   assert.equal(rozetBelirle({}), null);
 });
 
+test('sensorIpucuEki: hassasiyet (suggested_display_precision) uygulanır, float artığı yazılmaz; ondalık ayracı dile uyar; rozetle aynı sayıyı gösterir', () => {
+  const s = sensor('sensor.salon', '23.600000381469727', { friendly_name: 'Salon sıcaklığı', unit_of_measurement: '°C', suggested_display_precision: 1 });
+  assert.equal(sensorIpucuEki(s), 'Salon sıcaklığı: 23,6 °C');
+  assert.equal(sensorIpucuEki(s, { dil: 'tr' }), 'Salon sıcaklığı: 23,6 °C');
+  assert.equal(sensorIpucuEki(s, { dil: 'en' }), 'Salon sıcaklığı: 23.6 °C');
+  assert.equal(sensorIpucuEki(s, { dil: 'de' }), 'Salon sıcaklığı: 23,6 °C');
+  assert.equal(sensorIpucuEki(s, { dil: 'bilinmeyen' }), 'Salon sıcaklığı: 23,6 °C', 'bilinmeyen dil tr sayılır');
+  assert.doesNotMatch(sensorIpucuEki(s), /600000/);
+  const pil = sensor('sensor.pil', '79.5', { friendly_name: 'Pil', unit_of_measurement: '%', suggested_display_precision: 0 });
+  assert.equal(sensorIpucuEki(pil, { dil: 'tr' }), 'Pil: %80');
+  assert.equal(sensorIpucuEki(pil, { dil: 'en' }), 'Pil: 80%');
+  // hassasiyet yoksa en çok iki ondalık değil, HA'nın verdiği kadar (gereksiz artık yok); metin değerli sensör ipucuna girmez
+  assert.equal(sensorIpucuEki(sensor('sensor.metin', 'abc', { friendly_name: 'Metin' })), null);
+});
+
 test('sensorIpucuEki: "Ad: değer birim"; ad süzgeçten geçmezse ya da rozet yoksa null', () => {
-  assert.equal(sensorIpucuEki(sensor('sensor.salon', '21.5', { friendly_name: 'Salon sıcaklığı', unit_of_measurement: '°C' })), 'Salon sıcaklığı: 21.5 °C');
+  assert.equal(sensorIpucuEki(sensor('sensor.salon', '21.5', { friendly_name: 'Salon sıcaklığı', unit_of_measurement: '°C' })), 'Salon sıcaklığı: 21,5 °C', 'varsayılan dil tr: virgül');
+  assert.equal(sensorIpucuEki(sensor('sensor.salon', '21.5', { friendly_name: 'Salon sıcaklığı', unit_of_measurement: '°C' }), { dil: 'en' }), 'Salon sıcaklığı: 21.5 °C');
   assert.equal(sensorIpucuEki(sensor('sensor.salon', '48', { friendly_name: 'Nem' })), 'Nem: 48');
   assert.equal(sensorIpucuEki(sensor('sensor.salon', '21', {})), null, 'adsız sensör');
   assert.equal(sensorIpucuEki(sensor('sensor.salon', 'unavailable', { friendly_name: 'Salon' })), null);

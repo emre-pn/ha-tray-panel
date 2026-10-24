@@ -320,6 +320,50 @@ test('anlık: eylem BAŞARISIZ olursa saklanmaz (uygulanmamış eylemin eski dur
   assert.deepEqual(o.postlar().at(-1).govde, { entity_id: 'light.led', brightness_pct: 40 });
 });
 
+test('anlık: geri yükleme BAŞARISIZ olursa anlık korunur ve sonraki geri yükleme eski parlaklığı kurar; ömür dolunca unutulur', async () => {
+  const o = ortam({ ayar: { ...ACIK, tetikPcAcma: true } });
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' })).ok, true);
+  o.kontrol.ilkPostHata = true; // HA geçici yanıt vermiyor
+  const hata = await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' });
+  assert.equal(hata.ok, false);
+  assert.notEqual(hata.tur, 'anlik-yok');
+  const ikinci = await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' });
+  assert.equal(ikinci.ok, true, 'başarısız geri yükleme anlığı tüketmedi');
+  assert.deepEqual(o.postlar().at(-1).govde, { entity_id: 'light.led', brightness_pct: 40 });
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).tur, 'anlik-yok', 'başarılı geri yükleme anlığı tüketir');
+
+  // korunan anlık da ANLIK_OMRU_MS sonra unutulur (özgün zaman damgası kalır)
+  const e = ortam({ ayar: { ...ACIK, tetikPcAcma: true } });
+  await e.cagir({ kaynak: 'toplanti', kimlik: 'light.led', islem: 'kapat' });
+  e.kontrol.ilkPostHata = true;
+  assert.equal((await e.cagir({ kaynak: 'toplanti', kimlik: 'light.led', islem: 'geriYukle' })).ok, false);
+  e.ileri(ANLIK_OMRU_MS + 1);
+  assert.equal((await e.cagir({ kaynak: 'toplanti', kimlik: 'light.led', islem: 'geriYukle' })).tur, 'anlik-yok');
+});
+
+test('anlık: başarısız geri yüklemede korunan anlık, araya giren yeni kilitte taze anlığın yerine geçmez; ışık kapalıyken alınan anlık geri yüklemede komut göndermez', async () => {
+  const sunucu = structuredClone(SUNUCU);
+  const o = ortam({ ayar: { ...ACIK, tetikPcAcma: true }, sunucu });
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' })).ok, true); // gece: ışık açıktı, %40
+  o.kontrol.ilkPostHata = true; // uyanışta ağ yok
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).ok, false);
+  sunucu['light.led'] = { ...sunucu['light.led'], state: 'off' }; // kullanıcı gün içinde ışığı kapalı bıraktı
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' })).ok, true); // öğlen yeniden kilit
+  const once = o.postlar().length;
+  assert.equal((await o.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).ok, true);
+  assert.equal(o.postlar().length, once + 1);
+  const son = o.postlar().at(-1).govde;
+  assert.equal(son.brightness_pct, undefined, 'bayat %40 geri yüklenmedi: ışık kendiliğinden açılmadı');
+  assert.equal(o.postlar().at(-1).yol.endsWith('/turn_on'), false, 'kapalı ışığa açma komutu gitmedi');
+  // araya olay girmeden gelen geri yükleme eski anlığı yine yeniden dener
+  const p = ortam({ ayar: { ...ACIK, tetikPcAcma: true } });
+  await p.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'kapat' });
+  p.kontrol.ilkPostHata = true;
+  assert.equal((await p.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).ok, false);
+  assert.equal((await p.cagir({ kaynak: 'pc-olayi', kimlik: 'light.led', islem: 'geriYukle' })).ok, true);
+  assert.deepEqual(p.postlar().at(-1).govde, { entity_id: 'light.led', brightness_pct: 40 });
+});
+
 test('anlık: kilit + uyku arka arkaya iken biri başarısız olsa da ilk (asıl) durum korunur; hepsi başarısız olursa anlık kalmaz', async () => {
   const o = ortam({ ayar: { ...ACIK, tetikPcAcma: true } });
   o.kontrol.ilkPostHata = true; // kilit olayının komutu düşer, uyku olayınınki geçer
