@@ -9,7 +9,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { karo, modelYap, panelAc, dugmeler, dugmeAra, kartlar, basiliTut, ayrintiAc } = require('./yuzey-kartlar-sahte');
+const { karo, modelYap, panelAc, paletAc, paletSatirlari, sorguYaz, dugmeler, dugmeAra, kartlar, basiliTut, ayrintiAc } = require('./yuzey-kartlar-sahte');
 
 const IKLIM_OZ = { mod: 'cool', modlar: ['off', 'cool', 'heat', 'auto'], hedefSicaklik: 24, enAz: 16, enCok: 30, adim: 0.5, mevcutSicaklik: 26.5, hvacEylemi: 'cooling', mevcutNem: 55 };
 const KLIMA = karo('climate.salon', 'Salon klima', { grup: 'iklim', grupEtiketi: 'İklim', varsayilanEylem: false, onayliServisler: ['set_hvac_mode'], ozellik: IKLIM_OZ });
@@ -168,6 +168,35 @@ test('klima: ısıt/soğut aralığında iki sınır ayrı satırda; her gönder
   assert.equal(dugmeAra(sayfa, 'Aralık ısıtma hedefini artır').disabled, false);
 });
 
+test('klima aralığı: karşı sınır oturum içinde oynayınca bu satırın sınırı da oynar; alt < üst hiç bozulmaz (21/21 gönderilmez)', async () => {
+  const dar = varyant(ARALIKLI, 'climate.s', 'Sıkı', { ozellik: { ...ARALIKLI.ozellik, hedefAlt: 20, hedefUst: 22, adim: 1 } });
+  const sayfa = await panelAc({ model: modelYap(dar) });
+  // üst sınır 21'e iner (yanıt yeniden çizim getirmez); ardından alt sınır 21'e çıkarılmaya çalışılır
+  dugmeAra(sayfa, 'Sıkı soğutma hedefini azalt').gonder('click');
+  dugmeAra(sayfa, 'Sıkı ısıtma hedefini artır').gonder('click');
+  assert.match(metin(sayfa), /Isıt 20°/, 'alt sınır üstün bir adım altında kaldı');
+  assert.match(metin(sayfa), /Soğut 21°/);
+  sayfa.zaman.ilerle(500);
+  const istekler = sayfa.calistirmalar();
+  assert.ok(istekler.length >= 1);
+  assert.ok(istekler.every((y) => y.veri.target_temp_low < y.veri.target_temp_high), `alt < üst: ${JSON.stringify(istekler.map((y) => y.veri))}`);
+  assert.deepEqual(istekler.at(-1).veri, { target_temp_low: 20, target_temp_high: 21 });
+  // tersi: alt sınır yükselince üst sınır onun bir adım altına inemez
+  const ters = await panelAc({ model: modelYap(dar) });
+  dugmeAra(ters, 'Sıkı ısıtma hedefini artır').gonder('click');
+  dugmeAra(ters, 'Sıkı soğutma hedefini azalt').gonder('click');
+  assert.match(metin(ters), /Isıt 21°/);
+  assert.match(metin(ters), /Soğut 22°/, 'üst sınır alt sınırın bir adım üstünde kaldı');
+  ters.zaman.ilerle(500);
+  assert.ok(ters.calistirmalar().every((y) => y.veri.target_temp_low < y.veri.target_temp_high));
+  // sınır serbest kalınca (üst sınır geri yükselir) alt sınır yine ilerler
+  const serbest = await panelAc({ model: modelYap(dar) });
+  dugmeAra(serbest, 'Sıkı soğutma hedefini azalt').gonder('click');
+  dugmeAra(serbest, 'Sıkı soğutma hedefini artır').gonder('click');
+  dugmeAra(serbest, 'Sıkı ısıtma hedefini artır').gonder('click');
+  assert.match(metin(serbest), /Isıt 21°/);
+});
+
 test('klima: ulaşılamayan aralıklı klimada aralık düğmeleri kapalıdır', async () => {
   const sayfa = await panelAc({ model: modelYap(varyant(ARALIKLI, 'climate.k', 'Kapalı', { kullanilabilir: false, ulasilamiyor: true })) });
   assert.ok(dugmeAra(sayfa, 'Kapalı ısıtma hedefini artır').disabled);
@@ -269,6 +298,20 @@ test('ışık rengi: rengi desteklemeyen ışıkta bölüm tamamen gizlenir; yal
   assert.equal(dugmeler(r, (o) => o.sinifVar('kart-renk')).length, 8);
 });
 
+test('ışık rengi: beyaz tonu düğmeleri seçili tonu aria-pressed ile de bildirir (yalnız renk / kalınlık değil); ışık kapalıyken hiçbiri basılı değildir', async () => {
+  const sayfa = await panelAc({ model: modelYap(RENKLI), duzen: true });
+  ayrintiAc(sayfa, 'Masa');
+  const tonlar = dugmeler(sayfa, (o) => /beyaz/i.test(o.attributes['aria-label'] ?? ''));
+  assert.deepEqual(tonlar.map((d) => d.attributes['aria-pressed']), ['true', 'false', 'false'], '2800 K: sıcak beyaz basılı');
+  assert.deepEqual(tonlar.map(secili), [true, false, false], 'görünüm sınıfı ile aria-pressed aynı düğmeyi işaret eder');
+  const soguk = await panelAc({ model: modelYap(varyant(RENKLI, 'light.soguk', 'Soğuk lamba', { ozellik: { ...RENKLI.ozellik, renkSicakligi: 6000 } })), duzen: true });
+  ayrintiAc(soguk, 'Soğuk lamba');
+  assert.deepEqual(dugmeler(soguk, (o) => /beyaz/i.test(o.attributes['aria-label'] ?? '')).map((d) => d.attributes['aria-pressed']), ['false', 'false', 'true']);
+  const kapali = await panelAc({ model: modelYap(varyant(RENKLI, 'light.kapali', 'Kapalı lamba', { durum: 'kapali' })), duzen: true });
+  ayrintiAc(kapali, 'Kapalı lamba');
+  assert.deepEqual(dugmeler(kapali, (o) => /beyaz/i.test(o.attributes['aria-label'] ?? '')).map((d) => d.attributes['aria-pressed']), ['false', 'false', 'false'], 'kapalı ışıkta etkin ton yok');
+});
+
 test('ışık rengi: renk düğmesi metin taşımaz (dolgu CSS sınıfından), erişilebilir adı vardır; parlaklık kontrolü kapalıysa düz karo kalır', async () => {
   const sayfa = await panelAc({ model: modelYap(RENKLI), duzen: true });
   ayrintiAc(sayfa, 'Masa');
@@ -362,6 +405,63 @@ test('medya: kaynak seçimi cihazın listesinden, seçince gider (onaysız); ayn
   liste.value = 'Netflix';
   liste.gonder('change');
   assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'media_player.tv', servis: 'select_source', veri: { source: 'Netflix' }, sonDeger: true }]);
+});
+
+test('seçici: liste fareyle açılırken (pointerdown + odak + pointerup) çizim dondurması AÇIKKEN korunur; gelen model listeyi kapatmaz, odak gidince çizilir', async () => {
+  const sayfa = await panelAc({ model: modelYap(TV) });
+  const yeniModel = (baslik) => modelYap(varyant(TV, 'media_player.tv', 'Salon TV', { ozellik: { ...MEDYA_OZ, baslik } }));
+  const liste = sayfa.bul((o) => o.etiket === 'select')[0];
+  // fareyle açılış sırası: basış, odak, bırakış (+ click sonrası ertelenen bırakma)
+  sayfa.belgeOlayi('pointerdown');
+  liste.gonder('focus');
+  sayfa.belgeOlayi('pointerup');
+  sayfa.zaman.ilerle(10);
+  // liste hâlâ açık ve odakta: canlı güncelleme select'i yeniden kurmaz
+  sayfa.durum(yeniModel('Yeni Şarkı'));
+  assert.equal(sayfa.bul((o) => o.etiket === 'select')[0], liste, 'açık liste yok edilmedi');
+  assert.doesNotMatch(metin(sayfa), /Yeni Şarkı/, 'model liste kapanana kadar bekler');
+  // odak gidince bekleyen model çizilir
+  liste.gonder('blur');
+  assert.notEqual(sayfa.bul((o) => o.etiket === 'select')[0], liste);
+  assert.match(metin(sayfa), /Yeni Şarkı/);
+
+  // pencere yeniden gösterilince (donuk sıfırlanır) eski seçicinin temizliği negatif sayaç ya da kilit bırakmaz
+  const ikinci = sayfa.bul((o) => o.etiket === 'select')[0];
+  sayfa.belgeOlayi('pointerdown');
+  ikinci.gonder('focus');
+  sayfa.belgeOlayi('pointerup');
+  sayfa.zaman.ilerle(10);
+  sayfa.goster('panel');
+  sayfa.durum(yeniModel('Üçüncü Şarkı'));
+  assert.match(metin(sayfa), /Üçüncü Şarkı/, 'gösterim sonrası model hemen çizilir (dondurma takılı kalmadı)');
+});
+
+test('seçici: mevcut değer bilinmiyorsa kutu boş görünür (selectedIndex -1), ilk seçeneği seçmek de istek gönderir; başarısız gönderimde yine boşa döner', async () => {
+  const bilinmeyen = varyant(TV, 'media_player.k', 'Kapalı TV', { ozellik: { ...MEDYA_OZ, kaynak: null } });
+  const sayfa = await panelAc({ model: modelYap(bilinmeyen) });
+  const liste = sayfa.bul((o) => o.etiket === 'select')[0];
+  assert.equal(liste.selectedIndex, -1, 'ilk seçenek seçili gösterilmez');
+  assert.deepEqual(liste.children.map((o) => o.textContent), ['HDMI 1', 'HDMI 2', 'Netflix']);
+  liste.value = 'HDMI 1';
+  liste.selectedIndex = 0; // tarayıcı: kullanıcı ilk seçeneği seçti (boş seçimden farklı olduğu için change doğar)
+  liste.gonder('change');
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'media_player.k', servis: 'select_source', veri: { source: 'HDMI 1' }, sonDeger: true }]);
+
+  // değer biliniyorsa eskisi gibi seçili; bilinen değer için selectedIndex dokunulmaz (undefined: yalnız value atanır)
+  const bilinen = await panelAc({ model: modelYap(TV) });
+  const dolu = bilinen.bul((o) => o.etiket === 'select')[0];
+  assert.equal(dolu.value, 'HDMI 1');
+  assert.notEqual(dolu.selectedIndex, -1);
+
+  // gönderim başarısızsa (değer hâlâ bilinmiyor) kutu yine boşa döner
+  const hatali = await panelAc({ model: modelYap(bilinmeyen), calistirYaniti: { ok: false, tur: 'hata' } });
+  const kutu = hatali.bul((o) => o.etiket === 'select')[0];
+  kutu.value = 'HDMI 2';
+  kutu.selectedIndex = 1;
+  kutu.gonder('change');
+  await new Promise((coz) => setImmediate(coz));
+  await new Promise((coz) => setImmediate(coz));
+  assert.equal(kutu.selectedIndex, -1);
 });
 
 test('medya: kapatma onaylı servis olarak basılı tutma ister; kapalı TV\'yi açmak onaysızdır', async () => {
@@ -467,6 +567,29 @@ test('vantilatör: hız kaydırıcısı, ön ayarlar ve salınım düğmesi; ana
   sayfa.zaman.ilerle(500);
   dugmeAra(sayfa, 'Vantilatör salınımı aç / kapat').gonder('click', { detail: 1 });
   assert.deepEqual(sayfa.calistirmalar().at(-1), { kimlik: 'fan.vantilator', servis: 'oscillate', veri: { oscillating: true } });
+});
+
+test('vantilatör: hız kaydırıcısının adımı aşağı yuvarlanır (6 hızlı fan: 16); HA yüzde -> hız eşlemesinde her hıza kaydırıcıyla ulaşılır (2..100 hız)', async () => {
+  const altiHizli = varyant(FAN, 'fan.alti', 'Altı hız', { ozellik: { ...FAN.ozellik, yuzde: 0, adimYuzde: 100 / 6 } });
+  const sayfa = await panelAc({ model: modelYap(altiHizli) });
+  assert.equal(sayfa.bul((o) => o.type === 'range')[0].step, '16', '17 değil 16: ilk hız seçilebilir');
+  // HA percentage_to_ordered_list_item: hız k için üst sınır = k*100//n
+  const hizi = (yuzde, n) => {
+    for (let k = 1; k <= n; k += 1) if (yuzde <= Math.floor((k * 100) / n)) return k;
+    return n;
+  };
+  for (let n = 2; n <= 100; n += 1) {
+    const s = await panelAc({ model: modelYap(varyant(FAN, 'fan.d', 'Döngü', { ozellik: { ...FAN.ozellik, yuzde: 0, adimYuzde: 100 / n } })) });
+    const adim = Number(s.bul((o) => o.type === 'range')[0].step);
+    const ulasilan = new Set();
+    for (let v = adim; v <= 100; v += adim) ulasilan.add(hizi(Math.round(v), n));
+    assert.equal(ulasilan.size, n, `${n} hızlı fan: adım ${adim} ile ulaşılan hızlar ${[...ulasilan].join(',')}`);
+  }
+  // adım zaten tam sayı ya da 1'den küçükse davranış aynı
+  const dort = await panelAc({ model: modelYap(varyant(FAN, 'fan.d4', 'Dört', { ozellik: { ...FAN.ozellik, adimYuzde: 25 } })) });
+  assert.equal(dort.bul((o) => o.type === 'range')[0].step, '25');
+  const ince = await panelAc({ model: modelYap(varyant(FAN, 'fan.ince', 'İnce', { ozellik: { ...FAN.ozellik, adimYuzde: 0.5 } })) });
+  assert.equal(ince.bul((o) => o.type === 'range')[0].step, '1');
 });
 
 test('vantilatör: hız ve ön ayarı olmayan (yalnız aç/kapat) vantilatör düz karo kalır', async () => {
@@ -649,6 +772,70 @@ test('sayı (onay kapalı): ± düğmeleri 400 ms\'de tek gönderimde birleşir,
   aralik.value = 9;
   aralik.gonder('change');
   assert.deepEqual(sayfa.calistirmalar().at(-1), { kimlik: 'number.s', servis: 'set_value', veri: { value: 9 }, sonDeger: true });
+});
+
+test('sayı (kesirli adım): 0,05 adımlı sayı kartı ve palet özeti adımın basamağı kadar ondalık yazar; komşu değerler aynı görünmez; adım 1 olan kart eskisi gibi', async () => {
+  const ince = (deger) => varyant(SAYI, 'input_number.oran', 'Oran', { ozellik: { ...SAYI.ozellik, deger, enAz: 0, enCok: 1, adim: 0.05, birim: null } });
+  const sayfa = await panelAc({ model: modelYap(ince(0.05)) });
+  const gosterge = (s) => s.bul((o) => o.sinifVar('kart-deger'))[0];
+  assert.match(metin(sayfa), /0,05/, 'başlıkta 0,1 değil 0,05 yazar');
+  assert.equal(gosterge(sayfa).textContent, '0,05');
+  // + ile 0,10: gösterge 0,05'ten farklı görünür
+  dugmeAra(sayfa, 'Oran değerini artır').gonder('click');
+  assert.equal(gosterge(sayfa).textContent, '0,1');
+  dugmeAra(sayfa, 'Oran değerini artır').gonder('click');
+  assert.equal(gosterge(sayfa).textContent, '0,15');
+  // 0,25 ve 0,30 farklı görünür
+  assert.equal(gosterge(await panelAc({ model: modelYap(ince(0.25)) })).textContent, '0,25');
+  assert.equal(gosterge(await panelAc({ model: modelYap(ince(0.3)) })).textContent, '0,3');
+  // palet satırındaki özet de aynı basamakla yazılır
+  const palet = await paletAc({ model: modelYap(ince(0.25)) });
+  sorguYaz(palet, 'oran');
+  assert.match(palet.bul((o) => o.sinifVar('palet-durum')).map((o) => o.textContent).join('|'), /0,25/);
+  // adım 1: tek ondalıklı eski çıktı değişmez (5,25 -> 5,3)
+  const bir = await panelAc({ model: modelYap(varyant(SAYI, 'input_number.bir', 'Bir', { ozellik: { ...SAYI.ozellik, deger: 5.25, adim: 1 } })) });
+  assert.match(metin(bir), /5,3 °C/);
+  // üstel gösterimli çok küçük adım 4 basamakla sınırlanır, çökmez
+  const ustel = await panelAc({ model: modelYap(varyant(SAYI, 'input_number.us', 'Üstel', { ozellik: { ...SAYI.ozellik, deger: 0.0001, enAz: 0, enCok: 1, adim: 1e-7, birim: null } })) });
+  assert.match(metin(ustel), /0,0001/);
+});
+
+test('kart kaydırıcıları: dolu iz (--deger) tutamakla aynı konumdadır; sürükleyince, ± ile ve model yenilenince izler; sınırlar kırpılır', async () => {
+  const deger = (oge) => oge.style.getPropertyValue('--deger');
+  // medya sesi %20 (onaysız servis: sürüklerken ara değer gider)
+  const sayfa = await panelAc({ model: modelYap(varyant(TV, 'media_player.tv', 'Salon TV', { ozellik: { ...MEDYA_OZ, ses: 0.2 } })) });
+  const ses = sayfa.bul((o) => o.type === 'range')[0];
+  assert.equal(ses.value, '20');
+  assert.equal(deger(ses), '20%', 'iz %50 değil, ses düzeyi kadar dolu');
+  ses.value = 65;
+  ses.gonder('input');
+  assert.equal(deger(ses), '65%', 'sürüklerken dolgu hareket eder');
+  assert.equal(JSON.stringify(ses.style), '{}', 'satır içi stil nesnesine düz alan yazılmadı (yalnız CSSOM setProperty)');
+  // sayı kartı: min 0, max 10; onaylı serviste + düğmesi de dolguyu günceller
+  const sayi = (d) => varyant(SAYI, 'input_number.d', 'Derece', { ozellik: { ...SAYI.ozellik, deger: d, enAz: 0, enCok: 10, adim: 1 } });
+  const bes = await panelAc({ model: modelYap(sayi(5)) });
+  const aralikBes = bes.bul((o) => o.type === 'range')[0];
+  assert.equal(deger(aralikBes), '50%');
+  dugmeAra(bes, 'Derece değerini artır').gonder('click');
+  assert.equal(aralikBes.value, '6');
+  assert.equal(deger(aralikBes), '60%', '± ile değişince dolgu izler');
+  assert.equal(deger(bes.bul((o) => o.type === 'range')[0]), '60%');
+  const iki = await panelAc({ model: modelYap(sayi(2)) });
+  assert.equal(deger(iki.bul((o) => o.type === 'range')[0]), '20%');
+  // min sıfır değil: 40..80 aralığında 60 -> %50
+  const dar = await panelAc({ model: modelYap(varyant(SAYI, 'input_number.e', 'Dar', { ozellik: { ...SAYI.ozellik, deger: 60, enAz: 40, enCok: 80, adim: 1 } })) });
+  assert.equal(deger(dar.bul((o) => o.type === 'range')[0]), '50%');
+  // vantilatör hızı ve nem alıcı hedefi
+  const fan = await panelAc({ model: modelYap(FAN) });
+  assert.equal(deger(fan.bul((o) => o.type === 'range')[0]), '50%');
+  const nem = karo('humidifier.n', 'Nem alıcı', { grup: 'iklim', grupEtiketi: 'İklim', durum: 'acik', ozellik: { hedefNem: 55, mevcutNem: 45, enAz: 30, enCok: 80, mod: null } });
+  assert.equal(deger((await panelAc({ model: modelYap(nem) })).bul((o) => o.type === 'range')[0]), '50%', '(55-30)/(80-30)');
+  // cihaz değeri aralık dışındaysa dolgu kırpılır
+  const tasan = await panelAc({ model: modelYap(sayi(25)) });
+  assert.equal(deger(tasan.bul((o) => o.type === 'range')[0]), '100%');
+  // model yenilenince (yeni değer) dolgu yeni değerle çizilir
+  iki.durum(modelYap(sayi(8)));
+  assert.equal(deger(iki.bul((o) => o.type === 'range')[0]), '80%');
 });
 
 const ZAMANLAYICI = karo('timer.mutfak', 'Mutfak', {
@@ -845,4 +1032,76 @@ test('birleşik arayüz: cihaz kartları ve bilgi kartları aynı CSS sınıf ad
   const bilgiSiniflari = sinifla('yuzey-bilgi.js');
   assert.ok(kartSiniflari.size > 10 && bilgiSiniflari.size > 10, 'sınıflar okundu');
   assert.deepEqual([...kartSiniflari].filter((s) => bilgiSiniflari.has(s)), [], 'iki grubun sınıf adları kesişmemeli');
+});
+
+// --- B33: ok tuşu gezintisi pasif düğmede takılmaz -----------------------------------------------------------------
+
+test('B33: onaylı seçicinin pasif "Uygula"sı ok gezintisini kilitlemez; alttan Yukarı da geçer; kullanılamayan kartın pasif düğmeleri atlanır', async () => {
+  const ust = karo('switch.ust', 'Üst anahtar', { durum: 'kapali' });
+  const alt = karo('switch.alt', 'Alt anahtar', { durum: 'kapali' });
+  const sayfa = await panelAc({ model: modelYap(ust, EV_MODU, alt) });
+  const aktif = () => sayfa.sandbox.document.activeElement;
+  const bas = (tus) => sayfa.belgeOlayi('keydown', { key: tus, target: aktif() });
+  const uygula = dugmeler(sayfa, (o) => o.textContent === 'Uygula')[0];
+  assert.ok(uygula.disabled, 'başlangıçta pasif');
+  const dugme = (etiket) => dugmeler(sayfa, (o) => o.textContent.startsWith(etiket))[0];
+  const ustDugme = dugme('Üst anahtar');
+  const altDugme = dugme('Alt anahtar');
+
+  ustDugme.focus();
+  const gorulen = [];
+  for (let i = 0; i < 5 && aktif() !== altDugme; i += 1) {
+    bas('ArrowDown');
+    gorulen.push(aktif());
+  }
+  assert.equal(aktif(), altDugme, 'aşağı oklarla pasif satırın ötesindeki karoya ulaşılır');
+  assert.ok(!gorulen.includes(uygula), 'pasif düğme odak adayı olmaz');
+  for (let i = 0; i < 5 && aktif() !== ustDugme; i += 1) bas('ArrowUp');
+  assert.equal(aktif(), ustDugme, 'alttan yukarı da çıkılabilir');
+
+  // kullanılamayan kart: tüm düğmeleri pasif, gezinti onu atlar
+  const kapali = { ...KLIMA, kullanilabilir: false, ulasilamiyor: true };
+  const s2 = await panelAc({ model: modelYap(ust, kapali, alt) });
+  const aktif2 = () => s2.sandbox.document.activeElement;
+  const bas2 = (tus) => s2.belgeOlayi('keydown', { key: tus, target: aktif2() });
+  const ustD = dugmeler(s2, (o) => o.textContent.startsWith('Üst anahtar'))[0];
+  const altD = dugmeler(s2, (o) => o.textContent.startsWith('Alt anahtar'))[0];
+  ustD.focus();
+  for (let i = 0; i < 6 && aktif2() !== altD; i += 1) bas2('ArrowDown');
+  assert.equal(aktif2(), altD, 'tümü pasif kartın üstünden geçilir');
+  const etkin = dugmeler(s2, (o) => o.disabled !== true);
+  assert.ok(etkin.includes(aktif2()));
+});
+
+test('B33: odaktaki düğme sonradan pasifleşirse gezinti yine ondan sürer (olay hedefi satırdan süzülmez)', async () => {
+  const ust = karo('switch.ust', 'Üst anahtar', { durum: 'kapali' });
+  const alt = karo('switch.alt', 'Alt anahtar', { durum: 'kapali' });
+  const sayfa = await panelAc({ model: modelYap(ust, EV_MODU, alt) });
+  const dugme = (etiket) => dugmeler(sayfa, (o) => o.textContent.startsWith(etiket))[0];
+  const ustDugme = dugme('Üst anahtar');
+  ustDugme.focus();
+  ustDugme.disabled = true; // odaktayken pasifleşti
+  const olay = sayfa.belgeOlayi('keydown', { key: 'ArrowDown', target: ustDugme });
+  assert.equal(olay.onlendi, true, 'olay yine işlenir');
+  assert.notEqual(sayfa.sandbox.document.activeElement, ustDugme);
+});
+
+// --- palet satırı: kısaltılan metnin tam hali title'da (B148) ---------------------------------------------------------------
+
+test('palet: uzun parça başlığı ve grup adı palet-durum / palet-grup üzerinde title olarak tam yazılır (CSS bunları tek satıra kısaltır)', async () => {
+  const baslik = 'Queen - Bohemian Rhapsody (Remastered 2011) - A Night at the Opera';
+  const medya = karo('media_player.salon', 'Salon', {
+    grup: 'medya',
+    grupEtiketi: 'Wohnzimmer Lautsprecher',
+    durum: 'acik',
+    varsayilanEylem: false,
+    ozellik: { durum: 'playing', baslik },
+  });
+  const sayfa = await paletAc({ model: modelYap(medya) });
+  const satir = paletSatirlari(sayfa)[0];
+  const durum = satir.bul((o) => o.sinifVar('palet-durum'))[0];
+  const grup = satir.bul((o) => o.sinifVar('palet-grup'))[0];
+  assert.equal(durum.textContent, baslik);
+  assert.equal(durum.title, baslik, 'kısaltılan durum metni fareyle tam okunur');
+  assert.ok(grup.textContent !== '' && grup.title === grup.textContent, 'grup adı da title taşır');
 });

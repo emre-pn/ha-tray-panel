@@ -257,3 +257,48 @@ test('İngilizce arayüzde palet rozetleri ve ipucu İngilizcedir', async () => 
   enter(bos);
   assert.match(bos.ipucu(), /no one-click action/);
 });
+
+// ---- B22: onaylı (yıkıcı) parlaklık ışığında basılı tutma, yazılan seviyeyi/kapatmayı taşır ----------------------
+
+const ONAYLI_ISIK = karo('light.salon_lamba', 'Salon lamba', { grup: 'isik', grupEtiketi: 'Işık', sinif: 'yikici', durum: 'kapali', parlaklikKontrol: true });
+const ONAYLI_MODEL = { ...MODEL, gruplar: [{ kod: 'isik', etiket: 'Işık', karolar: [ONAYLI_ISIK] }] };
+
+test('B22: onaylı parlaklık ışığında "salon lamba 40" Enter basılı tutması %40 yükünü taşır (aç/kapa değil); erken bırakma hiçbir şey göndermez', async () => {
+  const sayfa = await paletAc({ model: ONAYLI_MODEL });
+  sorguYaz(sayfa, 'salon lamba 40');
+  assert.match(satirMetni(sayfa), /%40/);
+  assert.match(satirMetni(sayfa), /basılı tut/);
+  enter(sayfa);
+  sayfa.zaman.ilerle(300);
+  sayfa.oge('arama').gonder('keyup', { key: 'Enter' });
+  sayfa.zaman.ilerle(2000);
+  assert.deepEqual(sayfa.calistirmalar(), [], 'erken bırakma iptal eder');
+  enter(sayfa);
+  sayfa.zaman.ilerle(799);
+  assert.deepEqual(sayfa.calistirmalar(), []);
+  sayfa.zaman.ilerle(2);
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'light.salon_lamba', parlaklik: 40, sonDeger: true, basili: true }]);
+});
+
+test('B22: onaylı parlaklık ışığında "salon lamba 0" (kapat) basılı tutması kapat yükünü taşır; kapalı ışığı AÇMAZ', async () => {
+  const sayfa = await paletAc({ model: ONAYLI_MODEL });
+  sorguYaz(sayfa, 'salon lamba 0');
+  assert.match(satirMetni(sayfa), /Kapat/);
+  enter(sayfa);
+  sayfa.zaman.ilerle(900);
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'light.salon_lamba', kapat: true, basili: true }]);
+});
+
+test('B22: aynı yük fareyle basılı tutmada da gider; yalnız ad yazılınca (komut yok) karonun kendi eylemi (yük boş + basili) kalır', async () => {
+  const sayfa = await paletAc({ model: ONAYLI_MODEL });
+  sorguYaz(sayfa, 'salon lamba 40');
+  const satir = paletSatirlari(sayfa)[0];
+  satir.gonder('pointerdown', { button: 0 });
+  sayfa.zaman.ilerle(900);
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'light.salon_lamba', parlaklik: 40, sonDeger: true, basili: true }]);
+  const duz = await paletAc({ model: ONAYLI_MODEL });
+  sorguYaz(duz, 'salon lamba');
+  enter(duz);
+  duz.zaman.ilerle(900);
+  assert.deepEqual(duz.calistirmalar(), [{ kimlik: 'light.salon_lamba', basili: true }]);
+});

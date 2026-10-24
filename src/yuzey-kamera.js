@@ -10,6 +10,7 @@
  *  - Hata durumunda sahte görüntü ya da eski kare gösterilmez; kısa bir hata metni yazılır.
  *  - "Şimdi yenile" düğmesi o kameranın görüntüsünü hemen ister (hız sınırı yine ana süreçte: 5 sn içinde aynı kare döner); "Büyüt" yalnız kartı
  *    ızgarada tam genişliğe açar (CSS sınıfı kamera-buyuk). İkisi de yeni bir yetki, kanal ya da akış getirmez; bulanıklık büyütmeyle KALKMAZ.
+ *  - Kare yaşı etiketi, görüntü durdukça ~5 sn'de bir kendiliğinden tazelenir (yeni model gelmese de "az önce" bayat kalmaz); ağ isteği yapmaz.
  *  - Tüm metin textContent ile yazılır; bulanıklık CSS sınıfıyla (kamera-bulanik) yapılır (satır içi stil yok, CSP).
  *
  * ctx (yuzey-sayfa.js verir): t(anahtar, degisken), olustur(etiket, sinif, metin), odakKaydet(anahtar, oge), satirEkle(ogeler),
@@ -24,6 +25,7 @@
   'use strict';
 
   const EN_COK_KAMERA = 8;
+  const YAS_TIK_MS = 5000; // kare yaşı etiketi bu aralıkla tazelenir (yeni model / çizim gelmese de "az önce" yalan söylemesin)
   const YENILEME_SECENEKLERI = Object.freeze([0, 5, 10, 30, 60]); // saniye; 0 = yalnız elle
   const KAMERA_KIMLIGI = /^camera\.[a-z0-9_]{1,80}$/;
   const GORUNTU_DESENI = /^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
@@ -66,6 +68,7 @@
     let gosterim = 0; // her gösterim/gizlemede artar: eski gösterime ait geç yanıt yok sayılır
     let gorunurBekliyor = false; // gösterim geldi ama pencere henüz görünür değildi: görünür olunca ilk yükleme yapılır
     let yenilemeZamanlayicisi = null;
+    let yasZamanlayicisi = null;
 
     const kayit = (kimlik) => kameralar.get(kimlik);
 
@@ -74,6 +77,34 @@
         ctx.zamanlayici.clearTimeout(yenilemeZamanlayicisi);
         yenilemeZamanlayicisi = null;
       }
+    }
+
+    function yasiDurdur() {
+      if (yasZamanlayicisi !== null) {
+        ctx.zamanlayici.clearTimeout(yasZamanlayicisi);
+        yasZamanlayicisi = null;
+      }
+    }
+
+    /** Karenin yaş etiketi: görüntü yoksa boş, 3 sn'den yeniyse "az önce", değilse saniye sayısı. */
+    function yasMetni(k) {
+      const goruntuVar = k.adim === 'tamam' && typeof k.veri === 'string';
+      const yas = goruntuVar && typeof k.zaman === 'number' ? Math.max(0, Math.round((ctx.simdi() - k.zaman) / 1000)) : null;
+      return yas === null ? '' : yas < 3 ? t('yuzey.kamera.azOnce') : t('yuzey.kamera.yas', { sn: yas });
+    }
+
+    /** Görüntüsü olan kare durdukça her ~5 sn'de yalnız yaş etiketlerini yeniden hesaplar (DOM'u yeniden kurmaz, ağ isteği yapmaz). */
+    function yasTiktakKur() {
+      if (yasZamanlayicisi !== null || !ctx.acikMi()) return;
+      if (!Array.from(kameralar.values()).some((k) => k.adim === 'tamam' && k.kart)) return;
+      yasZamanlayicisi = ctx.zamanlayici.setTimeout(function () {
+        yasZamanlayicisi = null;
+        if (!ctx.acikMi()) return; // gizlendi: durur, yeni kare gelince yeniden kurulur
+        kameralar.forEach(function (k) {
+          if (k.kart) k.kart.yas.textContent = yasMetni(k);
+        });
+        yasTiktakKur();
+      }, YAS_TIK_MS);
     }
 
     function gorunumuGuncelle(k) {
@@ -108,8 +139,7 @@
       kart.yenile.disabled = k.adim === 'yukleniyor' || !k.kullanilabilir;
       kart.yenile.setAttribute('aria-label', t('yuzey.kamera.yenileAd', { ad: etiket }));
       kart.yenile.textContent = t('yuzey.kamera.yenile');
-      const yas = goruntuVar && typeof k.zaman === 'number' ? Math.max(0, Math.round((ctx.simdi() - k.zaman) / 1000)) : null;
-      kart.yas.textContent = yas === null ? '' : yas < 3 ? t('yuzey.kamera.azOnce') : t('yuzey.kamera.yas', { sn: yas });
+      kart.yas.textContent = yasMetni(k);
     }
 
     function kartKur(k) {
@@ -189,6 +219,7 @@
       }
       if (!yeni) {
         zamanlayiciyiDurdur();
+        yasiDurdur();
         return;
       }
       yeni.liste.forEach(function (g) {
@@ -215,6 +246,7 @@
         k.hata = sonuc && sonuc.ok === false && typeof sonuc.tur === 'string' && Object.prototype.hasOwnProperty.call(HATA_ANAHTARI, sonuc.tur) ? sonuc.tur : 'goruntu-yok';
       }
       gorunumuGuncelle(k);
+      yasTiktakKur();
     }
 
     function siradakiniIsle() {
@@ -284,6 +316,7 @@
       kuyruk = [];
       suruyor = false;
       zamanlayiciyiDurdur();
+      yasiDurdur();
       kameralar.forEach(function (k) {
         k.adim = 'bos';
         k.veri = null;
@@ -312,6 +345,7 @@
       suruyor = false;
       gorunurBekliyor = false;
       zamanlayiciyiDurdur();
+      yasiDurdur();
       kameralar.forEach(function (k) {
         k.adim = 'bos';
         k.veri = null;

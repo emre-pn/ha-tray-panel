@@ -75,8 +75,15 @@
     return typeof mevsim === 'string' && Object.hasOwn(MEVSIM_EFEKTI, mevsim) ? MEVSIM_EFEKTI[mevsim] : null;
   }
 
-  /** Model (yuzey:durum) içindeki ilk hava karosunun durumu; yoksa null. Yalnız beyaz listeli enum olduğu için sayfa bunu güvenle okur. */
+  /**
+   * Model (yuzey:durum) içindeki ilk hava karosunun durumu; yoksa null. Önce Hava kartı (model.bilgi.kartlar, tur 'hava'), sonra
+   * favori karolar (model.gruplar): hava durumu çoğu kurulumda yalnız üst kartta bulunur. Yalnız beyaz listeli enum olduğu için sayfa bunu güvenle okur.
+   */
   function havaDurumuBul(model) {
+    const kartlar = model && model.bilgi && Array.isArray(model.bilgi.kartlar) ? model.bilgi.kartlar : [];
+    for (const k of kartlar) {
+      if (k && k.tur === 'hava' && k.karo && k.karo.alan === 'weather' && k.karo.ozellik && typeof k.karo.ozellik.durum === 'string') return k.karo.ozellik.durum;
+    }
     const gruplar = model && Array.isArray(model.gruplar) ? model.gruplar : [];
     for (const g of gruplar) {
       for (const k of g && Array.isArray(g.karolar) ? g.karolar : []) {

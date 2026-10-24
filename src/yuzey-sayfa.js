@@ -51,6 +51,7 @@
     arama: document.getElementById('arama'),
     icerik: document.getElementById('icerik'),
     ipucu: document.getElementById('ipucu'),
+    paletDurum: document.getElementById('paletDurum'), // palet boş / yükleniyor / eşleşme yok durumunun görünmez canlı bölgesi
     haAc: document.getElementById('haAc'),
     ayarlarAc: document.getElementById('ayarlarAc'),
     geriAl: document.getElementById('geriAl'),
@@ -147,6 +148,9 @@
   const karoKilitleri = new Map(); // kimlik -> { basla, bitis, bekliyor } (h-06)
   const etkinTutmalar = new Set(); // { birak() }
   let tekrarlayicilar = []; // bu çizimdeki ses -/+ tekrarlayıcıları (pencere odağını kaybedince durdurulur)
+  // Bir çizime bağlı temizlikler (ör. açık <select>'in çizim dondurması): HER pointerup'ta DEĞİL, panel yeniden kurulurken çalışır.
+  // (tekrarlayicilar pointerup'ta bırakılır; liste fareyle açılırken pointerup'tan sonra da odakta ve açık kaldığından dondurmayı orada bırakmak yanlıştı.)
+  let cizimTemizlikleri = [];
   let dilCizimiBekliyor = false; // dil, sürükleme / basılı tutma sürerken değişti: bitince yeniden çizilir
   let bilgiCizimiBekliyor = false; // bilgi bölümü (okuma yanıtı, düğme) çizim istedi ama sürükleme / basılı tutma sürüyordu
   let odakIstegi = null; // sonraki panel çiziminde odağın verileceği anahtar (ör. geçmiş görünümüne girince "Geri")
@@ -318,10 +322,27 @@
 
   // ---------------------------------------------------------------- ortak eylemler
 
+  /**
+   * İpucu akış dışıdır (yuzey.css .ipucu). Panelde içerik alanının alt kenarına, yani alt şeritlerin (zamanlı şerit, alt düğmeler)
+   * hemen üstüne konur; eskiden pencerenin en altına biniyor, "Geri al" / "Ayarlar" düğmelerini yarıya kadar örtüyordu. Palette altta
+   * yalnız düğmesiz kısayol şeridi vardır: ipucu CSS'teki gibi (bottom: 0) onun yerine geçer, tek sonuç satırını örtmez.
+   */
+  function ipucuKonumla() {
+    if (mod === 'palet') {
+      el.ipucu.style.bottom = '';
+      return;
+    }
+    const kokYuksekligi = el.kok.clientHeight;
+    const icerikAlti = (el.icerik.offsetTop || 0) + (el.icerik.offsetHeight || 0);
+    if (typeof kokYuksekligi !== 'number' || !(kokYuksekligi > 0) || !(icerikAlti > 0)) return;
+    el.ipucu.style.bottom = Math.max(0, Math.round(kokYuksekligi - icerikAlti)) + 'px';
+  }
+
   function ipucuGoster(metin) {
     el.ipucu.textContent = metin || '';
     clearTimeout(ipucuZamanlayicisi);
     if (metin) {
+      ipucuKonumla();
       ipucuZamanlayicisi = setTimeout(function () {
         el.ipucu.textContent = '';
       }, IPUCU_MS);
@@ -817,17 +838,25 @@
   /**
    * Panelde ok tuşlarıyla ızgara gezintisi (k-09). Sol/Sağ okuma sırasında bir öğe gider (satır sonunda sonraki/önceki satıra
    * geçer), Yukarı/Aşağı bitişik satırda en yakın sütuna; Home/End satırın ilk/son öğesine, Ctrl+Home/End tüm panelin ilkine/sonuna.
-   * Kaydırıcıda (satırlarda yoktur) oklar kaydırıcının kendi işini yapar. @returns {boolean} olay işlendi
+   * Kaydırıcıda (satırlarda yoktur) oklar kaydırıcının kendi işini yapar. Pasif (disabled) düğme odak almaz: satırlardan süzülür
+   * (onay isteyen kartın başlangıçta pasif "Uygula"sı oku takılı bırakmaz); odaktaki öğe sonradan pasifleştiyse gezinti yine ondan sürer.
+   * @returns {boolean} olay işlendi
    */
   function panelGezin(olay) {
     if (OK_TUSLARI.indexOf(olay.key) < 0 || olay.altKey || olay.metaKey || olay.shiftKey) return false;
     const home = olay.key === 'Home' || olay.key === 'End';
     if (olay.ctrlKey && !home) return false;
-    const satirlar = panelSatirlari.filter(function (s) {
-      return s.length > 0;
-    });
-    if (satirlar.length === 0) return false;
     const hedef = olay.target || document.activeElement;
+    const satirlar = panelSatirlari
+      .map(function (s) {
+        return s.filter(function (o) {
+          return o === hedef || !o.disabled;
+        });
+      })
+      .filter(function (s) {
+        return s.length > 0;
+      });
+    if (satirlar.length === 0) return false;
     let konum = null;
     for (let r = 0; r < satirlar.length && konum === null; r += 1) {
       const c = satirlar[r].indexOf(hedef);
@@ -955,6 +984,9 @@
         ipucu: function (metin) {
           ipucuGoster(metin);
         },
+        odakYedek: function () {
+          el.icerik.focus(); // odaktaki "Geri al" / zamanlı eylem × düğmesi kalktı: ok gezintisi sürsün
+        },
       })
     : null;
 
@@ -979,6 +1011,9 @@
         donukBitir: donukBitir,
         temizlikEkle: function (islev) {
           tekrarlayicilar.push(islev);
+        },
+        cizimTemizligiEkle: function (islev) {
+          cizimTemizlikleri.push(islev);
         },
         karoDugmesi: karoDugmesi,
         // Albüm kapağı: ana süreç HA'dan çeker, `data:` adresi (ya da null) döner; kapak yoksa/alınamazsa kart kapaksız çizilir.
@@ -1114,6 +1149,15 @@
     if (uc && typeof uc.animate === 'function') uc.animate([{ transform: 'translateX(' + onceki * 100 + '%)' }, { transform: 'translateX(' + deger * 100 + '%)' }], { duration: 420, easing: YAY_YUMUSAK });
   }
 
+  /**
+   * Kaydırıcı, hazır seviye, tekerlek ve satır sürüklemesi basılı tutma jesti taşımaz. Onaylı (yıkıcı) ışık bu denetimlerle çizilmez:
+   * hat her seviye isteğini 'onay-gerekli' diye reddederdi. Böyle ışık düz karo düğmesi olarak kalır (800 ms basılı tutma, ipucu).
+   * (Ayrıntı bölmesi yıkıcı karoda zaten açılmaz: yuzey-duzen.js kontrolDestekliMi.)
+   */
+  function isikKontrolluMu(karo) {
+    return karo.parlaklikKontrol === true && karo.yikici !== true;
+  }
+
   function isikKarosu(karo, detaydaMi) {
     const kutu = olustur('div', 'isik-karo' + (detaydaMi === true ? '' : ' satir'));
     const ana = karoDugmesi(karo);
@@ -1130,6 +1174,8 @@
     doluluguYaz(karo.id, dolgu, acik ? (karo.yuzde !== null ? Math.max(0.04, Math.min(1, karo.yuzde / 100)) : 1) : 0, true, uc);
     kutu.appendChild(ana);
     if (detaydaMi !== true) return isikSatiri(karo, kutu, ana, dolgu, uc);
+    // Kompakt satırla (isikSatiri kullanilabilir) aynı koşul: ulaşılamayan ışıkta hazır seviyeler ve kaydırıcı pasiftir (her kullanım hata üretirdi)
+    const pasif = karo.kullanilabilir !== true || karo.ulasilamiyor === true;
     const hazirlar = olustur('div', 'hazirlar');
     const yakin = enYakinHazir(karo);
     const hazirDugmeleri = [];
@@ -1137,6 +1183,7 @@
       const d = olustur('button', 'hazir' + (p === yakin ? ' vurgu' : '') + (p === PANEL_HAZIR_SIK ? ' sik' : ''), t('yuzey.yuzde', { n: p }));
       d.type = 'button';
       d.title = karo.etiket + ' ' + t('yuzey.yuzde', { n: p });
+      d.disabled = pasif;
       odakKaydet('h:' + karo.id + ':' + p, d);
       d.addEventListener('click', function () {
         calistir({ kimlik: karo.id, parlaklik: p, sonDeger: true }, karo, d);
@@ -1154,6 +1201,7 @@
     aralik.max = '100';
     aralik.step = '1';
     aralik.value = String(karo.yuzde !== null ? Math.max(1, Math.min(100, karo.yuzde)) : 50);
+    aralik.disabled = pasif;
     aralik.setAttribute('aria-label', t('yuzey.karo.parlaklik', { etiket: karo.etiket }));
     odakKaydet('r:' + karo.id, aralik); // ok gezintisine girmez (oklar kaydırıcının kendi işidir) ama yeniden çizimde odağı korunur
     // 2.0: kaydırıcının dolu kısmı ve karonun dolgusu sürüklerken anında izler (HA yanıtı beklenmez; yanıt gelince model yeniden çizer)
@@ -1233,12 +1281,14 @@
       if (c.className === 'karo-durum' && acik && !karo.ulasilamiyor) c.textContent = t('yuzey.durum.acik');
     });
     const yuzde = olustur('span', 'karo-yuzde', acik && karo.yuzde !== null ? t('yuzey.yuzde', { n: karo.yuzde }) : '—');
-    yuzde.setAttribute('aria-hidden', 'true'); // değer aria'da düğmenin adında / durumunda zaten var
+    // Yüzde düğmenin erişilebilir adının parçasıdır ('Etiket Açık 40%'; ekran okuyucu seviyeyi duyar). Değer yokken '—' yer tutucusu gizlenir.
+    if (!(acik && karo.yuzde !== null)) yuzde.setAttribute('aria-hidden', 'true');
     ana.appendChild(yuzde);
     let gosterilen = karo.yuzde !== null ? karo.yuzde : null;
     const goster = function (deger) {
       gosterilen = deger;
       yuzde.textContent = t('yuzey.yuzde', { n: deger });
+      yuzde.removeAttribute('aria-hidden');
       doluluguYaz(karo.id, dolgu, Math.max(0.04, Math.min(1, deger / 100)), false, uc);
     };
     const kisici = Kaydirici.kisici(function (deger, son) {
@@ -1404,8 +1454,15 @@
   function bosDurum() {
     const kutu = olustur('div', 'bos');
     const anahtarYok = model.ust.anahtarYok === true;
-    kutu.appendChild(olustur('p', 'bos-metin', t(anahtarYok ? 'yuzey.bos.anahtarYok' : 'yuzey.bos.favoriYok')));
-    kutu.appendChild(olustur('p', 'bos-alt', t(anahtarYok ? 'yuzey.bos.anahtarYokAlt' : 'yuzey.bos.favoriYokAlt')));
+    const metin = olustur('p', 'bos-metin', t(anahtarYok ? 'yuzey.bos.anahtarYok' : 'yuzey.bos.favoriYok'));
+    const alt = olustur('p', 'bos-alt', t(anahtarYok ? 'yuzey.bos.anahtarYokAlt' : 'yuzey.bos.favoriYokAlt'));
+    if (mod === 'palet') {
+      // listbox içinde option olmayan metin ekran okuyucuya canlı bölgeden (#paletDurum) duyurulur; burada çift okunmasın (düğme erişilebilir kalır)
+      metin.setAttribute('aria-hidden', 'true');
+      alt.setAttribute('aria-hidden', 'true');
+    }
+    kutu.appendChild(metin);
+    kutu.appendChild(alt);
     const dugme = olustur('button', 'bos-dugme', t('yuzey.bos.ayarlariAc'));
     dugme.type = 'button';
     dugme.addEventListener('click', function () {
@@ -1451,7 +1508,7 @@
         return;
       }
     }
-    if (karo.parlaklikKontrol) {
+    if (isikKontrolluMu(karo)) {
       durum.bosalt();
       izgara.appendChild(isikKarosu(karo));
       return;
@@ -1609,7 +1666,21 @@
     el.hero.hidden = parcalar.length === 0;
   }
 
+  /**
+   * Paneli yeniden kurar. Önceki çizimin `cizimTemizlikleri` kayıtları yeni çizim BİTTİKTEN sonra çalışır: bir temizlik çizim dondurmasını
+   * bırakınca bekleyen model çizimi tetiklenebilir; bu, yarım kurulmuş bir panelin içinde değil, bitmiş çizimin ardından olmalıdır.
+   * (Yeni çizimde odak aynı seçiciye geri verilmişse yeni seçici kendi dondurmasını önceden almıştır; sayaç sıfıra inmez.)
+   */
   function panelCiz() {
+    const eskiTemizlikler = cizimTemizlikleri;
+    cizimTemizlikleri = [];
+    panelCizIc();
+    eskiTemizlikler.forEach(function (temizle) {
+      temizle();
+    });
+  }
+
+  function panelCizIc() {
     const rakamlar = rakamOkumasi();
     const oncekiOdak = odakIstegi !== null ? odakIstegi : odakAnahtari();
     const kaydirma = el.icerik.scrollTop;
@@ -1722,9 +1793,18 @@
     return karo.yikici;
   }
 
-  /** Satırın çalıştıracağı servis yükü (basılı tutma tamamlanınca isteğe eklenir); servis komutu yoksa boş (karonun kendi eylemi). */
+  /**
+   * Satırın çalıştıracağı yük (basılı tutma tamamlanınca isteğe eklenir). Servis komutu varsa servis + veri; yoksa palet satırının
+   * yazılı parlaklık komutu ("salon 40" -> parlaklik, "salon 0" -> kapat: paletCalistir'in tek tıklama yoluyla aynı yük); hiçbiri
+   * yoksa boş (karonun kendi eylemi). Onaylı (yıkıcı) ışıkta rozet "%40 · basılı tut" derken yapılan da o olmalı, aç/kapa değil.
+   */
   function satirServisYuku(satir) {
-    if (!satir.eylem) return {};
+    if (!satir.eylem) {
+      const karo = satir.karo;
+      if (karo.parlaklikKontrol && satir.kapat) return { kapat: true };
+      if (karo.parlaklikKontrol && satir.parlaklik !== null && satir.parlaklik !== undefined) return { parlaklik: satir.parlaklik, sonDeger: true };
+      return {};
+    }
     const yuk = { servis: satir.eylem.servis };
     if (satir.eylem.veri) yuk.veri = satir.eylem.veri;
     return yuk;
@@ -2191,6 +2271,11 @@
     if (sozu) paletYanitiniBekle(sozu); // yanıt gelince palet kapanır; sonuç köşe bildirimiyle gelir
   }
 
+  /** Palet durum metnini görünmez canlı bölgeye yazar; aynı metin yeniden yazılmaz (gereksiz yeniden duyuru olmasın). */
+  function paletDurumunuYaz(metin) {
+    if (el.paletDurum && el.paletDurum.textContent !== metin) el.paletDurum.textContent = metin;
+  }
+
   function paletCiz() {
     // Satırlar yeniden kurulacak: sürmekte olan her basılı tutma (fare ya da Enter) eski öğeye/eski seçime aittir; bırakılır.
     // (Aksi halde bırakma yeni öğeye gider ve eski sayaç dolunca yıkıcı eylem kısa bir tıklamayla çalışırdı.)
@@ -2207,7 +2292,21 @@
       baslik.setAttribute('aria-hidden', 'true'); // liste adı aria-label'dadır
       parcalar.push(baslik);
     }
-    if (paletSatirlari.length === 0) parcalar.push(h.bos ? olustur('p', 'bos', h.bos) : sorgu.trim() === '' ? bosDurum() : olustur('p', 'bos', t('yuzey.palet.eslesmeYok')));
+    if (paletSatirlari.length === 0) {
+      // Listbox yalnız option içerebilir: boş / yükleniyor / eşleşme yok metni görünür kalır ama okunmaz (aria-hidden); aynı metin canlı bölgeden duyurulur
+      const anahtarYok = model.ust.anahtarYok === true;
+      const durumMetni = h.bos ? h.bos : sorgu.trim() === '' ? t(anahtarYok ? 'yuzey.bos.anahtarYok' : 'yuzey.bos.favoriYok') : t('yuzey.palet.eslesmeYok');
+      if (h.bos || sorgu.trim() !== '') {
+        const bosMetin = olustur('p', 'bos', durumMetni);
+        bosMetin.setAttribute('aria-hidden', 'true');
+        parcalar.push(bosMetin);
+      } else {
+        parcalar.push(bosDurum());
+      }
+      paletDurumunuYaz(durumMetni);
+    } else {
+      paletDurumunuYaz('');
+    }
     paletSatirlari.forEach(function (satir, i) {
       const karo = satir.karo;
       if (satir.bolumBasligi) {
@@ -2239,8 +2338,13 @@
         kutu.appendChild(olustur('span', 'rozet sessiz', kartlar.ornek(karo))); // eylemi olmayan karo: nasıl komut verileceği
       }
       if (onayli) kutu.appendChild(olustur('span', 'rozet uyari', t('yuzey.rozet.basiliTut')));
-      kutu.appendChild(olustur('span', 'palet-grup', karo.grupEtiketi));
-      kutu.appendChild(olustur('span', 'palet-durum', satir.sayfa ? t('yuzey.palet.sayfayaGec') : durumMetni(karo)));
+      // grup ve durum metni CSS'te tek satıra kısaltılır (uzun parça başlığı cihaz adını ezmesin): tam metin fareyle okunur
+      const grupOgesi = olustur('span', 'palet-grup', karo.grupEtiketi);
+      grupOgesi.title = grupOgesi.textContent;
+      kutu.appendChild(grupOgesi);
+      const durumOgesi = olustur('span', 'palet-durum', satir.sayfa ? t('yuzey.palet.sayfayaGec') : durumMetni(karo));
+      durumOgesi.title = durumOgesi.textContent;
+      kutu.appendChild(durumOgesi);
       kutu.addEventListener('mousemove', function () {
         if (donuk > 0) return; // basılı tutma / basılı fare sürerken satır yeniden çizilmez (basılı öğe yok edilirse bırakma kaybolurdu)
         if (secili !== i) {
@@ -2263,7 +2367,7 @@
         });
       }
       parcalar.push(kutu);
-      if (i === secili && seviyeAcik && karo.parlaklikKontrol) {
+      if (i === secili && seviyeAcik && isikKontrolluMu(karo)) {
         const seviye = olustur('div', 'seviye');
         seviye.setAttribute('role', 'group');
         seviye.setAttribute('aria-label', t('yuzey.palet.seviye'));
@@ -2307,7 +2411,10 @@
     if (seciliKimligi !== null) el.arama.setAttribute('aria-activedescendant', seciliKimligi);
     else el.arama.removeAttribute('aria-activedescendant');
     el.icerik.replaceChildren.apply(el.icerik, parcalar);
-    if (seciliKutu && typeof seciliKutu.scrollIntoView === 'function') seciliKutu.scrollIntoView({ block: 'nearest' });
+    // İlk satır seçiliyken liste en baştan görünür: ilk açılışta pencere henüz kısayken "nearest" kaydırması bölüm başlığını
+    // ("Son kullanılanlar") üstte bırakıyordu ve pencere büyüyünce de geri gelmiyordu.
+    if (secili === 0) el.icerik.scrollTop = 0;
+    else if (seciliKutu && typeof seciliKutu.scrollIntoView === 'function') seciliKutu.scrollIntoView({ block: 'nearest' });
   }
 
   let paletTutmasi = null;
@@ -2365,7 +2472,9 @@
           return;
         }
         if (olay.shiftKey) {
-          if (satir.karo.parlaklikKontrol || satir.diger) {
+          // Onaylı (yıkıcı) ışıkta seviye menüsü açılmaz: seviye basılı tutmasız giderdi ve hat her seferinde 'onay-gerekli' derdi (B138);
+          // böyle ışıkta seviye yalnız yazılı komutla ("salon 40") ve basılı tutmayla verilir
+          if (isikKontrolluMu(satir.karo) || satir.diger) {
             seviyeAcik = !seviyeAcik;
             seviyeSecili = 0;
             paletCiz();
@@ -2381,7 +2490,10 @@
         // eylem çalıştırmaz (yıkıcı satır dahil). Satıra fareyle tıklamak bilinçli bir seçimdir ve değişmez (h-13).
         if (satirKomutHatasi(satir)) return paletCalistir(satir); // tanınan ama geçersiz komut: yalnız nedenini söyler
         if (satir.desteklenmiyor) return;
-        if (seviyeAcik) return paletCalistir(satir, SEVIYELER[seviyeSecili]);
+        if (seviyeAcik) {
+          if (isikKontrolluMu(satir.karo)) paletCalistir(satir, SEVIYELER[seviyeSecili]);
+          return;
+        }
         if (satirOnayliMi(satir)) {
           // seçili satırda dolum çubuğu görünür (h-31); satır yeniden çizilirse tutma zaten bırakılır
           paletTutmasi = basiliTutmaOlustur(satir.karo, seciliSatirKutusu, paletYanitiniBekle, satirServisYuku(satir));
@@ -2460,18 +2572,25 @@
     if (bildirimBekleyenler.has(oge.anahtar)) return;
     bildirimBekleyenler.add(oge.anahtar);
     dugme.disabled = true;
-    const birak = function () {
+    const birak = function (basarisiz) {
       bildirimBekleyenler.delete(oge.anahtar);
       dugme.disabled = false;
+      // İstek sürerken model değişip liste yeniden kurulduysa yeni × düğmesi bekleyen kümeye bakarak pasif doğmuştur; tıklanan (artık
+      // DOM'da olmayan) düğme açılmakla kalmaz. Başarısız yanıtta liste yeniden çizilir ki aynı öğe yeniden denenebilsin.
+      if (basarisiz && bildirimDugmeleri.indexOf(dugme) < 0) {
+        bildirimImzasi = '';
+        bildirimiCiz();
+      }
     };
     kopru.bildirimKapat(oge.anahtar).then(
       function (yanit) {
-        birak();
-        if (yanit && yanit.ok === true) return; // ana süreç yeni modeli gönderir; öğe listeden kalkar
+        const basarili = yanit && yanit.ok === true;
+        birak(!basarili);
+        if (basarili) return; // ana süreç yeni modeli gönderir; öğe listeden kalkar
         ipucuGoster(t(yanit && yanit.tur === 'cok-sik' ? 'yuzey.ipucu.cokSik' : 'yuzey.ipucu.bildirimKapatilamadi'));
       },
       function () {
-        birak();
+        birak(true);
         ipucuGoster(t('yuzey.ipucu.bildirimKapatilamadi'));
       },
     );
@@ -2555,11 +2674,13 @@
    * İçeriğin DOĞAL yüksekliği: üst/alt şeritler (kendi yükseklikleri) + içerik alanının TAM yüksekliği (scrollHeight; pencere
    * küçükse kaydırılan kısım dahil). Pencerenin o anki yüksekliğinden bağımsızdır, bu yüzden pencere hem küçülüp hem büyüyebilir;
    * en büyük yüksekliği yalnız ana süreç sınırlar (yuzeyYuksekligiKirp). Düzen: yuzey.css (.kok yüksekliği pencere kadardır,
-   * #icerik büyümez, yalnız küçülür). Çocuk ölçüsü alınamıyorsa kök yüksekliğine düşülür.
+   * #icerik büyümez, yalnız küçülür). Çocuk ölçüsü alınamıyorsa kök yüksekliğine düşülür. #ipucu akıştan çıkarılmıştır
+   * (yuzey.css: alt şeridin üstüne biner) ve #paletDurum görünmez canlı bölgedir (1 px); ikisi de yer kaplamaz, toplama katılmaz.
    */
   function dogalYukseklik() {
     let toplam = 0;
     Array.from(el.kok.children || []).forEach(function (c) {
+      if (c === el.ipucu || c === el.paletDurum) return;
       toplam += c === el.icerik ? Math.max(c.scrollHeight || 0, c.offsetHeight || 0) : c.offsetHeight || 0;
     });
     return Math.round(toplam > 0 ? toplam : el.kok.offsetHeight || 0);
@@ -2581,7 +2702,10 @@
     if (duzen) duzen.sekmeleriCiz(model); // palet kipinde ya da sayfa yokken gizlenir
     if (eylemBolumu) eylemBolumu.ciz(model.eylem); // alt şerit: "Geri al" düğmesi (o-12)
     if (mod === 'palet') paletCiz();
-    else panelCiz();
+    else {
+      paletDurumunuYaz('');
+      panelCiz();
+    }
     setTimeout(boyutBildir, 0);
   }
 
@@ -2608,6 +2732,7 @@
     if (Dil.DILLER.indexOf(yeniDil) < 0) return false;
     t = Dil.cevirmen(yeniDil, Sozluk);
     Dil.sayfayiCevir(document, t);
+    sabitGoster(); // sayfayiCevir iğne düğmesinin başlığını HTML'deki "Paneli sabitle" metnine çevirir; sabitliyse "Sabitlemeyi kaldır" geri yazılır
     seritImzasi = ''; // şerit metni dile bağlı: aynı içerik olsa da yeniden kurulsun
     if (duzen) duzen.dilDegisti(); // sekme metinleri yeniden yazılsın
     bildirimImzasi = ''; // bildirim şeridinin etiketleri de dile bağlı
@@ -2679,7 +2804,10 @@
     panelSatirlari = [];
     if (duzen) duzen.sifirla(); // ayrıntı bölmesi kapanır; seçili sayfa korunur
     malzemeAyarla(yuk && yuk.malzeme);
+    const oncekiMod = mod;
     kipAyarla(yuk && yuk.mod);
+    // Palet her gösterimde listenin başından açılır; kip değişince panelin kaydırma konumu da taşınmaz (yoksa "Son kullanılanlar" başlığı üstte gizli kalıyordu)
+    if (mod === 'palet' || mod !== oncekiMod) el.icerik.scrollTop = 0;
     // Palet "sayfa" satırı (o-24): ana süreç paneli istenen sayfayla açtı; sekme çubuğu panel kipinde yeniden kurulur
     if (duzen && mod === 'panel' && yuk && typeof yuk.sayfa === 'string') duzen.sayfayiAyarla(yuk.sayfa.slice(0, 40));
     etkilesimAyarla(yuk && yuk.etkilesim);
@@ -2693,6 +2821,7 @@
     digerListe = { durum: 'bos', liste: [], tur: null, zaman: 0 }; // "*" listesi her gösterimde yeniden istenir (ana süreç 2 dk önbellekler)
     digerBekliyor = false;
     el.ipucu.textContent = '';
+    paletDurumunuYaz(''); // her gösterimde yeniden duyurulabilsin
     if (bilgi) bilgi.gosterildi(); // geçmiş görünümü kapanır, başarısız okumalar yeniden denenir
     ciz();
     if (kamera) kamera.gosterildi(); // eski kareler silinir, görüntüler yeniden bulanık başlar; görünürse ilk kare istenir (yalnız panel kipinde)

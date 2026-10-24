@@ -286,6 +286,7 @@
         const ad = id === TUMU ? t('yuzey.sekme.tumu') : sayfa.ad || String(sira); // adsız sayfaya ana süreç "Sayfa N" yazar
         const d = ortak.olustur('button', 'sekme' + (secili ? ' secili' : ''), ad);
         d.type = 'button';
+        d.title = ad; // 140 px'te kırpılan uzun ad fareyle okunur
         d.id = 'sekme-' + id;
         d.setAttribute('role', 'tab');
         d.setAttribute('aria-selected', secili ? 'true' : 'false');
@@ -305,8 +306,22 @@
         return d;
       });
       ortak.sekmeKabi.replaceChildren.apply(ortak.sekmeKabi, dugmeler);
+      // yeniden kurulunca kaydırma konumu başa döner: seçili sekme görünür alana getirilir (imza aynıyken kullanıcının kaydırmasına dokunulmaz)
+      const seciliDugme = sekmeDugmeleri[seciliSayfa];
+      if (seciliDugme && typeof seciliDugme.scrollIntoView === 'function') seciliDugme.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       if (sekmeOdagi !== null) odakSekmeye();
     }
+
+    /** Sekme şeridi taşınca dikey fare tekerleği yatay kaydırır (kaydırma çubuğu gizli; Ctrl+tekerlek yakınlaştırma için bırakılır). */
+    function sekmeTekerlegi(olay) {
+      const kap = ortak.sekmeKabi;
+      if (olay.ctrlKey || !(kap.scrollWidth > kap.clientWidth)) return;
+      const dy = olay.deltaMode === 1 ? olay.deltaY * 40 : olay.deltaY; // satır kipi: satır başına ~40 px
+      if (!dy || Math.abs(dy) <= Math.abs(olay.deltaX || 0)) return; // yatay hareket (dokunmatik yüzey) kendi kayar
+      kap.scrollLeft += dy;
+      olay.preventDefault();
+    }
+    if (typeof ortak.sekmeKabi.addEventListener === 'function') ortak.sekmeKabi.addEventListener('wheel', sekmeTekerlegi, { passive: false });
 
     /** Panel kipinde Ctrl+PageUp / Ctrl+PageDown: sayfalar arasında geç. @returns {boolean} olay işlendi */
     function sekmeTusu(olay, model) {

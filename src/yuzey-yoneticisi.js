@@ -251,18 +251,27 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     if (gorunurMu() && KIPLER.includes(mod)) yerlestir(mod);
   }
 
+  /**
+   * Pencere ortadan kalkarken (sıfırla, kapat, Alt+F4 ile 'closed') yüzeye bağlı her şey bırakılır: odak zamanlayıcıları, menü sayacı,
+   * bekleyen kip, açık bağlantı izni sorusu (reddedilmiş sayılır), yarım kalan basılı tutmalar ve bellekteki kamera kareleri.
+   */
+  function yuzeyBittiTemizligi() {
+    odakKaybiniIptalEt();
+    odakYedeginiIptalEt();
+    menuAcik = 0;
+    bekleyenMod = null;
+    disOnayiBirak();
+    basislariBirak();
+    kareleriTemizle();
+  }
+
   function sifirla(bu, neden) {
     if (pencere !== bu) return;
     gunluk(`Hızlı panel penceresi sıfırlandı (${neden}); sonraki açılışta yeniden oluşturulacak.`);
-    odakKaybiniIptalEt();
-    odakYedeginiIptalEt();
-    disOnayiBirak();
-    basislariBirak();
+    yuzeyBittiTemizligi();
     pencere = null;
     yuklendi = false;
     mod = null;
-    bekleyenMod = null;
-    kareleriTemizle();
     try {
       if (!bu.isDestroyed()) bu.destroy();
     } catch {
@@ -339,6 +348,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       });
       bu.on('closed', () => {
         if (pencere !== bu) return;
+        yuzeyBittiTemizligi(); // sifirla / kapat pencereyi önce null yaptığından buraya düşmez (çift çalışma yok)
         pencere = null;
         yuklendi = false;
         mod = null;
@@ -352,11 +362,27 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     }
   }
 
-  /** Kipe göre boyut ve konumu uygular (imlecin bulunduğu ekranda). */
-  function yerlestir(kip) {
+  /**
+   * Yerleştirmenin ekranı. `imlecEkrani` (gösterim) ya da pencere görünür değilken imlecin bulunduğu ekran; aksi halde (görünür pencerenin
+   * yüksekliği / ölçeği değişirken) pencerenin kendi ekranı: sabitli panel, imleç başka monitördeyken HA durum değişikliğiyle
+   * boyut değiştirince o monitöre ışınlanmasın. Pencerenin ekranı bulunamazsa imleç ekranına düşülür.
+   */
+  function ekranSec(imlecEkrani) {
+    if (imlecEkrani !== true && gorunurMu() && typeof screen.getDisplayMatching === 'function' && typeof pencere.getBounds === 'function') {
+      try {
+        const ekran = screen.getDisplayMatching(pencere.getBounds());
+        if (ekran && ekran.workArea) return ekran;
+      } catch {
+        /* imleç ekranına düşülür */
+      }
+    }
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  }
+
+  /** Kipe göre boyut ve konumu uygular (gösterimde imlecin bulunduğu ekranda; görünür pencere yeniden boyutlanırken kendi ekranında). */
+  function yerlestir(kip, imlecEkrani = false) {
     if (!canliMi()) return;
-    const imlec = screen.getCursorScreenPoint();
-    const ekran = screen.getDisplayNearestPoint(imlec);
+    const ekran = ekranSec(imlecEkrani);
     const alan = ekran.workArea;
     const boyut = yuzeyBoyutu(kip === 'palet' ? PALET_BOYUTU : PANEL_BOYUTU, yukseklik[kip], yakinlastirma, alan);
     const konum = kip === 'palet' ? paletKonumu(alan, boyut) : panelKonumu(tepsiSinirlariAl(), alan, boyut, 8, ekran.bounds);
@@ -460,7 +486,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     try {
       yakinlastirmayiTabanaEsitle();
       if (yakinlastirma !== uygulananOlcek) yakinlastirmayiUygula(pencere.webContents); // ayarlar pencere oluştuktan sonra yüklendiyse
-      yerlestir(kip);
+      yerlestir(kip, true); // her gösterim imlecin bulunduğu ekrana gider
       modelGonder();
       const istenenSayfa = kip === 'panel' ? bekleyenSayfa : null;
       bekleyenSayfa = null;
@@ -599,7 +625,7 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
       if (!yuzeydenMi(olay)) return;
       const kip = kaynakKip();
       if (!kip || typeof deger !== 'number') return;
-      const alan = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+      const alan = ekranSec(false).workArea;
       // Renderer CSS pikseli bildirir; pencere sınırı (çalışma alanı, en çok) DIP'tir: yakınlaştırmayla çarpılıp kırpılır, CSS'e geri çevrilir.
       const h = yuzeyYuksekligiKirp(deger * yakinlastirma, alan, yakinlastirma);
       if (h === null) return;
@@ -854,14 +880,10 @@ function yuzeyYoneticisiOlustur({ modelAl, eylem, tepsiSinirlariAl, haAc, ayarla
     },
     kapat() {
       zaman.clearTimeout(yuklemeZamanlayicisi);
-      odakKaybiniIptalEt();
-      odakYedeginiIptalEt();
-      disOnayiBirak();
-      basislariBirak();
+      yuzeyBittiTemizligi();
       const eski = pencere;
       pencere = null;
       mod = null;
-      kareleriTemizle();
       if (eski && !eski.isDestroyed()) eski.destroy();
     },
   };

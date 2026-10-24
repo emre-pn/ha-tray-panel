@@ -104,6 +104,35 @@ test('zamanIsaretleri: yerel saat sınırlarına oturur, sayı sınırlıdır, g
   assert.deepEqual(G.zamanIsaretleri(10, 5), []);
 });
 
+test('zamanIsaretleri: kayma işlevi yaz/kış saati geçişini hesaba katar; sabit kayma eski davranışı korur', () => {
+  // Berlin 2026: 25 Ekim 01:00 UTC'de (03:00 CEST -> 02:00 CET) kayma +2 saatten +1 saate düşer
+  const gecis = Date.UTC(2026, 9, 25, 1, 0);
+  const berlin = (ms) => (ms < gecis ? 2 * SAAT : SAAT);
+  const bit = Date.UTC(2026, 9, 27, 11, 0); // 27 Ekim 12:00 CET
+  const bas = bit - 7 * 24 * SAAT;
+  const gun = 24 * SAAT;
+  const isaretler = G.zamanIsaretleri(bas, bit, { kaymaMs: berlin });
+  assert.ok(isaretler.length >= 3 && isaretler.length <= 5);
+  assert.ok(isaretler.every((t) => t >= bas && t <= bit));
+  assert.ok(isaretler.every((t) => (t + berlin(t)) % gun === 0), 'her işaret kendi anındaki yerel gece yarısına oturur');
+  const sonrasi = isaretler.filter((t) => t >= gecis);
+  assert.ok(sonrasi.length >= 1);
+  assert.ok(sonrasi.every((t) => new Date(t).getUTCHours() === 23), 'geçişten sonra yerel 00:00 = 23:00Z (eski kod 22:00Z verirdi)');
+  // sabit kayma: her işarete aynı fark (eski davranış)
+  const sabit = G.zamanIsaretleri(bas, bit, { kaymaMs: 2 * SAAT });
+  assert.ok(sabit.every((t) => (t + 2 * SAAT) % gun === 0));
+  // geçersiz dönüş değeri güvenli: kayma 0 sayılır
+  const bozuk = G.zamanIsaretleri(bas, bit, { kaymaMs: () => NaN });
+  assert.ok(bozuk.every((t) => t % gun === 0));
+  // 24 saatlik pencerede geçiş geceyi kapsarsa saat işaretleri tam saatlere oturur
+  const saatlik = G.zamanIsaretleri(Date.UTC(2026, 9, 24, 12, 0), Date.UTC(2026, 9, 25, 12, 0), { kaymaMs: berlin });
+  assert.ok(saatlik.length >= 3);
+  assert.ok(saatlik.every((t) => (t + berlin(t)) % SAAT === 0));
+  // varsayılan (çalışma ortamının saat dilimi) de her işaretin kendi farkını kullanır
+  const varsayilan = G.zamanIsaretleri(bas, bit);
+  assert.ok(varsayilan.every((t) => (t - new Date(t).getTimezoneOffset() * 60_000) % gun === 0));
+});
+
 test('sparkline: çizgi + alan, sabit viewBox; az nokta ya da sıfır aralık null; düz seri çökmez', () => {
   const seri = [{ t: T0, d: 10 }, { t: T0 + SAAT, d: 20 }, { t: T0 + 2 * SAAT, d: 15 }];
   const s = G.sparkline(seri, { genislik: 100, yukseklik: 30, etiket: 'Sıcaklık' });
@@ -248,6 +277,45 @@ test('karsilastirma: tek noktalı seri nokta olarak görünür; verilen aralık 
   assert.equal(sonuc.zamanX(sonuc.xZaman(sol + 10)), sol + 10);
 });
 
+test('karsilastirma: pencere başından önceki başlangıç durumu t0\'a taşınır; değişmeyen seri yatay çizgi olur, istatistik aynı kalır', () => {
+  const T1 = T0 + 24 * SAAT;
+  const yol = (sonuc, sinif) => betimTopla(sonuc.betim).find((b) => b.e === 'path' && b.a.class === sinif);
+  const yuvarla1 = (n) => Math.round(n * 10) / 10;
+  const sayilar = (d) => d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+  // (a) pencere boyunca değişmeyen sensör: HA yalnız istek anındaki başlangıç durumunu döndürür (t0'dan 5 sn önce)
+  const sabit = G.karsilastirma([{ kimlik: 'sensor.pil', birim: '%', noktalar: [{ t: T0 - 5000, d: 85 }] }], { bas: T0, bitis: T1, kaymaMs: 0 });
+  const cizgi = yol(sabit, 'cizgi seri-0');
+  assert.ok(cizgi, 'tek başlangıç noktası boş grafik bırakmaz');
+  const sa = sayilar(cizgi.a.d);
+  assert.equal(sa.length, 4);
+  assert.equal(sa[0], yuvarla1(sabit.zamanX(T0)), 'sol kenardan başlar');
+  assert.equal(sa[2], yuvarla1(sabit.zamanX(T1)), 'sağ kenara uzanır');
+  assert.equal(sa[1], sa[3], 'yatay çizgi');
+  assert.equal(sabit.seriler[0].ozet.enAz, 85, 'özet özgün noktalardan gelir');
+  assert.equal(sabit.seriler[0].ozet.adet, 1);
+  // (b) öncül + pencere içi nokta: çizgi sol kenardan başlar, öncül değeriyle
+  const degisen = G.karsilastirma([{ kimlik: 'sensor.s', birim: '', noktalar: [{ t: T0 - 3 * SAAT, d: 10 }, { t: T0 + 6 * SAAT, d: 20 }] }], { bas: T0, bitis: T1, kaymaMs: 0 });
+  const sb = sayilar(yol(degisen, 'cizgi seri-0').a.d);
+  assert.equal(sb[0], yuvarla1(degisen.zamanX(T0)));
+  assert.equal(sb[2], yuvarla1(degisen.zamanX(T0 + 6 * SAAT)));
+  assert.ok(sb[1] > sb[3], 'başlangıç 10 (alçak, y büyük), sonraki 20 (yüksek)');
+  // (c) öncül nokta kesinti (unavailable) ise taşınmaz
+  const kesik = G.karsilastirma(
+    [{ kimlik: 'sensor.k', birim: '', noktalar: [{ t: T0 - 2 * SAAT, d: 'unavailable' }, { t: T0 + 6 * SAAT, d: 20 }, { t: T0 + 8 * SAAT, d: 30 }] }],
+    { bas: T0, bitis: T1, kaymaMs: 0 },
+  );
+  assert.equal(sayilar(yol(kesik, 'cizgi seri-0').a.d)[0], yuvarla1(kesik.zamanX(T0 + 6 * SAAT)), 'çizgi ilk gerçek noktadan başlar');
+  const yalnizKesik = G.karsilastirma(
+    [{ kimlik: 'sensor.k', birim: '', noktalar: [{ t: T0 - 2 * SAAT, d: 'unavailable' }, { t: T0 + 6 * SAAT, d: 20 }] }],
+    { bas: T0, bitis: T1, kaymaMs: 0 },
+  );
+  assert.equal(yol(yalnizKesik, 'cizgi seri-0'), undefined);
+  assert.ok(betimTopla(yalnizKesik.betim).some((b) => b.e === 'circle'), 'tek gerçek nokta daire olarak kalır');
+  // (d) t0'da tam nokta varsa öncül onu ezmez; pencere içi noktalar değişmez
+  const tam = G.karsilastirma([{ kimlik: 'sensor.t', birim: '', noktalar: [{ t: T0 - SAAT, d: 1 }, { t: T0, d: 5 }, { t: T0 + SAAT, d: 6 }] }], { bas: T0, bitis: T1, kaymaMs: 0 });
+  assert.equal(sayilar(yol(tam, 'cizgi seri-0').a.d).length, 4, 'yalnız iki nokta: öncül eklenmedi');
+});
+
 test('svgOlustur: betimi DOM\'a çevirir; stil, olay ve href öznitelikleri ile izinsiz etiketler atlanır', () => {
   const belge = sahteBelge();
   const oge = G.svgOlustur(belge, {
@@ -297,4 +365,24 @@ test('CSP uyumu: grafik.js betik içi stil/innerHTML/eval kullanmaz ve ağa çı
   for (const yasak of [/innerHTML/, /outerHTML/, /insertAdjacent/, /document\.write/, /\beval\s*\(/, /new Function/, /\.style\b/, /setAttribute\(\s*['"]style/, /fetch\(/, /XMLHttpRequest/, /require\(/]) {
     assert.doesNotMatch(kaynak, yasak, String(yasak));
   }
+});
+
+test('zamanIsaretleri: yaz saatine ileri/geri geçişte aynı an iki kez işaretlenmez (artan sıra)', () => {
+  // Berlin 2026: 29 Mart 01:00Z'de 02:00 CET -> 03:00 CEST (yerel 02:00 yok); 25 Ekim 01:00Z'de 03:00 CEST -> 02:00 CET
+  const ileri = Date.UTC(2026, 2, 29, 1, 0);
+  const geri = Date.UTC(2026, 9, 25, 1, 0);
+  const berlinIleri = (ms) => (ms < ileri ? SAAT : 2 * SAAT);
+  const berlinGeri = (ms) => (ms < geri ? 2 * SAAT : SAAT);
+  const artanMi = (d) => d.every((t, i) => i === 0 || t > d[i - 1]);
+  for (const adim of [30 * 60_000, SAAT]) {
+    const bas = Date.UTC(2026, 2, 29, 0, 0);
+    const bit = bas + 4 * adim * 2;
+    const a = G.zamanIsaretleri(bas, bit, { kaymaMs: berlinIleri, en: 24 });
+    assert.ok(artanMi(a), 'ileri geçiş: artan, tekrarsız ' + a.map((t) => new Date(t).toISOString()));
+    const b = G.zamanIsaretleri(Date.UTC(2026, 9, 25, 0, 0), Date.UTC(2026, 9, 25, 4, 0), { kaymaMs: berlinGeri, en: 24 });
+    assert.ok(artanMi(b), 'geri geçiş: artan, tekrarsız ' + b.map((t) => new Date(t).toISOString()));
+  }
+  const saat = G.zamanIsaretleri(Date.UTC(2026, 2, 29, 0, 0), Date.UTC(2026, 2, 29, 4, 0), { kaymaMs: berlinIleri, en: 24 });
+  assert.equal(new Set(saat).size, saat.length);
+  assert.equal(saat.filter((t) => t === Date.UTC(2026, 2, 29, 1, 0)).length, 1, '01:00Z yalnız bir kez');
 });

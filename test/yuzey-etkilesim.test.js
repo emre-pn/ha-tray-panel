@@ -376,7 +376,28 @@ test('ışık satırı: Shift + ← / → parlaklığı ±10 değiştirir, tuş 
   assert.deepEqual(parlakliklar(sayfa).at(-1), [1, true]);
 });
 
-test('ışık satırı: kapalı ışıkta Shift + → %10\'dan başlar ve ışığı açar; ulaşılamayan ışıkta Shift + ok etkisizdir', async () => {
+test('ışık satırı (B21): yüzde aria-hidden değildir, düğmenin adının parçasıdır; Shift+ok / tekerlek sonrası güncel yüzde düğmenin içinde okunur', async () => {
+  const sayfa = await panelAc({ model: modelYap(ISIK), etkilesim: ETKILESIM });
+  const kutu = isikKutulari(sayfa)[0];
+  const ana = anaDugme(kutu);
+  const yuzde = yuzdeOgesi(kutu);
+  assert.equal(yuzde.attributes['aria-hidden'], undefined, 'yüzde ekran okuyucudan gizlenmez');
+  assert.match(ana.textContent, /%60/, 'düğmenin metni yüzdeyi içerir');
+  ana.gonder('keydown', { key: 'ArrowRight', shiftKey: true });
+  assert.match(ana.textContent, /%70/);
+  assert.doesNotMatch(ana.textContent, /%60/);
+  tekerlek(kutu, -100);
+  assert.match(ana.textContent, /%75/);
+  assert.equal(yuzde.attributes['aria-hidden'], undefined);
+
+  // değer yokken ('—' yer tutucusu) gizli kalır: ekran okuyucu "tire" okumaz
+  const kapali = await panelAc({ model: modelYap(AMPUL), etkilesim: ETKILESIM });
+  const bos = yuzdeOgesi(isikKutulari(kapali)[0]);
+  assert.equal(bos.textContent, '—');
+  assert.equal(bos.attributes['aria-hidden'], 'true');
+});
+
+test('ışık satırı: kapalı ışıkta Shift + →%10\'dan başlar ve ışığı açar; ulaşılamayan ışıkta Shift + ok etkisizdir', async () => {
   const sayfa = await panelAc({ model: modelYap(AMPUL), etkilesim: ETKILESIM });
   const kutu = isikKutulari(sayfa)[0];
   const ana = anaDugme(kutu);
@@ -426,6 +447,26 @@ test('sabitleme düğmesi: açılışta sabitliyse basılı görünür; Ayarlar\
   assert.equal(dugme.sinifVar('basili'), false);
   sayfa.etkilesimDegisti({ tekerlek: true, sabit: true });
   assert.equal(dugme.attributes['aria-pressed'], 'true');
+});
+
+test('sabitleme düğmesi (B142): dil çalışma anında değişince sabitliyse "kaldır" metni korunur (başlık ve aria-label), sabit değilse "sabitle" metni yeni dilde yazılır', async () => {
+  const sabit = await panelAc({ model: modelYap(ISIK), etkilesim: { tekerlek: true, sabit: true } });
+  const dugme = sabitleDugmesi(sabit);
+  assert.equal(dugme.title, 'Sabitlemeyi kaldır');
+  sabit.dilDegisti({ dil: 'en' });
+  assert.equal(dugme.title, 'Unpin the panel');
+  assert.equal(dugme.attributes['aria-label'], 'Unpin the panel');
+  assert.equal(dugme.attributes['aria-pressed'], 'true');
+  assert.equal(dugme.sinifVar('basili'), true);
+  sabit.dilDegisti({ dil: 'tr' });
+  assert.equal(dugme.title, 'Sabitlemeyi kaldır');
+  assert.equal(dugme.attributes['aria-label'], 'Sabitlemeyi kaldır');
+
+  const serbest = await panelAc({ model: modelYap(ISIK), etkilesim: { tekerlek: true, sabit: false } });
+  serbest.dilDegisti({ dil: 'en' });
+  assert.match(sabitleDugmesi(serbest).title, /^Pin the panel/);
+  assert.match(sabitleDugmesi(serbest).attributes['aria-label'], /^Pin the panel/);
+  assert.equal(sabitleDugmesi(serbest).attributes['aria-pressed'], 'false');
 });
 
 test('sabitleme düğmesi: ana süreç reddeder ya da yazamazsa düğme eski hâlinde kalır ve kısa bir hata ipucu çıkar', async () => {

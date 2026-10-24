@@ -634,6 +634,47 @@ test('sekmeler: klavye — sekmede oklar / Home / End sekmeyi seçer ve odağı 
   assert.equal(seciliSekme(sayfa).textContent, 'Tümü', 'Ctrl olmadan PageDown sayfa değiştirmez');
 });
 
+test('sekmeler: taşan şerit — seçili sekme görünür alana getirilir, ad title olur, dikey tekerlek yatay kaydırır (B24)', async () => {
+  const model = SAYFALI();
+  const adlar = ['Salon', 'Mutfak', 'Yatak odası', 'Çocuk odası – oyun alanı', 'Bahçe', 'Garaj', 'Ofis'];
+  model.sayfalar = adlar.map((ad, i) => ({ id: 'sy' + i, ad, kimlikler: ['switch.priz'] }));
+  const cagrilar = [];
+  const asil = SahteOge.prototype.scrollIntoView;
+  SahteOge.prototype.scrollIntoView = function (secenek) {
+    cagrilar.push({ id: this.id, secenek });
+  };
+  try {
+    const sayfa = await panelAc({ model });
+    assert.ok(sekmeler(sayfa).every((s) => s.title === s.textContent), 'kırpılan ad title ile tam okunur');
+    cagrilar.length = 0;
+    sekmeBul(sayfa, 'Ofis').gonder('click');
+    const son = cagrilar[cagrilar.length - 1];
+    assert.equal(son.id, 'sekme-sy6', 'şerit yeniden kurulunca seçili sekme görünür alana getirilir');
+    assert.equal(son.secenek.inline, 'nearest');
+    // imza aynıyken (model güncellemesi) kullanıcının kaydırmasına dokunulmaz
+    cagrilar.length = 0;
+    sayfa.durum(model);
+    assert.equal(cagrilar.length, 0);
+
+    const bar = sayfa.oge('sekmeler');
+    bar.scrollWidth = 900;
+    bar.clientWidth = 372;
+    bar.scrollLeft = 0;
+    const olay = bar.gonder('wheel', { deltaY: 120, deltaX: 0, deltaMode: 0, ctrlKey: false });
+    assert.equal(bar.scrollLeft, 120);
+    assert.equal(olay.onlendi, true);
+    const ctrl = bar.gonder('wheel', { deltaY: 120, deltaX: 0, ctrlKey: true });
+    assert.equal(bar.scrollLeft, 120, 'Ctrl+tekerlek (yakınlaştırma) yutulmaz');
+    assert.notEqual(ctrl.onlendi, true);
+    bar.scrollWidth = 300; // sığıyorsa sayfa tekerleği engellenmez
+    const sigiyor = bar.gonder('wheel', { deltaY: 120, deltaX: 0, ctrlKey: false });
+    assert.equal(bar.scrollLeft, 120);
+    assert.notEqual(sigiyor.onlendi, true);
+  } finally {
+    SahteOge.prototype.scrollIntoView = asil;
+  }
+});
+
 test('sekmeler: sayfa adı yalnız textContent ile yazılır (zararlı ad öğe üretmez); adsız sayfa için ana sürecin verdiği ad kullanılır', async () => {
   const model = SAYFALI();
   model.sayfalar[0].ad = '<img onerror=alert(1)>';
@@ -812,6 +853,31 @@ test('ayrıntı bölmesi: ışıkta parlaklık kontrolleri (hazır seviyeler + k
   hazir.gonder('click');
   assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'light.led_serit', parlaklik: 50, sonDeger: true }]);
   assert.equal(icerik(sayfa).bul((o) => sinifli(o, 'ayrinti-ust')).length, 1);
+});
+
+test('ayrıntı bölmesi (B139): ulaşılamayan ışıkta hazır seviyeler ve kaydırıcı pasiftir; ulaşılabilir ışıkta etkindir ve eylem gider', async () => {
+  const uzak = { ...ISIK, durum: 'yok', yuzde: null, kullanilabilir: false, ulasilamiyor: true };
+  const model = { ...MODEL(), gruplar: [{ kod: 'isik', etiket: 'Işık', karolar: [uzak] }], sonlar: [] };
+  const sayfa = await panelAc({ model });
+  icerik(sayfa).bul((o) => sinifli(o, 'isik-karo'))[0].bul((o) => sinifli(o, 'karo-kontrol'))[0].gonder('click');
+  assert.equal(ayrintiVarMi(sayfa), true);
+  const hazirlar = icerik(sayfa).bul((o) => sinifli(o, 'hazir'));
+  assert.equal(hazirlar.length, 4);
+  assert.ok(hazirlar.every((d) => d.disabled === true), 'hazır seviyeler pasif');
+  const aralik = icerik(sayfa).bul((o) => o.type === 'range');
+  assert.equal(aralik.length, 1);
+  assert.equal(aralik[0].disabled, true, 'kaydırıcı pasif');
+
+  // kullanilabilir:false (henüz durum yok) da aynı: istek gitmez
+  const bilinmiyor = { ...ISIK, kullanilabilir: false };
+  const b = await panelAc({ model: { ...model, gruplar: [{ kod: 'isik', etiket: 'Işık', karolar: [bilinmiyor] }] } });
+  icerik(b).bul((o) => sinifli(o, 'isik-karo'))[0].bul((o) => sinifli(o, 'karo-kontrol'))[0].gonder('click');
+  assert.ok(icerik(b).bul((o) => sinifli(o, 'hazir')).every((d) => d.disabled === true));
+
+  const iyi = await panelAc();
+  dugmeBul(iyi, 'LED şerit').gonder('keydown', { key: 'Enter', shiftKey: true });
+  assert.ok(icerik(iyi).bul((o) => sinifli(o, 'hazir')).every((d) => d.disabled !== true), 'ulaşılabilir ışıkta etkin');
+  assert.notEqual(icerik(iyi).bul((o) => o.type === 'range')[0].disabled, true);
 });
 
 test('ayrıntı bölmesi: tek tıklama eylemi olmayan (yalnız durum) karoda not gösterilir, eylem düğmesi yoktur', async () => {

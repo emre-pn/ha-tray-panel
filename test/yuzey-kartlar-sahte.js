@@ -32,6 +32,18 @@ const DUZEN_BETIKLERI = [
   ['yuzey-duzen.js', oku('src/yuzey-duzen.js')],
 ];
 
+/**
+ * CSSOM `style` nesnesi: setProperty / getPropertyValue özel (numaralanmayan) alanlardır; değerler gizli tabloda durur, bu yüzden
+ * JSON.stringify(oge.style) satır içi stil olmadığını ('{}') göstermeye devam eder.
+ */
+function sahteStil() {
+  const stil = {};
+  const degerler = new Map();
+  Object.defineProperty(stil, 'setProperty', { value: (ad, deger) => void degerler.set(String(ad), String(deger)) });
+  Object.defineProperty(stil, 'getPropertyValue', { value: (ad) => degerler.get(String(ad)) ?? '' });
+  return stil;
+}
+
 class SahteOge {
   constructor(etiket = 'div', kimlik = null, odak = { aktif: null }) {
     this.etiket = etiket;
@@ -39,7 +51,7 @@ class SahteOge {
     this.odak = odak;
     this.children = [];
     this.dinleyiciler = {};
-    this.style = {};
+    this.style = sahteStil();
     this.attributes = {};
     this.className = '';
     this.hidden = false;
@@ -118,6 +130,7 @@ class SahteOge {
   }
 
   focus() {
+    if (this.disabled === true) return; // gerçek DOM: pasif düğme odak almaz
     this.odakSayisi += 1;
     this.odak.aktif = this;
   }

@@ -220,11 +220,15 @@
     let tahminAcik = false; // 1.7.0: tahmin, hero'daki havaya tıklayınca açılır (panel her açılışta kapalı başlar)
     let medyaAcik = false; // 1.7.0: medya hapının gövdesine tıklayınca tam medya kartı içeriğin başında açılır
     const taslak = new Map(); // liste kimliği -> yazılmakta olan metin
+    const ekleniyor = new Set(); // yanıt bekleyen add_item isteği olan listeler (yeniden çizimde kutu / düğme yenilense de kilit kalır)
+    const aktifGirdiler = new Map(); // liste kimliği -> en son kurulan ekleme kutusu
+    const aktifDugmeler = new Map(); // liste kimliği -> en son kurulan Ekle düğmesi
     const tazeIstenen = new Set(); // sonraki okumada önbelleği atlanacak listeler (palet hızlı eklemesinden sonra)
     const bitenAcik = new Set(); // "Tamamlananlar" açılmış listeler
     let detay = null; // { kimlik, saat, secili: [], durum: 'bekliyor' | 'tamam' | 'hata', veri: {}, no }
     let istekNo = 0;
     let gecmisSaati = 0; // mini grafik önbelleğinin kapsadığı saat (ayar değişirse sıfırlanır)
+    let takvimGunu = null; // takvim önbelleğinin kapsadığı gün sayısı (ayar değişirse sıfırlanır)
 
     const dil = function () { return typeof ctx.dil === 'function' ? ctx.dil() : 'tr'; };
     const simdi = function () { return ctx.simdi(); };
@@ -336,9 +340,13 @@
         const parca = istenen.slice(i, i + GECMIS_PARCA);
         parca.forEach(function (k) { ucta.add('g:' + k); });
         gecmisIste(parca, saat).then(function (sonuc) {
-          if (gecmisSaati !== saat) return; // ayar değişti: eski saat penceresinin verisi yazılmaz
+          parca.forEach(function (k) { ucta.delete('g:' + k); }); // uçuş bayrağı saat denetiminden ÖNCE kalkar (yoksa sensör bir daha istenmez)
+          if (gecmisSaati !== saat) {
+            // ayar değişti: eski saat penceresinin verisi yazılmaz; yeni saat için istek bekletilmeden yeniden tetiklenir
+            if (bilgi && ctx.acikMi()) miniGrafikleriIste();
+            return;
+          }
           parca.forEach(function (k) {
-            ucta.delete('g:' + k);
             gecmis.set(k, { t: simdi(), durum: sonuc[k].durum, noktalar: sonuc[k].noktalar });
           });
           cizimIste();
@@ -354,14 +362,24 @@
     }
 
     function takvimleriIste() {
+      const gun = bilgi.ayar.takvimGunSayisi;
+      if (takvimGunu !== gun) {
+        takvim.clear();
+        takvimGunu = gun;
+      }
       bilgi.takvimler.forEach(function (c) {
         if (!c.kullanilabilir || ucta.has('t:' + c.id) || !eskidiMi(takvim.get(c.id), TAKVIM_YENILEME_MS)) return;
         ucta.add('t:' + c.id);
         Promise.resolve()
-          .then(function () { return ctx.oku({ tur: 'takvim', kimlik: c.id, gun: bilgi.ayar.takvimGunSayisi }); })
+          .then(function () { return ctx.oku({ tur: 'takvim', kimlik: c.id, gun: gun }); })
           .then(function (y) { return y && y.ok === true && Array.isArray(y.veri) ? { durum: 'tamam', etkinlikler: etkinlikDuzelt(y.veri) } : { durum: 'hata', etkinlikler: [] }; }, function () { return { durum: 'hata', etkinlikler: [] }; })
           .then(function (s) {
             ucta.delete('t:' + c.id);
+            if (takvimGunu !== gun) {
+              // ayar uçuşta değişti: eski gün penceresinin etkinlikleri yazılmaz; yeni pencere için istek bekletilmeden yeniden tetiklenir
+              if (bilgi && ctx.acikMi()) takvimleriIste();
+              return;
+            }
             takvim.set(c.id, { t: simdi(), durum: s.durum, etkinlikler: s.etkinlikler });
             cizimIste();
           });
@@ -686,7 +704,7 @@
         kutu.type = 'button';
         kutu.setAttribute('aria-expanded', tahminAcik ? 'true' : 'false');
         kutu.setAttribute('aria-label', betim + ' — ' + t('yuzey.bilgi.hava.tahmin.baslik'));
-        kutu.title = t('yuzey.bilgi.hava.tahmin.baslik');
+        kutu.title = kutu.getAttribute('aria-label'); // .hava-durum dar sütunda '…' ile kesilebilir: ipucu tam metni taşır
         ctx.odakKaydet('bi:hero:hava', kutu);
         kutu.addEventListener('click', function () {
           tahminAcik = !tahminAcik;
@@ -897,9 +915,12 @@
       girdi.setAttribute('aria-label', t('yuzey.bilgi.liste.ekleEtiket', { liste: liste.etiket }));
       girdi.value = taslak.get(liste.id) || '';
       ctx.odakKaydet('bi:girdi:' + liste.id, girdi);
+      aktifGirdiler.set(liste.id, girdi);
       const dugme = el('button', 'liste-ekle-dugme', t('yuzey.bilgi.liste.ekleDugme'));
       dugme.type = 'button';
+      dugme.setAttribute('aria-busy', ekleniyor.has(liste.id) ? 'true' : 'false');
       ctx.odakKaydet('bi:ekle:' + liste.id, dugme);
+      aktifDugmeler.set(liste.id, dugme);
 
       let yazimda = false;
       girdi.addEventListener('focus', function () {
@@ -918,21 +939,39 @@
         taslak.set(liste.id, girdi.value);
       });
       const ekle = function () {
-        const metin = String(girdi.value).replace(/\s+/g, ' ').trim();
+        if (ekleniyor.has(liste.id)) return; // yanıt gelmeden ikinci Enter / tık aynı öğeyi ikinci kez eklemesin
+        const gonderilen = String(girdi.value);
+        const metin = gonderilen.replace(/\s+/g, ' ').trim();
         if (metin === '') return;
+        ekleniyor.add(liste.id);
+        dugme.setAttribute('aria-busy', 'true');
+        const bitti = function () {
+          ekleniyor.delete(liste.id);
+          dugme.setAttribute('aria-busy', 'false');
+          const guncelDugme = aktifDugmeler.get(liste.id);
+          if (guncelDugme) guncelDugme.setAttribute('aria-busy', 'false');
+        };
         listeEylemi(liste, { servis: 'add_item', veri: { item: metin } }, metin, dugme).then(function (s) {
+          bitti();
           if (s && s.ok === true) {
-            taslak.delete(liste.id);
-            girdi.value = '';
+            // araya giren yeniden çizim kutuyu yeniden kurmuş olabilir: görünen (güncel) kutu da temizlenir; kullanıcı bu arada
+            // başka metin yazdıysa ona dokunulmaz
+            const gorunen = aktifGirdiler.get(liste.id) || girdi;
+            if (gorunen.value === gonderilen) {
+              gorunen.value = '';
+              taslak.delete(liste.id);
+            }
+            if (girdi.value === gonderilen) girdi.value = '';
           } else if (s && s.ok === false && s.tur !== 'cok-sik' && s.tur !== 'onay-gerekli') {
             ctx.ipucu(t('yuzey.bilgi.liste.eklenemedi'));
           }
-        });
+        }, bitti);
       };
       girdi.addEventListener('keydown', function (olay) {
         if (olay.isComposing === true || olay.keyCode === 229) return; // IME yazımı Enter'ı kullanır
         if (olay.key === 'Enter') {
           olay.preventDefault();
+          if (olay.repeat) return; // Enter basılı tutulursa tuş tekrarı ekleme sayılmaz
           ekle();
         }
       });
@@ -994,7 +1033,8 @@
         if (!kayit || kayit.durum !== 'tamam') return;
         kayit.etkinlikler.forEach(function (e) {
           const gun = Bicim.gunFarki(e.baslangic, simdiMs);
-          hepsi.push({ e: e, gun: gun === null ? 0 : gun, takvim: c.etiket });
+          // dünden başlayıp süren etkinlik (gun < 0) bugün grubuna girer; yoksa 'Bugün' başlığı iki kez çıkardı
+          hepsi.push({ e: e, gun: gun === null ? 0 : Math.max(0, gun), takvim: c.etiket });
         });
       });
       return hepsi.sort(etkinlikSirasi);
@@ -1213,6 +1253,7 @@
       const ana = haritadaBul(detay.kimlik);
       const aralikAdi = t(ARALIK_ADI[detay.saat]);
       if (detay.durum === 'bekliyor') {
+        kap.className = 'detay-grafik bekliyor'; // yükleme sırasında yer tutar (CSS min-height): alttaki karşılaştırma çipleri zıplamaz
         kap.appendChild(el('p', 'bilgi-not', t('yuzey.bilgi.detay.yukleniyor')));
         return kap;
       }

@@ -47,6 +47,22 @@ test('sayiBicimle ve yuzdeMetni: beş dilin ondalık ayracı ve yüzde yazımı 
   assert.equal(B.yuzdeMetni(45, { dil: '__proto__' }), '%45');
 });
 
+test('sayiBicimle: sıfıra yuvarlanan negatif değer "-0" yazılmaz; gerçek negatifler aynen kalır', () => {
+  assert.equal(B.sayiBicimle(-0.004, { dil: 'tr' }), '0');
+  assert.equal(B.sayiBicimle(-0.4, { hassasiyet: 0, dil: 'tr' }), '0');
+  assert.equal(B.sayiBicimle(Math.round(-0.4), { hassasiyet: 0, dil: 'tr' }), '0', 'çağıranın ürettiği -0 da normalleşir');
+  assert.equal(B.sayiBicimle(-0, { dil: 'en' }), '0');
+  assert.equal(B.sayiBicimle(-0.004, { hassasiyet: 1, dil: 'tr' }), '0,0', 'sabit basamakta işaretsiz sıfır');
+  assert.equal(B.sensorSayisiMetni({ sayi: -0.004, birim: 'W', hassasiyet: 1 }), '0,0 W');
+  assert.equal(B.sensorSayisiMetni({ sayi: -0.004, birim: 'W', hassasiyet: 0 }), '0 W');
+  assert.equal(B.yuzdeMetni(-0.2, { hassasiyet: 0, dil: 'en' }), '0%');
+  // gerçek negatifler korunur
+  assert.equal(B.sayiBicimle(-1.5, { dil: 'tr' }), '-1,5');
+  assert.equal(B.sayiBicimle(-0.04, { dil: 'tr' }), '-0,04', 'hassasiyet verilmemişse küçük negatif değer korunur');
+  assert.equal(B.sayiBicimle(-0.4, { hassasiyet: 1, dil: 'en' }), '-0.4');
+  assert.equal(B.sayiBicimle(-2.5, { hassasiyet: 0, dil: 'en' }), '-2', 'Math.round yarım değer davranışı değişmedi');
+});
+
 test('saatMetni: 24 ve 12 saat, geçersiz zaman boş', () => {
   assert.equal(B.saatMetni(OCAK, { saatBicimi: '24', saatDilimi: 'UTC' }), '21:05');
   assert.match(B.saatMetni(OCAK, { saatBicimi: '12', saatDilimi: 'UTC' }), /^9:05\s?PM$/i);
@@ -107,6 +123,110 @@ test('gunFarki: bugün/yarın/geçmiş; saat dilimine göre gün sınırı; tüm
   assert.equal(B.gunFarki('x', simdi, 'UTC'), null);
   assert.equal(B.gunFarki(5, simdi, 'UTC'), null);
   assert.equal(B.gunFarki('2026-10-14', NaN, 'UTC'), null);
+});
+
+/** Intl.DateTimeFormat / NumberFormat kuruculuklarını sayar (önbellek davranışını sınamak için); fn çalışınca özgün hâl geri konur. */
+function kurucuSay(fn) {
+  const sayac = { tarih: 0, sayi: 0 };
+  const TarihOzgun = Intl.DateTimeFormat;
+  const SayiOzgun = Intl.NumberFormat;
+  Intl.DateTimeFormat = class extends TarihOzgun { constructor(...a) { super(...a); sayac.tarih += 1; } };
+  Intl.NumberFormat = class extends SayiOzgun { constructor(...a) { super(...a); sayac.sayi += 1; } };
+  try {
+    fn();
+  } finally {
+    Intl.DateTimeFormat = TarihOzgun;
+    Intl.NumberFormat = SayiOzgun;
+  }
+  return sayac;
+}
+
+test('gunFarki / gunNumarasi (yerel yol): saat dilimi verilmeyince yerel Date alıcılarıyla eski Intl sonucuyla aynı gün farkı; gece yarısı, ay ve yıl sınırı', () => {
+  const eskiYol = (ms) => {
+    const parca = Object.fromEntries(new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(ms).filter((p) => p.type !== 'literal').map((p) => [p.type, Number(p.value)]));
+    return Math.floor(Date.UTC(parca.year, parca.month - 1, parca.day) / 86_400_000);
+  };
+  const yerelGun = (y, a, g, sa = 0, dk = 0, sn = 0, ms = 0) => new Date(y, a - 1, g, sa, dk, sn, ms).getTime();
+  const simdi = yerelGun(2026, 10, 16, 12);
+  const ornekler = [
+    [yerelGun(2026, 10, 16, 0, 0, 0, 0), 0], // yerel gece yarısı: bugün
+    [yerelGun(2026, 10, 16, 0, 0, 0, 0) - 1, -1], // bir ms önce: dün
+    [yerelGun(2026, 10, 16, 23, 59, 59, 999), 0],
+    [yerelGun(2026, 10, 17, 0, 0, 0, 0), 1],
+    [yerelGun(2026, 10, 31, 23, 59), 15], // ay sonu
+    [yerelGun(2026, 11, 1, 0, 0), 16], // ay geçişi
+    [yerelGun(2027, 1, 1, 0, 0), 77], // yıl geçişi
+    [yerelGun(2024, 2, 29, 12), -960], // artık gün
+  ];
+  for (const [ms, beklenen] of ornekler) {
+    const iso = new Date(ms).toISOString();
+    assert.equal(B.gunFarki(iso, simdi), beklenen, iso);
+    assert.equal(B.gunFarki(iso, simdi), eskiYol(ms) - eskiYol(simdi), `${iso}: eski Intl yoluyla aynı`);
+  }
+  assert.equal(B.gunFarki('2026-10-20', simdi), 4, 'tüm gün tarihi yerel bugüne göre');
+  assert.equal(B.gunFarki('bozuk', simdi), null);
+  assert.equal(B.gunFarki('2026-10-20', Infinity), null);
+  assert.equal(B.gunFarki('2026-10-20', 9e15), null, 'Date aralığı dışı zaman fırlatmaz');
+});
+
+test('gunFarki: açık saat dilimi (UTC, Europe/Berlin) sonuçları önbellekten sonra da aynı; geçersiz saat dilimi yedeğe düşer', () => {
+  const simdi = Date.UTC(2026, 9, 14, 21, 5);
+  for (let tur = 0; tur < 3; tur += 1) {
+    assert.equal(B.gunFarki('2026-10-14T23:30:00Z', simdi, 'UTC'), 0);
+    assert.equal(B.gunFarki('2026-10-15T00:30:00Z', simdi, 'UTC'), 1);
+    // Berlin: 21:05 UTC = 23:05 yerel (14 Ekim); 22:30 UTC = ertesi gün 00:30 yerel
+    assert.equal(B.gunFarki('2026-10-14T22:30:00Z', simdi, 'Europe/Berlin'), 1);
+    assert.equal(B.gunFarki('2026-10-14T21:30:00Z', simdi, 'Europe/Berlin'), 0);
+    assert.equal(B.gunFarki('2026-10-14T22:30:00Z', simdi, 'UTC'), 0);
+  }
+  assert.doesNotThrow(() => B.gunFarki('2026-10-14T22:30:00Z', simdi, 'Yok/Boyle'));
+  assert.equal(typeof B.gunFarki('2026-10-14T22:30:00Z', simdi, 'Yok/Boyle'), 'number', 'geçersiz saat dilimi yerel dilime düşer');
+  assert.equal(B.gunFarki('2026-10-14T22:30:00Z', simdi, 'Yok/Boyle'), B.gunFarki('2026-10-14T22:30:00Z', simdi), 'yedek, yerel yolla aynı');
+});
+
+test('biçimleyici önbelleği: yerel yolda (saat dilimi yok) tarih biçimleyicisi önbelleğe ALINMAZ, açık saat diliminde alınır; sayı biçimleyicisi paylaşılır', () => {
+  const simdi = Date.UTC(2026, 9, 14, 21, 5);
+  const yerel = kurucuSay(() => {
+    for (let i = 0; i < 20; i += 1) B.saatMetni(simdi, { saatBicimi: '24' });
+    for (let i = 0; i < 20; i += 1) B.gunFarki('2026-10-20T10:00:00Z', simdi);
+  });
+  assert.equal(yerel.tarih, 20, 'saat metni her çağrıda yeni biçimleyici (OS saat dilimi değişimi izlenir); gunFarki hiç kurmaz');
+  const acik = kurucuSay(() => {
+    for (let i = 0; i < 20; i += 1) {
+      B.saatMetni(simdi, { saatBicimi: '24', saatDilimi: 'UTC' });
+      B.gunFarki('2026-10-20T10:00:00Z', simdi, 'UTC');
+      B.tahminGunu('2026-10-17', { dil: 'tr' });
+    }
+  });
+  assert.ok(acik.tarih <= 3, `açık saat diliminde biçimleyici yeniden kullanılır (${acik.tarih} kurucu)`);
+  const sayi = kurucuSay(() => {
+    for (let i = 0; i < 30; i += 1) B.sayiBicimle(21.456 + i, { hassasiyet: 1, dil: 'tr' });
+  });
+  assert.ok(sayi.sayi <= 1, `aynı dil / basamak için tek NumberFormat (${sayi.sayi})`);
+  // farklı saat dilimi / seçenek ayrı biçimleyici: yanlış önbellek paylaşımı yok
+  assert.equal(B.saatMetni(simdi, { saatBicimi: '24', saatDilimi: 'UTC' }), '21:05');
+  assert.equal(B.saatMetni(simdi, { saatBicimi: '24', saatDilimi: 'Europe/Istanbul' }), '00:05');
+  assert.equal(B.saatMetni(simdi, { saatBicimi: '24', saatDilimi: 'UTC' }), '21:05');
+});
+
+test('sayiBicimle: beş dilde önbellek öncesi ve sonrası aynı çıktı; basamak / dil karışmaz; önbellek dolunca temizlenir ve bozulmaz', () => {
+  const ornekler = [[21.456, { hassasiyet: 1 }], [21.456, { hassasiyet: 0 }], [3.14159, {}], [1234.5, {}], [-0.5, {}], [5, { hassasiyet: 2 }]];
+  const beklenen = (dil, sayi, o) => {
+    const ham = Math.abs(sayi);
+    const enCok = Number.isFinite(o.hassasiyet) ? o.hassasiyet : ham >= 100 ? 0 : ham >= 10 ? 1 : 2;
+    const enAz = Number.isFinite(o.hassasiyet) ? enCok : 0;
+    const k = 10 ** enCok;
+    return new Intl.NumberFormat(B.YEREL_ADLARI[dil], { minimumFractionDigits: enAz, maximumFractionDigits: enCok }).format(Math.round(sayi * k) / k || 0);
+  };
+  for (let tur = 0; tur < 2; tur += 1) {
+    for (const dil of ['tr', 'en', 'de', 'fr', 'es']) {
+      for (const [sayi, o] of ornekler) assert.equal(B.sayiBicimle(sayi, { ...o, dil }), beklenen(dil, sayi, o), `${dil} ${sayi} (tur ${tur})`);
+    }
+  }
+  // önbellek sınırını aşan çok sayıda farklı anahtar sonrası da doğru
+  for (let h = 0; h <= 10; h += 1) for (const dil of ['tr', 'en', 'de', 'fr', 'es']) B.sayiBicimle(1.23456789, { hassasiyet: h, dil });
+  assert.equal(B.sayiBicimle(21.456, { hassasiyet: 1, dil: 'de' }), '21,5');
+  assert.equal(B.sayiBicimle(21.456, { hassasiyet: 1, dil: 'en' }), '21.5');
 });
 
 test('gunMetni: tüm gün tarihi saat diliminden etkilenmez; geçersiz boş', () => {

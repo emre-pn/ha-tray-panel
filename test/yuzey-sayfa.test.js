@@ -132,9 +132,12 @@ class SahteOge {
   }
 }
 
+/** Sahte saatin başlangıcı: sayfanın Date.now()'u buradan başlar; geçmiş noktaları gibi saate bağlı fikstürler bunu esas almalıdır. */
+const SAYFA_SIMDI = 1_000_000;
+
 /** Sahte zaman: setTimeout kuyruğu + Date.now; ilerle(ms) sırayla çalıştırır. */
 function sahteZaman() {
-  let t = 1_000_000;
+  let t = SAYFA_SIMDI;
   let sonId = 0;
   const bekleyenler = new Map();
   const SahteDate = class extends Date {
@@ -456,6 +459,48 @@ test('panel: zararsız karoya tıklamak tek istek gönderir; yanıt onay-gerekli
   assert.match(sayfa.oge('ipucu').textContent, /basılı tutun/);
   sayfa.zaman.ilerle(3000);
   assert.equal(sayfa.oge('ipucu').textContent, '', 'ipucu kısa sürede silinir');
+});
+
+test('ipucu alt şeritlerin üstüne, içerik alanının alt kenarına konur; alt düğmeleri örtmez', async () => {
+  const sayfa = await panelAc({ calistirYaniti: { ok: false, tur: 'onay-gerekli' } });
+  const kok = sayfa.oge('kok');
+  const icerik = sayfa.oge('icerik');
+  kok.clientHeight = 640; // pencere
+  icerik.offsetTop = 200; // üst şerit, medya, bildirim, sekmeler
+  icerik.offsetHeight = 389; // altında 51 px'lik alt şerit kalır
+  dugmeBul(sayfa, 'Ampul').gonder('click', { detail: 1 });
+  await akit();
+  assert.match(sayfa.oge('ipucu').textContent, /basılı tutun/);
+  assert.equal(sayfa.oge('ipucu').style.bottom, '51px', 'ipucu alt şeridin hemen üstünde');
+  // ölçü alınamazsa (gizli pencere) CSS'teki bottom:0 geçerli kalır, hata fırlatılmaz
+  sayfa.zaman.ilerle(3000);
+  sayfa.oge('ipucu').style.bottom = '';
+  kok.clientHeight = 0;
+  dugmeBul(sayfa, 'Ampul').gonder('click', { detail: 1 });
+  await akit();
+  assert.equal(sayfa.oge('ipucu').style.bottom, '');
+});
+
+test('ipucu palette kısayol şeridinin yerine geçer (bottom: 0); panelden kalan konum taşınmaz', async () => {
+  const sayfa = await panelAc({ calistirYaniti: { ok: false, tur: 'onay-gerekli' } });
+  const kok = sayfa.oge('kok');
+  const icerik = sayfa.oge('icerik');
+  kok.clientHeight = 640;
+  icerik.offsetTop = 200;
+  icerik.offsetHeight = 389;
+  dugmeBul(sayfa, 'Ampul').gonder('click', { detail: 1 });
+  await akit();
+  assert.equal(sayfa.oge('ipucu').style.bottom, '51px');
+  sayfa.zaman.ilerle(3000);
+  sayfa.goster('palet');
+  const arama = sayfa.oge('arama');
+  arama.value = 'pc kapat';
+  arama.gonder('input');
+  arama.gonder('keydown', { key: 'Enter', repeat: false });
+  sayfa.zaman.ilerle(300);
+  arama.gonder('keyup', { key: 'Enter' });
+  assert.notEqual(sayfa.oge('ipucu').textContent, '', 'erken bırakınca ipucu görünür');
+  assert.equal(sayfa.oge('ipucu').style.bottom, '', 'palette CSS bottom: 0 geçerli');
 });
 
 test('ışık karosu: hazır seviyeler son değerle gider; kaydırıcı sürüklenirken kısılır, bırakınca son değer beklemeden gider (1.7.0: yalnız "⋯" ile açılan ayrıntı bölmesinde)', async () => {
@@ -786,6 +831,22 @@ test('palet: yön tuşları seçimi taşır; Esc önce seviye satırını, sonra
   assert.equal(ikinci.cagrilar.filter((c) => c[0] === 'kapat').length, 1);
 });
 
+test('palet (R5): onaylı (yıkıcı) ışıkta Shift+Enter seviye menüsü açmaz; Enter basılı tutmayı başlatır, basılı tutmasız seviye gitmez', async () => {
+  const onayliIsik = karo('light.salon_onayli', 'Salon onaylı', { grup: 'isik', grupEtiketi: 'Işık', durum: 'acik', yuzde: 60, parlaklikKontrol: true, sinif: 'yikici' });
+  const model = { ...MODEL, gruplar: [{ kod: 'isik', etiket: 'Işık', karolar: [onayliIsik] }], sonlar: [] };
+  const sayfa = await paletAc({ model, calistirYaniti: { ok: false, tur: 'onay-gerekli' } });
+  const arama = sayfa.oge('arama');
+  assert.match(paletSatirlari(sayfa)[0].textContent, /Salon onaylı/);
+  arama.gonder('keydown', { key: 'Enter', shiftKey: true, repeat: false });
+  assert.equal(sayfa.oge('icerik').bul((o) => o.className.startsWith('seviye-oge')).length, 0, 'seviye menüsü açılmaz');
+  arama.gonder('keydown', { key: 'Enter', repeat: false });
+  assert.deepEqual(sayfa.calistirmalar(), [], 'Enter anında istek göndermez: basılı tutma başlar');
+  sayfa.zaman.ilerle(300);
+  arama.gonder('keyup', { key: 'Enter' });
+  sayfa.zaman.ilerle(2000);
+  assert.deepEqual(sayfa.calistirmalar(), [], 'erken bırakma hiçbir şey göndermez');
+});
+
 test('palet: yıkıcı eylem Enter\'a BASILI TUTMAYLA çalışır; kısa Enter, otomatik tekrar ve erken bırakma istek göndermez', async () => {
   const sayfa = await paletAc();
   const arama = sayfa.oge('arama');
@@ -823,6 +884,63 @@ test('palet: eşleşme yoksa "Eşleşen eylem yok" yazar; yeniden gösterilince 
   assert.match(sayfa.oge('icerik').textContent, /Son kullanılanlar/);
 });
 
+test('palet (B140): eşleşme yok / yükleniyor / favori yok durumları görünmez canlı bölgeden duyurulur; listbox içindeki metin aria-hidden, düğme erişilebilir', async () => {
+  const sayfa = await paletAc();
+  const durum = () => sayfa.oge('paletDurum');
+  assert.match(HTML, /<div id="paletDurum" class="gorunmez" role="status" aria-live="polite"><\/div>/);
+  assert.match(kuralGovdesi(oku('src/yuzey.css'), '.gorunmez'), /clip-path:\s*inset\(50%\)/);
+  assert.equal(durum().textContent, '', 'satırlar varken boş');
+  const arama = sayfa.oge('arama');
+  arama.value = 'zzzzzz';
+  arama.gonder('input');
+  assert.equal(durum().textContent, 'Eşleşen eylem yok.');
+  const bos = sayfa.oge('icerik').bul((o) => o.className === 'bos')[0];
+  assert.equal(bos.attributes['aria-hidden'], 'true', 'görsel metin çift okunmaz');
+  // aynı metin yeniden yazılmaz (yeniden duyuru yok)
+  let yazim = 0;
+  const orijinal = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(durum()), 'textContent');
+  Object.defineProperty(durum(), 'textContent', { get() { return orijinal.get.call(this); }, set(d) { yazim += 1; orijinal.set.call(this, d); } });
+  arama.value = 'yyyyyy';
+  arama.gonder('input');
+  assert.equal(yazim, 0, 'aynı durum metni tekrar yazılmadı');
+  arama.value = '';
+  arama.gonder('input');
+  assert.equal(durum().textContent, '', 'eşleşen sorguda boşalır');
+  // yeniden gösterilince temizlenir; panel kipinde canlı bölge boştur
+  arama.value = 'zzzzzz';
+  arama.gonder('input');
+  sayfa.goster('panel');
+  assert.equal(durum().textContent, '');
+
+  // İngilizce arayüzde duyuru metni de İngilizce
+  const en = await paletAc({ dil: 'en' });
+  en.oge('arama').value = 'zzzzzz';
+  en.oge('arama').gonder('input');
+  assert.equal(en.oge('paletDurum').textContent, 'No matching actions.');
+});
+
+test('palet (B140): "*" listesi yüklenirken durum duyurulur, liste gelince bölge boşalır; favori yokken boş durum metni duyurulur ve düğme aria-hidden olmaz', async () => {
+  let coz;
+  const sayfa = await paletSorgula('*', { digerYaniti: () => new Promise((c) => (coz = c)) });
+  assert.match(sayfa.oge('paletDurum').textContent, /Cihazlar alınıyor/);
+  assert.equal(sayfa.oge('icerik').bul((o) => o.className === 'bos')[0].attributes['aria-hidden'], 'true');
+  coz({ ok: true, liste: DIGER_LISTESI });
+  await akit();
+  assert.equal(sayfa.oge('paletDurum').textContent, '');
+
+  const favorisiz = await paletAc({ model: { ...MODEL, gruplar: [], sonlar: [] } });
+  assert.equal(favorisiz.oge('paletDurum').textContent, 'Henüz favori yok.');
+  const kutu = favorisiz.oge('icerik').bul((o) => o.className === 'bos')[0];
+  assert.deepEqual(kutu.bul((o) => o.className === 'bos-metin' || o.className === 'bos-alt').map((o) => o.attributes['aria-hidden']), ['true', 'true']);
+  const dugme = kutu.bul((o) => o.etiket === 'button')[0];
+  assert.ok(dugme && dugme.attributes['aria-hidden'] === undefined, 'düğme erişilebilir kalır');
+
+  // panelde boş durum metni okunur kalır (canlı bölge yalnız palet içindir)
+  const panel = await panelAc({ model: { ...MODEL, gruplar: [], sonlar: [] } });
+  assert.equal(panel.oge('paletDurum').textContent, '');
+  assert.equal(panel.oge('icerik').bul((o) => o.className === 'bos-metin')[0].attributes['aria-hidden'], undefined);
+});
+
 test('renderer kapı/kilit adını kendi başına süzmez ama hiçbir istekte "onay"ı kendi bildirmez: basili yalnız tutma tamamlanınca gider', async () => {
   const sayfa = await paletAc();
   const arama = sayfa.oge('arama');
@@ -857,6 +975,76 @@ test('boyut: pencere içerikten KÜÇÜKKEN büyütme, BÜYÜKKEN küçültme is
   assert.equal(olc({ pencere: 290, icerikGorunen: 200, icerikTam: 700 }), 44 + 700 + 46, 'pencere içerikten küçük: BÜYÜTME istenir');
   assert.equal(olc({ pencere: 900, icerikGorunen: 300, icerikTam: 300 }), 44 + 300 + 46, 'pencere içerikten büyük: KÜÇÜLTME istenir');
   assert.equal(olc({ pencere: 390, icerikGorunen: 300, icerikTam: 300 }), 44 + 300 + 46, 'pencere tam oturuyorsa ölçüm aynı kalır');
+});
+
+test('boyut (B20): #ipucu akıştan çıkarıldı; metin belirince doğal yükseklik değişmez, CSS ipucunu alt şeridin üstüne bindirir', async () => {
+  const sayfa = await panelAc();
+  const kok = sayfa.oge('kok');
+  const ust = sayfa.oge('ust');
+  const icerik = sayfa.oge('icerik');
+  const alt = sayfa.oge('alt');
+  const ipucu = sayfa.oge('ipucu');
+  const paletDurum = sayfa.oge('paletDurum');
+  kok.children = [ust, sayfa.oge('paletKutusu'), icerik, ipucu, paletDurum, alt];
+  paletDurum.offsetHeight = 1; // görünmez canlı bölge (1 px, mutlak konumlu): yükseklik toplamına girmez
+  kok.offsetHeight = 390;
+  ust.offsetHeight = 44;
+  alt.offsetHeight = 46;
+  icerik.offsetHeight = 300;
+  icerik.scrollHeight = 300;
+  ipucu.offsetHeight = 0; // metin yokken display:none
+  const olc = () => {
+    sayfa.goster('panel'); // sonBildirilenYukseklik sıfırlanır: yeniden ölçülür
+    sayfa.zaman.ilerle(5);
+    return sayfa.cagrilar.filter((c) => c[0] === 'boyut').at(-1)[1];
+  };
+  const bos = olc();
+  assert.equal(bos, 44 + 300 + 46);
+  ipucu.textContent = 'Basılı tutun.';
+  ipucu.offsetHeight = 28; // metin varken ~28 px yer kaplardı
+  assert.equal(olc(), bos, 'ipucu görünürken ölçülen yükseklik değişmez (pencere büyümez, silinince boş şerit kalmaz)');
+  // CSS: ipucu akışta değil (içeriği daraltmaz); .kok konumlama bağlamıdır
+  const css = oku('src/yuzey.css');
+  assert.match(kuralGovdesi(css, '.ipucu'), /position:\s*absolute/);
+  assert.match(kuralGovdesi(css, '.ipucu'), /bottom:\s*0/);
+  assert.match(kuralGovdesi(css, '.kok'), /position:\s*relative/);
+  assert.match(kuralGovdesi(css, '.ipucu'), /pointer-events:\s*none/, 'ipucu altındaki öğelerin tıklamasını yutmaz');
+  // Malzemede alt düğmeler gizlenmez (görünmez ama tıklanabilir düğme kalmasın); yalnız düğmesiz palet şeridi gizlenir
+  for (const [secici] of css.matchAll(/[^{}]*:has\(\.ipucu[^{]*/g)) assert.doesNotMatch(secici, /\.alt\b/, `alt şerit gizlenmez: ${secici.trim()}`);
+  assert.match(kuralGovdesi(css, ':root[data-malzeme] .ipucu:not(:empty)'), /backdrop-filter/);
+  // Palette ipucu kısayol şeridiyle aynı alt dolguyu alır: şeridi tam örter, iki üst çizgi üst üste binmez
+  assert.match(kuralGovdesi(css, '.palet-serit'), /padding:\s*6px 12px 8px/);
+  assert.match(kuralGovdesi(css, '.mod-palet .ipucu:not(:empty)'), /padding-bottom:\s*8px/);
+  // Boşken yer kaplamaz ve çizgi bırakmaz; display:none değil, çünkü canlı bölge erişilebilirlik ağacında kalmalı (B147)
+  const bosIpucu = kuralGovdesi(css, '.ipucu:empty');
+  assert.match(bosIpucu, /height:\s*0/);
+  assert.match(bosIpucu, /padding:\s*0/);
+  assert.match(bosIpucu, /border-top:\s*0/);
+  assert.doesNotMatch(bosIpucu, /display:\s*none/);
+});
+
+test('panel (B138): onaylı (yıkıcı) parlaklık ışığı kaydırıcı / yüzde / hazır seviye taşımaz; düz basılı-tut karosudur ve kısa tıklama "basılı tutun" der', async () => {
+  const onayliIsik = karo('light.salon_onayli', 'Salon onaylı', { grup: 'isik', grupEtiketi: 'Işık', durum: 'acik', yuzde: 60, parlaklikKontrol: true, sinif: 'yikici' });
+  const model = { ...MODEL, gruplar: [{ kod: 'isik', etiket: 'Işık', karolar: [ISIK, onayliIsik] }], sonlar: [] };
+  const sayfa = await panelAc({ model, calistirYaniti: { ok: false, tur: 'onay-gerekli' } });
+  const kutular = sayfa.oge('icerik').bul((o) => sinifli(o, 'isik-karo'));
+  assert.equal(kutular.length, 1, 'yalnız zararsız ışık kompakt ışık satırıdır');
+  assert.match(kutular[0].textContent, /LED şerit/);
+  const dugme = dugmeBul(sayfa, 'Salon onaylı');
+  assert.ok(dugme, 'onaylı ışık normal karo düğmesi');
+  assert.equal(dugme.bul((o) => sinifli(o, 'karo-yuzde')).length, 0, 'yüzde göstergesi yok');
+  assert.equal(sayfa.oge('icerik').bul((o) => o.type === 'range').length, 0);
+  assert.ok(sinifli(dugme, 'yikici'), 'yıkıcı karo');
+  // kısa basış hiçbir şey göndermez; ipucu basılı tutmayı söyler; 800 ms basılı tutunca düz basılı tutma yükü gider (seviye yok)
+  dugme.gonder('pointerdown', { button: 0 });
+  sayfa.zaman.ilerle(100);
+  dugme.gonder('pointerup');
+  sayfa.zaman.ilerle(2000);
+  assert.deepEqual(sayfa.calistirmalar(), []);
+  assert.match(sayfa.oge('ipucu').textContent, /Basılı tutun|basılı tutun/);
+  dugme.gonder('pointerdown', { button: 0 });
+  sayfa.zaman.ilerle(900);
+  assert.deepEqual(sayfa.calistirmalar(), [{ kimlik: 'light.salon_onayli', basili: true }]);
 });
 
 test('palet: arama sonuçları değişince yeniden ölçülür (96 px ile açılan palet sonuçlara göre büyür)', async () => {
@@ -1345,7 +1533,55 @@ test('h-07: odak panel içinde değilse çalmaz; odaktaki karo modelden kalkarsa
   assert.equal(sayfa.odakta(), sayfa.oge('icerik'));
 });
 
-test('k-09: panelde ok tuşları ızgarada gezinir (Sol/Sağ sırayla, Yukarı/Aşağı satırlar arası, Ctrl+Home/End tüm panel); ışık satırı tek öğelik bir satırdır', async () => {
+test('palet her gösterimde baştan açılır; panelin kaydırma konumu kip değişince taşınmaz, panelden panele korunur', async () => {
+  const sayfa = await panelAc();
+  const icerik = sayfa.oge('icerik');
+  // Gerçek tarayıcı gibi: içerik değişince kaydırma konumu kendiliğinden sıfırlanmaz (sahte DOM varsayılan olarak sıfırlıyor)
+  const asil = icerik.replaceChildren.bind(icerik);
+  icerik.replaceChildren = function (...cocuklar) {
+    const konum = this.scrollTop;
+    asil(...cocuklar);
+    this.scrollTop = konum;
+  };
+  icerik.scrollTop = 300;
+  sayfa.goster('panel');
+  assert.equal(icerik.scrollTop, 300, 'panelden panele kaydırma konumu korunur');
+  sayfa.goster('palet');
+  assert.equal(icerik.scrollTop, 0, 'palet panelin kaydırma konumuyla açılmaz');
+  icerik.scrollTop = 40;
+  sayfa.goster('palet');
+  assert.equal(icerik.scrollTop, 0, 'palet yeniden açılınca da baştan başlar');
+  icerik.scrollTop = 40;
+  sayfa.goster('panel');
+  assert.equal(icerik.scrollTop, 0, 'paletten panele geçişte paletin konumu taşınmaz');
+});
+
+test('palet: ilk satır seçiliyken liste baştan görünür (bölüm başlığı kaymaz); sonraki satırlar görünür alana kaydırılır', async () => {
+  const asil = SahteOge.prototype.scrollIntoView;
+  const kaydirilanlar = [];
+  let icerik = null;
+  // Kısa pencerede tarayıcının "nearest" kaydırması gibi: seçili satır görünsün diye içerik başlık kadar aşağı kayar
+  SahteOge.prototype.scrollIntoView = function () {
+    kaydirilanlar.push(this.id);
+    if (icerik) icerik.scrollTop = 28;
+  };
+  try {
+    const sayfa = sayfayiKur({ mod: 'palet' });
+    icerik = sayfa.oge('icerik');
+    await akit();
+    sayfa.goster('palet');
+    assert.equal(icerik.scrollTop, 0, 'ilk açılışta "Son kullanılanlar" başlığı görünür');
+    assert.deepEqual(kaydirilanlar, [], 'ilk satır için kaydırma istenmez');
+    sayfa.oge('arama').gonder('keydown', { key: 'ArrowDown' });
+    assert.deepEqual(kaydirilanlar, ['palet-satir-1'], 'aşağıdaki satır görünür alana getirilir');
+    sayfa.oge('arama').gonder('keydown', { key: 'ArrowUp' });
+    assert.equal(icerik.scrollTop, 0, 'ilk satıra dönünce liste başa kayar');
+  } finally {
+    SahteOge.prototype.scrollIntoView = asil;
+  }
+});
+
+test('k-09:panelde ok tuşları ızgarada gezinir (Sol/Sağ sırayla, Yukarı/Aşağı satırlar arası, Ctrl+Home/End tüm panel); ışık satırı tek öğelik bir satırdır', async () => {
   const sayfa = await panelAc();
   const icerik = sayfa.oge('icerik');
   const bas = (tus, hedef, ek = {}) => sayfa.belgeOlayi('keydown', { key: tus, target: hedef ?? sayfa.odakta(), ...ek });
@@ -1690,6 +1926,13 @@ test('g-04: yedek modda KAROLAR soluklaşmaz (opacity yok); yalnız durum metni 
   }
 });
 
+test('g-04: kullanılamayan cihaz KARTI da soluklaşmaz (opacity yok); kesikli çerçeveyle ayrılır, "Ulaşılamıyor" metni okunur kalır (B146, B159)', () => {
+  const css = oku('src/yuzey.css');
+  assert.doesNotMatch(kuralGovdesi(css, '.kart.yok'), /opacity/);
+  assert.match(kuralGovdesi(css, '.kart.yok'), /border-style:\s*dashed/);
+  assert.match(kuralGovdesi(css, ':root[data-karsitlik] .kart.yok'), /border-style:\s*dotted/);
+});
+
 // ---- g-05: palet seçili satır ---------------------------------------------------------------
 
 test('g-05: palette seçili satırın sol şeridi/çerçevesi var; eşleşen harf ve yıkıcı etiket renkleri seçili zeminde >= 4,5 (iki temada)', () => {
@@ -1876,7 +2119,7 @@ test('g-01: metin renkleri iki temada da zeminlerinde WCAG 4,5:1 sağlar (panel 
   const { koyu, acik } = temalar(css);
   const ciftler = [
     ['--metin', '--bg'], ['--metin', '--bg-ust'], ['--metin', '--karo'], ['--metin', '--karo-uzerinde'],
-    ['--soluk', '--bg'], ['--soluk', '--bg-ust'], ['--soluk', '--karo'],
+    ['--soluk', '--bg'], ['--soluk', '--bg-ust'], ['--soluk', '--karo'], ['--soluk-secili', '--karo-uzerinde'], // hover zemini
     ['--acik', '--bg'], ['--acik', '--karo'], ['--acik', '--bg-ust'],
     ['--rozet-metin', '--vurgu'], ['--rozet-metin', '--yikici'], ['--rozet-metin', '--hata'], ['--rozet-metin', '--yedek'], ['--rozet-metin', '--canli'],
   ];
@@ -2501,7 +2744,7 @@ const BILGI_MODEL = { ...MODEL, bilgi: BILGI };
 const bilgiOkuma = (istek) => {
   if (istek.tur === 'yapilacak') return { ok: true, veri: [{ uid: 'u1', baslik: 'Süt', tamamlandi: false }] };
   if (istek.tur === 'takvim') return { ok: true, veri: [] };
-  return { ok: true, veri: Object.fromEntries(istek.kimlikler.map((k) => [k, [{ t: Date.now() - 3 * 3_600_000, d: 20 }, { t: Date.now() - 3_600_000, d: 22 }]])) };
+  return { ok: true, veri: Object.fromEntries(istek.kimlikler.map((k) => [k, [{ t: SAYFA_SIMDI - 3 * 3_600_000, d: 20 }, { t: SAYFA_SIMDI - 3_600_000, d: 22 }]])) };
 };
 const sinifVar = (o, ad) => `${o.className} ${o.attributes.class ?? ''}`.split(/\s+/).includes(ad);
 const bulSinif = (sayfa, ad) => sayfa.oge('icerik').bul((o) => sinifVar(o, ad));
@@ -2536,6 +2779,20 @@ test('bilgi: model bilgi taşımıyorsa panel eskisi gibi çizilir ve hiçbir ok
   assert.deepEqual(yazilar(sayfa, 'bolum-baslik'), ['Son kullanılanlar', 'Işıklar', 'Sahneler', 'PC', 'Medya']);
   assert.equal(sayfa.oge('hero').hidden, true, 'bilgi modeli yoksa hero boş ve gizli');
   assert.equal(sayfa.oge('hero').children.length, 0);
+});
+
+test('bilgi: sensör çizgisi noktaları sayfanın saatine göre farklı x konumlarına düşer (sağ kenara yığılmaz)', async () => {
+  const sayfa = await panelAc({ model: BILGI_MODEL, okuYaniti: bilgiOkuma });
+  await akit();
+  sayfa.zaman.ilerle(100);
+  const yollar = bulSinif(sayfa, 'sparkline-cizgi');
+  assert.ok(yollar.length > 0, 'sensör çizgisi çizildi');
+  for (const yol of yollar) {
+    const xler = [...yol.attributes.d.matchAll(/[ML](\d+(?:\.\d+)?) /g)].map((e) => e[1]);
+    assert.ok(xler.length >= 2, yol.attributes.d);
+    assert.ok(new Set(xler).size > 1, `noktalar tek x'e yığılmış: ${yol.attributes.d}`);
+    assert.ok(xler.every((x) => Number(x) < 100), `hiçbir nokta sağ kenarda değil: ${yol.attributes.d}`);
+  }
 });
 
 test('bilgi: saat (hero) sayfanın zamanlayıcısıyla dakikada bir güncellenir; üst kart yuvasında saat seçili olmasa da hero\'da durur', async () => {
@@ -2826,6 +3083,39 @@ test('bildirim: kapat düğmesi köprüye opak anahtarı iletir; yanıt beklerke
   assert.equal(sayfa.oge('ipucu').textContent, '', 'başarıda uyarı yok');
 });
 
+test('bildirim (B141): kapatma sürerken liste yeniden kurulursa başarısız yanıtta yeni × düğmesi pasif kalmaz; başarıda yeniden kurulan düğme model gelene dek pasif kalır', async () => {
+  let coz;
+  const bekle = new Promise((c) => (coz = c));
+  const sayfa = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM), bildirimYaniti: () => bekle });
+  sayfa.oge('bildirimDugme').gonder('click');
+  const eski = bildirimKapatDugmeleri(sayfa)[1];
+  eski.gonder('click');
+  assert.equal(eski.disabled, true);
+  // istek sürerken başka bir bildirim gelir: liste yeniden kurulur, aynı öğenin yeni × düğmesi bekleyen kümeye bakıp pasif doğar
+  sayfa.durum(BILDIRIMLI({ ogeler: [...UC_BILDIRIM.ogeler, bildirimOgesi('kd4')], sayi: 4, gizlenen: 0 }));
+  const yeni = bildirimKapatDugmeleri(sayfa)[1];
+  assert.notEqual(yeni, eski, 'liste yeniden kuruldu');
+  assert.equal(yeni.disabled, true, 'istek sürerken yeni düğme pasif');
+  coz({ ok: false, tur: 'gecersiz' });
+  await akit();
+  assert.match(sayfa.oge('ipucu').textContent, /kapatılamadı/);
+  const simdiki = bildirimKapatDugmeleri(sayfa)[1];
+  assert.equal(simdiki.disabled, false, 'yeniden denenebilir');
+  assert.equal(bildirimKapatDugmeleri(sayfa).every((d) => d.disabled === false), true);
+
+  // başarıda yeniden çizim zorlanmaz (ana süreç yeni modeli gönderir): liste olduğu gibi kalır
+  let coz2;
+  const bekle2 = new Promise((c) => (coz2 = c));
+  const basarili = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM), bildirimYaniti: () => bekle2 });
+  basarili.oge('bildirimDugme').gonder('click');
+  bildirimKapatDugmeleri(basarili)[0].gonder('click');
+  basarili.durum(BILDIRIMLI({ ogeler: [...UC_BILDIRIM.ogeler, bildirimOgesi('kd4')], sayi: 4, gizlenen: 0 }));
+  const kurulan = bildirimKapatDugmeleri(basarili)[0];
+  coz2({ ok: true });
+  await akit();
+  assert.equal(bildirimKapatDugmeleri(basarili)[0], kurulan, 'başarıda liste yeniden kurulmadı');
+});
+
 test('bildirim: kapatma başarısızsa ipucu satırı söyler; "çok sık" ayrı mesajdır; köprü hatası da yakalanır', async () => {
   const cokSik = await panelAc({ model: BILDIRIMLI(UC_BILDIRIM), bildirimYaniti: { ok: false, tur: 'cok-sik' } });
   cokSik.oge('bildirimDugme').gonder('click');
@@ -2993,6 +3283,37 @@ test('geri al (o-12): model geri alınacak girdi taşıyorsa alt şeritteki dü�
   assert.equal(acik.oge('geriAl').hidden, true);
   acik.durum(GERI_ALINABILIR({ ad: 'Priz' }));
   assert.equal(acik.oge('geriAl').title, 'Geri al: Priz');
+});
+
+test('geri al (B135): odaktaki "Geri al" düğmesi gizlenince odak gövdeye düşmez, içerik alanına geçer; odak başka yerdeyse dokunulmaz', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR() });
+  sayfa.odakVer(sayfa.oge('geriAl'));
+  assert.equal(sayfa.odakta(), sayfa.oge('geriAl'));
+  sayfa.durum({ ...MODEL, eylem: { geriAl: null } }); // girdi tüketildi: düğme gizlenir
+  assert.equal(sayfa.oge('geriAl').hidden, true);
+  assert.equal(sayfa.odakta(), sayfa.oge('icerik'), 'odak içerik alanına geçti (ok gezintisi sürer)');
+
+  const baska = await panelAc({ eylemBetigi: true, model: GERI_ALINABILIR() });
+  const karoDugmesi = dugmeBul(baska, 'LED şerit');
+  baska.odakVer(karoDugmesi);
+  baska.durum({ ...MODEL, eylem: { geriAl: null } });
+  assert.match(baska.odakta().textContent, /^LED şerit/, 'odak Geri al düğmesinde değilse yeniden çizimde karo üstünde kalır');
+});
+
+test('zamanlı eylem şeridi (B135): odaktaki × düğmesiyle iptal edilen eylemin şeridi yeniden kurulunca odak içerik alanına geçer', async () => {
+  const sayfa = await panelAc({ eylemBetigi: true, model: gecikmeliModel([BEKLEYEN()]) });
+  const dugme = sayfa.oge('gecikmeliSerit').bul((o) => o.className === 'gecikmeli-iptal')[0];
+  sayfa.odakVer(dugme);
+  sayfa.durum(gecikmeliModel([])); // iptal edildi: şerit boşalır
+  assert.equal(sayfa.oge('gecikmeliSerit').hidden, true);
+  assert.equal(sayfa.odakta(), sayfa.oge('icerik'));
+
+  // şerit başka bir bekleyenle yeniden kurulursa odak gövdede kalmaz
+  const ikili = await panelAc({ eylemBetigi: true, model: gecikmeliModel([BEKLEYEN(), BEKLEYEN({ id: 'g2', ad: 'Priz', bitis: 1_000_000 + 1_200_000 })]) });
+  ikili.odakVer(ikili.oge('gecikmeliSerit').bul((o) => o.className === 'gecikmeli-iptal')[0]);
+  ikili.durum(gecikmeliModel([BEKLEYEN({ id: 'g2', ad: 'Priz', bitis: 1_000_000 + 1_200_000 })]));
+  assert.notEqual(ikili.odakta(), null);
+  assert.equal(ikili.odakta(), ikili.oge('icerik'));
 });
 
 test('geri al (o-12): tıklama ana sürece YÜKSÜZ "geri al" der; yanıt gelene kadar ikinci tıklama yok sayılır', async () => {

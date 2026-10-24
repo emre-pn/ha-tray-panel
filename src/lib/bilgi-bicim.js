@@ -21,10 +21,26 @@
   const yerelAdi = (dil) => (Object.hasOwn(YEREL_ADLARI, dil) ? YEREL_ADLARI[dil] : YEREL_ADLARI.tr);
   const sonluMu = (n) => typeof n === 'number' && Number.isFinite(n);
 
+  // Biçimleyici önbelleği (her çağrıda yeni Intl nesnesi kurmak takvim / tahmin çiziminde milisaniyelere çıkıyordu). Tarih biçimleyicisi
+  // YALNIZ saat dilimi açıkça verildiğinde önbelleğe girer: verilmezse çalışma ortamının (Windows) saat dilimi kullanılır ve tepside
+  // uzun yaşayan uygulamada bu dilim değişebilir; önbellekteki nesne eski dilimi taşırdı. Sayı biçimleyicisi saat diliminden bağımsızdır.
+  const ONBELLEK_SINIRI = 64;
+  const tarihBicimleyicileri = new Map();
+  const sayiBicimleyicileri = new Map();
+
+  function onbellegeYaz(harita, anahtar, bicim) {
+    if (harita.size >= ONBELLEK_SINIRI) harita.clear();
+    harita.set(anahtar, bicim);
+    return bicim;
+  }
+
   function bicimleyici(yerel, secenek, saatDilimi) {
     const tam = saatDilimi ? { ...secenek, timeZone: saatDilimi } : secenek;
+    const anahtar = saatDilimi ? `${yerel}|${saatDilimi}|${JSON.stringify(secenek)}` : null;
+    if (anahtar !== null && tarihBicimleyicileri.has(anahtar)) return tarihBicimleyicileri.get(anahtar);
     try {
-      return new Intl.DateTimeFormat(yerel, tam);
+      const yeni = new Intl.DateTimeFormat(yerel, tam);
+      return anahtar === null ? yeni : onbellegeYaz(tarihBicimleyicileri, anahtar, yeni);
     } catch {
       try {
         return new Intl.DateTimeFormat(yerel, secenek);
@@ -36,7 +52,7 @@
 
   function yuvarla(n, basamak) {
     const k = 10 ** basamak;
-    return Math.round(n * k) / k;
+    return Math.round(n * k) / k || 0; // Math.round(-0.4) = -0: Intl '-0' yazardı; sıfıra yuvarlanan negatif değer '0' olur
   }
 
   /**
@@ -49,7 +65,10 @@
     const enCok = sonluMu(hassasiyet) ? Math.max(0, Math.min(10, Math.round(hassasiyet))) : ham >= 100 ? 0 : ham >= 10 ? 1 : 2;
     const enAz = sonluMu(hassasiyet) ? enCok : 0;
     try {
-      return new Intl.NumberFormat(yerelAdi(dil), { minimumFractionDigits: enAz, maximumFractionDigits: enCok }).format(yuvarla(sayi, enCok));
+      const yerel = yerelAdi(dil);
+      const anahtar = `${yerel}|${enAz}|${enCok}`;
+      const bicim = sayiBicimleyicileri.get(anahtar) ?? onbellegeYaz(sayiBicimleyicileri, anahtar, new Intl.NumberFormat(yerel, { minimumFractionDigits: enAz, maximumFractionDigits: enCok }));
+      return bicim.format(yuvarla(sayi, enCok));
     } catch {
       return String(yuvarla(sayi, enCok));
     }
@@ -86,9 +105,16 @@
   /** Gün numarası (UTC günü) — yalnız fark almak için. */
   const gunNumarasi = (y, a, g) => Math.floor(Date.UTC(y, a - 1, g) / GUN_MS);
 
-  /** Bir zamanın verilen saat dilimindeki takvim günü numarası; çözülemezse null. */
+  /**
+   * Bir zamanın verilen saat dilimindeki takvim günü numarası; çözülemezse null. Saat dilimi verilmezse (üretim) yerel Date alıcıları
+   * kullanılır: Intl nesnesi kurmaz ve çalışma ortamının saat dilimi değişirse (tepside uzun yaşar) bir sonraki çağrıda yeni dilimi izler.
+   */
   function gunNumarasiMs(ms, saatDilimi) {
     if (!sonluMu(ms)) return null;
+    if (!saatDilimi) {
+      const d = new Date(ms);
+      return sonluMu(d.getTime()) ? gunNumarasi(d.getFullYear(), d.getMonth() + 1, d.getDate()) : null;
+    }
     const b = bicimleyici('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' }, saatDilimi);
     if (!b) return null;
     const parca = Object.fromEntries(b.formatToParts(ms).filter((p) => p.type !== 'literal').map((p) => [p.type, Number(p.value)]));

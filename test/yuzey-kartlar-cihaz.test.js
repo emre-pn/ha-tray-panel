@@ -185,3 +185,22 @@ test('otomasyon: çalıştırma onaylı olduğu için palet/panel dışındaki k
   assert.equal(yuk.basili, true);
   assert.deepEqual(Object.keys(yuk).sort(), ['basili', 'kimlik', 'servis'], 'yük yalnız kimlik, servis ve basili taşır (onay kanıtı ana süreçte tutulur)');
 });
+
+// --- iklim: onaylı hedef sıcaklık (B26) ---------------------------------------------------------------------------------------
+
+test('iklim: onaylı hedef sıcaklıkta "Uygula" düğmesi yuvarlak − / + sınıfını (adim) taşımaz; yalnız − ve + taşır (CSS 36 px daireyi yalnız adim sınıfına verir)', async () => {
+  const klima = karo('climate.salon', 'Salon klima', {
+    grup: 'iklim',
+    grupEtiketi: 'İklim',
+    varsayilanEylem: false,
+    onayliServisler: ['set_temperature'],
+    ozellik: { mod: 'cool', modlar: ['off', 'cool'], hedefSicaklik: 24, enAz: 16, enCok: 30, adim: 0.5, mevcutSicaklik: 26.5, hvacEylemi: 'cooling' },
+  });
+  const sayfa = await panelAc({ model: modelYap(klima) });
+  const uygula = sayfa.bul((o) => o.etiket === 'button' && o.textContent === 'Uygula')[0];
+  assert.ok(uygula, 'onaylı iklimde Uygula düğmesi çizilir');
+  assert.ok(uygula.sinifVar('onayli') && uygula.sinifVar('uygula'));
+  assert.equal(uygula.sinifVar('adim'), false, 'daire (adim) sınıfı yok: metin kırpılmaz, dolum çubuğu görünür');
+  const adimlar = sayfa.bul((o) => o.etiket === 'button' && o.sinifVar('adim'));
+  assert.deepEqual(adimlar.map((d) => d.textContent), ['−', '+']);
+});

@@ -21,6 +21,7 @@
   const EN_COK_SERI = 7;
   const EN_COK_NOKTA = 2000;
   const DAKIKA_MS = 60_000;
+  const SAAT_PAYI_MS = 3 * 60 * DAKIKA_MS; // saat dilimi kayması yön değiştirirse döngü sınırı için pay
   const ZAMAN_ADIMLARI = Object.freeze([5, 10, 15, 30, 60, 120, 180, 360, 720, 1440, 2880].map((d) => d * DAKIKA_MS));
   const IZINLI_ETIKETLER = new Set(['svg', 'g', 'path', 'line', 'circle', 'rect', 'text', 'title']);
   const SERI_KESIK_DESENLERI = Object.freeze([null, null, null, null, '6 3', '2 3', '8 3 2 3']); // 5. serinin ardından renk körlüğü için desen
@@ -140,14 +141,28 @@
 
   /**
    * Zaman ekseni işaretleri: [bas, bit] içinde, yerel saat sınırlarına (5 dk ... 2 gün) oturan en çok `en` zaman damgası.
-   * `kaymaMs`: yerel saat farkı (ms; verilmezse çalışma ortamının saat dilimi); testler 0 verir.
+   * `kaymaMs`: yerel saat farkı — sayı (sabit, ms), `(ms) => kayma` işlevi ya da verilmezse çalışma ortamının saat dilimi.
+   * Sabit sayı her işarete aynen uygulanır (testler 0 verir); işlev ve varsayılan her işaretin KENDİ anındaki farkı kullanır,
+   * böylece yaz/kış saati geçişini kapsayan pencerede geçişten sonraki işaretler de yerel sınıra oturur.
    */
   function zamanIsaretleri(bas, bit, { en = 5, kaymaMs } = {}) {
     if (!sonluMu(bas) || !sonluMu(bit) || bit <= bas) return [];
-    const kayma = sonluMu(kaymaMs) ? kaymaMs : -new Date(bas).getTimezoneOffset() * DAKIKA_MS;
+    const kaymaAl = typeof kaymaMs === 'function' ? kaymaMs : sonluMu(kaymaMs) ? () => kaymaMs : (ms) => -new Date(ms).getTimezoneOffset() * DAKIKA_MS;
+    const yerelFark = (ms) => {
+      const k = kaymaAl(ms);
+      return sonluMu(k) ? k : 0;
+    };
     const adim = ZAMAN_ADIMLARI.find((a) => (bit - bas) / a <= en) ?? ZAMAN_ADIMLARI.at(-1);
+    const kayma0 = yerelFark(bas);
     const sonuc = [];
-    for (let t = Math.ceil((bas + kayma) / adim) * adim - kayma; t <= bit && sonuc.length < 24; t += adim) sonuc.push(t);
+    // L: yerel saat sınırı (yerel duvar saati ms'si); işaretin gerçek anı = L - o andaki kayma (iki turda yakınsar)
+    for (let L = Math.ceil((bas + kayma0) / adim) * adim; L - kayma0 - SAAT_PAYI_MS <= bit && sonuc.length < 24; L += adim) {
+      let t = L - kayma0;
+      t = L - yerelFark(t);
+      t = L - yerelFark(t);
+      // ileri alınan saatte var olmayan yerel sınır ile sonraki sınır aynı ana yakınsar: tekrar eden ya da geriye düşen an atlanır
+      if (t >= bas && t <= bit && (sonuc.length === 0 || t > sonuc[sonuc.length - 1])) sonuc.push(t);
+    }
     return sonuc;
   }
 
@@ -274,7 +289,7 @@
    * @param {(t:number)=>string} [secenek.yaziX] zaman işareti yazısı
    * @param {(v:number)=>string} [secenek.yaziY] değer işareti yazısı (yalnız 'ortak' kipte)
    * @param {string} [secenek.etiket] erişilebilirlik etiketi
-   * @param {number} [secenek.kaymaMs] yerel saat farkı (testler için)
+   * @param {number|((ms:number)=>number)} [secenek.kaymaMs] yerel saat farkı (ms): sabit sayı (testler için) ya da anına göre işlev
    * @returns {null | { betim: object, kip: 'ortak'|'bagimsiz', bas: number, bitis: number, bolge: object,
    *   seriler: {kimlik:string, ozet:object|null, sira:number}[], zamanX: (t:number)=>number, xZaman: (x:number)=>number,
    *   imlec: (x:number)=>{x:number,t:number,degerler:{kimlik:string,t:number|null,d:number|null}[]} }}
@@ -347,9 +362,16 @@
       const y = yOlcek(s);
       let d = '';
       const noktalar = [];
-      for (const p of parcala(s.noktalar)) {
-        const ic = p.filter((n) => n.t >= t0 && n.t <= t1);
-        if (ic.length === 0) continue;
+      // HA geçmişi, istek anındaki (pencere başından önceki) başlangıç durumunu da döndürür: son sayısal öncül nokta t0'a taşınır
+      // (aksi halde pencere boyunca değişmeyen seri boş çizilir, değişen serinin ilk parçası eksik kalır). Kesintiyle (null) biten
+      // öncül taşınmaz; özet/imleç/Y ölçeği özgün noktaları kullanır, istatistik değişmez.
+      const icNoktalar = s.noktalar.filter((n) => n.t >= t0 && n.t <= t1);
+      const oncul = s.noktalar.findLast((n) => n.t < t0);
+      const tasindi = oncul !== undefined && oncul.d !== null && icNoktalar[0]?.t !== t0;
+      if (tasindi) icNoktalar.unshift({ t: t0, d: oncul.d });
+      // pencere boyunca hiç değişmeyen seri: tek daire yerine t0..t1 yatay çizgi
+      if (tasindi && icNoktalar.length === 1) icNoktalar.push({ t: t1, d: oncul.d });
+      for (const ic of parcala(icNoktalar)) {
         if (ic.length === 1) {
           noktalar.push(dugum('circle', { class: `nokta seri-${s.sira}`, cx: s1(zamanX(ic[0].t)), cy: s1(y(ic[0].d)), r: '2' }));
           continue;

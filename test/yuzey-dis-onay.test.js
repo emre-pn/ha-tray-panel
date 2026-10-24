@@ -190,6 +190,121 @@ test('soru yoksa, geçersizse ya da palet açıldıysa bölüm gizli kalır; ret
   assert.equal(o.cagrilar.at(-1)[0], 'al');
 });
 
+test('B135: karar sonrası kutu gizlenince odak kutudaki düğmedeyse içerik alanına geçer (palette arama kutusuna); odak dışarıdaysa dokunulmaz', async () => {
+  const o = ortam({ soru: SORU });
+  o.dinleyiciler.goster({ mod: 'panel' });
+  await bekle();
+  o.zamanlayicilariCalistir();
+  o.el('disOnayIzin').focus();
+  assert.equal(o.belge.activeElement, o.el('disOnayIzin'));
+  o.el('disOnayIzin').gonder('click');
+  await bekle();
+  assert.equal(o.el('disOnay').hidden, true);
+  assert.equal(o.belge.activeElement, o.el('icerik'), 'izin sonrası odak gövdeye düşmedi');
+
+  const red = ortam({ soru: { ...SORU, bilet: 'b-r' } });
+  red.dinleyiciler.disOnay();
+  await bekle();
+  assert.equal(red.belge.activeElement, red.el('disOnayReddet'));
+  red.el('disOnayReddet').gonder('click');
+  await bekle();
+  assert.equal(red.belge.activeElement, red.el('icerik'));
+
+  // soru bitti (ana süreç başka yerden yanıtladı): kutu gizlenir, odak yine kurtarılır
+  const bitti = ortam({ soru: { ...SORU, bilet: 'b-b' } });
+  bitti.dinleyiciler.disOnay();
+  await bekle();
+  bitti.soruAyarla(null);
+  bitti.dinleyiciler.disOnay();
+  await bekle();
+  assert.equal(bitti.el('disOnay').hidden, true);
+  assert.equal(bitti.belge.activeElement, bitti.el('icerik'));
+
+  // palet gösterilince kutu gizlenir: odak aramaya gider
+  const palet = ortam({ soru: { ...SORU, bilet: 'b-p' } });
+  palet.dinleyiciler.disOnay();
+  await bekle();
+  palet.dinleyiciler.goster({ mod: 'palet' });
+  assert.equal(palet.belge.activeElement, palet.el('arama'));
+
+  // odak kutunun dışındaysa (ör. kullanıcı kutuya hiç girmedi) dokunulmaz
+  const disarida = ortam({ soru: { ...SORU, bilet: 'b-d' } });
+  disarida.dinleyiciler.disOnay();
+  await bekle();
+  const baska = disarida.el('arama');
+  baska.focus();
+  disarida.soruAyarla(null);
+  disarida.dinleyiciler.disOnay();
+  await bekle();
+  assert.equal(disarida.belge.activeElement, baska);
+});
+
+test('B136: aynı bilet bekleme süresi dolmadan yeniden okunursa (yeni nesne, daha küçük bekleMs) İzin ver / Her zaman süre sonunda yine açılır', async () => {
+  const o = ortam({ soru: SORU });
+  o.dinleyiciler.goster({ mod: 'panel' });
+  await bekle();
+  assert.equal(o.el('disOnayIzin').disabled, true);
+  o.soruAyarla({ ...SORU, bekleMs: 100 }); // aynı bilet, yeni nesne (yenile her seferinde yenisini üretir)
+  o.dinleyiciler.goster({ mod: 'panel' });
+  await bekle();
+  assert.equal(o.el('disOnayIzin').disabled, true, 'süre dolmadı');
+  o.zamanlayicilariCalistir();
+  assert.equal(o.el('disOnayIzin').disabled, false);
+  assert.equal(o.el('disOnayHerZaman').disabled, false);
+  assert.equal(o.el('disOnayReddet').disabled, false);
+
+  // yeni bilet yine kendi bekleme süresini kurar: eski zamanlayıcı yeni soruyu erken açmaz
+  const o2 = ortam({ soru: SORU });
+  o2.dinleyiciler.goster({ mod: 'panel' });
+  await bekle();
+  o2.soruAyarla({ ...SORU, bilet: 'bilet-2' });
+  o2.dinleyiciler.disOnay();
+  await bekle();
+  assert.equal(o2.el('disOnayIzin').disabled, true);
+  const eski = o2.zamanlayicilar.splice(0, 1)[0];
+  eski.fn(); // yeni biletten ÖNCEKİ bileti bekleyen zamanlayıcı
+  assert.equal(o2.el('disOnayIzin').disabled, true, 'yeni bilet kendi süresini bekler');
+});
+
+test('B136: yanıt gönderilirken aynı bilet yeniden okunsa da başarılı yanıt kutuyu kapatır; başarısız yanıt kutuyu takılı bırakmaz', async () => {
+  const o = ortam({ soru: SORU });
+  o.dinleyiciler.goster({ mod: 'panel' });
+  await bekle();
+  o.zamanlayicilariCalistir();
+  let coz;
+  o.yanitAyarla(new Promise((c) => (coz = c)));
+  o.el('disOnayIzin').gonder('click');
+  await bekle();
+  o.soruAyarla({ ...SORU, bekleMs: 0 }); // gönderim sürerken yeniden okuma
+  o.dinleyiciler.disOnay();
+  await bekle();
+  coz({ ok: true });
+  await bekle();
+  assert.equal(o.el('disOnay').hidden, true, 'yanıt yok sayılmadı: kutu kapandı');
+  assert.deepEqual(o.cagrilar.filter((c) => c[0] === 'yanitla'), [['yanitla', 'bilet-1', 'izin']]);
+
+  // başarısız yanıt: gonderiliyor sıfırlanır, kullanıcı yeniden karar verebilir
+  const k = ortam({ soru: SORU });
+  k.dinleyiciler.goster({ mod: 'panel' });
+  await bekle();
+  k.zamanlayicilariCalistir();
+  let coz2;
+  k.yanitAyarla(new Promise((c) => (coz2 = c)));
+  k.el('disOnayReddet').gonder('click');
+  await bekle();
+  k.soruAyarla({ ...SORU }); // yeniden okuma (yeni nesne)
+  k.dinleyiciler.disOnay();
+  await bekle();
+  coz2({ ok: false });
+  await bekle();
+  await bekle();
+  k.yanitAyarla({ ok: true });
+  k.el('disOnayReddet').gonder('click');
+  await bekle();
+  assert.equal(k.cagrilar.filter((c) => c[0] === 'yanitla').length, 2, 'ikinci karar gönderilebildi');
+  assert.equal(k.el('disOnay').hidden, true);
+});
+
 test('işlem satırı: parlaklık, göreli adım ve komut; dil değişince metin yeni dilde yeniden yazılır', async () => {
   const o = ortam({ soru: { ...SORU, islem: 'parlaklik', deger: 40 } });
   o.dinleyiciler.disOnay();

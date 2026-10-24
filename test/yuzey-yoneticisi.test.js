@@ -29,7 +29,7 @@ function onbellegiTemizle() {
 const akit = () => new Promise((coz) => setImmediate(coz));
 
 /** Sahte Electron + yönetici. `zoomVar`: webContents.setZoomFactor var mı (eski sürüm/sahte ortam davranışı). */
-function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {}, sagTik = null, ayar = {}, gorunumAl, metinOlcegiAl, bildirim = null, kamera = null, korumaVar = true, disOnay = null, geriAl = null, eylemEk = null } = {}) {
+function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem = {}, sagTik = null, ayar = {}, gorunumAl, metinOlcegiAl, bildirim = null, kamera = null, korumaVar = true, disOnay = null, geriAl = null, eylemEk = null, ekran = null } = {}) {
   // 1.4.0 (o-22, o-32): ustteAl / opaklikAl / malzemeAl ayarları; testler `ayarlar` nesnesini değiştirir
   const ayarlar = { ust: false, opaklik: 100, malzeme: 'yok', koru: false, ...ayar };
   const pencereler = [];
@@ -118,7 +118,7 @@ function kur({ model, zoomVar = true, getBoundsVar = true, okuma = null, eylem =
       handle: (kanal, fn) => ipcIsleyicileri.set(kanal, fn),
       on: (kanal, fn) => ipcIsleyicileri.set(kanal, fn),
     },
-    screen: {
+    screen: ekran ?? {
       getCursorScreenPoint: () => ({ x: 1, y: 1 }),
       getDisplayNearestPoint: () => ({ workArea: CALISMA_ALANI, bounds: EKRAN }),
     },
@@ -1395,5 +1395,122 @@ test('1.4.0 yuzey:diger-* (o-46): yalnız açık PALETTEN; panel, yabancı gönd
     assert.deepEqual(await baglayicisiz.ipcIsleyicileri.get('yuzey:diger-favori-ekle')(baglayicisiz.yuzeyOlayi(p), 'light.x'), { ok: false, tur: 'gecersiz' });
   } finally {
     baglayicisiz.temizle();
+  }
+});
+
+// ---- B23: sabitli panel yükseklik değişince imlecin ekranına ışınlanmaz ---------------------------------------------------
+
+/** İki monitör: birincil (0-1920, tepsi burada) ve sağında ikincil. `imlec.x` değiştirilerek fare taşınır. */
+function ikiEkran() {
+  const birinci = { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
+  const ikinci = { bounds: { x: 1920, y: 0, width: 1920, height: 1080 }, workArea: { x: 1920, y: 0, width: 1920, height: 1040 } };
+  const imlec = { x: 10, y: 10 };
+  const icinde = (e, x, y) => x >= e.bounds.x && x < e.bounds.x + e.bounds.width && y >= e.bounds.y && y < e.bounds.y + e.bounds.height;
+  const ekran = {
+    getCursorScreenPoint: () => ({ ...imlec }),
+    getDisplayNearestPoint: (n) => (icinde(ikinci, n.x, n.y) ? ikinci : birinci),
+    getDisplayMatching: (r) => (r.x + r.width / 2 >= ikinci.bounds.x ? ikinci : birinci),
+  };
+  return { ekran, imlec, birinci, ikinci };
+}
+
+test('B23: sabitli panel birinci ekranda açıkken imleç ikinci monitöre geçip yükseklik değişirse panel birinci ekranda kalır; yeniden gösterim imlecin ekranına gider', async () => {
+  const e = ikiEkran();
+  const o = kur({ ekran: e.ekran });
+  try {
+    const p = await panelAc(o);
+    const son = () => p.sinirlar.at(-1);
+    assert.ok(son().x >= 0 && son().x + son().width <= 1920, 'ilk açılış imlecin ekranında (birinci)');
+    e.imlec.x = 2500; // fare ikinci monitörde çalışıyor
+    o.ipcIsleyicileri.get('yuzey:boyut')(o.yuzeyOlayi(p), 300);
+    assert.equal(son().height, 300, 'yükseklik gerçekten uygulandı');
+    assert.ok(son().x >= 0 && son().x + son().width <= 1920, 'panel birinci ekranın çalışma alanında kaldı: ' + JSON.stringify(son()));
+    // Ctrl + (yakınlaştırma) da pencerenin kendi ekranında yeniden yerleştirir
+    o.tus(p, { key: '+' });
+    assert.ok(son().x >= 0 && son().x + son().width <= 1920, 'yakınlaştırma da sıçratmaz');
+
+    // gizle + yeniden göster: her gösterim imlecin ekranına gider
+    o.yonetici.gizle('test');
+    assert.equal(o.yonetici.panelAcKapat('tepsi'), 'acildi');
+    assert.ok(son().x >= 1920, 'yeniden gösterim imlecin bulunduğu (ikinci) ekrana yerleşir: ' + JSON.stringify(son()));
+  } finally {
+    o.temizle();
+  }
+});
+
+test('B23: getDisplayMatching yoksa ya da hata verirse (eski ortam) imleç ekranına düşülür; boyut yine uygulanır', async () => {
+  const e = ikiEkran();
+  delete e.ekran.getDisplayMatching;
+  const o = kur({ ekran: e.ekran });
+  try {
+    const p = await panelAc(o);
+    o.ipcIsleyicileri.get('yuzey:boyut')(o.yuzeyOlayi(p), 300);
+    assert.equal(p.sinirlar.at(-1).height, 300);
+  } finally {
+    o.temizle();
+  }
+  const f = ikiEkran();
+  f.ekran.getDisplayMatching = () => {
+    throw new Error('yok');
+  };
+  const o2 = kur({ ekran: f.ekran });
+  try {
+    const p = await panelAc(o2);
+    o2.ipcIsleyicileri.get('yuzey:boyut')(o2.yuzeyOlayi(p), 300);
+    assert.equal(p.sinirlar.at(-1).height, 300);
+  } finally {
+    o2.temizle();
+  }
+});
+
+// ---- B143: pencere 'closed' ile kapanınca (Alt+F4) temizlik ------------------------------------------------------------
+
+test("B143: pencere 'closed' ile kapanınca izin sorusu reddedilir, başlamış basışlar iptal edilir ve kamera kareleri silinir (gizle / sifirla ile aynı temizlik); sonra gizle() yeniden yapmaz", async () => {
+  const cagrilar = [];
+  const SORU = { bilet: 'b-1', ad: 'Salon', islem: 'ac', bekleMs: 600 };
+  const disOnay = { al: () => SORU, yanitla: () => true, kapandi: () => cagrilar.push('kapandi') };
+  const iptal = [];
+  const eylem = { basiliBasla: () => true, basiliIptal: (kimlik) => iptal.push(kimlik) };
+  const kamera = sahteKamera();
+  const o = kur({ disOnay, eylem, kamera });
+  try {
+    const p = await panelAc(o);
+    assert.equal(o.yonetici.disOnayGoster(), true);
+    await o.ipcIsleyicileri.get('yuzey:basili-basla')(o.yuzeyOlayi(p), 'button.pc_bilgisayari_kapat');
+    const temizlemeOnce = kamera.temizlemeler.sayi;
+
+    p.emit('closed'); // Alt+F4: destroy() çağrılmadan Electron 'closed' verir
+    assert.deepEqual(cagrilar, ['kapandi'], 'açık izin sorusu reddedilmiş sayılır');
+    assert.deepEqual(iptal, ['button.pc_bilgisayari_kapat'], 'başlamış basılı tutma iptal edildi');
+    assert.ok(kamera.temizlemeler.sayi > temizlemeOnce, 'bellekteki kamera kareleri silindi');
+    assert.equal(o.yonetici.kip(), null, 'pencere durumu da sıfırlandı');
+
+    // temizlik bir kez yapıldı: sonraki gizle() ve kapat() aynı şeyi yeniden yapmaz
+    o.yonetici.gizle('test');
+    o.yonetici.kapat();
+    assert.deepEqual(cagrilar, ['kapandi']);
+    assert.deepEqual(iptal, ['button.pc_bilgisayari_kapat']);
+
+    // sonraki açılış temiz başlar (eski soru yeniden gösterilmez, yeni pencere oluşur)
+    assert.equal(o.yonetici.panelAcKapat('tepsi'), 'acildi');
+    await akit();
+    assert.equal(o.pencereler.length, 2);
+  } finally {
+    o.temizle();
+  }
+});
+
+test("B143: yönetici pencereyi kendisi yok edince ('closed' orada erken döner) temizlik çift çalışmaz", async () => {
+  const cagrilar = [];
+  const disOnay = { al: () => ({ bilet: 'b-1', ad: 'Salon', islem: 'ac', bekleMs: 600 }), yanitla: () => true, kapandi: () => cagrilar.push('kapandi') };
+  const kamera = sahteKamera();
+  const o = kur({ disOnay, kamera });
+  try {
+    await panelAc(o);
+    assert.equal(o.yonetici.disOnayGoster(), true);
+    o.yonetici.kapat();
+    assert.deepEqual(cagrilar, ['kapandi'], 'tek kez');
+  } finally {
+    o.temizle();
   }
 });

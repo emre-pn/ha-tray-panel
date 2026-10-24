@@ -115,6 +115,7 @@
    * @param {() => number} bag.simdi
    * @param {{setTimeout: Function, clearTimeout: Function}} [bag.zaman] "Odayı kapat" onay süresi için
    * @param {(metin: string) => void} [bag.ipucu] kısa ipucu satırı (odayı kapat hatası)
+   * @param {() => void} [bag.odakYedek] odaktaki "Geri al" / zamanlı eylem × düğmesi kalkınca odağı sayfaya geri verir (gövdeye düşmesin)
    */
   function kur(bag) {
     const kopru = bag.kopru;
@@ -132,6 +133,12 @@
     let eylem = modelDuzelt(null);
     let bekliyor = false;
     let seritImzasi = null;
+    let seritDugmeleri = []; // şeritteki güncel × düğmeleri (odak kurtarma için)
+
+    /** Odak, kalkmak üzere olan bir düğmedeyken çağrılır: değişiklikten sonra odak hâlâ eski düğmede (ya da gövdede) ise yedek hedefe geçer. */
+    function odagiKurtar(odakliydi, hala) {
+      if (odakliydi && !hala() && typeof bag.odakYedek === 'function') bag.odakYedek();
+    }
 
     /** Zamanlı eylemler şeridi: bekleyen yoksa gizli; her öğede iptal düğmesi. Değişmeyen şerit yeniden kurulmaz (odak kaybolmasın). */
     function seritCiz() {
@@ -142,8 +149,10 @@
       const imza = t('yuzey.gecikmeli.baslik') + '|' + JSON.stringify(liste);
       if (imza === seritImzasi) return;
       seritImzasi = imza;
-      kap.hidden = liste.length === 0;
       const belge = kap.ownerDocument || kok.document;
+      const odakliydi = seritDugmeleri.indexOf(belge.activeElement) >= 0;
+      kap.hidden = liste.length === 0;
+      const yeniDugmeler = [];
       const parcalar = liste.map(function (o) {
         const oge = belge.createElement('span');
         oge.className = 'gecikmeli-oge';
@@ -174,9 +183,14 @@
         });
         oge.appendChild(metin);
         oge.appendChild(iptal);
+        yeniDugmeler.push(iptal);
         return oge;
       });
+      seritDugmeleri = yeniDugmeler;
       kap.replaceChildren.apply(kap, parcalar);
+      odagiKurtar(odakliydi, function () {
+        return seritDugmeleri.indexOf(belge.activeElement) >= 0;
+      });
     }
 
     /** Alt şerit düğmesi: görünürlük, etiket ve ipucu. Palet kipinde alt şerit zaten gizlidir (CSS). */
@@ -185,9 +199,14 @@
       seritCiz();
       const g = eylem.geriAl;
       const gorunur = typeof kopru.geriAl === 'function' && g !== null && g.bitis > simdi();
+      const geriAlBelge = el.geriAl.ownerDocument || kok.document;
+      const geriAlOdakta = geriAlBelge.activeElement === el.geriAl;
       el.geriAl.hidden = !gorunur;
       if (!gorunur) {
         el.geriAl.title = '';
+        odagiKurtar(geriAlOdakta, function () {
+          return false;
+        });
         return;
       }
       const ipucu = t('yuzey.alt.geriAlIpucu', { ad: g.ad });

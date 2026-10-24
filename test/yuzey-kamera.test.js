@@ -371,6 +371,52 @@ test('yaş metni: yeni kare "az önce", eski kare saniye sayısı (önbellekten 
   assert.match(o.yas.textContent, /^yuzey\.kamera\.yas\|\{"sn":7\}$/);
 });
 
+test('yaş etiketi: yeni model / çizim gelmese de ~5 sn\'de bir kendiliğinden tazelenir; gizlenince zamanlayıcı kalmaz; ağ isteği yapmaz', async () => {
+  const { modul, kartlar, zaman, durum } = kur();
+  modul.ayarla(model({ liste: [{ id: 'camera.salon', etiket: 'Salon', kullanilabilir: true }], yenilemeSn: 0 }));
+  modul.gosterildi();
+  await akit();
+  const o = kartDurumu(kartlar()[0]);
+  assert.equal(o.yas.textContent, 'yuzey.kamera.azOnce');
+  const istek = durum.istekler.length;
+  zaman.ilerle(4999);
+  assert.equal(o.yas.textContent, 'yuzey.kamera.azOnce', '5 sn dolmadan değişmez');
+  zaman.ilerle(1);
+  assert.match(o.yas.textContent, /^yuzey\.kamera\.yas\|\{"sn":5\}$/, '5 sn sonra etiket yaşı yazar (yeniden çizim olmadan)');
+  zaman.ilerle(60_000);
+  assert.match(o.yas.textContent, /^yuzey\.kamera\.yas\|\{"sn":65\}$/, 'tik zinciri sürer');
+  assert.equal(durum.istekler.length, istek, 'tik ağ isteği yapmaz');
+  // gizlenince etiket silinir ve zamanlayıcı kalmaz
+  modul.gizlendi();
+  assert.equal(o.yas.textContent, '');
+  zaman.ilerle(60_000);
+  assert.equal(o.yas.textContent, '', 'gizliyken tik yok');
+  // yeni gösterimde kare gelince tik yeniden kurulur
+  modul.gosterildi();
+  await akit();
+  zaman.ilerle(10_000);
+  assert.match(o.yas.textContent, /^yuzey\.kamera\.yas\|\{"sn":10\}$/);
+});
+
+test('yaş etiketi: görüntü yoksa (hata, yükleniyor) zamanlayıcı kurulmaz; model null olunca durur', async () => {
+  const hatali = kur({ yanitlar: { 'camera.salon': { ok: false, tur: 'ulasilamiyor' } } });
+  hatali.modul.ayarla(model({ liste: [{ id: 'camera.salon', etiket: 'Salon', kullanilabilir: true }] }));
+  hatali.modul.gosterildi();
+  await akit();
+  const o = kartDurumu(hatali.kartlar()[0]);
+  hatali.zaman.ilerle(30_000);
+  assert.equal(o.yas.textContent, '');
+  const { modul, kartlar, zaman } = kur();
+  modul.ayarla(model({ liste: [{ id: 'camera.salon', etiket: 'Salon', kullanilabilir: true }] }));
+  modul.gosterildi();
+  await akit();
+  const y = kartDurumu(kartlar()[0]).yas;
+  modul.ayarla(null);
+  const onceki = y.textContent;
+  zaman.ilerle(30_000);
+  assert.equal(y.textContent, onceki, 'model kalkınca tik durur');
+});
+
 // --- Büyüt ve Şimdi yenile (1.4.0) -----------------------------------------------------------------------------------------
 
 test('Büyüt: görüntü yokken kapalı; görüntü gelince açılır, kartı tam genişliğe açar ve tekrar basınca küçültür; bulanıklık büyütmeyle kalkmaz', async () => {

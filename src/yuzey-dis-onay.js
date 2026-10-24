@@ -86,16 +86,24 @@
     el.herZaman.disabled = !etkin;
   }
 
-  function gizle() {
+  /** Odak kutudaki düğmedeyken kutu gizlenirse odak gövdeye düşmesin (ok gezintisi ve ekran okuyucu bağlamı): palette aramaya, panelde içerik alanına. */
+  function odagiVer(kip) {
+    const hedef = document.getElementById(kip === 'palet' ? 'arama' : 'icerik');
+    if (hedef && typeof hedef.focus === 'function') hedef.focus();
+  }
+
+  function gizle(kip) {
     clearTimeout(acmaZamanlayicisi);
     acmaZamanlayicisi = null;
     const acikti = el.kutu.hidden !== true;
+    const odakKutuda = DUGMELER.indexOf(document.activeElement) >= 0;
     soru = null;
     gonderiliyor = false;
     izinDugmeleri(false);
     el.kutu.hidden = true;
     el.soru.textContent = '';
     el.islem.textContent = '';
+    if (odakKutuda) odagiVer(kip);
     if (acikti) boyutDegisti();
   }
 
@@ -110,7 +118,8 @@
       const bekle = Math.min(EN_COK_BEKLEME_MS, Math.max(0, Number(s.bekleMs) || 0));
       acmaZamanlayicisi = setTimeout(function () {
         acmaZamanlayicisi = null;
-        if (soru === s) izinDugmeleri(true);
+        // Nesne kimliği değil bilet karşılaştırılır: aynı bilet yeniden okununca (yenile her seferinde yeni nesne üretir) zamanlayıcı yine açar
+        if (soru && soru.bilet === s.bilet) izinDugmeleri(true);
       }, bekle);
     }
     el.kutu.hidden = false;
@@ -142,16 +151,16 @@
   function yanitla(karar) {
     if (!soru || gonderiliyor) return;
     if (karar !== 'reddet' && el.izin.disabled) return;
-    const s = soru;
+    const bilet = soru.bilet; // yanıt sürerken aynı bilet yeniden okunabilir (yeni nesne): bilete bakılır
     gonderiliyor = true;
     istekNo += 1; // bekleyen okuma bu kararı ezmesin
     Promise.resolve()
       .then(function () {
-        return kopru.disOnayYanitla(s.bilet, karar);
+        return kopru.disOnayYanitla(bilet, karar);
       })
       .then(
         function (yanit) {
-          if (soru !== s) return;
+          if (!soru || soru.bilet !== bilet) return;
           if (yanit && yanit.ok === true) gizle();
           else {
             gonderiliyor = false;
@@ -159,7 +168,7 @@
           }
         },
         function () {
-          if (soru !== s) return;
+          if (!soru || soru.bilet !== bilet) return;
           gonderiliyor = false;
           yenile();
         },
@@ -200,7 +209,7 @@
 
   kopru.onGoster(function (yuk) {
     if (yuk && yuk.mod === 'panel') yenile();
-    else gizle();
+    else gizle(yuk && yuk.mod === 'palet' ? 'palet' : 'panel');
   });
   if (typeof kopru.onDisOnay === 'function') kopru.onDisOnay(yenile);
   if (typeof kopru.onDilDegisti === 'function') kopru.onDilDegisti(ciz);

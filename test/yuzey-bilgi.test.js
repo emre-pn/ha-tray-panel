@@ -311,6 +311,36 @@ test('hava (1.7.0 hero): yuvarlanmış sıcaklık, durum ve nem görünür; tam 
   assert.match(metin(yok.modul.heroParcalari()), /Hava durumu alınamadı/);
 });
 
+test('hava (hero): tahmin açıkken düğmenin ipucu kesilebilen durum metninin tamamını taşır; tahmin kapalıyken ipucu değişmez', () => {
+  const { modul } = ortamKur();
+  modul.ayarla(modelOlustur({ ayar: { ...AYAR, havaTahmini: 'gunluk' } }));
+  const dugme = bulSinif(modul.heroParcalari(), 'hero-hava')[0];
+  assert.equal(dugme.etiket, 'button');
+  assert.match(dugme.title, /Parçalı bulutlu/);
+  assert.match(dugme.title, /Nem %40/);
+  assert.match(dugme.title, /Hava tahmini/);
+  assert.equal(dugme.title, dugme.attributes['aria-label'], 'ipucu ve erişilebilir ad aynı metin');
+  const kapali = ortamKur();
+  kapali.modul.ayarla(modelOlustur({ ayar: { ...AYAR, havaTahmini: 'kapali' } }));
+  const kutu = bulSinif(kapali.modul.heroParcalari(), 'hero-hava')[0];
+  assert.equal(kutu.etiket, 'div');
+  assert.equal(kutu.title, kutu.attributes['aria-label']);
+  assert.match(kutu.title, /Parçalı bulutlu/);
+  assert.doesNotMatch(kutu.title, /Hava tahmini/);
+});
+
+test('hava (hero): sıfıra yuvarlanan negatif sıcaklık "-0°" yazılmaz; tam değer erişilebilir adda korunur', () => {
+  const sicaklikla = (sicaklik) => modelOlustur({ kartlar: [{ yuva: 1, tur: 'hava', karo: { ...HAVA, ozellik: { ...HAVA.ozellik, sicaklik } }, secilmedi: false }] });
+  const { modul } = ortamKur();
+  modul.ayarla(sicaklikla(-0.4));
+  const kart = bulSinif(modul.heroParcalari(), 'hero-hava')[0];
+  assert.equal(bulSinif(kart, 'hava-sicaklik')[0].textContent, '0°');
+  assert.doesNotMatch(kart.textContent, /-0°/);
+  assert.match(kart.attributes['aria-label'], /-0,4 °C/);
+  modul.ayarla(sicaklikla(-3.6));
+  assert.equal(bulSinif(modul.heroParcalari(), 'hero-hava')[0].children.find((c) => sinifli(c, 'hava-sicaklik')).textContent, '-4°');
+});
+
 test('hava kartı: yalnız mevcut durum gösterilir (tahmin okuması yok)', () => {
   const { modul, kayit } = ortamKur();
   modul.ayarla(modelOlustur());
@@ -461,6 +491,35 @@ test('mini grafik: hata alınan geçmiş 30 sn dolmadan yeniden denenmez, sonra 
   assert.equal(bulSinif(modul.altParcalar()[0], 'sensor-karo')[0].bul((o) => sinifli(o, 'sparkline')).length, 1);
 });
 
+test('mini grafik: istek havadayken geçmiş saati değişirse uçuş bayrağı kalkar ve yeni saat için istek atılır', async () => {
+  const bekleyenler = [];
+  const { modul, kayit, zaman } = ortamKur({
+    okuma: { gecmis: (istek) => new Promise((coz) => bekleyenler.push({ istek, coz })) },
+  });
+  const sensorler = [SICAKLIK];
+  const model = (saat) => modelOlustur({ ayar: { ...AYAR, sensorGrafikSaat: saat }, sensorler, serit: [], listeler: [], takvimler: [] });
+  const gecmisSaatleri = () => kayit.okumalar.filter((o) => o.tur === 'gecmis').map((o) => o.saat);
+  modul.ayarla(model(6));
+  await akit();
+  assert.deepEqual(gecmisSaatleri(), [6], 'ilk istek 6 saatlik, yanıt bekleniyor');
+  modul.ayarla(model(24));
+  await akit();
+  assert.deepEqual(gecmisSaatleri(), [6], 'eski istek havadayken yenisi atılamaz (aynı sensör uçuşta)');
+  // eski (6 saatlik) yanıt gelir: veri yazılmaz ama 24 saatlik istek hemen atılır
+  bekleyenler[0].coz({ ok: true, veri: { 'sensor.salon_sicaklik': [nokta(3, 20), nokta(1, 21)] } });
+  await akit();
+  assert.deepEqual(gecmisSaatleri(), [6, 24], 'yeni saat için istek atıldı');
+  assert.equal(bulSinif(modul.altParcalar()[0], 'sensor-karo')[0].bul((o) => sinifli(o, 'sparkline')).length, 0, 'eski saatin verisi çizilmedi');
+  // yeni yanıt gelince mini çizgi çizilir; bayrak kalmadığı için tekrar istek yok
+  bekleyenler[1].coz({ ok: true, veri: { 'sensor.salon_sicaklik': [nokta(20, 18), nokta(2, 21)] } });
+  await akit();
+  zaman.ilerle(50);
+  assert.equal(bulSinif(modul.altParcalar()[0], 'sensor-karo')[0].bul((o) => sinifli(o, 'sparkline')).length, 1);
+  modul.gosterildi();
+  await akit();
+  assert.deepEqual(gecmisSaatleri(), [6, 24], 'taze veri varken gosterildi sonrası bekleyen / yinelenen istek yok');
+});
+
 test('panel kapalıyken (acikMi false) hiçbir okuma istenmez', async () => {
   const { modul, kayit } = ortamKur({ acik: false });
   modul.ayarla(modelOlustur());
@@ -579,6 +638,99 @@ test('yapılacaklar: ekleme kutusu Enter ile add_item gönderir (boşluklar teke
   assert.equal(kayit.calistirmalar.at(-1).veri.item, 'ekmek');
 });
 
+/** Yanıtı elle çözülen add_item: her çağrı bekleyenler dizisine bir çözücü ekler. */
+function elleCozulenEkleme() {
+  const bekleyenler = [];
+  return { bekleyenler, calistir: () => new Promise((coz) => bekleyenler.push(coz)) };
+}
+
+test('yapılacaklar: ekleme sürerken ikinci Enter / tık / tuş tekrarı yinelenen kayıt oluşturmaz; düğme meşgul görünür; yanıttan sonra yeniden eklenebilir', async () => {
+  const sahte = elleCozulenEkleme();
+  const { liste, kayit } = await listeHazirla({ calistir: sahte.calistir });
+  const bolum = liste();
+  const girdi = bulSinif(bolum, 'liste-girdi')[0];
+  const dugme = bulSinif(bolum, 'liste-ekle-dugme')[0];
+  assert.equal(dugme.attributes['aria-busy'], 'false');
+  girdi.value = 'süt';
+  girdi.gonder('keydown', { key: 'Enter' });
+  girdi.gonder('keydown', { key: 'Enter' });
+  girdi.gonder('keydown', { key: 'Enter', repeat: true });
+  dugme.gonder('click');
+  dugme.gonder('click');
+  await akit();
+  assert.equal(kayit.calistirmalar.length, 1, 'yanıt gelmeden tek istek');
+  assert.equal(dugme.attributes['aria-busy'], 'true', 'bekleme sırasında düğme meşgul');
+  // yeniden çizimde kurulan yeni düğme de meşgul başlar ve kilit korunur
+  const yeniDugme = bulSinif(liste(), 'liste-ekle-dugme')[0];
+  assert.equal(yeniDugme.attributes['aria-busy'], 'true');
+  yeniDugme.gonder('click');
+  await akit();
+  assert.equal(kayit.calistirmalar.length, 1);
+  sahte.bekleyenler[0]({ ok: true });
+  await akit();
+  assert.equal(dugme.attributes['aria-busy'], 'false');
+  assert.equal(yeniDugme.attributes['aria-busy'], 'false', 'güncel düğme de serbest kalır');
+  // kilit kalktı: yeni metin gider; basılı tutulan Enter'ın tekrarı yine gitmez
+  const yeniGirdi = bulSinif(liste(), 'liste-girdi')[0];
+  yeniGirdi.value = 'ekmek';
+  yeniGirdi.gonder('keydown', { key: 'Enter', repeat: true });
+  assert.equal(kayit.calistirmalar.length, 1, 'olay.repeat Enter göndermez');
+  yeniGirdi.gonder('keydown', { key: 'Enter' });
+  await akit();
+  assert.deepEqual(kayit.calistirmalar.map((c) => c.veri.item), ['süt', 'ekmek']);
+});
+
+test('yapılacaklar: ekleme reddedilse de kilit kalkar (yanıt hatası kutuyu kalıcı kilitlemez) ve metin kutuda kalır', async () => {
+  let sonuc = { ok: false, tur: 'hata' };
+  const { liste, kayit } = await listeHazirla({ calistir: async () => sonuc });
+  const girdi = bulSinif(liste(), 'liste-girdi')[0];
+  girdi.value = 'süt';
+  girdi.gonder('keydown', { key: 'Enter' });
+  await akit();
+  assert.equal(girdi.value, 'süt');
+  assert.equal(bulSinif(liste(), 'liste-ekle-dugme')[0].attributes['aria-busy'], 'false');
+  sonuc = { ok: true };
+  girdi.gonder('keydown', { key: 'Enter' });
+  await akit();
+  assert.equal(kayit.calistirmalar.length, 2, 'ikinci deneme gider');
+  assert.equal(girdi.value, '');
+});
+
+test('yapılacaklar: ekleme sürerken yeniden çizim araya girerse yanıttan sonra GÖRÜNEN kutu da boşalır; bu arada başka metin yazıldıysa dokunulmaz', async () => {
+  const sahte = elleCozulenEkleme();
+  const { liste } = await listeHazirla({ calistir: sahte.calistir });
+  const ilkBolum = liste();
+  const eski = bulSinif(ilkBolum, 'liste-girdi')[0];
+  eski.value = 'süt';
+  eski.gonder('input');
+  bulSinif(ilkBolum, 'liste-ekle-dugme')[0].gonder('click');
+  await akit();
+  // yanıttan önce liste durumu geldi ve bölüm yeniden kuruldu: yeni kutu taslaktan 'süt' alır
+  const yeni = bulSinif(liste(), 'liste-girdi')[0];
+  assert.notEqual(yeni, eski);
+  assert.equal(yeni.value, 'süt');
+  sahte.bekleyenler[0]({ ok: true });
+  await akit();
+  assert.equal(yeni.value, '', 'görünen kutu boşaldı');
+  assert.equal(eski.value, '');
+  assert.equal(bulSinif(liste(), 'liste-girdi')[0].value, '', 'taslak da silindi (sonraki çizimde eski metin dönmez)');
+
+  // aynı akış, ama yanıttan önce kullanıcı başka şey yazdı
+  const ucuncuBolum = liste();
+  const kutu = bulSinif(ucuncuBolum, 'liste-girdi')[0];
+  kutu.value = 'süt';
+  kutu.gonder('input');
+  bulSinif(ucuncuBolum, 'liste-ekle-dugme')[0].gonder('click');
+  await akit();
+  const sonraki = bulSinif(liste(), 'liste-girdi')[0];
+  sonraki.value = 'ekmek';
+  sonraki.gonder('input');
+  sahte.bekleyenler[1]({ ok: true });
+  await akit();
+  assert.equal(sonraki.value, 'ekmek', 'yeni yazılan metin silinmez');
+  assert.equal(bulSinif(liste(), 'liste-girdi')[0].value, 'ekmek', 'taslak da korunur');
+});
+
 test('yapılacaklar: ekleme başarısızsa "Eklenemedi." söylenir ve yazılan metin kutuda kalır', async () => {
   const { liste, kayit } = await listeHazirla({ calistir: async () => ({ ok: false, tur: 'hata' }) });
   const girdi = bulSinif(liste(), 'liste-girdi')[0];
@@ -677,6 +829,20 @@ test('takvim: etkinlikler gün gün gruplanır (Bugün / Yarın / tarih), tüm g
   assert.match(simdi[0].textContent, /şu an/);
 });
 
+test('takvim: dünden başlayıp süren etkinlik bugünün grubuna girer; "Bugün" başlığı tek çıkar, tüm gün önce gelir ve "şu an" rozeti taşır', async () => {
+  const { bolum } = await takvimHazirla([
+    { baslik: 'Toplantı', baslangic: yerel(16, 14), bitis: yerel(16, 15), tumGun: false },
+    { baslik: 'Tatil', baslangic: '2026-10-15', bitis: '2026-10-17', tumGun: true }, // dün başladı, bugün sürüyor, yarın başında bitiyor
+    { baslik: 'Gece nöbeti', baslangic: yerel(15, 22), bitis: yerel(16, 2), tumGun: false }, // dün 22:00 - bugün 02:00 (bitti)
+  ]);
+  const b = bolum();
+  assert.deepEqual(bulSinif(b, 'takvim-gun').map((g) => g.textContent), ['Bugün']);
+  assert.deepEqual(bulSinif(b, 'takvim-baslik').map((o) => o.textContent), ['Tatil', 'Gece nöbeti', 'Toplantı']);
+  const satirlar = bulSinif(b, 'takvim-satir');
+  assert.match(satirlar[0].textContent, /şu an/);
+  assert.doesNotMatch(satirlar[2].textContent, /şu an/);
+});
+
 test('takvim: boş dönem "etkinlik yok", okuma hatası "alınamadı" der (ikisi ayrı); 8\'den çok etkinlik kısaltılır', async () => {
   const bos = await takvimHazirla([]);
   assert.match(bos.bolum().textContent, /Yaklaşan etkinlik yok/);
@@ -689,6 +855,39 @@ test('takvim: boş dönem "etkinlik yok", okuma hatası "alınamadı" der (ikisi
   const cok = await takvimHazirla(Array.from({ length: 11 }, (_, i) => ({ baslik: `E${i}`, baslangic: yerel(17, 8 + (i % 10)), bitis: yerel(17, 9 + (i % 10)), tumGun: false })));
   assert.equal(bulSinif(cok.bolum(), 'takvim-baslik').length, 8);
   assert.match(cok.bolum().textContent, /\+3 etkinlik daha/);
+});
+
+test('takvim: gün sayısı ayarı değişince önbellek atılır, yeni pencere hemen istenir; uçuştaki eski yanıt yazılmaz', async () => {
+  const bekleyenler = [];
+  const etkinlik = (baslik, gun) => ({ baslik, baslangic: yerel(gun, 9), bitis: yerel(gun, 10), tumGun: false });
+  const { modul, kayit } = ortamKur({ okuma: { takvim: (istek) => new Promise((coz) => bekleyenler.push({ istek, coz })) } });
+  const model = (gun) => modelOlustur({ ayar: { ...AYAR, takvimGunSayisi: gun }, sensorler: [], listeler: [] });
+  const bolum = () => modul.altParcalar().find((p) => sinifli(p, 'bilgi-takvim'));
+  const takvimGunleri = () => kayit.okumalar.filter((o) => o.tur === 'takvim').map((o) => o.gun);
+  // taze önbellek: gün sayısı 3'ten 1'e inince 2 dk beklemeden yeni istek gider
+  modul.ayarla(model(3));
+  await akit();
+  bekleyenler[0].coz({ ok: true, veri: [etkinlik('Uzak', 18), etkinlik('Yakın', 16)] });
+  await akit();
+  assert.deepEqual(bulSinif(bolum(), 'takvim-baslik').map((o) => o.textContent), ['Yakın', 'Uzak']);
+  modul.ayarla(model(1));
+  await akit();
+  assert.deepEqual(takvimGunleri(), [3, 1], 'gün sayısı değişince önbellek 2 dk beklemeden yenilenir');
+  // ikinci istek havadayken ayar yine değişir: eski yanıt yazılmaz, yeni gün sayısı istenir
+  modul.ayarla(model(7));
+  await akit();
+  assert.deepEqual(takvimGunleri(), [3, 1], 'uçuşta aynı takvim için ikinci istek atılmaz');
+  bekleyenler[1].coz({ ok: true, veri: [etkinlik('Eski pencere', 16)] });
+  await akit();
+  assert.deepEqual(takvimGunleri(), [3, 1, 7], 'eski yanıt gelince uçuş bayrağı kalkar ve 7 günlük istek atılır');
+  assert.doesNotMatch(bolum().textContent, /Eski pencere/, 'eski pencerenin etkinlikleri yazılmadı');
+  bekleyenler[2].coz({ ok: true, veri: [etkinlik('Hafta sonu', 17)] });
+  await akit();
+  assert.deepEqual(bulSinif(bolum(), 'takvim-baslik').map((o) => o.textContent), ['Hafta sonu']);
+  // aynı gün sayısıyla yeniden ayarla: yeniden istek yok
+  modul.ayarla(model(7));
+  await akit();
+  assert.deepEqual(takvimGunleri(), [3, 1, 7]);
 });
 
 test('takvim: başlıklar yalnız textContent ile yazılır (zararlı metin etiket olmaz); bozuk etkinlikler atılır', async () => {
@@ -761,6 +960,23 @@ test('geçmiş görünümü: aralık düğmesi yeni aralığı ister; geç gelen
   await akit();
   assert.match(metin(detay()), /En az30 °C/, 'eski aralığın verisi yazılmadı');
   assert.equal(modul.detayAcikMi(), true);
+});
+
+test('geçmiş görünümü: yüklenirken grafik kutusu "bekliyor" sınıfıyla yer tutar (CSS min-height); veri gelince sınıf kalkar; aralık değişince yeniden', async () => {
+  const bekleyen = [];
+  const { detay, modul } = await detayAc((istek) => new Promise((coz) => bekleyen.push(() => coz({ ok: true, veri: { 'sensor.salon_sicaklik': SERI_SICAKLIK, 'sensor.kumanda_pil': SERI_PIL } }))));
+  const kutu = () => bulSinif(detay(), 'detay-grafik')[0];
+  assert.ok(sinifli(kutu(), 'bekliyor'));
+  assert.match(kutu().textContent, /Geçmiş yükleniyor/, 'yükleniyor notu yine yazılır');
+  bekleyen.splice(0).forEach((coz) => coz());
+  await akit();
+  assert.equal(sinifli(kutu(), 'bekliyor'), false);
+  assert.equal(kutu().bul((o) => o.etiket === 'svg').length > 0, true);
+  bulSinif(detay(), 'aralik-dugme')[0].gonder('click'); // 1 sa: yeni istek, kutu yine yer tutar
+  assert.ok(sinifli(kutu(), 'bekliyor'));
+  assert.equal(modul.detayAcikMi(), true);
+  const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'yuzey.css'), 'utf8');
+  assert.match(css, /\.detay-grafik\.bekliyor\s*\{[^}]*min-height:\s*\d+px/);
 });
 
 test('geçmiş görünümü: boş dönem, okuma hatası ve sayısal olmayan değer üç ayrı mesajdır', async () => {

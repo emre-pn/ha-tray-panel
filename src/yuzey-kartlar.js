@@ -160,8 +160,17 @@
     return Dil ? Dil.yerelAdi(dil) : dil === 'en' ? 'en-US' : 'tr-TR';
   }
 
-  function sayiYaz(n, t) {
-    return Number(n).toLocaleString(yerelAdi(t.dil), { maximumFractionDigits: 1 });
+  /** Adımın ondalık basamak sayısı (0,05 -> 2; 1 -> 1; üstel gösterim dahil); en az 1, en çok 4. */
+  function adimBasamagi(adim) {
+    if (!sayiMi(adim) || adim <= 0) return 1;
+    const e = /^\d+(?:\.(\d+))?(?:e([+-]\d+))?$/i.exec(String(adim));
+    if (!e) return 1;
+    return Math.min(4, Math.max(1, (e[1] ? e[1].length : 0) - (e[2] ? Number(e[2]) : 0)));
+  }
+
+  /** Sayıyı dilin ayracıyla yazar; varsayılan en çok 1 ondalık, kesirli adımlı sayıda (basamak) adımın basamağı kadar (0,05 ile 0,10 aynı görünmesin). */
+  function sayiYaz(n, t, basamak) {
+    return Number(n).toLocaleString(yerelAdi(t.dil), { maximumFractionDigits: Math.max(1, basamak || 1) });
   }
 
   function sinirla(d, alt, ust) {
@@ -382,7 +391,8 @@
      * yapar, kaydırıcı sürüklenirken kısılır (araDeger), bırakınca son değer gider. Onay isteyen serviste değişiklik YEREL kalır ve
      * "Uygula" düğmesi ~0,8 sn basılı tutulunca gönderilir (kaydırıcıda basılı tutma uygulanamaz).
      * @param {{servis: string, veriYap: Function, deger: number|null, min: number, max: number, adim: number, artim?: number, hizaAdimi?: number,
-     *   adimDugmeleri?: boolean, kaydirici?: boolean, yalnizSon?: boolean, goster: Function, azaltAria: string, artirAria: string, kaydiriciAria?: string, gostergeSinifi?: string}} s
+     *   adimDugmeleri?: boolean, kaydirici?: boolean, yalnizSon?: boolean, sinirlar?: Function, goster: Function, azaltAria: string, artirAria: string, kaydiriciAria?: string, gostergeSinifi?: string}} s
+     *   sinirlar: () => {min, max}; verilirse ± düğmeleri sınırı her tıklamada buradan okur (min/max yalnız kaydırıcı özniteliği ve geçerlilik denetimi içindir)
      *   yalnizSon: kaydırıcı sürüklenirken ara değer gönderilmez, yalnız bırakınca son değer gider (perde gibi fiziksel hareket eden cihazlar)
      * @returns {{kok: HTMLElement, dugmeler: HTMLElement[], gosterge: HTMLElement}}
      */
@@ -399,9 +409,17 @@
       let aralik = null;
       let uygula = null;
 
+      // Kaydırıcının dolu izi (CSS --deger, yuzey.css .kaydirici): tutamakla aynı konumda olmalı; yoksa iz hep %50 dolu görünür.
+      // CSSOM ile yazılır (satır içi stil bildirimi değil, CSP uyumlu); ortam desteklemiyorsa sessizce geçer.
+      const dolguYaz = function () {
+        if (!aralik || !aralik.style || typeof aralik.style.setProperty !== 'function') return;
+        const oran = aralikGecerli ? (sinirla(sayiMi(guncel) ? guncel : s.min, s.min, s.max) - s.min) / (s.max - s.min) : 0;
+        aralik.style.setProperty('--deger', temizSayi(oran * 100) + '%');
+      };
       const goster = function () {
         gosterge.textContent = sayiMi(guncel) ? s.goster(guncel) : '—';
         if (aralik && sayiMi(guncel)) aralik.value = String(guncel);
+        dolguYaz();
       };
       const gonder = function (deger, son, ara) {
         const yuk = { kimlik: karo.id, servis: s.servis, veri: s.veriYap(deger) };
@@ -462,7 +480,9 @@
           b.odakKaydet('c:' + karo.id + ':' + ad + '-' + d[3], dugme);
           dugme.addEventListener('click', function () {
             if (!sayiMi(guncel)) return;
-            const yeni = sinirla(hizala(temizSayi(guncel + d[1] * artim), d[1], s.hizaAdimi), s.min, s.max);
+            // s.sinirlar verilmişse sınırlar HER tıklamada yeniden okunur (karşı sınır oturum içinde oynamış olabilir; ör. ısıt/soğut aralığı)
+            const sinir = typeof s.sinirlar === 'function' ? s.sinirlar() : { min: s.min, max: s.max };
+            const yeni = sinirla(hizala(temizSayi(guncel + d[1] * artim), d[1], s.hizaAdimi), sinir.min, sinir.max);
             if (yeni !== guncel) degistir(yeni, 'adim');
           });
           dugmeler.push(dugme);
@@ -483,6 +503,7 @@
         aralik.step = String(s.adim);
         aralik.value = String(sayiMi(guncel) ? sinirla(guncel, s.min, s.max) : s.min);
         aralik.disabled = !kullanilabilir;
+        dolguYaz();
         aralik.setAttribute('aria-label', s.kaydiriciAria || s.azaltAria);
         b.odakKaydet('c:' + karo.id + ':' + ad + '-kaydirici', aralik);
         // Sürüklerken panel yeniden çizilmez (öğe yok olursa sürükleme kopar); bırakınca / odak gidince çözülür.
@@ -611,7 +632,9 @@
         oge.textContent = s.etiketYap ? s.etiketYap(secenek) : secenek;
         liste.appendChild(oge);
       });
+      // Değer bilinmiyorsa kutu BOŞ görünür: tarayıcı ilk seçeneği seçili gösterirse, onu seçmek 'change' üretmez ve istek hiç gitmez
       if (gorunen !== null) liste.value = gorunen;
+      else liste.selectedIndex = -1;
       liste.disabled = !karo.kullanilabilir || s.secenekler.length === 0;
       b.odakKaydet('c:' + karo.id + ':' + ad, liste);
       let donukta = false;
@@ -629,7 +652,7 @@
       };
       liste.addEventListener('focus', donukAc);
       liste.addEventListener('blur', donukKapat);
-      b.temizlikEkle(donukKapat);
+      b.cizimTemizligiEkle(donukKapat); // pointerup'ta DEĞİL, panel yeniden kurulurken (açık liste fareyle açılınca pointerup'tan sonra da donuk kalmalı)
       let uygula = null;
       liste.addEventListener('change', function () {
         const deger = liste.value;
@@ -641,7 +664,10 @@
         if (deger === s.secili) return;
         donukAc();
         b.calistir({ kimlik: karo.id, servis: s.servis, veri: s.veriYap(deger), sonDeger: true }, karo, liste).then(function (sonuc) {
-          if (!sonuc || sonuc.ok !== true) liste.value = s.secili === null ? '' : s.secili;
+          if (!sonuc || sonuc.ok !== true) {
+            if (s.secili === null) liste.selectedIndex = -1;
+            else liste.value = s.secili;
+          }
           donukKapat();
         });
       });
@@ -780,8 +806,9 @@
     function klimaAraligi(karo, oz) {
       const adim = sayiMi(oz.adim) ? oz.adim : 1;
       const simdiki = { alt: oz.hedefAlt, ust: oz.hedefUst };
-      const satir = function (ad, anahtar, etiketAnahtar, azaltAnahtar, artirAnahtar, enAz, enCok) {
+      const satir = function (ad, anahtar, etiketAnahtar, azaltAnahtar, artirAnahtar, enAz, enCok, sinirlar) {
         return sayisalDenetim(karo, ad, {
+          sinirlar: sinirlar,
           servis: 'set_temperature',
           veriYap: function (d) {
             simdiki[anahtar] = d;
@@ -800,8 +827,13 @@
           artirAria: t(artirAnahtar, { etiket: karo.etiket }),
         });
       };
-      const alt = satir('hedef-alt', 'alt', 'yuzey.klima.altDeger', 'yuzey.klima.altAzalt', 'yuzey.klima.altArtir', oz.enAz, Math.min(oz.enCok, oz.hedefUst - adim));
-      const ust = satir('hedef-ust', 'ust', 'yuzey.klima.ustDeger', 'yuzey.klima.ustAzalt', 'yuzey.klima.ustArtir', Math.max(oz.enAz, oz.hedefAlt + adim), oz.enCok);
+      // Karşı sınır kullanıcı eliyle oynayınca (simdiki güncellenir) bu satırın sınırı da onunla birlikte oynar: alt < üst oturum boyunca korunur.
+      const alt = satir('hedef-alt', 'alt', 'yuzey.klima.altDeger', 'yuzey.klima.altAzalt', 'yuzey.klima.altArtir', oz.enAz, Math.min(oz.enCok, oz.hedefUst - adim), function () {
+        return { min: oz.enAz, max: Math.min(oz.enCok, simdiki.ust - adim) };
+      });
+      const ust = satir('hedef-ust', 'ust', 'yuzey.klima.ustDeger', 'yuzey.klima.ustAzalt', 'yuzey.klima.ustArtir', Math.max(oz.enAz, oz.hedefAlt + adim), oz.enCok, function () {
+        return { min: Math.max(oz.enAz, simdiki.alt + adim), max: oz.enCok };
+      });
       const kok = olustur('div', 'kart-aralik');
       kok.appendChild(alt.kok);
       kok.appendChild(ust.kok);
@@ -1041,7 +1073,7 @@
       const kutu = kartKutusu(karo, 'sayi');
       const birim = typeof oz.birim === 'string' && oz.birim !== '' ? ' ' + oz.birim : '';
       const goster = function (d) {
-        return sayiYaz(d, dilAl()) + birim;
+        return sayiYaz(d, dilAl(), adimBasamagi(oz.adim)) + birim;
       };
       kutu.appendChild(baslikSatiri(karo, karo.ulasilamiyor ? t('yuzey.durum.ulasilamiyor') : sayiMi(oz.deger) ? goster(oz.deger) : '').satir);
       if (!sayiMi(oz.enAz) || !sayiMi(oz.enCok)) {
@@ -1123,7 +1155,8 @@
           deger: sayiMi(oz.yuzde) ? oz.yuzde : 0,
           min: 0,
           max: 100,
-          adim: oz.adimYuzde >= 1 ? Math.round(oz.adimYuzde) : 1,
+          // Aşağı yuvarlanır: HA yüzde -> hız eşlemesinde hız k'nın üst sınırı k*100//n; 16,67 -> 17 olursa ilk hıza (<=16) hiç inilemezdi
+          adim: oz.adimYuzde >= 1 ? Math.floor(oz.adimYuzde) : 1,
           adimDugmeleri: false,
           kaydirici: true,
           goster: function (d) {
@@ -1340,7 +1373,7 @@
           const k = Arama.alanKomutu(karo, ton);
           const yakin = k && !k.hata && sayiMi(oz.renkSicakligi) && Math.abs(oz.renkSicakligi - k.kelvin) <= BEYAZ_YAKINLIGI_K && karo.durum === 'acik';
           return k && !k.hata
-            ? { metin: t('yuzey.isik.' + ton), aria: t('yuzey.isik.tonAra', { etiket: karo.etiket, ad: t('yuzey.isik.' + ton), n: k.kelvin }), servis: k.servis, veri: k.veri, vurgu: !!yakin, ad: 'ton-' + ton }
+            ? { metin: t('yuzey.isik.' + ton), aria: t('yuzey.isik.tonAra', { etiket: karo.etiket, ad: t('yuzey.isik.' + ton), n: k.kelvin }), servis: k.servis, veri: k.veri, vurgu: !!yakin, basili: !!yakin, ad: 'ton-' + ton }
             : null;
         }).filter(Boolean);
         if (tonlar.length > 0) {
@@ -1390,7 +1423,7 @@
           return typeof oz.secenek === 'string' ? oz.secenek : '';
         case 'input_number':
         case 'number':
-          return sayiMi(oz.deger) ? sayiYaz(oz.deger, dilAl()) + (typeof oz.birim === 'string' && oz.birim !== '' ? ' ' + oz.birim : '') : '';
+          return sayiMi(oz.deger) ? sayiYaz(oz.deger, dilAl(), adimBasamagi(oz.adim)) + (typeof oz.birim === 'string' && oz.birim !== '' ? ' ' + oz.birim : '') : '';
         case 'timer': {
           const durum = ZAMANLAYICI_DURUMLARI.indexOf(oz.durum) >= 0 ? t('yuzey.zamanlayici.durum.' + oz.durum) : '';
           const kalan = oz.durum === 'idle' ? null : zamanlayiciKalan(oz);

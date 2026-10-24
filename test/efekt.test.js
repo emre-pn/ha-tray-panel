@@ -124,6 +124,19 @@ test('havaDurumuBul: ilk hava karosunun beyaz listeli durumunu bulur; model bozu
   for (const kotu of [null, undefined, {}, { gruplar: 5 }, { gruplar: [null, { karolar: 'x' }, { karolar: [null, 5] }] }, 'x']) assert.equal(E.havaDurumuBul(kotu), null);
 });
 
+test('havaDurumuBul (B137): Hava kartındaki (bilgi.kartlar) hava durumunu görür; kart favorilerden önce gelir; bozuk bilgi şekilleri null verir', () => {
+  const kart = (durum, tur = 'hava') => ({ tur, karo: { alan: 'weather', ozellik: { durum } } });
+  assert.equal(E.havaDurumuBul({ gruplar: [], bilgi: { kartlar: [kart('rainy')] } }), 'rainy');
+  assert.equal(E.havaDurumuBul({ bilgi: { kartlar: [{ tur: 'saat', karo: null }, kart('snowy')] } }), 'snowy', 'modelde gruplar yoksa da çalışır');
+  const grupta = { gruplar: [{ karolar: [{ alan: 'weather', ozellik: { durum: 'sunny' } }] }] };
+  assert.equal(E.havaDurumuBul({ ...grupta, bilgi: { kartlar: [kart('rainy')] } }), 'rainy', 'hem kart hem favori varken kart önce');
+  assert.equal(E.havaDurumuBul({ ...grupta, bilgi: { kartlar: [] } }), 'sunny', 'kartta hava yoksa favoriye düşülür');
+  assert.equal(E.havaDurumuBul({ ...grupta, bilgi: { kartlar: [kart('rainy', 'varlik')] } }), 'sunny', 'tür hava olmayan kart sayılmaz');
+  for (const bozuk of [null, 5, 'x', { kartlar: 5 }, { kartlar: [null, 5, 'x'] }, { kartlar: [{ tur: 'hava', karo: null }] }, { kartlar: [{ tur: 'hava', karo: { alan: 'weather' } }] }, { kartlar: [{ tur: 'hava', karo: { alan: 'weather', ozellik: { durum: 5 } } }] }, { kartlar: [{ tur: 'hava', karo: { alan: 'sensor', ozellik: { durum: 'rainy' } } }] }]) {
+    assert.equal(E.havaDurumuBul({ gruplar: [], bilgi: bozuk }), null, JSON.stringify(bozuk));
+  }
+});
+
 test('parcacikSayisi: pencere alanıyla orantılı, alt ve üst sınırlı; bilinmeyen tür 0', () => {
   const taban = E.parcacikSayisi('yagmur', 360, 420);
   assert.ok(taban >= 40 && taban <= E.EN_COK_PARCACIK);
