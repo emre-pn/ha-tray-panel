@@ -65,3 +65,17 @@ test('h-09: REST yedeğinde geciken çağrıdan sonra durum tazelenir; diğer ha
   assert.equal(belirsiz.bildirimler[0].tur, 'hata');
   assert.match(belirsiz.bildirimler[0].metin, /^Yapılamadı: Home Assistant yanıt vermedi/);
 });
+
+test('(bulgu 19) gecikti sonucu çağırana neden ile döner (sessiz/toplu dal ve normal dal); sır taşımaz, diğer hatalarda neden yine hata türüdür', async () => {
+  const kayit = { entity_id: 'scene.uzun', ad: 'Uzun sahne' };
+  const toplu = ortam('gecikti');
+  const t = await toplu.katman.kayitliCalistir({ kimlik: 'scene.uzun', kaynak: 'panel', kayit, sessiz: true }, 'cihaz');
+  assert.deepEqual(t, { ok: false, tur: 'ha-hatasi', ad: 'Uzun sahne', neden: 'gecikti' });
+  assert.equal(toplu.bildirimler.length, 0, 'toplu dal bildirim vermez');
+  const normal = ortam('gecikti');
+  const n = await normal.katman.yuzeydenCalistir('panel', { kimlik: 'scene.uzun' });
+  assert.deepEqual(n, { ok: false, tur: 'ha-hatasi', ad: 'Uzun sahne', neden: 'gecikti' });
+  const belirsiz = ortam('belirsiz');
+  const b = await belirsiz.katman.kayitliCalistir({ kimlik: 'scene.uzun', kaynak: 'panel', kayit, sessiz: true }, 'cihaz');
+  assert.deepEqual([b.ok, b.tur, b.neden], [false, 'ha-hatasi', 'belirsiz']);
+});

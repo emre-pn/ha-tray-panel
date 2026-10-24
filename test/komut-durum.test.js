@@ -157,6 +157,41 @@ test('durumDosyasiYaz: JSON yazar (geçici dosya kalmaz), var olan dosyayı değ
   }
 });
 
+test('durumDosyasiYaz: yazma yarıda kalırsa (ENOSPC) geçici dosya silinir ve sonuç "yazilamadi" olur; hedef değişmez', () => {
+  const g = gecici();
+  try {
+    const belge = durumBelgesiOlustur({ simdi: SIMDI, karolar: [karo('light.masa', 'Masa')] });
+    const klasor = path.join(g.ev, 'Belgeler');
+    const yol = path.join(klasor, 'durum.json');
+    const onceki = JSON.stringify(durumBelgesiOlustur({ simdi: SIMDI, karolar: [] }));
+    fs.writeFileSync(yol, onceki, 'utf8');
+    let silinen = null;
+    const sahteFs = {
+      ...fs,
+      // geçici dosyayı oluşturur, bir kısmını yazar, sonra disk dolu hatası fırlatır
+      writeFileSync: (dosya, veri, secenek) => {
+        fs.writeFileSync(dosya, String(veri).slice(0, 5), secenek);
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      },
+      unlinkSync: (dosya) => {
+        silinen = dosya;
+        return fs.unlinkSync(dosya);
+      },
+    };
+    assert.deepEqual(durumDosyasiYaz(yol, belge, { fs: sahteFs, ev: g.ev, pid: 4242 }), { ok: false, neden: 'yazilamadi' });
+    assert.equal(path.basename(silinen), '.durum.json.4242.tmp', 'geçici dosya silindi');
+    assert.deepEqual(fs.readdirSync(klasor), ['durum.json'], 'artık dosya kalmadı');
+    assert.equal(fs.readFileSync(yol, 'utf8'), onceki, 'hedef bozulmadı');
+    // yeniden adlandırma başarısız olursa da aynı temizlik
+    silinen = null;
+    const renameHata = { ...fs, renameSync: () => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); } };
+    assert.deepEqual(durumDosyasiYaz(yol, belge, { fs: renameHata, ev: g.ev, pid: 4243 }), { ok: false, neden: 'yazilamadi' });
+    assert.deepEqual(fs.readdirSync(klasor), ['durum.json']);
+  } finally {
+    g.temizle();
+  }
+});
+
 test('durumDosyasiYaz: hedef klasör ya da düz olmayan dosyaysa, ya da yasak klasördeyse yazılmaz', () => {
   const g = gecici();
   try {

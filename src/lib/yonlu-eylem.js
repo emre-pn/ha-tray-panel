@@ -101,6 +101,10 @@ function goreliParlaklik(varlik, delta) {
 /**
  * Göreli vantilatör hızı (fan.set_percentage): yüzde 0..100 arasında kalır; 0 vantilatörü kapatır (HA davranışı).
  * Kapalıyken artı adım o hızla açar, eksi adım bir şey yapmaz. Açıkken `percentage` bilinmiyorsa desteklenmiyor.
+ * Basamaklı vantilatörde (`percentage_step` > 1; ör. 3 hızlı fanda 33,33) HA yüzdeyi yukarı yuvarlayarak hız basamağına çevirir
+ * (ceil(yüzde * hızSayısı / 100)); delta basamaktan küçükse aynı basamağa düşer ve hız değişmez. Bu yüzden delta basamak sayısına
+ * çevrilir (en az 1 basamak, işaretine göre) ve hedef yüzde o basamağın alt sınırıdır (tamsayıya aşağı yuvarlanır: 66,67 -> 66 yine
+ * 2. basamak). Adım bilinmiyorsa ya da 1'den küçükse (sürekli ölçek) hesap yüzde üzerinden yapılır.
  * @returns {{tur: 'ayarla', yuzde: number} | {tur: 'degisim-yok'} | {tur: 'desteklenmiyor'} | {tur: 'ulasilamiyor'}}
  */
 function goreliHiz(varlik, delta) {
@@ -112,8 +116,20 @@ function goreliHiz(varlik, delta) {
   else if (durum === 'on') simdiki = sayi(varlik.attributes?.percentage);
   else return { tur: 'desteklenmiyor' };
   if (simdiki === null) return { tur: 'desteklenmiyor' };
+  const adim = sayi(varlik.attributes?.percentage_step);
+  if (adim !== null && adim > 1 && adim <= 100) return goreliBasamak(simdiki, delta, adim);
   const yeni = sinirla(Math.round(simdiki + delta), 0, 100);
   return yeni === Math.round(simdiki) ? { tur: 'degisim-yok' } : { tur: 'ayarla', yuzde: yeni };
+}
+
+/** Basamaklı vantilatör (goreliHiz): basamak sayısı üzerinden göreli hız; hedef yüzde hedef basamağın alt sınırıdır (son basamak 100). */
+function goreliBasamak(simdiki, delta, adim) {
+  const enCok = Math.round(100 / adim);
+  const simdikiBasamak = sinirla(Math.round(simdiki / adim), 0, enCok);
+  const fark = Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta) / adim));
+  const hedefBasamak = sinirla(simdikiBasamak + fark, 0, enCok);
+  const yeni = hedefBasamak >= enCok ? 100 : Math.floor(hedefBasamak * adim);
+  return hedefBasamak === simdikiBasamak || yeni === Math.round(simdiki) ? { tur: 'degisim-yok' } : { tur: 'ayarla', yuzde: yeni };
 }
 
 module.exports = {

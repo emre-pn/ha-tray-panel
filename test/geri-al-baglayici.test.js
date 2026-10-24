@@ -9,16 +9,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { geriAlBaglayiciOlustur } = require('../src/lib/geri-al-baglayici');
 const { HAZIRLIK_BUTCESI_MS } = require('../src/eylem');
+const { kapiOlustur } = require('../src/lib/kimlikli-kapi');
 const { eylemOrtami, TEMEL_VARLIKLAR, TEMEL_FAVORILER } = require('./eylem-sahte');
+const { anaCevirmen } = require('../src/lib/ceviri-varsayilan');
 
 function kur(ek = {}) {
-  const o = eylemOrtami(ek);
+  const { t, ...eylemEk } = ek;
+  const o = eylemOrtami(eylemEk);
   const bildirimler = [];
   const sayac = { degisti: 0 };
   const b = geriAlBaglayiciOlustur({
     eylem: o.katman,
     ayarlarAl: () => o.ayarlar,
     bildir: (x) => bildirimler.push(x),
+    ...(t ? { t } : {}),
     degisti: () => {
       sayac.degisti += 1;
     },
@@ -223,6 +227,37 @@ test('kısmi başarı: başarılı adımlar uygulanır, başarısız sayı bildi
   assert.equal(o.b.ozet(), null, 'kısmi başarıda girdi geri konmaz');
 });
 
+test('kısmi başarı: tek başarısız adım her dilde tekil yazılır ("1 step failed"), çoğul sayıda çoğul kalır', async () => {
+  const beklenenTekil = {
+    tr: 'Kısmen geri alındı: Film (1 adım yapılamadı)',
+    en: 'Partly undone: Film (1 step failed)',
+    de: 'Teilweise rückgängig gemacht: Film (1 Schritt fehlgeschlagen)',
+    fr: 'Annulation partielle : Film (1 étape échouée)',
+    es: 'Deshecho en parte: Film (1 paso falló)',
+  };
+  for (const [dil, metin] of Object.entries(beklenenTekil)) {
+    const varliklar = structuredClone(TEMEL_VARLIKLAR);
+    varliklar['scene.film'].attributes.entity_id = ['switch.priz', 'light.yatak'];
+    let engelle = false;
+    const o = kur({
+      t: anaCevirmen(dil),
+      varliklar,
+      sahneEtkileri: { 'scene.film': { 'switch.priz': { state: 'off' }, 'light.yatak': { state: 'on' } } },
+      haSarmala: (ha) => async (yol, secenek) => {
+        if (engelle && secenek?.yontem === 'POST' && yol.startsWith('/api/services/light/')) throw Object.assign(new Error('x'), { tur: 'ag' });
+        return ha(yol, secenek);
+      },
+    });
+    await o.panel({ kimlik: 'scene.film' });
+    engelle = true;
+    const s = await o.b.geriAl('panel');
+    assert.equal(s.basarisiz, 1, dil);
+    assert.equal(o.bildirimler.at(-1).metin, metin, dil);
+  }
+  const en = anaCevirmen('en');
+  assert.equal(en('geriAl.kismi', { ad: 'Film', n: 2 }), 'Partly undone: Film (2 steps failed)');
+});
+
 test('süre dolumu: girdi 10 dk sonra düşer, panel modeli haberdar edilir; ayardaki süre canlı uygulanır', async () => {
   const o = kur({ ayarlar: { geriAlSureDk: 2 } });
   await o.panel({ kimlik: 'switch.priz' });
@@ -316,4 +351,107 @@ test('varsayılan favoriler listesi: yalnız zararsız eylemler girdi üretir (k
   const s = await o.panel({ kimlik: 'light.kapi_lambasi' });
   assert.deepEqual([s.ok, s.tur], [false, 'yasak']);
   assert.equal(o.b.ozet(), null);
+});
+
+test('(bulgu 11) izlenmeyen sahne üyesinin durumu ikinci çalıştırmada yeniden okunur: bayat "kapalı" yüzünden geri al açık ışığı KAPATMAZ', async () => {
+  const varliklar = structuredClone(TEMEL_VARLIKLAR);
+  varliklar['scene.film'].attributes.entity_id = ['light.koridor'];
+  varliklar['light.koridor'] = { entity_id: 'light.koridor', state: 'off', attributes: { friendly_name: 'Koridor' } };
+  const o = kur({
+    varliklar,
+    canli: true,
+    izlenen: ['scene.film'], // üye favori değil: canlı olayları depoya gelmez
+    sahneEtkileri: { 'scene.film': { 'light.koridor': { state: 'on', attributes: { brightness: 255 } } } },
+  });
+  await o.panel({ kimlik: 'scene.film' }); // 1. çalıştırma: koridor 'off' okunur
+  o.ha.degistir('light.koridor', { state: 'on', attributes: { brightness: 128 } }); // elle açıldı: WS olayı depoya gelmez
+  await o.saat.ileri(1500);
+  await o.panel({ kimlik: 'scene.film' }); // 2. çalıştırma: koridor gerçekte AÇIK
+  const once = o.postlar().length;
+  const s = await o.b.geriAl('panel');
+  assert.equal(s.ok, true);
+  const yeni = o.postlar().slice(once);
+  assert.equal(yeni.some((p) => p.yol === '/api/services/light/turn_off'), false, 'açık ışık geri alma ile kapatılmadı');
+  assert.deepEqual(yeni.map((p) => p.yol), ['/api/services/light/turn_on']);
+  assert.equal(o.ha.durum.get('light.koridor').state, 'on');
+});
+
+test('(bulgu 12) favori olmayan sahne için hazırlık üyeleri okumaz: HA\'ya hiç GET gitmez, sonuç "bilinmeyen-favori"', async () => {
+  const varliklar = structuredClone(TEMEL_VARLIKLAR);
+  varliklar['scene.baska'] = { entity_id: 'scene.baska', state: 'unknown', attributes: { friendly_name: 'Başka', entity_id: ['light.salon', 'switch.priz'] } };
+  const o = kur({ varliklar, canli: false });
+  const s = await o.panel({ kimlik: 'scene.baska' });
+  assert.deepEqual([s.ok, s.tur], [false, 'bilinmeyen-favori']);
+  assert.equal(o.ha.istekler.length, 0, 'ne sahne ne üyeler okundu');
+  const kotu = await o.panel({ kimlik: 'scene.x/../../config' });
+  assert.deepEqual([kotu.ok, kotu.tur], [false, 'gecersiz']);
+  assert.equal(o.ha.istekler.length, 0);
+  assert.equal(o.b.ozet(), null);
+});
+
+/**
+ * Gecikmeli HA: her istek kimlikli kapıdan (aynı anda en çok 1, 'yuksek' önde) geçer ve sanal saatle rttMs sürer; istek başlangıçları kaydedilir.
+ * Sanal saat zamanlayıcıları sırayla çalıştırır; promise zincirlerinin ilerlemesi için her adımdan sonra olay döngüsü boşaltılır.
+ */
+function gecikmeliHaKur(rttMs, { uyeSayisi = 12 } = {}) {
+  const varliklar = structuredClone(TEMEL_VARLIKLAR);
+  const uyeler = [];
+  for (let i = 0; i < uyeSayisi; i += 1) {
+    const kimlik = `light.u${i}`;
+    uyeler.push(kimlik);
+    varliklar[kimlik] = { entity_id: kimlik, state: 'on', attributes: { friendly_name: `Üye ${i}`, brightness: 128 } };
+  }
+  varliklar['scene.film'].attributes.entity_id = uyeler;
+  const baslayanlar = [];
+  let kapi;
+  let o;
+  const sar = (ha) => async (yol, sec = {}) => {
+    kapi ??= kapiOlustur({ zaman: o.saat });
+    const birak = await kapi.al({ oncelik: sec.yontem === 'POST' || sec.oncelik === 'yuksek' ? 'yuksek' : 'normal' });
+    baslayanlar.push({ yol, yontem: sec.yontem ?? 'GET', t: o.saat.simdi() });
+    try {
+      await new Promise((coz) => o.saat.setTimeout(coz, rttMs));
+      return await ha(yol, sec);
+    } finally {
+      birak();
+    }
+  };
+  // üyeler favori değil, yalnız sahne izlenir (canlı bağlantıda yalnız izlenen kümenin olayları depoya gelir)
+  o = kur({ varliklar, canli: true, izlenen: ['scene.film'], favoriler: TEMEL_FAVORILER.filter((f) => f.entity_id === 'scene.film'), haSarmala: sar });
+  const t0 = o.saat.simdi();
+  async function ilerle(toplamMs) {
+    for (let gecen = 0; gecen < toplamMs; gecen += 10) {
+      await o.saat.ileri(10);
+      for (let i = 0; i < 12; i += 1) await new Promise((coz) => setImmediate(coz));
+    }
+  }
+  return { o, baslayanlar, ilerle, t0, uyeler };
+}
+
+test('(bulgu 20) 12 izlenmeyen üyeli sahne, yavaş HA (200 ms/istek): üye okumaları bütçeyi aşınca yeni okuma başlamaz ve sahne POST hemen arkasından gider', async () => {
+  const { o, baslayanlar, ilerle, t0 } = gecikmeliHaKur(200);
+  const sonuc = o.panel({ kimlik: 'scene.film' });
+  await ilerle(HAZIRLIK_BUTCESI_MS + 1500);
+  assert.equal((await sonuc).ok, true);
+  const goreli = baslayanlar.map((b) => ({ ...b, t: b.t - t0 }));
+  const uyeOkumalari = goreli.filter((b) => b.yontem === 'GET' && b.yol.includes('light.u'));
+  assert.ok(uyeOkumalari.length >= 5, 'bütçe içinde üyeler okundu');
+  assert.ok(uyeOkumalari.length < 12, 'hepsi okunmadı');
+  assert.equal(uyeOkumalari.filter((b) => b.t >= HAZIRLIK_BUTCESI_MS).length, 0, 'bütçe dolduktan sonra yeni üye okuması başlamadı');
+  const post = goreli.find((b) => b.yontem === 'POST');
+  assert.ok(post, 'sahne POST gitti');
+  assert.ok(post.t <= HAZIRLIK_BUTCESI_MS + 200, `POST ${post.t} ms'de başladı: bütçe + yoldaki tek istek`);
+  assert.equal(o.b.ozet(), null, 'okuma tamamlanmadığı için geri al kaydı oluşmadı (eski davranış)');
+});
+
+test('(bulgu 20) hızlı HA (20 ms/istek): 12 izlenmeyen üye bütçe içinde sırayla okunur ve geri al kaydı oluşur', async () => {
+  const { o, baslayanlar, ilerle, uyeler } = gecikmeliHaKur(20);
+  const sonuc = o.panel({ kimlik: 'scene.film' });
+  await ilerle(1200);
+  assert.equal((await sonuc).ok, true);
+  assert.deepEqual(baslayanlar.filter((b) => b.yontem === 'GET' && b.yol.includes('light.u')).map((b) => b.yol.split('/').pop()), uyeler, 'üyeler sırayla ve birer kez okundu');
+  assert.deepEqual(o.b.ozet()?.adet, 1);
+  const geriAlma = o.b.geriAl('panel'); // geri alma adımları da yavaş HA'dan geçer: sanal saat ilerletilir
+  await ilerle(1000);
+  assert.equal((await geriAlma).ok, true);
 });

@@ -151,10 +151,11 @@ function durumDosyasiYaz(yol, belge, { fs = nodeFs, path = nodePath, ev = null, 
     // Yalnız boş bir dosyanın ya da önceki bir durum belgesinin üzerine yazılır: `--cikti` kullanıcının başka bir .json dosyasını
     // (ayar yedeği, VS Code ayarı, paket dosyası) sessizce ezemez.
     if (mevcut && mevcut.size > 0 && !oncekiDurumBelgesiMi(yol, mevcut, fs)) return { ok: false, neden: 'baska-dosya' };
-    fs.writeFileSync(gecici, metin, { encoding: 'utf8', flag: 'w' });
     try {
+      fs.writeFileSync(gecici, metin, { encoding: 'utf8', flag: 'w' });
       fs.renameSync(gecici, yol);
     } catch (hata) {
+      // Yazma yarıda kalsa (ENOSPC/EIO) da yeniden adlandırma başarısız olsa da geçici dosya bırakılmaz (adı pid içerir: her çalıştırmada yeni artık).
       try {
         fs.unlinkSync(gecici);
       } catch {

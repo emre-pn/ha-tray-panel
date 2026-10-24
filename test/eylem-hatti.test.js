@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { eylemHattiOlustur, basiliTutmaDeposu, hizSiniriOlustur, IZINLI_SERVISLER, ORAN_SINIRI, ORAN_SINIRI_DUGME, ORAN_SINIRI_SON } = require('../src/lib/eylem-hatti');
+const { eylemHattiOlustur, basiliTutmaDeposu, hizSiniriOlustur, BASILI_SURE_MS, IZINLI_SERVISLER, ORAN_SINIRI, ORAN_SINIRI_DUGME, ORAN_SINIRI_SON } = require('../src/lib/eylem-hatti');
 const { KAYNAKLAR } = require('../src/lib/eylem-sinifi');
 
 const DURUMLAR = {
@@ -294,6 +294,25 @@ test('basiliTutmaDeposu: 0,8 sn dolmadan onay yok; dolunca bir kez; ikinci kez y
   t += 900;
   assert.equal(depo.tuket('a.b'), false);
   assert.equal(depo.basla(5), false);
+});
+
+test('basiliTutmaDeposu: ana taraftaki kapının sınırları sabit: süre 800 ms, kabul eşiği 700 ms (100 ms tolerans), üst sınır 10 sn', () => {
+  assert.equal(BASILI_SURE_MS, 800, 'basılı tutma süresi 800 ms altına inemez');
+  // Her sınır değeri için ayrı basış: tuket tek kullanımlık olduğundan örnekler birbirini etkilemesin
+  const dene = (gecenMs) => {
+    let t = 0;
+    const depo = basiliTutmaDeposu({ simdi: () => t });
+    depo.basla('script.iyi_geceler');
+    t = gecenMs;
+    return depo.tuket('script.iyi_geceler');
+  };
+  assert.equal(dene(0), false, 'hemen');
+  assert.equal(dene(500), false, '500 ms: süre kısaltılsa bile geçmemeli');
+  assert.equal(dene(699), false, 'eşiğin 1 ms altı');
+  assert.equal(dene(700), true, 'eşik: süre - 100 ms tolerans');
+  assert.equal(dene(800), true);
+  assert.equal(dene(10_000), true, 'üst sınır dahil');
+  assert.equal(dene(10_001), false, 'unutulmuş basış');
 });
 
 test('basiliTutmaDeposu: sınıra gelince YALNIZ en eski (ya da süresi dolmuş) kayıt atılır; tutulmakta olan basış silinmez', () => {

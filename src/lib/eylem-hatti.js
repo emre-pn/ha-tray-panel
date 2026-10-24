@@ -195,9 +195,10 @@ function hataTuru(hata) {
   return typeof hata?.tur === 'string' ? hata.tur : 'bilinmeyen';
 }
 
-/** HTTP durum kodu varsa (yalnız tam sayı) hata sonucuna eklenir: "sunucu hatası (500)" gibi metin için. */
+/** HTTP durum kodu varsa (yalnız tam sayı) hata sonucuna eklenir: "sunucu hatası (500)" gibi metin için. ad verilmezse sonuçta ad olmaz. */
 function hataSonucu(hata, ad) {
-  const sonuc = { ok: false, tur: 'ha-hatasi', neden: hataTuru(hata), ad };
+  const sonuc = { ok: false, tur: 'ha-hatasi', neden: hataTuru(hata) };
+  if (ad !== undefined) sonuc.ad = ad;
   if (Number.isInteger(hata?.durumKodu) && hata.durumKodu > 0) sonuc.durumKodu = hata.durumKodu;
   return sonuc;
 }
@@ -332,6 +333,7 @@ module.exports = {
   BASILI_SURE_MS,
   ONCE_OZNITELIKLERI,
   oncekiGoruntu,
+  hataSonucu,
   basiliTutmaDeposu,
   hizSiniriOlustur,
   eylemHattiOlustur,

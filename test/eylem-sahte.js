@@ -105,9 +105,10 @@ const TEMEL_FAVORILER = [
 /**
  * Sahte Home Assistant: durum tutar, GET /api/states[/kimlik] yanıtlar, POST /api/services/<alan>/<servis> çağrısının etkisini
  * durumlara uygular (ışık/anahtar/vantilatör aç-kapa-değiştir, parlaklık, renk, vantilatör yüzdesi, sahne) ve her isteği kaydeder.
- * Durum değişince depoya (varsa) yazar ve bildirir.
+ * Durum değişince depoya (varsa) yazar ve bildirir. izlenen (Set): verilirse yalnız bu kimliklerin değişimi depoya yazılır
+ * (canlı bağlantıda yalnız izlenen kümenin olayları depoya gelir; izlenmeyen varlığın değişimi depoya yansımaz).
  */
-function sahteHA({ varliklar = TEMEL_VARLIKLAR, saat, depo = null, sahneEtkileri = {} } = {}) {
+function sahteHA({ varliklar = TEMEL_VARLIKLAR, saat, depo = null, sahneEtkileri = {}, izlenen = null } = {}) {
   const durum = new Map(Object.entries(structuredClone(varliklar)));
   const istekler = [];
   let sayac = 0;
@@ -118,7 +119,7 @@ function sahteHA({ varliklar = TEMEL_VARLIKLAR, saat, depo = null, sahneEtkileri
     const v = durum.get(kimlik);
     v.last_updated = new Date((saat ? saat.simdi() : 0) + sayac).toISOString();
     v.last_changed = v.last_updated;
-    if (depo) {
+    if (depo && (!izlenen || izlenen.has(kimlik))) {
       depo.guncelle(kopya(v));
       depo.bosalt();
     }
@@ -209,10 +210,11 @@ function sahteHA({ varliklar = TEMEL_VARLIKLAR, saat, depo = null, sahneEtkileri
  * Gerçek eylem katmanı + sahte HA + sanal saat + depo. Eylem katmanının bağımlılıkları (bildirim, "son", onay) kaydedilir.
  * @returns {{katman, depo, ha, saat, ayarlar, bildirimler, sonlar, postlar: Function}}
  */
-function eylemOrtami({ varliklar = TEMEL_VARLIKLAR, favoriler = TEMEL_FAVORILER, ayarlar = {}, canli = true, sahneEtkileri = {}, haSarmala = null } = {}) {
+function eylemOrtami({ varliklar = TEMEL_VARLIKLAR, favoriler = TEMEL_FAVORILER, ayarlar = {}, canli = true, sahneEtkileri = {}, haSarmala = null, izlenen = null } = {}) {
   const saat = sahteSaat();
   const depo = durumDeposuOlustur({ gruplamaMs: 0, zaman: { setTimeout: () => 0, clearTimeout: () => {} } });
-  const ha = sahteHA({ varliklar, saat, depo, sahneEtkileri });
+  const izlenenKume = izlenen ? new Set(izlenen) : null; // null: hepsi izleniyor (eski davranış)
+  const ha = sahteHA({ varliklar, saat, depo, sahneEtkileri, izlenen: izlenenKume });
   const ayarNesnesi = { favoriler, etkinlikGecmisi: true, ...ayarlar };
   const bildirimler = [];
   const sonlar = [];
@@ -220,6 +222,7 @@ function eylemOrtami({ varliklar = TEMEL_VARLIKLAR, favoriler = TEMEL_FAVORILER,
     ayarlarAl: () => ayarNesnesi,
     depo,
     canliMi: () => canli,
+    ...(izlenenKume ? { izlenenMi: (k) => izlenenKume.has(k) } : {}),
     haIstek: haSarmala ? haSarmala(ha.haIstek) : ha.haIstek,
     son: { ekle: (k) => sonlar.push(k) },
     geriBildirim: (b) => bildirimler.push(b),

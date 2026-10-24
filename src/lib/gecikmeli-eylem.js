@@ -14,12 +14,14 @@
  *    SUNAMAZ, yıkıcı çalışmaz), servis izin listesi, hız sınırı, tek POST. Hat kuralları o an yeniden uygulanır.
  *  - Süre 1 dakika - 24 saat; en çok 10 bekleyen eylem. Aynı varlığa aynı işlemi yeniden planlamak eskisinin yerine geçer.
  *    "Süreli" planda varlık açılırken (HA'yı beklerken) yer ayrılır: kapatma zamanlayıcısına yer kalmadığı için açık unutulan cihaz olmaz.
+ *    Açma yanıtı gecikirse (komut gitti, sonuç belirsiz: ha-hatasi/gecikti) cihaz açılmış olabilir; bu durumda kapatma yine kurulur.
  *  - Bekleyenler yalnız bellektedir: uygulama kapanınca hepsi iptal olur, bilgisayar uykudayken çalışmaz. Zamanlayıcı tetiklendiğinde
  *    planlanan zamandan 2 dakikadan fazla geçmişse (uyku, saat atlaması) eylem ÇALIŞTIRILMAZ, kullanıcıya "çalışmadı" denir.
  *  - Ayar `gecikmeliEylem` kapanınca bekleyenlerin hepsi iptal edilir.
  */
 
 const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
+const { hataSonucu } = require('./eylem-hatti');
 const { alanAl, guvenliVarlikMi } = require('./suzgec');
 const { SINIF, eylemSinifi } = require('./eylem-sinifi');
 const { kisalt } = require('./metin');
@@ -147,7 +149,7 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
   /**
    * Gecikmeli eylem kurar.
    * @param {{kaynak: 'panel'|'palet', kimlik: string, yon: 'ac'|'kapat'|'sureli', dakika: number}} istek
-   *   'sureli': varlık HEMEN açılır, `dakika` sonra kapatılır ("fan 30dk"). Açma başarısızsa hiçbir şey kurulmaz.
+   *   'sureli': varlık HEMEN açılır, `dakika` sonra kapatılır ("fan 30dk"). Açma kesin başarısızsa hiçbir şey kurulmaz; yanıt gecikmişse (belirsiz) kapatma yine kurulur.
    * @returns {Promise<{ok: boolean, tur?: string, neden?: string, id?: string, bitis?: number}>}
    */
   async function planla({ kaynak, kimlik, yon, dakika } = {}) {
@@ -172,8 +174,8 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     let varlik;
     try {
       varlik = await eylem.guncelDurum(kimlik);
-    } catch {
-      return { ok: false, tur: 'ulasilamiyor' };
+    } catch (hata) {
+      return hataSonucu(hata); // durum okuma hatasının gerçek nedeni ('ha-hatasi' + neden) korunur
     }
     if (varlik === null || varlik === undefined) return { ok: false, tur: 'bulunamadi' };
     if (typeof varlik !== 'object' || varlik.entity_id !== kimlik || !guvenliVarlikMi(varlik)) return { ok: false, tur: 'yasak' };
@@ -184,11 +186,14 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     // Yer denetimi varlığı açmadan ÖNCE yapılır (süreli planda açılmış ama kapatma zamanlayıcısı kurulamamış cihaz olmasın); ayrılan yerler sayılır.
     if (!eskiBul(kimlik, servis) && bekleyenler.size + ayrilan >= EN_COK_BEKLEYEN) return { ok: false, tur: 'dolu' };
 
+    let belirsiz = false; // süreli planda açma yanıtı gecikti: sonuç bilinmiyor
     if (yon === 'sureli') {
       ayrilan += 1; // açma HA'yı beklerken başka bir plan bu yeri alamaz
       try {
         const simdiAc = await eylem.kayitliCalistir({ kimlik, kaynak, kayit, eylem: { servis: YONLER.ac }, sessiz: true }, 'cihaz');
-        if (!simdiAc?.ok) {
+        // 'gecikti': komut HA'ya gitti ama yanıt gelmedi (h-09); cihaz açılmış olabilir. Kapatma yine kurulur (kapatma zararsızdır, sınıf yukarıda denetlendi).
+        belirsiz = simdiAc?.tur === 'ha-hatasi' && simdiAc?.neden === 'gecikti';
+        if (!simdiAc?.ok && !belirsiz) {
           bildir({ tur: 'hata', metin: t('gecikmeli.acilamadi', { ad }) });
           return { ok: false, tur: simdiAc?.tur ?? 'hata' };
         }
@@ -207,7 +212,7 @@ function gecikmeliEylemOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, de
     zamanlayiciKur(o);
     kaydet({ kaynak, kimlik, ad, islem: 'gecikmeli-kur', sonuc: 'ok' });
     const saat = saatMetni(o.bitis);
-    if (yon === 'sureli') bildir({ tur: 'ok', metin: t('gecikmeli.sureli', { ad, saat }) });
+    if (yon === 'sureli') bildir({ tur: 'ok', metin: t(belirsiz ? 'gecikmeli.sureliBelirsiz' : 'gecikmeli.sureli', { ad, saat }) });
     else bildir({ tur: 'ok', metin: t(yon === 'ac' ? 'gecikmeli.planlandiAc' : 'gecikmeli.planlandiKapat', { ad, saat }) });
     degisti();
     return { ok: true, id: o.id, bitis: o.bitis };

@@ -131,6 +131,14 @@ test('boş alan kaydı (hiç oda tanımlı değil) tür gruplu bırakır ve kıs
   o.b.gruplar(g);
   await o.b.yenile();
   assert.equal(o.b.gruplar(g), g);
+  assert.equal(o.olaylar.alanOkuma, 1);
+  await o.saat.ileri(10_000);
+  o.b.gruplar(g);
+  assert.equal(o.olaylar.alanOkuma, 1, '30 sn dolmadı');
+  await o.saat.ileri(21_000);
+  o.b.gruplar(g);
+  await new Promise((coz) => setImmediate(coz));
+  assert.equal(o.olaylar.alanOkuma, 2, '30 sn sonra yeniden okundu (5 dk beklenmez)');
 });
 
 test('ayarDegisti: oda açılınca kayıt hemen okunur, her durumda panel yenilenir', async () => {
@@ -268,12 +276,13 @@ test('odayı kapat: her adım ETİKETLİ ("oda-kapat") ve tek parti olarak izley
   assert.equal(gelenler.length, 3);
 });
 
-test('odayı kapat: 16 sn sonra bile aynı kod yeni kayıtla çalışır (kayıt yenilendi, kod kararlı)', async () => {
+test('odayı kapat: 5 dk sonra bile aynı kod yeni kayıtla çalışır (kayıt yenilendi, kod kararlı)', async () => {
   const o = await hazirKur();
   await o.saat.ileri(YENILEME_MS + 1000);
   o.b.gruplar(MODEL_GRUPLARI());
   await o.b.yenile();
-  assert.equal(odalariCikar(ALAN_VERISI).get('salon').kod, SALON_KODU);
+  assert.equal(o.olaylar.alanOkuma, 2, 'kayıt gerçekten yenilendi');
+  assert.equal(o.b.gruplar(MODEL_GRUPLARI()).find((g) => g.etiket === 'Salon').kod, SALON_KODU, 'bağlayıcının yenilenen kayıttan ürettiği kod aynı');
   assert.equal((await o.b.kapat({ kaynak: 'panel', kod: SALON_KODU })).ok, true);
 });
 

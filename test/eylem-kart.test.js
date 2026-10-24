@@ -157,6 +157,15 @@ test('klima: mod değişimi (onaylı servis) basılı tutma olmadan çalışmaz;
   assert.deepEqual(o.postlar().map((p) => p.govde), [{ entity_id: 'climate.salon', hvac_mode: 'heat' }]);
 });
 
+test('klima: mod değişimi ana süreçte 600 ms süren basışla onaylanmaz (onay-gerekli, POST yok)', async () => {
+  const o = basiliOrtam();
+  assert.equal(o.katman.basiliBasla('climate.salon'), true);
+  o.ilerle(600);
+  const kisa = await o.katman.yuzeydenCalistir('panel', { kimlik: 'climate.salon', servis: 'set_hvac_mode', veri: { hvac_mode: 'heat' }, basili: true });
+  assert.deepEqual([kisa.ok, kisa.tur], [false, 'onay-gerekli'], '600 ms basış 0,8 sn kuralını karşılamaz');
+  assert.deepEqual(o.postlar(), []);
+});
+
 test('klima: cihazın listesinde olmayan mod, bilinmeyen servis ve fazladan parametre reddedilir (basılı tutma olsa bile)', async () => {
   const o = basiliOrtam({ favoriler: [{ entity_id: 'climate.salon', ad: 'Salon klima', onay: false }] });
   for (const yuk of [

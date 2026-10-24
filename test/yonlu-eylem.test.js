@@ -16,7 +16,11 @@ const {
 } = require('../src/lib/yonlu-eylem');
 
 const isik = (state, brightness) => ({ entity_id: 'light.led', state, attributes: brightness === undefined ? {} : { brightness } });
-const fan = (state, percentage) => ({ entity_id: 'fan.vantilator', state, attributes: percentage === undefined ? {} : { percentage } });
+const fan = (state, percentage, percentage_step) => ({
+  entity_id: 'fan.vantilator',
+  state,
+  attributes: { ...(percentage === undefined ? {} : { percentage }), ...(percentage_step === undefined ? {} : { percentage_step }) },
+});
 
 test('yonCoz: işaretli adım ayrılır (+10, -10, +10%, −5, +%10); işaret ve rakam bitişik olmalıdır', () => {
   assert.deepEqual(yonCoz('led +10'), { metin: 'led', yon: { tur: 'goreli', delta: 10 } });
@@ -148,4 +152,42 @@ test('goreliHiz: yüzde 0..100 arasında kalır; kapalıyken artı adım o hızl
   assert.deepEqual(goreliHiz(fan('on', NaN), 10), { tur: 'desteklenmiyor' });
   assert.deepEqual(goreliHiz(fan('on', 50), 0), { tur: 'desteklenmiyor' });
   assert.deepEqual(goreliHiz(null, 10), { tur: 'desteklenmiyor' });
+});
+
+test('goreliHiz: basamaklı fanda (percentage_step) delta hız basamağına çevrilir; gönderilen yüzde HA eşlemesinde hedef basamağa düşer', () => {
+  // HA percentage_to_ordered_list_item: ceil(yüzde * hızSayısı / 100) numaralı hız
+  const hiz = (yuzde, hizSayisi) => Math.ceil((yuzde * hizSayisi) / 100);
+  const ADIM3 = 33.333333333333336;
+  assert.deepEqual(goreliHiz(fan('on', 100, ADIM3), -20), { tur: 'ayarla', yuzde: 66 });
+  assert.deepEqual(goreliHiz(fan('on', 67, ADIM3), -10), { tur: 'ayarla', yuzde: 33 });
+  assert.deepEqual(goreliHiz(fan('on', 66, ADIM3), -10), { tur: 'ayarla', yuzde: 33 });
+  assert.deepEqual(goreliHiz(fan('on', 33, ADIM3), -10), { tur: 'ayarla', yuzde: 0 }, 'en düşük basamaktan eksi fanı kapatır (HA davranışı)');
+  assert.deepEqual(goreliHiz(fan('on', 33, ADIM3), 10), { tur: 'ayarla', yuzde: 66 });
+  assert.deepEqual(goreliHiz(fan('on', 66, ADIM3), 10), { tur: 'ayarla', yuzde: 100 });
+  assert.deepEqual(goreliHiz(fan('on', 100, ADIM3), 10), { tur: 'degisim-yok' });
+  assert.deepEqual(goreliHiz(fan('off', undefined, ADIM3), 10), { tur: 'ayarla', yuzde: 33 }, 'kapalı fanda artı adım en az bir basamak açar');
+  assert.deepEqual(goreliHiz(fan('off', undefined, ADIM3), -10), { tur: 'degisim-yok' });
+  assert.deepEqual(goreliHiz(fan('on', 100, 25), -10), { tur: 'ayarla', yuzde: 75 });
+  assert.deepEqual(goreliHiz(fan('on', 50, 25), 60), { tur: 'ayarla', yuzde: 100 }, 'büyük delta birden çok basamak atlar, 100 ile sınırlı');
+  assert.deepEqual(goreliHiz(fan('on', 50, 25), -60), { tur: 'ayarla', yuzde: 0 });
+  // gönderilen yüzde gerçekten bir alt/üst basamağa düşer (HA yukarı yuvarlamasıyla)
+  for (const [hizSayisi, adim] of [[3, ADIM3], [4, 25], [6, 100 / 6], [7, 100 / 7]]) {
+    for (let mevcut = 1; mevcut <= hizSayisi; mevcut += 1) {
+      const yuzde = mevcut === hizSayisi ? 100 : Math.floor(mevcut * adim);
+      for (const delta of [-20, -10, 10, 20]) {
+        const s = goreliHiz(fan('on', yuzde, adim), delta);
+        const beklenen = Math.max(0, Math.min(hizSayisi, mevcut + Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta) / adim))));
+        if (beklenen === mevcut) assert.equal(s.tur, 'degisim-yok', `${hizSayisi} hız, ${mevcut}. basamak, ${delta}`);
+        else {
+          assert.equal(s.tur, 'ayarla', `${hizSayisi} hız, ${mevcut}. basamak, ${delta}`);
+          assert.equal(s.yuzde === 0 ? 0 : hiz(s.yuzde, hizSayisi), beklenen, `${hizSayisi} hız, ${mevcut}. basamak, ${delta}: ${s.yuzde}`);
+        }
+      }
+    }
+  }
+  // adım yoksa ya da 1 ise (sürekli ölçek) yüzde hesabı aynen
+  for (const adim of [undefined, 1, 0.5, 0, null, 150]) {
+    assert.deepEqual(goreliHiz(fan('on', 50, adim), 20), { tur: 'ayarla', yuzde: 70 }, String(adim));
+    assert.deepEqual(goreliHiz(fan('on', 50, adim), -10), { tur: 'ayarla', yuzde: 40 }, String(adim));
+  }
 });

@@ -37,8 +37,23 @@
   const PARLAKLIK_YAKINLIGI = 0.8; // parlaklıklı aday en az en iyi puanın bu oranı kadar iyi olmalı (h-02)
   const SON_SAYISI = 5; // boş aramada "son kullanılanlar" bölümünün uzunluğu
 
+  // Katlama saf bir karakter -> karakter eşlemesidir; her tuşta tüm etiketler yeniden katlandığı için sonuç karakter başına saklanır.
+  // Büyüklük sınırlıdır (dolunca boşaltılır): bellek, alışılmadık metinlerle sınırsız büyümez.
+  const KATLAMA_ONBELLEK_SINIRI = 4096;
+  const katlamaOnbellegi = new Map();
+
   /** Tek bir karakteri katlar; her zaman TEK karakter döner (boş sonuçta özgün karakter kalır). */
   function katlaKarakter(karakter) {
+    const anahtar = String(karakter);
+    const onceki = katlamaOnbellegi.get(anahtar);
+    if (onceki !== undefined) return onceki;
+    const sonuc = katlaKarakterHesapla(karakter);
+    if (katlamaOnbellegi.size >= KATLAMA_ONBELLEK_SINIRI) katlamaOnbellegi.clear();
+    katlamaOnbellegi.set(anahtar, sonuc);
+    return sonuc;
+  }
+
+  function katlaKarakterHesapla(karakter) {
     let s = String(karakter).toLocaleLowerCase('tr-TR').normalize('NFKD').replace(/[̀-ͯ]/g, '');
     const ilk = Array.from(s)[0];
     if (ilk === undefined) return karakter;

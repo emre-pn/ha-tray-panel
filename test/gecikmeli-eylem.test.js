@@ -80,6 +80,38 @@ test('süreli ("fan 30dk"): HEMEN açılır, süre dolunca kapatılır; açma ba
   assert.equal(hata.bildirimler.at(-1).tur, 'hata');
 });
 
+test('(bulgu 19) süreli: açma yanıtı gecikirse (komut gitti, sonuç belirsiz) kapatma yine kurulur ve belirsiz bildirimi çıkar; kesin hatada kurulmaz', async () => {
+  let postDenemesi = 0;
+  const o = kur({
+    haSarmala: (haIstek) => async (yol, sec) => {
+      if (sec?.yontem === 'POST') postDenemesi += 1;
+      if (sec?.yontem === 'POST' && postDenemesi === 1) {
+        throw Object.assign(new Error('x'), { tur: 'gecikti' }); // POST HA'ya gitti, yanıt zaman aşımına uğradı
+      }
+      return haIstek(yol, sec);
+    },
+  });
+  o.ha.degistir('fan.vantilator', { state: 'off' });
+  const s = await o.g.planla({ kaynak: 'palet', kimlik: 'fan.vantilator', yon: 'sureli', dakika: 30 });
+  assert.equal(s.ok, true, 'cihaz açılmış olabilir: kapatma planı kurulur');
+  assert.equal(o.g.sayi(), 1);
+  assert.equal(o.saat.bekleyen(), 1, '1 kapatma zamanlayıcısı');
+  assert.deepEqual(o.bildirimler, [{ tur: 'ok', metin: `Vantilatör: açma yanıtı gecikti; yine de kapatılacak: T${o.saat.simdi() + 30 * DK}` }]);
+  assert.equal(postDenemesi, 1, 'açma komutu yeniden gönderilmedi');
+  o.ha.degistir('fan.vantilator', { state: 'on' }); // aslında açılmıştı
+  await o.saat.ileri(30 * DK + 10);
+  assert.deepEqual(govde(o), [['/api/services/fan/turn_off', 'fan.vantilator']], 'zamanı gelince kapatma gider');
+  assert.equal(o.ha.durum.get('fan.vantilator').state, 'off');
+
+  // kesin hata (ulaşılamıyor/ağ): hiçbir zamanlayıcı kurulmaz, "açılamadı" denir
+  const ag = kur({ haSarmala: (haIstek) => async (yol, sec) => (sec?.yontem === 'POST' ? Promise.reject(Object.assign(new Error('x'), { tur: 'baglanti' })) : haIstek(yol, sec)) });
+  const r = await ag.g.planla({ kaynak: 'palet', kimlik: 'fan.vantilator', yon: 'sureli', dakika: 30 });
+  assert.equal(r.ok, false);
+  assert.equal(ag.g.sayi(), 0);
+  assert.equal(ag.saat.bekleyen(), 0);
+  assert.match(ag.bildirimler.at(-1).metin, /açılamadı/);
+});
+
 test('ozet: en yakın önde; opak kimlik ve ad, yön ve bitiş var; varlık kimliği YOK', async () => {
   const o = kur();
   await o.g.planla({ kaynak: 'palet', kimlik: 'switch.priz', yon: 'kapat', dakika: 60 });
@@ -193,8 +225,17 @@ test('varlık yok ya da HA\'ya ulaşılamıyor: bulunamadi / ulasilamiyor; hiçb
   const o = kur({ favoriler: [...TEMEL_FAVORILER, { entity_id: 'light.yok', ad: 'Yok' }] });
   assert.equal((await o.g.planla({ kaynak: 'palet', kimlik: 'light.yok', yon: 'kapat', dakika: 10 })).tur, 'bulunamadi');
   const ag = kur({ canli: false, haSarmala: () => async () => Promise.reject(Object.assign(new Error('x'), { tur: 'ag' })) });
-  assert.equal((await ag.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 10 })).tur, 'ulasilamiyor');
+  const agSonuc = await ag.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'kapat', dakika: 10 });
+  assert.deepEqual([agSonuc.ok, agSonuc.tur, agSonuc.neden], [false, 'ha-hatasi', 'ag'], 'durum okuma hatasının gerçek nedeni düzleşmez');
   assert.equal(o.g.sayi() + ag.g.sayi(), 0);
+});
+
+test('(bulgu 14) planla: erişim anahtarı reddi gibi durum okuma hataları "ulasilamiyor"a düzleşmez, neden korunur; hiçbir şey kurulmaz', async () => {
+  const yetki = kur({ canli: false, haSarmala: () => async () => Promise.reject(Object.assign(new Error('x'), { tur: 'yetki', durumKodu: 401 })) });
+  const s = await yetki.g.planla({ kaynak: 'palet', kimlik: 'light.salon', yon: 'sureli', dakika: 10 });
+  assert.deepEqual(s, { ok: false, tur: 'ha-hatasi', neden: 'yetki', durumKodu: 401 });
+  assert.equal(yetki.g.sayi(), 0);
+  assert.deepEqual(yetki.postlar(), []);
 });
 
 test('aynı varlık ve işlem yeniden planlanınca eskisinin yerine geçer; en çok 10 bekleyen', async () => {

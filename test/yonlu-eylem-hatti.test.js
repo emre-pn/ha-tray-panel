@@ -34,7 +34,7 @@ const FAVORILER = () => [
   { entity_id: 'scene.film', ad: 'Film' },
 ];
 
-function ortam({ sunucu = sunucuKur(), favoriler = FAVORILER(), durumHatasi = false } = {}) {
+function ortam({ sunucu = sunucuKur(), favoriler = FAVORILER(), durumHatasi = false, durumHataTuru = 'ag' } = {}) {
   const istekler = [];
   const bildirimler = [];
   const gunlukler = [];
@@ -49,7 +49,7 @@ function ortam({ sunucu = sunucuKur(), favoriler = FAVORILER(), durumHatasi = fa
       istekler.push({ yol, yontem: secenek.yontem ?? 'GET', govde: secenek.govde });
       const e = /^\/api\/states\/(.+)$/.exec(yol);
       if (e) {
-        if (durumHatasi) throw Object.assign(new Error('ag'), { tur: 'ag' });
+        if (durumHatasi) throw Object.assign(new Error('ag'), { tur: durumHataTuru });
         if (!sunucu[e[1]]) throw Object.assign(new Error('x'), { tur: 'bulunamadi' });
         return sunucu[e[1]];
       }
@@ -104,7 +104,7 @@ test('komut satırı: kapalı ışığa artı adım %N ile açar; eksi adım ve 
 test('komut satırı: ışık durumu okunamazsa/ulaşılamazsa hata bildirilir, POST yok; parlaklık bildirmeyen ışıkta hesap yapılmaz', async () => {
   const yok = ortam({ durumHatasi: true });
   const s = await yok.katman.komutSatirindan('led +10');
-  assert.deepEqual([s.ok, s.tur], [false, 'ulasilamiyor']);
+  assert.deepEqual([s.ok, s.tur], [false, 'ha-hatasi']);
   assert.equal(yok.postlar().length, 0);
   assert.equal(yok.bildirimler.at(-1).tur, 'hata');
 
@@ -234,4 +234,23 @@ test('eylem kısayolu: hata ve günlük metinlerinde adres, anahtar ya da kimlik
   const hepsi = JSON.stringify([o.bildirimler, o.gunlukler]);
   assert.doesNotMatch(hepsi, /https?:\/\//);
   assert.doesNotMatch(hepsi, /Bearer|token|eyJ/i);
+});
+
+test('(bulgu 14) yönlü eylemde durum okuma hatası gerçek nedenle bildirilir: doğrudan eylemle ("led 40") AYNI hata metni', async () => {
+  for (const neden of ['yetki', 'baglanti']) {
+    const o = ortam({ durumHatasi: true, durumHataTuru: neden });
+    const yonlu = await o.katman.komutSatirindan('led +10');
+    const dogrudan = await o.katman.komutSatirindan('led 40');
+    assert.deepEqual([yonlu.ok, yonlu.tur], [false, 'ha-hatasi'], neden);
+    assert.deepEqual([dogrudan.ok, dogrudan.tur], [false, 'ha-hatasi'], neden);
+    const hatalar = o.bildirimler.filter((b) => b.tur === 'hata');
+    assert.equal(hatalar.length, 2);
+    assert.equal(hatalar[0].metin, hatalar[1].metin, `${neden}: yönlü ve doğrudan eylem aynı metni verir`);
+    assert.doesNotMatch(hatalar[0].metin, /ulaşılamıyor/, 'anahtar/ağ nedeni "cihaz ulaşılamıyor"a düzleşmez');
+    assert.equal(o.postlar().length, 0);
+  }
+  const anahtar = ortam({ durumHatasi: true, durumHataTuru: 'yetki' });
+  await anahtar.katman.komutSatirindan('led +10');
+  assert.match(anahtar.bildirimler.at(-1).metin, /erişim anahtarı geçersiz/);
+  assert.ok(anahtar.gunlukler.every((m) => !/token|anahtar=|Bearer/i.test(m)));
 });

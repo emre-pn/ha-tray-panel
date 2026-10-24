@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { eylemKatmaniOlustur, eylemHataMetni, REST_SONRASI_YENILEME_MS } = require('../src/eylem');
+const { eylemKatmaniOlustur, eylemHataMetni, REST_SONRASI_YENILEME_MS, HAZIRLIK_BUTCESI_MS } = require('../src/eylem');
 const { durumDeposuOlustur } = require('../src/lib/durum-deposu');
 const { yuzeyModeliOlustur } = require('../src/lib/yuzey-modeli');
 
@@ -25,7 +25,7 @@ const FAVORILER = [
   { entity_id: 'light.kapi_lambasi', ad: 'Lamba' },
 ];
 
-function ortam({ canli = false, diyalogYaniti = true, onayAcik = false, zamanSimdi = () => 1000, karolar = null } = {}) {
+function ortam({ canli = false, diyalogYaniti = true, onayAcik = false, zamanSimdi = () => 1000, karolar = null, izlenenMi = null } = {}) {
   const istekler = [];
   const bildirimler = [];
   const sonlar = [];
@@ -40,6 +40,7 @@ function ortam({ canli = false, diyalogYaniti = true, onayAcik = false, zamanSim
     ayarlarAl: () => ayarlar,
     depo,
     canliMi: () => canli,
+    ...(izlenenMi ? { izlenenMi } : {}),
     haIstek: async (yol, secenek = {}) => {
       istekler.push({ yol, yontem: secenek.yontem ?? 'GET', govde: secenek.govde });
       oncelikler.push(secenek.oncelik);
@@ -63,7 +64,17 @@ function ortam({ canli = false, diyalogYaniti = true, onayAcik = false, zamanSim
     onayBekleniyorBildir: () => bekleyenBildirimler.push(1),
     karolariAl: () => karolar ?? yuzeyModeliOlustur({ favoriler: FAVORILER, durumAl: (k) => SUNUCU[k] }).gruplar.flatMap((g) => g.karolar),
     gunluk: () => {},
-    zaman: { setTimeout: (fn, ms) => zamanlayicilar.push({ fn, ms }) },
+    zaman: {
+      setTimeout: (fn, ms) => {
+        const z = { fn, ms };
+        zamanlayicilar.push(z);
+        return z;
+      },
+      clearTimeout: (z) => {
+        const i = zamanlayicilar.indexOf(z);
+        if (i >= 0) zamanlayicilar.splice(i, 1); // iptal edilen zamanlayıcı listeden düşer: bekleyen sayısı = zamanlayicilar.length
+      },
+    },
     simdi: zamanSimdi,
   });
   const postlar = () => istekler.filter((i) => i.yontem === 'POST');
@@ -155,6 +166,20 @@ test('basılı tutma: renderer "basili:true" dese de ana süreç saati dolmadan 
   assert.equal((await o.katman.yuzeydenCalistir('palet', { kimlik: 'button.pc_bilgisayari_kapat', basili: true })).tur, 'onay-gerekli', 'tek kullanımlık');
   assert.equal(o.katman.basiliBasla('light.olmayan'), false, 'favori olmayan kimlik için basış kaydedilmez');
   assert.equal(o.katman.basiliBasla(5), false);
+});
+
+test('basılı tutma: ana süreçte 600 ms süren basış yetmez (onay-gerekli, POST yok); 800 ms yeter', async () => {
+  let t = 0;
+  const o = ortam({ zamanSimdi: () => t });
+  o.katman.basiliBasla('button.pc_bilgisayari_kapat');
+  t += 600;
+  const kisa = await o.katman.yuzeydenCalistir('panel', { kimlik: 'button.pc_bilgisayari_kapat', basili: true });
+  assert.equal(kisa.tur, 'onay-gerekli', '600 ms basış 0,8 sn kuralını karşılamaz');
+  assert.equal(o.postlar().length, 0);
+  o.katman.basiliBasla('button.pc_bilgisayari_kapat');
+  t += 800;
+  assert.equal((await o.katman.yuzeydenCalistir('panel', { kimlik: 'button.pc_bilgisayari_kapat', basili: true })).ok, true);
+  assert.equal(o.postlar().length, 1);
 });
 
 test('kısayol ve komut satırı yıkıcı eylemi ASLA çalıştırmaz (hata bildirimi, POST yok)', async () => {
@@ -443,4 +468,139 @@ test('masaustundenCalistir: onay isteyen (yıkıcı) eylem ASLA çalışmaz (bas
   basili.katman.basiliBasla('button.pc_bilgisayari_kapat');
   assert.equal((await basili.katman.masaustundenCalistir({ kimlik: 'button.pc_bilgisayari_kapat', basili: true })).ok, false, 'basılı tutma kaydı olsa da masaüstü kaynağı yıkıcıyı çalıştırmaz');
   assert.equal(basili.postlar().length, 0);
+});
+
+test('(bulgu 11) canlı bağlantıda İZLENMEYEN kimlik her seferinde REST ile okunur, bayat depo kaydı dönmez ve depoya yazılmaz; izlenen kimlik depodan döner', async () => {
+  const o = ortam({ canli: true, izlenenMi: (k) => k === 'light.led' });
+  o.depo.guncelle({ entity_id: 'light.ampul', state: 'on', attributes: { friendly_name: 'Ampul' } }); // izlenmiyor: olayları depoya gelmez, kayıt bayat
+  const ilk = await o.katman.guncelDurum('light.ampul');
+  const ikinci = await o.katman.guncelDurum('light.ampul');
+  assert.equal(ilk.state, 'off', 'bayat depo kaydı (on) yerine HA durumu');
+  assert.equal(ikinci.state, 'off');
+  assert.equal(o.istekler.filter((i) => i.yontem === 'GET').length, 2, 'her çağrı REST okur');
+  assert.equal(o.depo.al('light.ampul').state, 'on', 'REST sonucu izlenmeyen kimlik için depoya yazılmaz');
+  assert.equal(await o.katman.guncelDurum('light.hic_yok'), null);
+  assert.equal(o.depo.al('light.hic_yok'), undefined, '404 izlenmeyen kimlik için depoya null olarak da yazılmaz');
+
+  o.depo.guncelle(SUNUCU['light.led']);
+  const once = o.istekler.length;
+  assert.equal((await o.katman.guncelDurum('light.led')).state, 'on');
+  assert.equal(o.istekler.length, once, 'izlenen kimlik depodan döner, GET yok');
+});
+
+test('(bulgu 11) REST yedeğinde izlenen kimliğin okuması depoyu günceller (eskisi gibi)', async () => {
+  const o = ortam({ canli: false, izlenenMi: (k) => k === 'light.led' });
+  await o.katman.guncelDurum('light.led');
+  await o.katman.guncelDurum('light.ampul');
+  assert.equal(o.depo.al('light.led').state, 'on');
+  assert.equal(o.depo.al('light.ampul'), undefined);
+});
+
+test('(bulgu 12) hazırlık işlevleri hattan ÖNCE çalışır: desen dışı ya da kayıtsız kimlik için HA\'ya hiçbir okuma gitmez, depoya yazılmaz', async () => {
+  const o = ortam({ canli: false });
+  const cagrilar = [];
+  o.katman.hazirlikEkle('deneme', async (istek) => {
+    cagrilar.push(istek.kimlik);
+    return o.katman.guncelDurum(istek.kimlik); // geri al hazırlığı gibi: kimliği doğrudan okur
+  });
+  const kotu = await o.katman.yuzeydenCalistir('panel', { kimlik: 'scene.x/../../config' });
+  assert.deepEqual([kotu.ok, kotu.tur], [false, 'gecersiz']);
+  const kayitsiz = await o.katman.yuzeydenCalistir('panel', { kimlik: 'scene.baska' }); // desene uyar ama favori değil
+  assert.deepEqual([kayitsiz.ok, kayitsiz.tur], [false, 'bilinmeyen-favori']);
+  assert.deepEqual(cagrilar, [], 'hazırlık işlevi hiç çağrılmadı');
+  assert.equal(o.istekler.length, 0, 'ne okuma ne yazma isteği gitti');
+  assert.deepEqual(o.depo.kimlikler(), [], 'depo boş kaldı');
+
+  const gecerli = await o.katman.yuzeydenCalistir('panel', { kimlik: 'scene.film' }); // kayıtlı favori: hazırlık çalışır
+  assert.equal(gecerli.ok, true);
+  assert.deepEqual(cagrilar, ['scene.film']);
+});
+
+test('(bulgu 12) guncelDurum desen dışı kimlik için ağa çıkmadan null döner ve depoya yazmaz', async () => {
+  const o = ortam({ canli: false });
+  for (const kimlik of ['scene.x/../../config', '../api/config', 'light.', 'LIGHT.led', undefined, 42]) {
+    assert.equal(await o.katman.guncelDurum(kimlik), null, String(kimlik));
+  }
+  assert.equal(o.istekler.length, 0);
+  assert.deepEqual(o.depo.kimlikler(), []);
+});
+
+test('(bulgu 13) REST yedeğinde kaydırıcı ara değerleri tek bekleyen tazeleme bırakır; sürükleme bitince 1 kez tazelenir', async () => {
+  const o = ortam({ canli: false });
+  for (let yuzde = 10; yuzde <= 80; yuzde += 10) await o.katman.yuzeydenCalistir('panel', { kimlik: 'light.led', parlaklik: yuzde });
+  assert.equal(o.postlar().length, 8);
+  assert.equal(o.zamanlayicilar.length, 1, 'sekiz ara değer tek bekleyen tazeleme zamanlayıcısı bırakır');
+  assert.equal(o.zamanlayicilar[0].ms, REST_SONRASI_YENILEME_MS);
+  assert.equal(o.yenilemeler.length, 0, 'sürükleme sürerken tazeleme turu başlamaz');
+  await o.katman.yuzeydenCalistir('panel', { kimlik: 'light.led', parlaklik: 90, sonDeger: true });
+  assert.equal(o.zamanlayicilar.length, 1);
+  o.zamanlayicilar[0].fn();
+  await new Promise((coz) => setImmediate(coz));
+  assert.equal(o.yenilemeler.length, 1, 'tek tazeleme');
+  assert.equal(o.zamanlayicilar.length, 1, 'çalışan zamanlayıcı listede kalır ama yeni eylem yeniden kurar');
+  await o.katman.yuzeydenCalistir('panel', { kimlik: 'light.led', parlaklik: 20, sonDeger: true });
+  assert.equal(o.zamanlayicilar.length, 2, 'tazeleme çalıştıktan sonraki eylem yeni tazeleme planlar');
+});
+
+test('(bulgu 13) zaman nesnesinde clearTimeout yoksa bekleyen tazeleme varken ikincisi kurulmaz; çalışınca yeniden kurulabilir', async () => {
+  const zamanlayicilar = [];
+  const yenilemeler = [];
+  const depo = durumDeposuOlustur({ gruplamaMs: 0, zaman: { setTimeout: () => 0, clearTimeout: () => {} } });
+  const katman = eylemKatmaniOlustur({
+    ayarlarAl: () => ({ favoriler: FAVORILER }),
+    depo,
+    canliMi: () => false,
+    haIstek: async (yol) => (yol.startsWith('/api/states/') ? SUNUCU[yol.split('/').pop()] : []),
+    son: { ekle: () => {} },
+    geriBildirim: () => {},
+    durumlariYenile: async () => {
+      yenilemeler.push(1);
+    },
+    onayDiyalogu: async () => true,
+    onayAcikMi: () => false,
+    onayBekleniyorBildir: () => {},
+    karolariAl: () => [],
+    gunluk: () => {},
+    zaman: { setTimeout: (fn, ms) => zamanlayicilar.push({ fn, ms }) },
+  });
+  for (let yuzde = 10; yuzde <= 50; yuzde += 10) await katman.yuzeydenCalistir('panel', { kimlik: 'light.led', parlaklik: yuzde });
+  assert.equal(zamanlayicilar.length, 1);
+  zamanlayicilar[0].fn();
+  await new Promise((coz) => setImmediate(coz));
+  assert.equal(yenilemeler.length, 1);
+  await katman.yuzeydenCalistir('panel', { kimlik: 'light.led', parlaklik: 60 });
+  assert.equal(zamanlayicilar.length, 2);
+});
+
+test('(bulgu 13) REST yedeğinde sürükleme ara değeri hataları da tek bekleyen tazelemede birleşir; ara değer olmayan hatada tazeleme hemen çalışır', async () => {
+  const ara = ortam({ canli: false });
+  for (let i = 0; i < 4; i += 1) await ara.katman.yuzeydenCalistir('panel', { kimlik: 'light.kapi_lambasi', parlaklik: 10 + i }); // kapı kuralı: hat reddeder
+  assert.equal(ara.postlar().length, 0);
+  assert.equal(ara.yenilemeler.length, 0);
+  assert.equal(ara.zamanlayicilar.length, 1);
+  const tek = ortam({ canli: false });
+  await tek.katman.yuzeydenCalistir('panel', { kimlik: 'light.kapi_lambasi' });
+  assert.equal(tek.yenilemeler.length, 1);
+});
+
+test('(bulgu 20) guncelDurum oncelik seçeneğini kapıya iletir (varsayılan "yuksek"); hazırlık işlevi iptal sinyali alır ve bütçe dolunca sinyal true olur', async () => {
+  const o = ortam({ canli: false });
+  await o.katman.guncelDurum('light.ampul');
+  await o.katman.guncelDurum('light.led', { oncelik: 'normal' });
+  assert.deepEqual(o.oncelikler, ['yuksek', 'normal']);
+
+  const sinyaller = [];
+  o.katman.hazirlikEkle('uzun', (istek, ic, sinyal) => {
+    sinyaller.push(sinyal);
+    return new Promise(() => {}); // hiç bitmeyen hazırlık
+  });
+  const sonuc = o.katman.yuzeydenCalistir('panel', { kimlik: 'light.ampul' });
+  await new Promise((coz) => setImmediate(coz));
+  assert.equal(sinyaller.length, 1);
+  assert.equal(sinyaller[0].iptalMi(), false, 'bütçe dolmadan iptal yok');
+  const butce = o.zamanlayicilar.find((z) => z.ms === HAZIRLIK_BUTCESI_MS);
+  assert.ok(butce, 'bekleme bütçesi zamanlayıcısı kuruldu');
+  butce.fn();
+  assert.equal((await sonuc).ok, true, 'eylem bütçe dolunca yine de çalışır');
+  assert.equal(sinyaller[0].iptalMi(), true, 'bütçe dolunca hazırlığa iptal bildirilir');
 });

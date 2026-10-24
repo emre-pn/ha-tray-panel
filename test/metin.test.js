@@ -37,3 +37,28 @@ test('adAnahtari: sözcüğe bitişik işaretler ayraç kalır; "arti"/"eksi" ya
   assert.equal(adAnahtari('!!!'), '');
   assert.equal(sadelestir('Ses +'), 'ses +', 'sadelestir işaretlere dokunmaz');
 });
+
+test('katlama önbelleği: tekrar çağrı, uzun girdi ve önbellek taşması önbelleksiz hesapla aynı sonucu verir; sadelestir etkilenmez', () => {
+  const referansAnahtar = (m) => sadelestir(m).replace(/[^a-z0-9]+/g, ' ').trim();
+  const referansAd = (m) =>
+    sadelestir(m)
+      .replace(/(^|\s)([+\-\u{2212}])(?=\s|$)/gu, (_e, bas, isaret) => `${bas}${isaret === '+' ? 'arti' : 'eksi'}`)
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const ornekler = ['Ses +', 'Ses −', 'Ses -', 'KAPI', 'Gece lambası', 'ｋａｐｉ', 'Ka\u00ADpı', '', null, undefined, 'a'.repeat(300), `${'b '.repeat(200)}+`];
+  for (let tur = 0; tur < 2; tur += 1) {
+    for (const m of ornekler) {
+      assert.equal(anahtarKatla(m), referansAnahtar(m), `anahtar ${String(m).slice(0, 12)} tur ${tur}`);
+      assert.equal(adAnahtari(m), referansAd(m), `ad ${String(m).slice(0, 12)} tur ${tur}`);
+    }
+  }
+  assert.equal(adAnahtari('Ses +'), 'ses arti');
+  assert.equal(adAnahtari('Ses −'), 'ses eksi');
+  assert.equal(adAnahtari('KAPI'), 'kapi');
+  // sınırı aşan çok sayıda farklı girdi: önbellek boşalsa da sonuçlar değişmez
+  for (let i = 0; i < 5000; i += 1) assert.equal(adAnahtari(`Lamba ${i} +`), `lamba ${i} arti`);
+  assert.equal(adAnahtari('Ses +'), 'ses arti');
+  assert.equal(anahtarKatla('Ses +'), 'ses');
+  // süzgeç sadeleştirmesi önbelleksiz kalır: görünmez karakterle bölünmüş yasak sözcük hâlâ çözülür
+  assert.equal(sadelestir('Ka\u00ADpı'), 'kapi');
+});

@@ -12,6 +12,7 @@
 
 const { alanAl, guvenliVarlikMi } = require('./suzgec');
 const { kisalt } = require('./metin');
+const { cogul } = require('./dil');
 const { AD_SINIRI } = require('./bildirim-metni');
 const { TR } = require('./ceviri-varsayilan');
 const { KAYNAKLAR, SAHNE_UYE_ALANLARI, EN_COK_SAHNE_UYESI, parlaklikYuzdesi, geriAlmaPlani, geriAlYiginiOlustur } = require('./geri-al');
@@ -64,15 +65,26 @@ function geriAlBaglayiciOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, d
     }, Math.max(1, bitis - simdi()) + 50);
   }
 
-  /** Sahnenin üyelerinin ŞİMDİKİ (sahne çalışmadan önceki) durumu; okunamayan, güvensiz ya da açık/kapalı olmayan üye atlanır. */
-  async function sahneUyeleriniOku(kimlik) {
+  /**
+   * Sahnenin üyelerinin ŞİMDİKİ (sahne çalışmadan önceki) durumu; okunamayan, güvensiz ya da açık/kapalı olmayan üye atlanır.
+   * İzlenmeyen üyeler her basışta REST ile okunur ve kimlikli kapı aynı anda tek işleme izin verir: okumalar SIRAYLA ve 'normal' öncelikle
+   * yapılır (hattın kendi okuması ile sahne POST'u 'yuksek' olarak önlerine geçer). Bekleme bütçesi dolunca (sinyal.iptalMi) yeni okuma başlamaz.
+   * @returns {Promise<object[]|undefined>} bütçe dolduysa undefined (geri al kaydı oluşmaz)
+   */
+  async function sahneUyeleriniOku(kimlik, sinyal) {
+    const iptalMi = () => sinyal?.iptalMi?.() === true;
     const sahne = await eylem.guncelDurum(kimlik);
     const liste = Array.isArray(sahne?.attributes?.entity_id) ? sahne.attributes.entity_id : [];
     const adaylar = liste
       .slice(0, SAHNE_UYE_OKUMA_SINIRI)
       .filter((k) => typeof k === 'string' && SAHNE_UYE_ALANLARI.includes(alanAl(k)))
       .slice(0, EN_COK_SAHNE_UYESI);
-    const durumlar = await Promise.all(adaylar.map((k) => Promise.resolve(eylem.guncelDurum(k)).catch(() => null)));
+    const durumlar = [];
+    for (const k of adaylar) {
+      if (iptalMi()) return undefined;
+      durumlar.push(await Promise.resolve(eylem.guncelDurum(k, { oncelik: 'normal' })).catch(() => null));
+    }
+    if (iptalMi()) return undefined;
     const uyeler = [];
     for (const v of durumlar) {
       if (!v || typeof v !== 'object' || !guvenliVarlikMi(v) || (v.state !== 'on' && v.state !== 'off')) continue;
@@ -87,10 +99,10 @@ function geriAlBaglayiciOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, d
     return uyeler;
   }
 
-  const hazirligiKaldir = eylem.hazirlikEkle(SAHNE_HAZIRLIGI, (istek, ic) => {
+  const hazirligiKaldir = eylem.hazirlikEkle(SAHNE_HAZIRLIGI, (istek, ic, sinyal) => {
     if (!acikMi() || typeof istek?.kimlik !== 'string' || alanAl(istek.kimlik) !== 'scene') return undefined;
     if (!KAYNAKLAR.includes(istek.kaynak) || ic?.islem === ETIKET) return undefined;
-    return sahneUyeleriniOku(istek.kimlik);
+    return sahneUyeleriniOku(istek.kimlik, sinyal);
   });
 
   const izleyiciyiKaldir = eylem.sonucDinle((bilgi) => {
@@ -181,7 +193,7 @@ function geriAlBaglayiciOlustur({ eylem, ayarlarAl, bildir = () => {}, t = TR, d
       bildir({ tur: 'hata', metin: t('geriAl.olmadi', { ad }) });
       return { ok: false, tur: ilkHata, basarisiz };
     }
-    bildir({ tur: 'hata', metin: t('geriAl.kismi', { ad, n: basarisiz }) });
+    bildir({ tur: 'hata', metin: cogul(t, 'geriAl.kismi', basarisiz, { ad }) });
     return { ok: false, tur: 'kismi', adim: basarili, basarisiz };
   }
 

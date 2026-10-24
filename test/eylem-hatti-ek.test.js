@@ -8,11 +8,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { eylemHattiOlustur, oncekiGoruntu, ONCE_OZNITELIKLERI } = require('../src/lib/eylem-hatti');
+const { eylemHattiOlustur, hizSiniriOlustur, oncekiGoruntu, ONCE_OZNITELIKLERI } = require('../src/lib/eylem-hatti');
 const { KAYNAKLAR, SINIF, kaynakIzni } = require('../src/lib/eylem-sinifi');
 const { eylemOrtami } = require('./eylem-sahte');
 
-function hat(varliklar, favoriler = []) {
+function hat(varliklar, favoriler = [], hizSiniri = undefined) {
   const postlar = [];
   const h = eylemHattiOlustur({
     favoriAl: (k) => favoriler.find((f) => f.entity_id === k),
@@ -21,6 +21,7 @@ function hat(varliklar, favoriler = []) {
       postlar.push({ yol, govde: secenek.govde });
       return [];
     },
+    ...(hizSiniri ? { hizSiniri } : {}),
   });
   return { h, postlar };
 }
@@ -92,7 +93,8 @@ test('ic.kayit hattın diğer adımlarını GEVŞETMEZ: kapı kuralı, okunur al
     'button.pc_bilgisayari_kapat': { entity_id: 'button.pc_bilgisayari_kapat', state: 'unknown', attributes: { friendly_name: 'Kapat' } },
     'light.a': { entity_id: 'light.a', state: 'on', attributes: { friendly_name: 'A' } },
   };
-  const { h, postlar } = hat(varliklar, []);
+  let t = 0; // sahte saat: hız sınırı penceresi (1 sn) gerçek zamana bağlı olmasın
+  const { h, postlar } = hat(varliklar, [], hizSiniriOlustur({ simdi: () => t }));
   const dene = (kimlik, kaynak = 'palet', eylem) => h({ kimlik, kaynak, eylem }, { kayit: { entity_id: kimlik, ad: 'Masum ad' } });
   assert.equal((await dene('light.kapi_lambasi')).tur, 'yasak', 'HA adı kapıyı belli ediyor');
   assert.equal((await dene('light.garaj')).tur, 'yasak');
@@ -108,6 +110,8 @@ test('ic.kayit hattın diğer adımlarını GEVŞETMEZ: kapı kuralı, okunur al
   const sonuclar = [];
   for (let i = 0; i < 12; i += 1) sonuclar.push((await dene('light.a', 'palet', { servis: 'turn_off' })).tur ?? 'ok');
   assert.equal(sonuclar.filter((s) => s === 'cok-sik').length, 4);
+  t += 1000; // pencere dolunca sınır yeniden açılır
+  assert.equal((await dene('light.a', 'palet', { servis: 'turn_off' })).ok, true, 'pencere sonrası çağrı yeniden geçer');
 });
 
 test('renderer yükü ic.kayit taşıyamaz: yuzeydenCalistir fazladan alanı yok sayar, favori olmayan varlık reddedilir', async () => {

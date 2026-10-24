@@ -26,7 +26,7 @@
  * hata; PC olayı ve toplantı ışığı) ya da 'yok' (yerel API'de bildirim kapalıysa).
  */
 
-const { eylemHattiOlustur, bildirimKapatHattiOlustur, basiliTutmaDeposu } = require('./lib/eylem-hatti');
+const { eylemHattiOlustur, bildirimKapatHattiOlustur, basiliTutmaDeposu, hataSonucu } = require('./lib/eylem-hatti');
 const { SINIF, DIS_KAYNAKLAR, eylemSinifi } = require('./lib/eylem-sinifi');
 const { eylemAdiniCoz } = require('./lib/komut-satiri');
 const { goreliParlaklik, goreliHiz, kisayolEylemiYonu, kisayolEylemiGecerliMi } = require('./lib/yonlu-eylem');
@@ -38,6 +38,7 @@ const { tekrarliMi } = require('./lib/favoriler');
 const { kisalt } = require('./lib/metin');
 const { hataMetni } = require('./ha-istemcisi');
 const { ortaTikUygunMu } = require('./lib/orta-tik');
+const { VARLIK_KIMLIGI_DESENI } = require('./lib/dogrulama');
 
 const HAZIRLIK_BUTCESI_MS = 1500; // eylemden önce çalışan hazırlık işlevlerinin (geri al için sahne üyeleri okuması) toplam bekleme sınırı
 const REST_SONRASI_YENILEME_MS = 1000; // canlı bağlantı yokken cihazın durumunu bildirmesi için kısa bekleme
@@ -60,7 +61,7 @@ function servisYukuGecerliMi(servis, veri) {
 }
 
 function varsayilanZaman() {
-  return { setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms) };
+  return { setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: (id) => globalThis.clearTimeout(id) };
 }
 
 /** Eylem sonucundaki hata türünü kullanıcıya gösterilecek kısa metne çevirir (adres, anahtar vb. ASLA içermez). t: çevirmen; verilmezse Türkçe. */
@@ -94,6 +95,8 @@ function eylemHataMetni(sonuc, t = TR) {
  * @param {() => {favoriler: object[]}} bag.ayarlarAl
  * @param {{al: Function, guncelle: Function, yokIsaretle: Function}} bag.depo
  * @param {() => boolean} bag.canliMi canlı bağlantı kurulu mu (depo güncel mi)
+ * @param {(kimlik: string) => boolean} [bag.izlenenMi] depo bu kimliği GÜNCEL tutuyor mu (canlı bağlantıda yalnız izlenen kümenin olayları depoya işlenir).
+ *   false ise guncelDurum depoya ne bakar ne yazar, her seferinde REST okur; verilmezse hepsi izlenen sayılır.
  * @param {(yol: string, secenek?: object) => Promise<unknown>} bag.haIstek
  * @param {{ekle: Function}} bag.son "Son kullanılanlar" deposu
  * @param {(b: {tur: 'ok'|'hata', metin: string, baslik?: string, ozet?: {baslik: string, alt: string, alan: string, acik: boolean}}) => void} bag.geriBildirim
@@ -107,13 +110,14 @@ function eylemHataMetni(sonuc, t = TR) {
  * @param {string} [bag.uygulamaAdi] sabit uygulama adı (t verilmediyse bildirim başlığında kullanılır)
  * @param {Function} [bag.t] çevirmen (src/lib/dil.js); ana süreçte dil değişince kendiliğinden yeni dili izler. Verilmezse Türkçe.
  * @param {(m: string) => void} [bag.gunluk]
- * @param {{setTimeout: Function}} [bag.zaman]
+ * @param {{setTimeout: Function, clearTimeout?: Function}} [bag.zaman] clearTimeout yoksa bekleyen REST yenilemesi varken ikincisi kurulmaz
  * @param {() => number} [bag.simdi]
  */
 function eylemKatmaniOlustur({
   ayarlarAl,
   depo,
   canliMi,
+  izlenenMi = () => true,
   haIstek,
   son,
   geriBildirim,
@@ -153,15 +157,33 @@ function eylemKatmaniOlustur({
   /** Hazırlık işlevleri (ad -> işlev): eylemden ÖNCE çalışır, sonucu izleyicilere `hazirlik[ad]` olarak gider (ör. sahne üyelerinin önceki durumu). */
   const hazirlayicilar = new Map();
 
-  /** Hazırlıkları çalıştırır; her biri en çok HAZIRLIK_BUTCESI_MS bekletir, hata/zaman aşımı eylemi engellemez (o ad için undefined). */
+  /**
+   * Hazırlıkları çalıştırır; her biri en çok HAZIRLIK_BUTCESI_MS bekletir, hata/zaman aşımı eylemi engellemez (o ad için undefined).
+   * Hazırlıklar hattın kimlik deseni ve "kayıtlı olmalı" denetiminden ÖNCE çalışır; bu yüzden burada aynı iki denetim yeniden yapılır:
+   * renderer'dan gelen desen dışı ya da kayıtsız kimlik için HA'ya hiçbir okuma gitmez (hat zaten reddedecek).
+   */
   async function hazirliklariYap(istek, ic) {
     if (hazirlayicilar.size === 0) return undefined;
+    const kimlik = istek?.kimlik;
+    if (typeof kimlik !== 'string' || !VARLIK_KIMLIGI_DESENI.test(kimlik)) return undefined;
+    const kayit = ic && typeof ic === 'object' && ic.kayit !== undefined ? ic.kayit : favoriAl(kimlik);
+    if (!kayit || typeof kayit !== 'object' || kayit.entity_id !== kimlik) return undefined;
     const sonuc = {};
     for (const [ad, islev] of [...hazirlayicilar]) {
+      let iptal = false; // bütçe dolunca true: hazırlık yeni HA okuması BAŞLATMAMALI (beklemeyi bırakmak sürenleri iptal etmez)
+      const sinyal = { iptalMi: () => iptal };
       try {
-        let veri = islev(istek, ic);
+        let veri = islev(istek, ic, sinyal);
         if (veri && typeof veri.then === 'function') {
-          veri = await Promise.race([veri, new Promise((coz) => zaman.setTimeout(() => coz(undefined), HAZIRLIK_BUTCESI_MS))]);
+          veri = await Promise.race([
+            veri,
+            new Promise((coz) =>
+              zaman.setTimeout(() => {
+                iptal = true;
+                coz(undefined);
+              }, HAZIRLIK_BUTCESI_MS),
+            ),
+          ]);
         }
         if (veri !== undefined) sonuc[ad] = veri;
       } catch {
@@ -215,18 +237,24 @@ function eylemKatmaniOlustur({
     }
   }
 
-  /** HA'daki GÜNCEL durum: canlı bağlantıda depodan, değilse REST'ten (404 = HA'da yok). Güvenlik süzgeci hatta yeniden uygulanır. */
-  async function guncelDurum(kimlik) {
-    const onbellek = depo.al(kimlik);
+  /**
+   * HA'daki GÜNCEL durum: canlı bağlantıda İZLENEN varlık için depodan, değilse REST'ten (404 = HA'da yok). Güvenlik süzgeci hatta yeniden uygulanır.
+   * oncelik: kimlikli kapıdaki sıra ('yuksek' varsayılan; eylem öncesi hazırlık okumaları 'normal' ile hattın okumasının ve POST'un önüne geçmez).
+   * İzlenmeyen varlığın (sahne üyesi, "diğer cihazlar") olayları depoya gelmez: kaydı bayat kalırdı, bu yüzden onlar için depoya bakılmaz ve REST sonucu depoya yazılmaz.
+   */
+  async function guncelDurum(kimlik, { oncelik = 'yuksek' } = {}) {
+    if (typeof kimlik !== 'string' || !VARLIK_KIMLIGI_DESENI.test(kimlik)) return null; // desen dışı kimlik HA yoluna eklenmez (`..` parçaları çözülürdü)
+    const izleniyor = izlenenMi(kimlik) === true;
+    const onbellek = izleniyor ? depo.al(kimlik) : undefined;
     if (canliMi() && onbellek !== undefined) return onbellek;
     try {
-      const varlik = await haIstek(`/api/states/${kimlik}`, { oncelik: 'yuksek' }); // eylemden önceki okuma toplu yenilemenin arkasında beklemez (tur 5, K10)
+      const varlik = await haIstek(`/api/states/${kimlik}`, { oncelik }); // eylemden önceki okuma toplu yenilemenin arkasında beklemez (tur 5, K10); hazırlık okumaları 'normal' ister
       const d = durumuDuzelt(varlik);
-      if (d && d.entity_id === kimlik) depo.guncelle(d);
+      if (izleniyor && d && d.entity_id === kimlik) depo.guncelle(d);
       return varlik;
     } catch (hata) {
       if (hata?.tur === 'bulunamadi') {
-        depo.yokIsaretle(kimlik);
+        if (izleniyor) depo.yokIsaretle(kimlik);
         return null;
       }
       throw hata;
@@ -282,6 +310,32 @@ function eylemKatmaniOlustur({
     geriBildirim({ tur: 'ok', metin, ozet: { baslik: kisalt(ad, AD_SINIRI), alan: sonuc.alan, ...ozet } });
   }
 
+  let yenilemeBekliyor = false;
+  let yenilemeZamanlayici;
+
+  /**
+   * REST yedeğinde (canlı bağlantı yok) cihazın durumunu bildirmesi için eylemden kısa süre sonra tek bir durum tazelemesi ister. Bekleyen bir tazeleme
+   * varsa süresi yeniden başlar (debounce): kaydırıcı sürüklemesi ya da ses -/+ basılı tutma her adım için ayrı bir tur başlatmaz, tek tur son adımdan sonra çalışır.
+   */
+  function yenilemePlanla() {
+    if (yenilemeBekliyor) {
+      if (typeof zaman.clearTimeout !== 'function') return; // sahte/eksik zamanlayıcı: bekleyen varken ikincisi kurulmaz
+      zaman.clearTimeout(yenilemeZamanlayici);
+    }
+    yenilemeBekliyor = true;
+    yenilemeZamanlayici = zaman.setTimeout(() => {
+      yenilemeBekliyor = false;
+      Promise.resolve(durumlariYenile()).catch(() => {});
+    }, REST_SONRASI_YENILEME_MS);
+  }
+
+  /** Hatadan sonra REST yedeğinde durumu hemen tazeler; sürükleme ara değeri hatası (peş peşe gelebilir) birleştirilmiş tazelemeye gider. */
+  function hataSonrasiYenile(istek) {
+    if (canliMi()) return;
+    if (araDegerMi(istek)) yenilemePlanla();
+    else Promise.resolve(durumlariYenile()).catch(() => {});
+  }
+
   /**
    * Hattı çalıştırır; geri bildirim, "Son" ve durum tazelemeyi yapar.
    * @returns {Promise<{ok: boolean, tur?: string, ad?: string}>} hata ayrıntısı (ağ, adres) dışarı verilmez
@@ -297,21 +351,23 @@ function eylemKatmaniOlustur({
       // "Son kullanılanlar" tek tıklamayla yinelenebilen eylemleri tutar; servis eylemi (klima 24, ışık rengi, ses 30) yinelenemez.
       // Ana süreç içi işler (ic.islem: geri alma, gecikmeli eylem, oda kapatma, diğer cihazlar) kullanıcının tıkladığı karo değildir: "Son"a girmez.
       if (!ic?.islem && YUZEYLER.includes(istek.kaynak) && sonuc.sinif === 'zararsiz' && sonuc.servisEylemi !== true) son.ekle(istek.kimlik);
-      if (!canliMi()) zaman.setTimeout(() => Promise.resolve(durumlariYenile()).catch(() => {}), REST_SONRASI_YENILEME_MS);
+      if (!canliMi()) yenilemePlanla();
       return { ok: true, ad: sonuc.ad };
     }
     if (sonuc.tur === 'onay-gerekli' || sonuc.tur === 'cok-sik') return { ok: false, tur: sonuc.tur, ad: sonuc.ad }; // sessiz: yüzey kendi ipucunu gösterir
+    // neden bir hata türü dizgesidir (ör. 'gecikti'), sır taşımaz; çağıran (gecikmeli eylem) belirsiz sonucu kesin hatadan ayırabilsin.
+    const nedenEki = sonuc.neden ? { neden: sonuc.neden } : {};
     if (toplu) {
       gunluk(`Eylem başarısız: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
-      if (!canliMi()) Promise.resolve(durumlariYenile()).catch(() => {});
-      return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
+      hataSonrasiYenile(istek);
+      return { ok: false, tur: sonuc.tur, ad: sonuc.ad, ...nedenEki };
     }
     if (sonuc.tur === 'ha-hatasi' && sonuc.neden === 'gecikti') {
       // h-09 (1.2.0): komut HA'ya gitti ama yanıt gecikti (uzun sahne): "Yapılamadı" denmez; sonuç bilinmiyor.
       gunluk('Eylem yanıtı gecikti: ha-hatasi/gecikti');
       if (!sessizMi(istek)) geriBildirim({ tur: 'ok', metin: `${kisalt(gorunenAd(sonuc, istek), AD_SINIRI)}: ${hataMetni({ tur: 'gecikti' }, t)}` });
-      if (!canliMi()) Promise.resolve(durumlariYenile()).catch(() => {});
-      return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
+      hataSonrasiYenile(istek);
+      return { ok: false, tur: sonuc.tur, ad: sonuc.ad, ...nedenEki };
     }
     gunluk(`Eylem başarısız: ${sonuc.tur}${sonuc.neden ? `/${sonuc.neden}` : ''}`);
     if (istek?.bildirim !== 'yok') {
@@ -319,7 +375,7 @@ function eylemKatmaniOlustur({
       const metin = hataBildirimiMetni(eylemHataMetni(sonuc, t), t);
       geriBildirim({ tur: 'hata', metin, baslik: `${adAl()} — ${ad}`, ozet: { baslik: ad, alt: metin, alan: sonuc.alan || String(istek?.kimlik || '').split('.')[0], acik: false } });
     }
-    if (!canliMi()) Promise.resolve(durumlariYenile()).catch(() => {});
+    hataSonrasiYenile(istek);
     return { ok: false, tur: sonuc.tur, ad: sonuc.ad };
   }
 
@@ -351,8 +407,8 @@ function eylemKatmaniOlustur({
     let varlik;
     try {
       varlik = await guncelDurum(kimlik);
-    } catch {
-      return yonluHata({ tur: 'ulasilamiyor' }, kimlik, bildirim);
+    } catch (hata) {
+      return yonluHata(hataSonucu(hata), kimlik, bildirim); // erişim anahtarı reddi, duraklatma... gerçek neden korunur (doğrudan eylemle aynı metin)
     }
     if (varlik === null || varlik === undefined) return yonluHata({ tur: 'bulunamadi' }, kimlik, bildirim);
     if (typeof varlik !== 'object' || varlik.entity_id !== kimlik || !guvenliVarlikMi(varlik)) return yonluHata({ tur: 'yasak' }, kimlik, bildirim);
@@ -538,8 +594,8 @@ function eylemKatmaniOlustur({
     },
 
     /**
-     * Eylem grubu: eylemden ÖNCE çalışan hazırlık işlevi ekler (geri al: sahnenin üyelerinin önceki durumu). İşlev (istek, ic) alır, değer ya da
-     * söz döner; sonuç izleyicilere `hazirlik[ad]` olarak gider. Eylemi bekletme sınırı toplam 1,5 sn'dir; hata/zaman aşımı eylemi engellemez.
+     * Eylem grubu: eylemden ÖNCE çalışan hazırlık işlevi ekler (geri al: sahnenin üyelerinin önceki durumu). İşlev (istek, ic, sinyal) alır, değer ya da
+     * söz döner (sinyal.iptalMi(): bekleme bütçesi doldu, yeni HA okuması başlatma); sonuç izleyicilere `hazirlik[ad]` olarak gider. Eylemi bekletme sınırı toplam 1,5 sn'dir; hata/zaman aşımı eylemi engellemez.
      * Dönen işlev hazırlığı kaldırır.
      */
     hazirlikEkle(ad, islev) {

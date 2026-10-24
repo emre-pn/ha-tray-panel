@@ -283,3 +283,27 @@ test('o-13: argv — tırnaksız eksi adım ("--eylem=led -10") seçenek sayılm
   const ad = komutSatiriEylemi(['x', '--eylem=led', '-10']).ad;
   assert.deepEqual(eylemAdiniCoz(ad, YON_KAROLARI), { id: 'light.masa_led_serit', yon: { tur: 'goreli', delta: -10 } });
 });
+
+test('komutSatiriAdi: 200 karolu listede sonuçlar önbelleksiz hesapla birebir aynı; tekrar çağrıda değişmez', () => {
+  const { sadelestir } = require('../src/lib/metin');
+  const { komutSatiriAdi } = require('../src/lib/komut-satiri');
+  const karolar = [];
+  for (let i = 0; i < 200; i += 1) karolar.push({ id: `light.lamba_${i}`, etiket: `Lamba ${i}`, ad: `Lamba ${i}`, alan: 'light', parlaklikKontrol: true });
+  karolar.push({ id: 'button.pc_mediavolumeup', etiket: 'Ses +', ad: 'Ses +', alan: 'button' }, { id: 'button.pc_mediavolumedown', etiket: 'Ses −', ad: 'Ses −', alan: 'button' });
+  // önbelleksiz referans: etiketi sadelestir ile katlayıp başka hiçbir karoyla çakışmayan adı bulur
+  const katla = (m) => sadelestir(m).replace(/[^a-z0-9]+/g, ' ').trim();
+  const beklenen = karolar.map((k) => {
+    const cakisan = karolar.filter((d) => katla(d.etiket) === katla(k.etiket));
+    return cakisan.length === 1 ? k.etiket : null;
+  });
+  for (let tur = 0; tur < 2; tur += 1) {
+    const sonuc = karolar.map((k) => komutSatiriAdi(k, karolar));
+    for (let i = 0; i < karolar.length; i += 1) {
+      if (beklenen[i] === null) continue;
+      assert.equal(sonuc[i], beklenen[i], `${karolar[i].id} tur ${tur}`);
+    }
+  }
+  // "Ses +" / "Ses −" birbirini silmez: ayrı adlarla çözülür
+  assert.equal(komutSatiriAdi(karolar[200], karolar), 'Ses +');
+  assert.equal(komutSatiriAdi(karolar[201], karolar), 'Ses −');
+});

@@ -36,6 +36,33 @@ test('katlama kod noktası başına TEK karakter üretir (vurgu konumu kaymaz): 
   assert.deepEqual(katlaDizi(null), []);
 });
 
+test('katlama önbelleği: ilk ve sonraki çağrılar, önbellek dolup boşalsa da, önbelleksiz hesapla aynı sonucu verir', () => {
+  const referans = (k) => {
+    const LATIN = { ı: 'i', ß: 's', æ: 'a', œ: 'o', ø: 'o', ł: 'l', đ: 'd', ð: 'd', þ: 't' };
+    const tireler = [0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2212].map((kod) => String.fromCodePoint(kod));
+    const ilk = Array.from(String(k).toLocaleLowerCase('tr-TR').normalize('NFKD').replace(/[̀-ͯ]/g, ''))[0];
+    if (ilk === undefined) return k;
+    const s = Object.prototype.hasOwnProperty.call(LATIN, ilk) ? LATIN[ilk] : ilk;
+    return tireler.includes(s) ? '-' : s;
+  };
+  const metin = 'Işık IŞIK İ ı ß ø Ses − – - Çalışma Ağız 😀 ﬁ ǆ é';
+  const ilk = katlaDizi(metin);
+  assert.deepEqual(ilk, Array.from(metin).map(referans));
+  assert.deepEqual(katlaDizi(metin), ilk, 'ikinci (önbellekli) çağrı aynı');
+  assert.equal(katlaKarakter('I'), 'i');
+  assert.equal(katlaKarakter('İ'), 'i');
+  assert.equal(kat('Işık'), 'isik');
+  assert.equal(katlaKarakter('−'), '-');
+  // sınırı aşan çok sayıda farklı karakter: önbellek boşalsa da sonuçlar değişmez
+  for (let kod = 0x4e00; kod < 0x4e00 + 5000; kod += 1) {
+    const k = String.fromCodePoint(kod);
+    assert.equal(katlaKarakter(k), referans(k));
+  }
+  assert.deepEqual(katlaDizi(metin), ilk);
+  const e1 = eslestir('sal lamba', 'Salon lambası');
+  assert.deepEqual(eslestir('sal lamba', 'Salon lambası'), e1);
+});
+
 test('altDiziEsles: harfler sırayla geçmeli; yoksa null', () => {
   assert.deepEqual(altDiziEsles(katlaDizi('flm'), katlaDizi('Film')), [0, 2, 3]);
   assert.deepEqual(altDiziEsles(katlaDizi('gl'), katlaDizi('Gece lambası')), [0, 5]);
