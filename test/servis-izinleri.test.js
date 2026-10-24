@@ -245,6 +245,40 @@ test('input_number / number: min ve max öznitelikleri zorunlu; adım cihazın s
   assert.equal(S.servisDogrula('number', 'set_value', { value: 0.25 }, v('number.y', { min: 0, max: 1, step: 0.05 })).govde.value, 0.25);
 });
 
+test('seçiciler: arayüzün kısaltılmış (boşlukları daralmış, 60 karaktere kesilmiş) seçeneği tek ham öğeye çözülür; Home Assistant e HAM metin gider', () => {
+  const { guvenliOzellikler } = require('../src/lib/varlik-ozellik');
+  const uzun = `Uzun seçenek ${'x'.repeat(60)}`; // 60 karakterden uzun
+  const ham = ['Salon   Lambası', uzun, 'a'];
+  const s = v('input_select.mod', { options: ham }, 'a');
+  // renderer'ın gördüğü değerler (kısaltılmış) servis doğrulamasından geçer
+  const gorunen = guvenliOzellikler(s).secenekler;
+  assert.deepEqual(gorunen, ['Salon Lambası', Array.from(uzun).slice(0, 60).join(''), 'a']);
+  assert.deepEqual(S.servisDogrula('input_select', 'select_option', { option: gorunen[0] }, s), { ok: true, govde: { entity_id: 'input_select.mod', option: 'Salon   Lambası' }, sinif: 'zararsiz' });
+  assert.equal(S.servisDogrula('input_select', 'select_option', { option: gorunen[1] }, s).govde.option, uzun);
+  assert.equal(S.servisDogrula('select', 'select_option', { option: gorunen[0] }, v('select.x', { options: ham })).govde.option, 'Salon   Lambası');
+  assert.equal(S.servisDogrula('input_select', 'select_option', { option: 'a' }, s).govde.option, 'a', 'tam eşleşme aynen');
+  // tam eşleşme kısaltmaya göre önceliklidir
+  assert.equal(S.servisDogrula('input_select', 'select_option', { option: 'Salon Lambası' }, v('input_select.y', { options: ['Salon   Lambası', 'Salon Lambası'] })).govde.option, 'Salon Lambası');
+  // aynı kısaltmaya düşen birden çok farklı ham öğe: belirsiz seçim gönderilmez
+  const cakisan = v('input_select.z', { options: ['Salon  Lambası', 'Salon   Lambası'] });
+  assert.equal(ret(S.servisDogrula('input_select', 'select_option', { option: 'Salon Lambası' }, cakisan)), 'parametre');
+  const onEk = 'y'.repeat(60);
+  assert.equal(ret(S.servisDogrula('input_select', 'select_option', { option: onEk }, v('input_select.u', { options: [`${onEk}1`, `${onEk}2`] }))), 'parametre');
+  // listede olmayan değer yine reddedilir
+  assert.equal(ret(S.servisDogrula('input_select', 'select_option', { option: 'Salon Lambasi' }, s)), 'parametre');
+  // süzgeçten geçmeyen ham öğe kısaltılmış biçimiyle de seçilemez (Kapı Kuralı ham öğe üzerinde)
+  const kapili = v('input_select.k', { options: ['Kapı kamerası', `${'k'.repeat(60)} kapı`] });
+  assert.equal(ret(S.servisDogrula('input_select', 'select_option', { option: 'Kapı   kamerası' }, kapili)), 'parametre');
+  assert.equal(ret(S.servisDogrula('input_select', 'select_option', { option: 'Kapı kamerası' }, kapili)), 'parametre');
+  assert.equal(ret(S.servisDogrula('input_select', 'select_option', { option: 'k'.repeat(60) }, kapili)), 'parametre');
+  // media_player kaynağı ve klima/fan ön ayarı da aynı kuralı izler
+  const m = v('media_player.tv', { source_list: ['HDMI   1', 'Garage camera', 'Spotify'] }, 'playing');
+  assert.equal(S.servisDogrula('media_player', 'select_source', { source: 'HDMI 1' }, m).govde.source, 'HDMI   1');
+  assert.equal(ret(S.servisDogrula('media_player', 'select_source', { source: 'Garage  camera' }, m)), 'parametre');
+  const fan = v('fan.x', { preset_modes: ['Gece   modu', 'auto'] });
+  assert.equal(S.servisDogrula('fan', 'set_preset_mode', { preset_mode: 'Gece modu' }, fan).govde.preset_mode, 'Gece   modu');
+});
+
 test('seçiciler: seçenek cihaz listesinde ve süzgeçten geçmeli', () => {
   const s = v('input_select.mod', { options: ['Ev', 'Dışarı', 'Tatil'] }, 'Ev');
   assert.equal(S.servisDogrula('input_select', 'select_option', { option: 'Tatil' }, s).ok, true);

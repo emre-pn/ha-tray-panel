@@ -82,14 +82,15 @@ test('her yeni sözcük adda ve kimlikte, her alanda, büyük harf / tam genişl
     (k) => k,
     (k) => k.toLocaleUpperCase('tr-TR'),
     tamGenislik,
-    (k) => `${k.slice(0, 2)}­${k.slice(2)}`,
-    (k) => `${k.slice(0, 1)}​${k.slice(1)}`,
+    (k) => `${k.slice(0, 2)}\u00AD${k.slice(2)}`,
+    (k) => `${k.slice(0, 1)}\u200B${k.slice(1)}`,
     (k) => `Salon ${k} Röle`,
     (k) => `salon_${k}_rolesi`,
   ];
   for (const sozcuk of sozcukler) {
     for (const donustur of donusumler) {
       const ad = donustur(sozcuk);
+      if (donustur !== donusumler[0]) assert.notEqual(ad, sozcuk, `dönüşüm girdiyi değiştirmeli (görünmez karakter silinirse kimliğe düşer): ${JSON.stringify(sozcuk)}`);
       for (const alan of ['light', 'switch', 'climate', 'sensor', 'binary_sensor', 'calendar', 'todo', 'media_player', 'input_select']) {
         assert.equal(guvenliVarlikMi(varlik(`${alan}.x`, ad)), false, `${alan}: ${JSON.stringify(ad)}`);
       }
@@ -115,6 +116,22 @@ test('akıllı kilit markaları: nuki, kwikset, ttlock, tedee, ultraloq (adları
     assert.equal(guvenliVarlikMi(varlik('switch.x', ad)), false, ad);
   }
   assert.equal(guvenliVarlikMi(varlik('switch.nuki_bad', 'Bad')), false);
+});
+
+test('eş anlamlı kapı adları da engellenir (Pforte, Pförtner, grille, gâche, cochera, reja, portal): hem adda hem kimlikte', () => {
+  for (const ad of ['Pforte', 'Gartenpforte öffnen', 'Pförtner', 'Pfoertner', 'Grille du jardin', 'Ouvrir la grille', 'Gâche électrique', 'Cochera', 'Abrir cochera', 'Reja jardín', 'Portal']) {
+    assert.equal(guvenliVarlikMi(varlik('light.x', ad)), false, ad);
+    assert.equal(metinGuvenliMi(ad), false, ad);
+  }
+  for (const kimlik of ['switch.gartenpforte', 'button.cochera_abrir', 'switch.grille_jardin', 'switch.gache_electrique', 'switch.reja_jardin', 'button.portal_abrir', 'switch.pfortner']) {
+    assert.equal(guvenliVarlikMi(varlik(kimlik, undefined)), false, kimlik);
+    assert.equal(metinGuvenliMi(kimlik.split('.')[1].replace(/_/g, ' ')), false, kimlik);
+  }
+  // kısa sözcükler yalnız TAM belirteç: benzer masum adlar geçer
+  for (const ad of ['Grillen Terrasse', 'Grill', 'Gâchette', 'Portátil', 'Einfahrt', 'Entrada', 'Rollo', 'Jalousie', 'Rideau', 'Toldo']) {
+    assert.equal(guvenliVarlikMi(varlik('light.x', ad)), true, ad);
+    assert.equal(metinGuvenliMi(ad), true, ad);
+  }
 });
 
 test('masum adlar etkilenmez: tor / tür / porte yalnız TAM belirteç ya da belirteç başı; monitor, motor, sensor, reporter, temperatur... geçer', () => {

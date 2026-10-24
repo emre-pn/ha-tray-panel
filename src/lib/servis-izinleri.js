@@ -28,9 +28,11 @@
  *       adim: değer (alt sınırdan ya da sıfırdan) adımın katı olmalı; kayan nokta artığı adıma yuvarlanır.
  *       kirp: değer mutlak sınır içinde ama cihaz aralığı dışındaysa cihaz aralığına kırpılır (yalnız renk sıcaklığı).
  *   { tur: 'mantiksal', gerekli? }
- *   { tur: 'secenek', gerekli?, listeOznitelik?, sabitListe?, suz? }
+ *   { tur: 'secenek', gerekli?, listeOznitelik?, sabitListe?, suz?, enUzun? }
  *       değer, cihazın listesinde (listeOznitelik, ör. hvac_modes / source_list / options) VE varsa sabitListe'de olmalı.
  *       suz: liste öğeleri kapı süzgecinden geçer (geçmeyen seçenek seçilemez).
+ *       enUzun: renderer'a giden liste (varlik-ozellik.js listeAl) öğeleri boşlukları daraltıp bu kod noktasına kısaltır; kısaltılmış değer
+ *       geri gelirse listedeki TEK ham öğeye çözülür ve HA'ya HAM metin gider (belirsizse 'parametre').
  *   { tur: 'metin', gerekli?, enUzun } kapı süzgecinden geçmeli, boş olamaz, enUzun kod noktası
  *   { tur: 'rgb', gerekli?, renkModu? } [r, g, b], her biri 0..255 tamsayı
  *   destekBiti: (sayi) öznitelik supported_features bu biti taşımalı (ör. klima aralığı için 2); taşımıyorsa 'desteklenmiyor'
@@ -81,7 +83,7 @@ const SERVIS_IZINLERI = Object.freeze({
     ...acKapa,
     set_percentage: Object.freeze({ parametreler: Object.freeze({ percentage: Object.freeze({ tur: 'sayi', gerekli: true, tamsayi: true, min: 0, max: 100 }) }) }),
     oscillate: Object.freeze({ parametreler: Object.freeze({ oscillating: Object.freeze({ tur: 'mantiksal', gerekli: true }) }) }),
-    set_preset_mode: Object.freeze({ parametreler: Object.freeze({ preset_mode: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'preset_modes', suz: true }) }) }),
+    set_preset_mode: Object.freeze({ parametreler: Object.freeze({ preset_mode: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'preset_modes', suz: true, enUzun: 40 }) }) }),
   }),
   scene: Object.freeze({ turn_on: parametresiz }),
   script: Object.freeze({ turn_on: parametresiz }),
@@ -102,8 +104,8 @@ const SERVIS_IZINLERI = Object.freeze({
       birlikteGerekli: Object.freeze([Object.freeze(['target_temp_low', 'target_temp_high'])]),
       kucukOlmali: Object.freeze([Object.freeze(['target_temp_low', 'target_temp_high'])]),
     }),
-    set_fan_mode: Object.freeze({ parametreler: Object.freeze({ fan_mode: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'fan_modes', suz: true }) }) }),
-    set_preset_mode: Object.freeze({ parametreler: Object.freeze({ preset_mode: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'preset_modes', suz: true }) }) }),
+    set_fan_mode: Object.freeze({ parametreler: Object.freeze({ fan_mode: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'fan_modes', suz: true, enUzun: 40 }) }) }),
+    set_preset_mode: Object.freeze({ parametreler: Object.freeze({ preset_mode: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'preset_modes', suz: true, enUzun: 40 }) }) }),
     // Mod değişimi (ısıt <-> soğut <-> kapalı) yeni favoride varsayılan olarak onay ister.
     set_hvac_mode: Object.freeze({
       sinif: 'onayli',
@@ -119,7 +121,7 @@ const SERVIS_IZINLERI = Object.freeze({
     media_previous_track: parametresiz,
     volume_set: Object.freeze({ parametreler: Object.freeze({ volume_level: Object.freeze({ tur: 'sayi', gerekli: true, min: 0, max: 1 }) }) }),
     volume_mute: Object.freeze({ parametreler: Object.freeze({ is_volume_muted: Object.freeze({ tur: 'mantiksal', gerekli: true }) }) }),
-    select_source: Object.freeze({ parametreler: Object.freeze({ source: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'source_list', suz: true }) }) }),
+    select_source: Object.freeze({ parametreler: Object.freeze({ source: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'source_list', suz: true, enUzun: 60 }) }) }),
     // Konum atlama (saniye): cihaz SEEK özelliğini (supported_features bit 2) ve parça süresini (media_duration) bildirmeli; konum 0..süre.
     media_seek: Object.freeze({
       parametreler: Object.freeze({ seek_position: Object.freeze({ tur: 'sayi', gerekli: true, min: 0, max: 1e7, maxOznitelik: 'media_duration', oznitelikZorunlu: true, destekBiti: 2 }) }),
@@ -133,10 +135,10 @@ const SERVIS_IZINLERI = Object.freeze({
   }),
   vacuum: Object.freeze({ start: parametresiz, pause: parametresiz, stop: parametresiz, turn_on: parametresiz, turn_off: parametresiz, return_to_base: parametresiz, locate: parametresiz }),
   input_select: Object.freeze({
-    select_option: Object.freeze({ parametreler: Object.freeze({ option: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'options', suz: true }) }) }),
+    select_option: Object.freeze({ parametreler: Object.freeze({ option: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'options', suz: true, enUzun: 60 }) }) }),
   }),
   select: Object.freeze({
-    select_option: Object.freeze({ parametreler: Object.freeze({ option: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'options', suz: true }) }) }),
+    select_option: Object.freeze({ parametreler: Object.freeze({ option: Object.freeze({ tur: 'secenek', gerekli: true, listeOznitelik: 'options', suz: true, enUzun: 60 }) }) }),
   }),
   input_number: Object.freeze({
     set_value: Object.freeze({
@@ -277,7 +279,13 @@ function secenekDogrula(deger, sema, nitelikler) {
     if (!Array.isArray(ham)) return { hata: 'desteklenmiyor' };
     // suz: listedeki öğe süzgeçten geçmeli (ör. "Kapı kamerası" kaynağı seçilemez); karşılaştırma tam metinle yapılır.
     const liste = sema.suz ? ham.filter((s) => typeof s === 'string' && metinGuvenliMi(s)) : ham;
-    if (!liste.includes(deger)) return { hata: 'parametre' };
+    if (liste.includes(deger)) return { deger };
+    // Arayüz seçeneği kısaltılmış (boşluklar daralmış, enUzun'a kesilmiş) halde geri gönderir: TEK bir ham öğeye karşılık geliyorsa
+    // HA'ya o ham metin gider; birden çok farklı öğe aynı kısaltmaya düşüyorsa belirsiz seçim gönderilmez.
+    if (!sema.suz || !sema.enUzun) return { hata: 'parametre' };
+    const eslesen = new Set(liste.filter((s) => s.length <= 255 && kisalt(s, sema.enUzun) === deger));
+    if (eslesen.size !== 1) return { hata: 'parametre' };
+    return { deger: [...eslesen][0] };
   }
   return { deger };
 }

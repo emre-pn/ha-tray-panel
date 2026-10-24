@@ -136,6 +136,43 @@ test('ipucu belirteçleri: kapat, restart, reboot, shutdown, uyut, sıfırla, ye
   }
 });
 
+test('ipucu belirteçleri DE/FR/ES adlarını da kapsar (yalnız sıkılaşır); masum adlar zararsız kalır', () => {
+  for (const [kimlik, ad] of [
+    ['switch.pc_herunterfahren', 'PC'],
+    ['switch.x', 'Computer herunterfahren'],
+    ['input_boolean.x', 'Neustart Router'],
+    ['switch.x', 'Router neu starten'],
+    ['script.x', 'Ruhezustand'],
+    ['button.x', 'Router zurücksetzen'],
+    ['switch.x', 'Redémarrer le routeur'],
+    ['button.x', 'Réinitialiser le modem'],
+    ['script.reiniciar_pc', 'Reiniciar'],
+    ['switch.x', 'Restablecer router'],
+    ['switch.x', 'Suspender PC'],
+    ['script.x', 'Hibernar'],
+    ['button.ordinateur', 'Éteindre le PC'],
+    ['button.x', 'Apagar el ordenador'],
+    ['button.x', 'PC ausschalten'],
+    ['switch.x', 'Rechner ausschalten'],
+  ]) {
+    for (const favori of [undefined, { onay: false }]) {
+      assert.deepEqual(eylemSinifi(sentetik(kimlik, ad), favori), { sinif: SINIF.YIKICI, zorunlu: true, neden: 'ipucu' }, `${kimlik} ${ad}`);
+    }
+  }
+  // genel kapatma fiili tek başına ipucu değildir; masum adlar zararsız kalır
+  for (const [kimlik, ad] of [
+    ['switch.preset', 'Preset'],
+    ['switch.neuer_strom', 'Neuer Strom'],
+    ['switch.x', 'Neue Lampe'],
+    ['switch.x', 'Lampe ausschalten'],
+    ['switch.x', 'Éteindre la lampe'],
+    ['switch.x', 'Apagar luz'],
+    ['switch.x', 'Dimmer'],
+  ]) {
+    assert.equal(eylemSinifi(sentetik(kimlik, ad), { onay: false }).sinif, SINIF.ZARARSIZ, `${kimlik} ${ad}`);
+  }
+});
+
 // --- 1.6.0 sonrası: sahne/grup üyeleri (yalnız sıkılaştırma) ---------------------------------------------------------------------
 
 const uyeli = (uyeler, kimlik = 'scene.bahce', ad = 'Bahçe') => ({ entity_id: kimlik, state: 'unknown', attributes: { friendly_name: ad, entity_id: uyeler } });

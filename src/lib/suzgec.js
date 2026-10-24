@@ -153,6 +153,8 @@ const YASAK_EK_PARCALAR = [
     'puerta', 'cerradura', 'cerrojo', 'candado', 'videoportero', 'interfon', 'telefonillo', 'barrera', 'persiana',
     // Yaygın akıllı kilit markaları (adı kilit sözcüğü taşımayanlar)
     'nuki', 'kwikset', 'ttlock', 'tedee', 'ultraloq',
+    // Eş anlamlılar: Almanca Pforte (geçit/bahçe kapısı) ve Pförtner (kapıcı; "pfoertner" yazımıyla), İspanyolca cochera (garaj)
+    'pforte', 'pfortner', 'pfoertner', 'cochera',
     ...DE_TUR_TOR_PARCALARI,
   ]),
 ];
@@ -162,6 +164,10 @@ const YASAK_EK_BAS_ISTISNASI = new Set(['porter', 'porters']);
 const YASAK_EK_TAM_BELIRTECLER = new Set([
   'tor', 'tore', 'toren', 'tur', 'turen', 'tuer', 'tueren', // Almanca Tor / Tür
   'cancela', 'cancelas', 'verja', 'verjas', 'cadenas', // İspanyolca / Fransızca: "cancelar", "cadena" gibi sözcükleri engellemesin
+  // Eş anlamlılar: grille (Fr. bahçe kapısı/parmaklık kapı), gâche (Fr. elektrikli kapı dili), reja (İs. demir parmaklık/kapı), portal (İs. giriş
+  // kapısı/geçit). Yalnız TAM belirteç: parça aransaydı "Grillen", "Gâchette", "Portátil" gibi masum adlar engellenirdi. "Einfahrt" ve "Entrada"
+  // (giriş) bilerek yoktur: "Giriş/Entrance" gibi masum adlar geçmeye devam eder; perde adları (Rollo, Jalousie, Rideau, Toldo) kapı değildir.
+  'grille', 'grilles', 'reja', 'rejas', 'gache', 'gaches', 'portal', 'portales',
 ]);
 const YASAK_EK_PARCA_DESENI = new RegExp(YASAK_EK_PARCALAR.join('|'));
 // Arayüzde (Ayarlar > Güvenlik Kuralı) her dil için gösterilen örnek sözcükler: ayar.guvenlik.metin ile aynı olmalıdır (test denetler).

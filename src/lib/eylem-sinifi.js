@@ -86,13 +86,46 @@ const ZARARSIZ_KIMLIKLER = new Set([
 // İpucu belirteçleri yalnız bu alanlarda aranır (ışık, vantilatör ve sahne muaf). Sahnenin KENDİ adı bilerek taranmaz ("Işıkları kapat",
 // "Hepsini kapat" masum sahnelerdir); sahnenin ne yaptığını üyeleri söyler ve üyeler ayrıca taranır (uyelerdenZorunluMu).
 const IPUCU_ALANLARI = new Set(['button', 'input_button', 'script', 'switch', 'input_boolean']);
-// Belirteç BAŞI eşleşir ("kapatma" ve "kapat"; ama "preset" "reset" sayılmaz).
-const IPUCU_BELIRTECLERI = ['kapat', 'restart', 'reboot', 'shutdown', 'poweroff', 'uyut', 'hibernate', 'powershell', 'sifirla', 'reset'];
+// Belirteç BAŞI eşleşir ("kapatma" ve "kapat"; ama "preset" "reset" sayılmaz). Sözcükler sadelestir sonrası biçimdedir (ü -> u, é -> e).
+// Arayüz dilleri için (HA adları çoğu kez yerel dilde): DE herunterfahren / neustart / ruhezustand / zurücksetzen, FR redémarrer /
+// réinitialiser, ES reiniciar / restablecer / suspender / hibernar. Genel kapatma fiilleri (apagar, éteindre, ausschalten) tek başına
+// yoktur: ışık betiklerini gereksiz zorunlu onaya düşürürdü; bilgisayar sözcüğüyle çift olarak aşağıdadır. Liste yalnız genişler.
+const IPUCU_BELIRTECLERI = [
+  'kapat',
+  'restart',
+  'reboot',
+  'shutdown',
+  'poweroff',
+  'uyut',
+  'hibernate',
+  'powershell',
+  'sifirla',
+  'reset',
+  'hibern',
+  'herunterfahr',
+  'neustart',
+  'ruhezustand',
+  'zurucksetz',
+  'redemarr',
+  'reinitialis',
+  'reinici',
+  'restablec',
+  'suspend',
+];
 // Ayrı yazılmış çiftler: ikisi de (belirteç başı olarak) bulunmalı.
 const IPUCU_CIFTLERI = [
   ['yeniden', 'baslat'],
   ['power', 'off'],
   ['shut', 'down'],
+  ['neu', 'start'],
+  ['herunter', 'fahren'],
+  ['eteindre', 'pc'],
+  ['eteindre', 'ordinateur'],
+  ['apagar', 'pc'],
+  ['apagar', 'ordenador'],
+  ['ausschalten', 'pc'],
+  ['ausschalten', 'rechner'],
+  ['ausschalten', 'computer'],
 ];
 
 // Onay penceresi açıklamaları src/lib/ceviri/ana.js sözlüğündedir ('onay.<kimlik>'); burada yalnız hangi kimliklerin açıklaması olduğu durur.
