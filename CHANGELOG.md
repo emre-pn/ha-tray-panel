@@ -2,6 +2,49 @@
 
 Release notes before 1.3.0 are in Turkish. / 1.3.0 öncesi sürüm notları Türkçedir.
 
+### 1.7.1 — 2026-10-24
+
+Update with "Check now" in Settings or "Check for updates" in the tray menu, or by running `Ev-Paneli-Kurulum-1.7.1.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. This is a fix-only release for problems found in an audit of 1.7.0. The code is checked with `npm test` and `npm run kontrol`, and the panel, the palette and Settings were tried in the app with a sample home.
+
+**Quick panel and command palette**
+
+- **Palette and hint line:** The palette opens at the top of its list again, so "Recently used" is no longer hidden, and a hint at the bottom no longer clips the last row or leaves an empty strip behind.
+- **Press-and-hold lights:** A level typed in the palette (for example "lamp 40") for a press-and-hold light now sets that level when you hold, instead of switching the light. The Shift+Enter level menu is no longer offered for them, and in the panel they show as a press-and-hold tile, since the slider, wheel and drag could never change them.
+- **Panel:** "Undo" shows only when there is something to undo, card sliders fill to their real value (they always showed half), fans reach their lowest speed, a selector with an unknown value shows empty so its first option can be picked, the pinned panel no longer jumps to the monitor with the mouse when its height changes, and choosing a select option, media source, preset or fan mode with a long name no longer fails.
+- **Palette and lists:** Searching no longer lags with about 200 favorites, pressing Enter twice adds a to-do item once, and the now-playing strip shows a coloured placeholder when there is no cover.
+
+**Folder sync and saved data**
+
+- **Password change:** Changing or removing the sync password no longer overwrites another computer's encrypted file. It goes ahead only if the file opens with the old password, and other computers' sections stay in it.
+- **Favorites:** Repairing a favorite also moves its desktop tile and tray middle-click, which used to disappear. On ready-made favorites, a label you cleared or a brightness control you turned off no longer comes back, and new ones get no Turkish labels in other languages.
+- **Locked files:** A file that cannot be read for a moment no longer makes the activity history or the dismissed notifications start empty and get overwritten.
+
+**Connection and actions**
+
+- **Token and address:** An unverified token no longer causes endless reconnects or a false "connection lost" notice, and address lookup errors no longer mark it unverified.
+- **Timed actions:** If Home Assistant is slow to answer a timed on action (for example "fan 30min"), the off timer is still set and a notice says when it will turn off.
+- **Undo and restore rules:** Undo no longer relies on stale data for devices the app does not watch live, which could turn an on light off. If a restore from a PC event rule or the meeting light fails, the saved state is kept for the next restore.
+
+**Stuck notifications and missing alerts**
+
+- A corner notification or push card that cannot be drawn no longer stays stuck and blocks the ones after it; an information notice falls back to a Windows notification.
+- A low battery or pending update at the end of a long device list is now seen, and alert rules with a duration no longer stay silent after a reconnect.
+- Text that starts with a number and a dot (such as "2." for a floor) keeps its number in Home Assistant notifications, mobile messages and alerts.
+
+**Settings**
+
+- **Tray menu choices:** Start with Windows, window size and the other tray choices are no longer reset when Settings saves another field. If saving fails, the menu goes back and an error is shown.
+- **Edits and confirmations:** Removed favorites no longer come back on Save, a typed custom header is asked about before closing, "Clear history" asks first, and an invalid undo time is reported instead of becoming 10.
+- **Mobile registration:** The text said no device information is sent. It now names what is sent (device name, app version, Windows version); what is sent has not changed.
+
+**Safety (only tightens)**
+
+- Shut-down, restart, sleep, hibernate and reset devices with German, French or Spanish names, and "turn off PC" in those languages, need press-and-hold, as English and Turkish ones did. The door rule knows more German, French and Spanish words for gate, grille and garage. Malformed device ids are refused before undo reads them, and an old address's certificate fingerprint can no longer be pinned to a new address.
+
+**Also fixed**
+
+- Alert sentences show weather, media, vacuum, timer and climate states in your language, English, German, French and Spanish wording was corrected, desktop tiles at 150% text size are no longer clipped, the offline page follows "Reduce motion", and high contrast shows the selected tab. Many more smaller fixes from the audit are included, with tests added for them.
+
 ### 1.7.0 — 2026-10-23
 
 Update with "Check now" in Settings or "Check for updates" in the tray menu, or by running `Ev-Paneli-Kurulum-1.7.0.exe` over the installed version. Your settings, favorites and token stay as they are, and nothing new reaches outside the app. This release gives the quick panel a new layout, brings a new logo, and fixes the findings of a security and bug audit. The code is checked with `npm test` and `npm run kontrol`, and the panel and the corner notification were tried in the app with a sample home.

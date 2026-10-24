@@ -179,13 +179,13 @@ Kullanıcı başına kurulan, yönetici (admin) izni gerektirmeyen, Başlat men�
 ```powershell
 npm run dist
 ```
-İşlem tamamlandığında `dist/` klasörü altında **`Ev-Paneli-Kurulum-1.7.0.exe`** dosyası hazır olacaktır (dosya adındaki sürüm `package.json` içindeki `version` değerinden gelir).
+İşlem tamamlandığında `dist/` klasörü altında **`Ev-Paneli-Kurulum-1.7.1.exe`** dosyası hazır olacaktır (dosya adındaki sürüm `package.json` içindeki `version` değerinden gelir).
 
 Kurulum gerektirmeyen tek dosyalık bir sürüm de üretilebilir:
 ```powershell
 npm run dist:tasinabilir
 ```
-Çıktı `dist/` altında **`Ev-Paneli-Tasinabilir-1.7.0.exe`** olur. Ayarlar, anahtar ve HA oturumu kurulu sürümle aynı klasörde (`%APPDATA%\Ev Paneli`) tutulur; kurulu sürüm çalışırken taşınabilir exe ikinci bir kopya açmaz, çalışan pencereyi öne getirir. Taşınabilir sürümde "Windows açılınca başlat" yoktur. **Eski sürüm uyarısı:** Aynı klasörü 1.3.0 ya da daha eski bir kopya da (kurulu ya da taşınabilir) açarsa, o sürüm ayar dosyasını kendi biçimine geri yazar ve 1.4.0'da eklediğiniz favoriler, karo alanları ve arayüz dili silinir. Bir sonraki 1.4.0 açılışında bu kayıp, saklanan eski sürüm yedeğinden (`ayarlar.v6-yedek*.json`, en çok 5 adet) otomatik geri alınır ve bir bildirimle söylenir; yine de iki sürümü aynı anda kullanmamanız önerilir. exe her açılışta kendini geçici bir klasöre açtığı için komut satırı çağrıları (`--eylem`, `--goster`, `--durum`) kurulu sürümden belirgin biçimde yavaştır; sık kullanılan kısayollar ve Stream Deck için kurulu sürümü tercih edin.
+Çıktı `dist/` altında **`Ev-Paneli-Tasinabilir-1.7.1.exe`** olur. Ayarlar, anahtar ve HA oturumu kurulu sürümle aynı klasörde (`%APPDATA%\Ev Paneli`) tutulur; kurulu sürüm çalışırken taşınabilir exe ikinci bir kopya açmaz, çalışan pencereyi öne getirir. Taşınabilir sürümde "Windows açılınca başlat" yoktur. **Eski sürüm uyarısı:** Aynı klasörü 1.3.0 ya da daha eski bir kopya da (kurulu ya da taşınabilir) açarsa, o sürüm ayar dosyasını kendi biçimine geri yazar ve 1.4.0'da eklediğiniz favoriler, karo alanları ve arayüz dili silinir. Bir sonraki 1.4.0 açılışında bu kayıp, saklanan eski sürüm yedeğinden (`ayarlar.v6-yedek*.json`, en çok 5 adet) otomatik geri alınır ve bir bildirimle söylenir; yine de iki sürümü aynı anda kullanmamanız önerilir. exe her açılışta kendini geçici bir klasöre açtığı için komut satırı çağrıları (`--eylem`, `--goster`, `--durum`) kurulu sürümden belirgin biçimde yavaştır; sık kullanılan kısayollar ve Stream Deck için kurulu sürümü tercih edin.
 
 ### 5. Simgeleri Yeniden Üretme
 Tepsi simgeleri (`assets/ikon.png`, `ikon.ico` ve bağlantı yokken kullanılan soluk `ikon-soluk.png`, `ikon-soluk.ico`) harici bağımlılık olmadan Node ile üretilir; pencere açmaz, yalnız dosya yazar:
