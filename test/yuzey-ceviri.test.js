@@ -94,6 +94,19 @@ test('yüzey sözlüğü: tutarlı terimler (Try again, Settings, home/external 
   }
 });
 
+test('yüzey sözlüğü: İspanyolcada Ayarlar penceresi her yerde "Configuración" (hiçbir ileti "Ajustes" demez)', () => {
+  for (const [anahtar, metin] of Object.entries(YUZEY.es)) assert.doesNotMatch(metin, /Ajustes/, `${anahtar}: "Ajustes"`);
+  assert.match(YUZEY.es['yuzey.degisen.kapali'], /Configuración > Acciones/);
+});
+
+test('yüzey sözlüğü: humidifier Türkçede "Nemlendirici" (nem alıcı = dehumidifier değildir); takvim "+N daha" İngilizcede çoğul sözcük taşımaz', () => {
+  assert.equal(YUZEY.tr['yuzey.diger.alan.humidifier'], 'Nemlendirici');
+  assert.doesNotMatch(YUZEY.tr['yuzey.diger.alan.humidifier'], /nem alıcı/i);
+  // n = 1 iken "+1 more events" çıkmasın: sayıdan bağımsız kalıp
+  assert.doesNotMatch(YUZEY.en['yuzey.bilgi.takvim.dahaFazla'], /events/);
+  assert.equal(YUZEY.en['yuzey.bilgi.takvim.dahaFazla'], '+{n} more');
+});
+
 test('dört yerel sayfa (çevrimdışı, köşe, hızlı panel, masaüstü karosu) lib/dil.js ve lib/ceviri/yuzey.js betiklerini sayfa betiğinden ÖNCE yükler; <title> çevrilir; <html lang> varsayılanı tr', () => {
   for (const [html, betik] of SAYFALAR) {
     const kaynak = oku(html);

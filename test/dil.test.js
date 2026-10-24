@@ -554,3 +554,31 @@ test('dil.js ve sözlük dosyaları tarayıcıda da yüklenir: require kullanmaz
     assert.equal(typeof pencere[ad], 'object', `${dosya}: ${ad} küresel adı`);
   }
 });
+
+// --- çeviri üslubu bekçileri (anlam, hitap, düğme adı) -----------------------------------------------------
+
+test('es kisayol.sinif: güvenlik kuralı eylemi engeller (özne kural), eylem kuralı engelliyor gibi okunmaz', () => {
+  const metin = ANA.es['kisayol.sinif'];
+  assert.doesNotMatch(metin, /que bloquea la regla/);
+  assert.match(metin, /que la regla de seguridad bloquea\.$/);
+});
+
+test('fr: tüm metinler "vous" hitabında; tu/toi/ton/ta/tes/tien kalıpları yok (ana, yüzey ve ayarlar sözlüklerinin tümü)', () => {
+  // "ton de blanc" renk tonudur (isim), hitap değildir.
+  const tutoiement = /(?<![\p{L}-])(tu|toi|tes|ta|tien|tiens|tienne|tiennes|ton(?! de blanc))(?![\p{L}-])/iu;
+  const bak = (ad, tablo, anahtarlar) => {
+    for (const k of anahtarlar ?? Object.keys(tablo)) assert.doesNotMatch(tablo[k], tutoiement, `${ad} fr ${k}: "tu" kipinde`);
+  };
+  bak('ana', ANA.fr);
+  bak('yuzey', YUZEY.fr);
+  bak('ayarlar', AYARLAR.fr);
+  assert.match(ANA.fr['aktar.onizlemeGecersiz'], /choisissez de nouveau le fichier/);
+});
+
+test('oturum.kayit-yok: tırnaklı düğme adları Ayarlar sayfasındaki gerçek etiketlerle aynı (Kaydet düğmesi ve Yeniden etkinleştir)', () => {
+  for (const dil of DILLER) {
+    const metin = ANA[dil]['oturum.kayit-yok'];
+    assert.ok(metin.includes(AYARLAR[dil]['ayar.kaydet.dugme']), `${dil}: kaydet düğmesi adı "${AYARLAR[dil]['ayar.kaydet.dugme']}" metinde yok`);
+    assert.ok(metin.includes(AYARLAR[dil]['ayar.baslangic.etkinlestir']), `${dil}: "${AYARLAR[dil]['ayar.baslangic.etkinlestir']}" metinde yok`);
+  }
+});
