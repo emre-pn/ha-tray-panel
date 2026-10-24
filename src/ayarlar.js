@@ -89,6 +89,7 @@
   let bildirimZamanlayicisi = null;
   let kaydediliyor = false;
   let yuklemeSozu = null;
+  let yukleneNesil = 0; // cihaz listesi durumu sıfırlanınca ya da taze istek gelince artar; eski yanıtlar atılır
   let sonYedekler = null; // son alınan yedek listesi (null: henüz alınmadı); dil değişince yeniden çizilir
   let listeIletisi = null; // cihaz listesi yerine gösterilen ileti: { anahtar, ham, hata } (dil değişince yeniden yazılır)
 
@@ -312,6 +313,7 @@
         dil: function () { return dil; },
         kirliGuncelle: function () { kirliGuncelle(); },
         bildirimGoster: function (mesaj, tur) { bildirimGoster(mesaj, tur); },
+        onayIste: function (metin) { return confirm(metin); },
         kisayolBagla: function (girdi, secenek) { kisayolKutusunuBagla(girdi, secenek); },
         kisayolNormal: function (metin) { return kisNorm(metin); },
         kisayolGoster: function (metin) { return kisGoster(metin); },
@@ -405,6 +407,8 @@
   const baglantiBildirimi = $('baglantiBildirimi');
   const baglantiBildirimSn = $('baglantiBildirimSn');
   const baglantiBildirimSnHata = $('baglantiBildirimSnHata');
+  const geriAlSureDk = $('geriAlSureDk'); // eylem grubu (o-12): sayı alanı ayarlar-eylem.js'te okunur, hata işareti burada
+  const geriAlSureHata = $('geriAlSureHata');
   const anahtarYoneticiUyari = $('anahtarYoneticiUyari');
   const anahtarYoneticiDegil = $('anahtarYoneticiDegil');
   // Masaüstüne sabitlenebilen alanlar: src/lib/masaustu-karo.js SABITLENEBILIR_ALANLAR ile aynı (ana süreç yine süzer).
@@ -413,6 +417,7 @@
   // Orta tık adayları ana süreçten gelir (ayar özeti: ortaTikAlanlari; src/lib/orta-tik.js); bu liste yalnız yedektir. Ana süreç yine denetler.
   const ORTA_TIK_YEDEK_ALANLAR = ['light', 'switch', 'fan', 'input_boolean', 'scene', 'script', 'button', 'input_button', 'humidifier'];
   const BAGLANTI_SN_ARALIGI = { en_az: 15, en_cok: 600 }; // src/lib/baglanti-bildirimi.js GECIKME_SINIRI ile aynı
+  const GERI_AL_SURE_ARALIGI = { en_az: 1, en_cok: 60 }; // src/lib/ayar-alanlari.js geriAlSureDk ile aynı
   let ortaTikAlanlari = ORTA_TIK_YEDEK_ALANLAR;
   let masaustuSecili = []; // ayardaki ve işaretlenen karo kimlikleri (ham liste; kayıtta yalnız seçili, sabitlenebilir favoriler gider)
   let tercihEkranKaydi = {}; // ayardaki tercih edilen ekran ({} = yok)
@@ -478,6 +483,7 @@
     paletKisayol: { girdi: paletKisayol, kutu: paletKisayolUyarilari },
     bildirimPilEsigi: { girdi: bildirimPilEsigi, hata: bildirimPilEsigiHata, detay: 'bolumBildirimler' },
     baglantiBildirimSn: { girdi: baglantiBildirimSn, hata: baglantiBildirimSnHata, detay: 'bolumBildirimler' },
+    geriAlSureDk: { girdi: geriAlSureDk, hata: geriAlSureHata, detay: 'bolumEtkinlik' },
     uyariKurallari: { girdi: btnKuralEkle, hata: kuralHata, detay: 'bolumBildirimler' },
   };
 
@@ -519,6 +525,7 @@
   }
 
   function odakla(oge) {
+    if (!oge) return;
     try {
       oge.focus();
     } catch {
@@ -676,6 +683,8 @@
     yapilacakListeleri: { kap: $('yapilacakListeleriListesi'), sec: $('yapilacakListeleriEkle'), dugme: $('btnYapilacakListeleriEkle'), ilkKaldir: null },
     kameraIzinleri: { kap: $('kameraIzinleriListesi'), sec: $('kameraIzinleriEkle'), dugme: $('btnKameraIzinleriEkle'), ilkKaldir: null },
   };
+  // Son öğe kaldırılınca ve aday seçici de pasifse odağın gideceği yer listenin kendisidir (programla odaklanır, Tab sırasına girmez)
+  Object.keys(BILGI_LISTELERI).forEach(function (ad) { BILGI_LISTELERI[ad].kap.tabIndex = -1; });
   const KAMERA_YENILEME_SECENEKLERI = [0, 5, 10, 30, 60]; // src/lib/kamera.js YENILEME_SECENEKLERI ile aynı
   const KART_SABITLERI = [['yok', 'ayar.bilgi.kart.yok'], ['saat', 'ayar.bilgi.kart.saat'], ['hava', 'ayar.bilgi.kart.hava'], ['medya', 'ayar.bilgi.kart.medya']];
   const bilgiSecim = { sensorSeridi: [], takvimler: [], yapilacakListeleri: [], kameraIzinleri: [] }; // seçili kimlikler (şeritte sıra önemli)
@@ -841,7 +850,7 @@
         bilgiSecim[ad].splice(sira, 1);
         bilgiListesiCiz(ad);
         kirliGuncelle();
-        odakla(oge.sec.disabled ? oge.ilkKaldir : oge.sec);
+        odakla(oge.sec.disabled ? (oge.ilkKaldir || oge.kap) : oge.sec);
       });
       if (oge.ilkKaldir === null) oge.ilkKaldir = kaldir;
       satir.appendChild(metin);
@@ -943,7 +952,7 @@
       bilgiSecim[ad].push(kimlik);
       bilgiListesiCiz(ad);
       kirliGuncelle();
-      odakla(oge.sec.disabled ? oge.ilkKaldir : oge.sec);
+      odakla(oge.sec.disabled ? (oge.ilkKaldir || oge.kap) : oge.sec);
     });
   });
 
@@ -1155,17 +1164,29 @@
     return gecerli;
   }
 
+  /** Geri alma süresi geçerli mi (tam sayı, 1-60)? Geçersizse alan işaretlenir; sessizce varsayılana çevrilip kaydedilmez. */
+  function geriAlSureDenetle() {
+    if (!eylemBolumu) return true; // eylem bölümü yoksa bu alan kayda zaten girmez
+    const ham = String(geriAlSureDk.value).trim();
+    const gecerli = /^\d{1,3}$/.test(ham) && Number(ham) >= GERI_AL_SURE_ARALIGI.en_az && Number(ham) <= GERI_AL_SURE_ARALIGI.en_cok;
+    if (!gecerli) alanIsaretle('geriAlSureDk', t('ayar.eylem.geriAl.sureHata'));
+    return gecerli;
+  }
+
   /** Anahtar bölümündeki yönetici uyarısı (o-43): true = uyarı, false = olumlu not, null/bilinmiyor = ikisi de gizli. */
   function anahtarYoneticisiniGoster(yonetici, goster) {
     anahtarYoneticiUyari.style.display = goster && yonetici === true ? 'block' : 'none';
     anahtarYoneticiDegil.style.display = goster && yonetici === false ? 'block' : 'none';
   }
 
-  /** panelSabit yalnız Ayarlar'da DEĞİŞTİRİLDİYSE gönderilir: panelin iğne düğmesiyle yapılan değişikliği eski bir form ezmesin (o-23). */
-  function panelSabitDegisti(anlik) {
+  /**
+   * Alan yalnız Ayarlar'da DEĞİŞTİRİLDİYSE gönderilir: ana sürecin kendi değiştirdiği alanı (panelin iğne düğmesi o-23; tepsi menüsü:
+   * otomatikBaslat, pencereBoyutu, odakKaybindaGizle, tercihEkran) eski bir form ezmesin.
+   */
+  function alanDegisti(anlik, ad) {
     if (bazGenel === null) return false;
     try {
-      return JSON.parse(bazGenel).panelSabit !== anlik.panelSabit;
+      return JSON.stringify(JSON.parse(bazGenel)[ad]) !== JSON.stringify(anlik[ad]);
     } catch {
       return false;
     }
@@ -1222,9 +1243,11 @@
       const baz = JSON.parse(bazGenel);
       if (JSON.stringify(baz.masaustuKarolari) !== JSON.stringify(yeni)) {
         const duzenlenmedi = JSON.stringify(masaustuSecili) === JSON.stringify(baz.masaustuKarolari);
+        const kapanan = baz.masaustuKarolari.filter(function (kimlik) { return yeni.indexOf(kimlik) < 0; });
         baz.masaustuKarolari = yeni;
         bazGenel = JSON.stringify(baz);
         if (duzenlenmedi) masaustuSecili = yeni.slice();
+        else masaustuSecili = masaustuSecili.filter(function (kimlik) { return kapanan.indexOf(kimlik) < 0; }); // × ile kapatılan karo, düzenlenmiş listede kalıp Kaydet'te yeniden açılmasın
       }
     }
     masaustuKaroListesiniCiz();
@@ -1400,9 +1423,9 @@
     kirliGosterge.style.display = kirliMi() ? 'inline' : 'none';
   }
 
-  // Kapatırken sor: kaydedilmemiş ayar ya da yazılmış ama kaydedilmemiş anahtar (anahtar kirli göstergesine girmez, ayrı kaydedilir).
+  // Kapatırken sor: kaydedilmemiş ayar, yazılmış ama kaydedilmemiş anahtar ya da özel üstbilgi taslağı (ikisi de kirli göstergesine girmez, ayrı kaydedilir).
   function kapatmaOnayiGerekli() {
-    return kirliMi() || anahtarGirdisi.value !== '';
+    return kirliMi() || anahtarGirdisi.value !== '' || (baglanti !== null && baglanti.kirliMi());
   }
 
   /** Değişiklik haritasını kayıtlı değere göre günceller: eşitse kayıt silinir (geri alınan düzenleme kirli sayılmaz). */
@@ -1720,7 +1743,7 @@
       uyariKutusuDoldur(paletKisayolUyarilari, sunucuIletileri.palet);
       gecersizIsaretle(paletKisayol, false);
     }
-    ['yerelAdres', 'disAdres', 'anaPanoyaDonDk', 'bildirimPilEsigi', 'baglantiBildirimSn', 'uyariKurallari'].forEach(function (ad) {
+    ['yerelAdres', 'disAdres', 'anaPanoyaDonDk', 'bildirimPilEsigi', 'baglantiBildirimSn', 'geriAlSureDk', 'uyariKurallari'].forEach(function (ad) {
       if (!korunan.has(ad)) alanTemizle(ad);
     });
     vurguOnizlemeGuncelle(); // geçerli ya da boş renkte işareti kaldırır, korunan geçersiz değerde işaretli bırakır
@@ -1784,8 +1807,11 @@
     return kisayolSorunMesaji(oge);
   }
 
+  let panoAdGirdileri = []; // satır sırasına göre ad kutuları (silme/ekleme sonrası odak için)
+
   function panolariCiz() {
     panolarListesi.replaceChildren();
+    panoAdGirdileri = [];
     panolar.forEach(function (pano, sira) {
       const satir = el('div', 'pano-satir');
       satir.setAttribute('role', 'group');
@@ -1796,6 +1822,7 @@
       ad.value = pano.ad;
       ad.maxLength = 30;
       ad.setAttribute('aria-label', t('ayar.pano.adEtiket', { n: sira + 1 }));
+      panoAdGirdileri.push(ad);
       // Reddedilen satırın nedeni, kullanıcı satırı düzenlemeye başlayınca kalkar (kısayol iletisi varsa yeniden hesaplanır).
       const hatayiTemizle = function () {
         if (!pano.hata) return;
@@ -1827,6 +1854,8 @@
       kisayolGirdisi.spellcheck = false;
       const ileti = el('div', 'pano-hata', panoHataMetni(pano));
       ileti.style.display = pano.hata ? 'block' : 'none';
+      ileti.id = 'panoHata' + (sira + 1); // satırlar baştan kurulduğundan sıra benzersizdir
+      kisayolGirdisi.setAttribute('aria-describedby', ileti.id); // ekran okuyucu nedeni de duysun
       const sil = el('button', 'buton buton-ikincil', t('ayar.pano.sil'));
       sil.type = 'button';
       sil.setAttribute('aria-label', t('ayar.pano.silEtiket', { n: sira + 1 }));
@@ -1834,6 +1863,7 @@
         panolar.splice(sira, 1);
         panolariCiz();
         kirliGuncelle();
+        odakla(panoAdGirdileri[sira] || panoAdGirdileri[sira - 1] || btnPanoEkle); // silinen düğme DOM'dan gitti: komşu satır, yoksa "Pano ekle"
       });
       kisayolKutusunuBagla(kisayolGirdisi, {
         bosIzinli: true,
@@ -1844,6 +1874,8 @@
           kirliGuncelle();
         },
       });
+      // yazılmış ama kaydedilmemiş geçersiz kısayol işaretli kalır (sunucu nedeni varsa o ezilmez); geçerli kayıtlı kısayolun altına AltGr/Windows uyarısı yazılmaz
+      if (pano.kisayol !== '' && !pano.hata && Kisayol && !Kisayol.kisayolDogrula(pano.kisayol, t).gecerli) kisayolAnlikDenetle(kisayolGirdisi, ileti, true);
       satir.appendChild(ad);
       satir.appendChild(yol);
       satir.appendChild(kisayolGirdisi);
@@ -1954,7 +1986,7 @@
   /** Tarayıcıyla giriş tamamlandı ya da oturum sona erdi/kapatıldı (o-57): anahtar bölümü ve (sağlıklıysa) cihaz listesi tazelenir. */
   async function oturumDegisti() {
     const sonuc = await anahtariYenile();
-    if (sonuc && anahtarSaglikli(sonuc)) await cihazlariYukle(false);
+    if (sonuc && anahtarSaglikli(sonuc)) await cihazlariYukle(false, true);
   }
 
   /**
@@ -1963,7 +1995,7 @@
    */
   async function esitlemeDegisti(tur) {
     if (tur !== 'uygulandi') return;
-    if (kirliMi() || anahtarGirdisi.value !== '') {
+    if (kapatmaOnayiGerekli()) {
       bildirimGoster(t('ayar.esitleme.alindiKirli'), 'uyari', 8000);
       return;
     }
@@ -2001,7 +2033,7 @@
         bildirimGoster(sonuc.uyari || t('ayar.anahtar.dogrulandi'));
         // Yalnız anahtar bölümü tazelenir: form alanlarındaki ve favori listesindeki kaydedilmemiş düzenlemeler korunur (h-05).
         yenilendi = (await anahtariYenile()) !== null;
-        await cihazlariYukle(false);
+        await cihazlariYukle(false, true);
       } else {
         ikinciOnayiGizle(); // 401 / hata: onay harcandı, sonraki aday yeniden onay ister
         bildirimGoster(sonuc.hata || t('ayar.anahtar.kaydedilemedi'), 'hata');
@@ -2086,6 +2118,7 @@
         // Yalnız yerel dosya silindi; HA'daki anahtar duruyor — kullanıcıya açıkça söylenir (hata-07).
         bildirimGoster(sonuc.mesaj || t('ayar.anahtar.silindi'), 'uyari', 12000);
         await anahtariYenile();
+        yukleneNesil += 1; // süren cihaz yüklemesinin yanıtı silinen anahtara aittir
         cihazlarYuklendi = false;
         yuklenenCihazlar = [];
         eksikFavoriler = [];
@@ -2148,6 +2181,20 @@
       kayitliSira.forEach(function (kimlik) {
         if (!eskiKayitli.has(kimlik) && seciliSira.indexOf(kimlik) < 0) seciliSira.push(kimlik);
       });
+      // Arka planda KALDIRILAN favori (panel menüsünden "Favoriden kaldır"): seçimde ve taslak düzenlemelerde kalırsa Kaydet geri getirirdi
+      const kaldirilan = new Set(Array.from(eskiKayitli).filter(function (kimlik) { return kayitliSira.indexOf(kimlik) < 0; }));
+      if (kaldirilan.size > 0) {
+        seciliSira = seciliSira.filter(function (kimlik) { return !kaldirilan.has(kimlik); });
+        kaldirilan.forEach(function (kimlik) {
+          onayDegisiklikleri.delete(kimlik);
+          kisayolDegisiklikleri.delete(kimlik);
+          parlaklikDegisiklikleri.delete(kimlik);
+          etiketDegisiklikleri.delete(kimlik);
+          kisayolEylemiDegisiklikleri.delete(kimlik);
+          kisayolHatali.delete(kimlik);
+          etiketHatali.delete(kimlik);
+        });
+      }
     } else {
       seciliSira = kayitliSira.slice();
       onayDegisiklikleri.clear();
@@ -2335,25 +2382,39 @@
     cihazListesi.replaceChildren();
     const kutu = el('div', 'liste-bos', typeof ham === 'string' && ham !== '' ? ham : t(anahtar));
     if (hata) kutu.classList.add('liste-hata');
+    kutu.setAttribute('role', hata ? 'alert' : 'status'); // yükleniyor/hata ekran okuyucuya duyurulsun
     cihazListesi.appendChild(kutu);
     btnDahaFazla.style.display = 'none';
   }
 
-  function cihazlariYukle(sessiz) {
-    if (yuklemeSozu) return yuklemeSozu;
-    yuklemeSozu = cihazlariYukleIsle(sessiz === true).then(
-      function () { yuklemeSozu = null; },
-      function () { yuklemeSozu = null; },
-    );
-    return yuklemeSozu;
+  /**
+   * taze: çağıranın durumu değişti (yeni anahtar, kayıt sonrası, dil, içe aktarma). Süren yükleme eski duruma aittir: sonucu atılır ve yenisi
+   * onun ardından başlar. Aksi halde süren yüklemeye katılınır (aynı durum için ikinci istek atılmaz).
+   */
+  function cihazlariYukle(sessiz, taze) {
+    if (yuklemeSozu && taze !== true) return yuklemeSozu;
+    const baslat = function () { return cihazlariYukleIsle(sessiz === true); };
+    let calisan;
+    if (yuklemeSozu) {
+      yukleneNesil += 1; // süren yüklemenin yanıtı gelince uygulanmaz
+      calisan = yuklemeSozu.then(baslat);
+    } else {
+      calisan = baslat();
+    }
+    const bitti = function () { if (yuklemeSozu === soz) yuklemeSozu = null; };
+    const soz = calisan.then(bitti, bitti);
+    yuklemeSozu = soz;
+    return soz;
   }
 
   async function cihazlariYukleIsle(sessiz) {
+    const nesil = yukleneNesil;
     btnCihazlariYukle.disabled = true;
     btnCihazlariYukle.textContent = t('ayar.favori.yukleniyor');
     if (!sessiz) listeMesaji('ayar.favori.cihazlarCekiliyor', false);
     try {
       const sonuc = await window.evPaneli.cihazlariGetir();
+      if (nesil !== yukleneNesil) return; // yanıt beklenirken anahtar silindi ya da durum değişti: eski yanıt yeni durumu ezmesin
       if (sonuc.ok) {
         yuklenenCihazlar = sonuc.cihazlar || [];
         eksikFavoriler = sonuc.eksik || [];
@@ -2368,7 +2429,7 @@
         });
         cihazlarYuklendi = true;
         bilgiAdaylariniKur(sonuc);
-        gosterilenCihazSayisi = CIHAZ_SAYFA_BOYUTU;
+        if (!sessiz) gosterilenCihazSayisi = CIHAZ_SAYFA_BOYUTU; // sessiz yenilemede (kayıt, favori tazeleme, dil) "Daha fazla göster" ile açılan satırlar kapanmaz
         guncelleSecilenSayisi();
         cihazlariCiz();
         siraCiz();
@@ -2379,12 +2440,14 @@
         listeMesaji('ayar.favori.listeAlinamadi', true, sonuc.hata);
       }
     } catch (err) {
-      listeMesaji('ayar.favori.baglantiHatasi', true);
+      if (nesil === yukleneNesil) listeMesaji('ayar.favori.baglantiHatasi', true);
     } finally {
       btnCihazlariYukle.disabled = false;
       btnCihazlariYukle.textContent = t('ayar.favori.cihazlariListele');
     }
   }
+
+  let cihazNotSayaci = 0; // satır iletilerine benzersiz kimlik (aria-describedby)
 
   /**
    * Tek satır. s: { kimlik, ad, turEtiketi, durum, secili, secilebilir, sinifAdi, notMetni, cihaz }
@@ -2416,6 +2479,7 @@
       onayCb.type = 'checkbox';
       onayCb.checked = etkinOnay(s.kimlik, s.cihaz);
       onayCb.disabled = s.cihaz.onayZorunlu || !cb.checked;
+      onayCb.setAttribute('aria-label', s.cihaz.onayZorunlu ? t('ayar.cihaz.onayZorunluEtiket', { ad: s.ad }) : t('ayar.cihaz.onayIsteEtiket', { ad: s.ad }));
       onayEtiket.title = s.cihaz.onayZorunlu ? t('ayar.cihaz.onayZorunluIpucu') : t('ayar.cihaz.onayIpucu');
       onayEtiket.appendChild(onayCb);
       onayEtiket.appendChild(el('span', '', s.cihaz.onayZorunlu ? t('ayar.cihaz.onayZorunlu') : t('ayar.cihaz.onayIste')));
@@ -2519,6 +2583,7 @@
         parlaklikCb.type = 'checkbox';
         parlaklikCb.checked = etkinParlaklik(s.kimlik);
         parlaklikCb.disabled = !cb.checked;
+        parlaklikCb.setAttribute('aria-label', t('ayar.cihaz.parlaklikEtiket', { ad: s.ad }));
         etiket.title = t('ayar.cihaz.parlaklikIpucu');
         etiket.appendChild(parlaklikCb);
         etiket.appendChild(el('span', '', t('ayar.cihaz.parlaklik')));
@@ -2531,10 +2596,15 @@
       }
       const ileti = el('div', 'cihaz-not', '');
       ileti.style.display = 'none';
+      cihazNotSayaci += 1;
+      ileti.id = 'cihazNot' + cihazNotSayaci;
+      etiketGirdisi.setAttribute('aria-describedby', ileti.id);
+      if (kisayolGirdisi) kisayolGirdisi.setAttribute('aria-describedby', ileti.id);
       const sunucuSorunu = kisayolSorunMesaji(favoriKisayolDurumu(s.kimlik));
       if (sunucuSorunu && !kisayolDegisiklikleri.has(s.kimlik)) uyariKutusuDoldur(ileti, [sunucuSorunu]);
       if (kisayolGirdisi) {
-        if (kisayolHatali.has(s.kimlik)) kisayolAnlikDenetle(kisayolGirdisi, ileti, true);
+        // Sunucunun reddettiği ya da kullanıcının yazıp henüz kaydetmediği değer: yeniden çizimde işaret ve neden kaybolmasın
+        if (kisayolHatali.has(s.kimlik) || kisayolDegisiklikleri.has(s.kimlik)) kisayolAnlikDenetle(kisayolGirdisi, ileti, true);
         kisayolKutusunuBagla(kisayolGirdisi, {
           bosIzinli: true,
           kutu: ileti,
@@ -2582,10 +2652,8 @@
     // Satıra tıklayınca da işaret kutusu değişsin
     if (s.secilebilir) {
       satir.addEventListener('click', function (e) {
-        if (e.target !== cb) {
-          cb.checked = !cb.checked;
-          cb.dispatchEvent({ type: 'change', target: cb });
-        }
+        // click() işareti çevirir ve gerçek (kabarcıklanan) change olayını üretir; düz nesneyle dispatchEvent TypeError verirdi
+        if (e.target !== cb) cb.click();
       });
     }
     return satir;
@@ -2718,7 +2786,7 @@
     favoriUygula(sonuc, true);
     masaustuListesiniSunucudanYenile(sonuc);
     hazirListeDurumunuGoster(sonuc.hazirListeGuncel);
-    if (cihazlarYuklendi) await cihazlariYukle(true);
+    if (cihazlarYuklendi) await cihazlariYukle(true, true);
     else cihazlariCiz();
     kurulumGuncelle();
     kirliGuncelle();
@@ -2871,7 +2939,9 @@
   }
 
   function boyutMetni(bayt) {
-    return typeof bayt === 'number' && bayt > 0 ? (bayt / 1048576).toFixed(bayt < 10485760 ? 1 : 0) + ' MB' : '';
+    if (typeof bayt !== 'number' || bayt <= 0) return '';
+    const yazi = (bayt / 1048576).toFixed(bayt < 10485760 ? 1 : 0);
+    return (dil === 'en' ? yazi : yazi.replace('.', ',')) + ' MB'; // ondalık ayraç arayüz diline göre (onizlemeKontrastiMetni ile aynı kural)
   }
 
   // Sözlük anahtarları açık yazılır (dinamik birleştirme yok): kullanılmayan anahtar testle yakalanır.
@@ -2992,7 +3062,7 @@
 
   function mobilSaatMetni(ms) {
     try {
-      return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return new Date(ms).toLocaleTimeString(Dil ? Dil.yerelAdi(dil) : dil === 'en' ? 'en-US' : 'tr-TR', { hour: '2-digit', minute: '2-digit' }); // arayüz diliyle (yedekZamani ile aynı), sistem yerel ayarıyla değil
     } catch (err) {
       return '';
     }
@@ -3016,7 +3086,7 @@
         metin = t(anahtar);
         if (kayitli && k.canliAcik === false) metin += ' ' + t('ayar.mobil.canliKapali');
         if (k.sonBildirim) metin += ' ' + t('ayar.mobil.sonBildirim', { saat: mobilSaatMetni(k.sonBildirim) });
-        if (k.dusenBildirim > 0) metin += ' ' + t('ayar.mobil.dusen', { n: String(k.dusenBildirim) });
+        if (k.dusenBildirim > 0) metin += ' ' + cogul('ayar.mobil.dusen', k.dusenBildirim);
         if (!kayitli && mobilBildirimler.checked) metin += ' ' + t('ayar.mobil.kayitGerek');
       }
     }
@@ -3298,9 +3368,10 @@
       disAdres: a.disAdres,
       kisayol: a.kisayol,
       dil: a.dil,
-      otomatikBaslat: a.otomatikBaslat,
-      pencereBoyutu: a.pencereBoyutu,
-      odakKaybindaGizle: a.odakKaybindaGizle,
+      // Tepsi menüsünden de değişen alanlar: yalnız Ayarlar'da değiştirildiyse gider (ana süreç eksik alanı mevcut değerle bırakır)
+      ...(alanDegisti(a, 'otomatikBaslat') ? { otomatikBaslat: a.otomatikBaslat } : {}),
+      ...(alanDegisti(a, 'pencereBoyutu') ? { pencereBoyutu: a.pencereBoyutu } : {}),
+      ...(alanDegisti(a, 'odakKaybindaGizle') ? { odakKaybindaGizle: a.odakKaybindaGizle } : {}),
       anaPanoyaDonDk: a.anaPanoyaDonDk,
       koseBildirimi: a.koseBildirimi,
       bipSesi: a.bipSesi,
@@ -3328,7 +3399,7 @@
       // Pencere grubu (1.4.0): doğrulama ana süreçte (src/lib/ayar-alanlari.js); karolarda yalnız seçili, sabitlenebilir favoriler gider
       panelHerZamanUstte: a.panelHerZamanUstte,
       pencereKonumu: a.pencereKonumu,
-      tercihEkran: a.tercihEkran,
+      ...(alanDegisti(a, 'tercihEkran') ? { tercihEkran: a.tercihEkran } : {}),
       panelOpaklik: a.panelOpaklik,
       tepsiRozeti: a.tepsiRozeti,
       tepsiRozetSensoru: a.tepsiRozetSensoru,
@@ -3341,7 +3412,7 @@
       tepsiOrtaTik: a.tepsiOrtaTik,
       baglantiBildirimi: a.baglantiBildirimi,
       baglantiBildirimSn: a.baglantiBildirimSn,
-      ...(panelSabitDegisti(a) ? { panelSabit: a.panelSabit } : {}),
+      ...(alanDegisti(a, 'panelSabit') ? { panelSabit: a.panelSabit } : {}),
       // Grup "tema" (ayar-alanlari.js tablosu): sunucu her alanı yeniden doğrular, geçersiz değer mevcut olanı korur
       metinOlcegi: a.metinOlcegi,
       yuksekKarsitlik: a.yuksekKarsitlik,
@@ -3373,11 +3444,13 @@
         bildirimGoster(
           bildirimSorunlari.indexOf('bildirimPilEsigi') >= 0 ? t('ayar.bm.pilEsigiHata')
             : bildirimSorunlari.indexOf('baglantiBildirimSn') >= 0 ? t('ayar.etk.baglantiSnHata')
-              : t('ayar.kural.hata.ozet'),
+              : bildirimSorunlari.indexOf('geriAlSureDk') >= 0 ? t('ayar.eylem.geriAl.sureHata')
+                : t('ayar.kural.hata.ozet'),
           'hata',
         );
         if (bildirimSorunlari.indexOf('bildirimPilEsigi') >= 0) ilkHataliyaOdaklan(['bildirimPilEsigi']);
         else if (bildirimSorunlari.indexOf('baglantiBildirimSn') >= 0) ilkHataliyaOdaklan(['baglantiBildirimSn']);
+        else if (bildirimSorunlari.indexOf('geriAlSureDk') >= 0) ilkHataliyaOdaklan(['geriAlSureDk']);
         else ilkHataliKuralaOdaklan();
         return;
       }
@@ -3452,12 +3525,14 @@
         yerelAdresUyarisiniGuncelle();
         kurulumGuncelle();
       }
+      // Adresler değişmiş olabilir: sertifika bölümü (okunan sertifika, elle girilen parmak izleri, adres listesi) güncel adreslerle yeniden kurulur.
+      if (sertifikaBolumu) sertifikaBolumu.yukle();
       // Reddedilen alanları işaretle
       uyarilar.forEach(function (u) {
         if (u && !u.yalnizKayitBasarili && ALAN_KUTULARI[u.alan]) alanIsaretle(u.alan, u.mesaj);
       });
       // eksik / engelli listeleri ve onay değerleri güncellensin; dil değiştiyse cihaz türü ve durum adları da yeni dille gelsin
-      if (favoriSonuc || (dilDegisti && cihazlarYuklendi)) await cihazlariYukle(true);
+      if (favoriSonuc || (dilDegisti && cihazlarYuklendi)) await cihazlariYukle(true, true);
       else cihazlariCiz();
       siraCiz();
       kirliGuncelle();
@@ -3617,7 +3692,9 @@
     anahtarUygula(sonuc);
     yerelAdresUyarisiniGuncelle();
     kurulumGuncelle();
-    if (cihazlarYuklendi) await cihazlariYukle(true);
+    // Adresler değişmiş olabilir: okunan sertifika ve elle girilen izler eski adrese ait kalıp yeni adrese sabitlenmesin (Kaydet yolundaki gibi).
+    if (sertifikaBolumu) sertifikaBolumu.yukle();
+    if (cihazlarYuklendi) await cihazlariYukle(true, true);
     kirliGuncelle();
     if (duzen) duzen.gecmisiYenile();
   }
@@ -3854,7 +3931,7 @@
         .catch(function () { /* önceki özetle devam edilir */ })
         .then(function () {
           metinleriYenile(false);
-          if (cihazlarYuklendi) return cihazlariYukle(true);
+          if (cihazlarYuklendi) return cihazlariYukle(true, true);
           return undefined;
         })
         .catch(function () { /* sonraki kaydetmede yeniden denenir */ });
@@ -4024,7 +4101,12 @@
 
   function kuralHatalariniYaz(k, oge) {
     Object.keys(oge.girdiler).forEach(function (ad) {
-      [].concat(oge.girdiler[ad]).forEach(function (girdi) { gecersizIsaretle(girdi, Object.hasOwn(k.hata, ad)); });
+      [].concat(oge.girdiler[ad]).forEach(function (girdi) {
+        const hatali = Object.hasOwn(k.hata, ad);
+        gecersizIsaretle(girdi, hatali);
+        if (hatali) girdi.setAttribute('aria-describedby', oge.hata.id);
+        else girdi.removeAttribute('aria-describedby');
+      });
     });
     const mesajlar = Object.keys(k.hata).map(function (ad) { return t(k.hata[ad]); });
     oge.hata.textContent = mesajlar.join(' ');
@@ -4130,6 +4212,7 @@
     const n = sira + 1;
     const oge = { girdiler: {}, ad: el('div', 'kural-ad'), oneriler: document.createElement('datalist'), hata: el('div', 'kural-hata') };
     oge.hata.style.display = 'none';
+    oge.hata.id = 'kural' + k.anahtar + 'Hata';
     oge.oneriler.id = 'kural' + k.anahtar + 'Durumlar';
     const kart = el('div', 'kural');
     kart.setAttribute('role', 'listitem');
@@ -4356,6 +4439,7 @@
       sorunlu.push('bildirimPilEsigi');
     }
     if (!baglantiSnDenetle()) sorunlu.push('baglantiBildirimSn');
+    if (!geriAlSureDenetle()) sorunlu.push('geriAlSureDk');
     if (!kurallariDenetle()) {
       kuralHatasiniYaz(t('ayar.kural.hata.ozet'));
       sorunlu.push('uyariKurallari');
@@ -4388,6 +4472,7 @@
     girdi.addEventListener('change', kirliGuncelle);
   });
   baglantiBildirimSn.addEventListener('input', function () { alanTemizle('baglantiBildirimSn'); });
+  geriAlSureDk.addEventListener('input', function () { alanTemizle('geriAlSureDk'); });
   // Grup "tema": önizleme ve bu pencerenin kendi görünümü seçimle birlikte güncellenir (kirli gösterge yukarıda bağlıdır)
   [temaZorla, panelTemasi].forEach(function (girdi) {
     girdi.addEventListener('change', temaOnizlemeGuncelle);
@@ -4482,6 +4567,7 @@
     panolar.push({ ad: '', yol: '', kisayol: '', kayitli: false, sunucuSira: -1, hata: '' });
     panolariCiz();
     kirliGuncelle();
+    odakla(panoAdGirdileri[panoAdGirdileri.length - 1]); // yeni boş satırın ad kutusu
   });
 
   btnAcikSayfaEkle.addEventListener('click', async function () {

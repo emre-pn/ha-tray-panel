@@ -33,6 +33,7 @@
     'sifreleme-yok': 'ayar.esitleme.parola.sifrelemeYok',
     saklanamadi: 'ayar.esitleme.hata.saklanamadi',
     'parola-gecersiz': 'ayar.esitleme.hata.parolaGecersiz',
+    'ayar-yazilamadi': 'ayar.kaydet.kaydedilemedi',
     kapali: 'ayar.esitleme.durum.kapali',
   };
   const GENEL_HATA = 'ayar.esitleme.hata.genel';
@@ -175,14 +176,30 @@
       } catch (err) {
         yanit = null;
       }
-      if (!yanit || !yanit.ok || !yanit.esitleme) return null;
+      if (!yanit || !yanit.ok || !yanit.esitleme) {
+        yoklamayiPlanla(); // tek bir başarısız istek yoklama zincirini koparmasın (olay da gelmezse arayüz 'eşitleniyor'da takılırdı)
+        return null;
+      }
       durumuAl(yanit.esitleme);
       return esitleme;
+    }
+
+    /**
+     * Eylem sürerken odaktaki anahtar/düğme pasifleşir ve odak gövdeye düşer: odak başka yere gitmediyse eylem bitince önceki öğeye
+     * (görünür ve etkinse; gizlenen "Parolayı kaldır" için parola alanına) geri verilir. Klavye kullanıcısı Tab'a baştan başlamak zorunda kalmasın.
+     */
+    function odagiGeriVer(onceki) {
+      const aktif = belge.activeElement;
+      if (aktif && aktif !== belge.body) return;
+      const kullanilabilir = function (oge) { return !!oge && oge !== belge.body && !oge.disabled && oge.style.display !== 'none'; };
+      const hedef = kullanilabilir(onceki) ? onceki : onceki === parolaSilDugmesi ? parolaGirdisi : null;
+      if (kullanilabilir(hedef) && typeof hedef.focus === 'function') hedef.focus();
     }
 
     /** Bir eylemi çalıştırır: işlem sürerken düğmeler kilitlenir; yanıttaki durum alınır. Başarıda `tamamIletisi`, hatada neden yazılır. */
     async function eylem(cagri, tamamIletisi) {
       if (mesgul) return null;
+      const onceki = belge.activeElement;
       mesgul = true;
       iletisi(null);
       ciz();
@@ -203,6 +220,7 @@
         mesgul = false;
         await yenile();
         ciz();
+        odagiGeriVer(onceki);
       }
       return yanit;
     }

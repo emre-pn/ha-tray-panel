@@ -30,7 +30,8 @@ const {
 } = require('./ayarlar-sahte');
 
 // Ayarlar sayfasının Türkçe metinleri artık sözlüktedir (src/lib/ceviri/ayarlar.js); metin denetimleri sözlüğü de tarar.
-const TR_SOZLUK_METNI = Object.values(require('../src/lib/ceviri/ayarlar').tr).join('\n');
+const AYARLAR_TR = require('../src/lib/ceviri/ayarlar').tr;
+const TR_SOZLUK_METNI = Object.values(AYARLAR_TR).join('\n');
 
 const kaydet = async (sayfa) => {
   sayfa.oge('btnAyarlariKaydet').dispatchEvent({ type: 'click' });
@@ -205,6 +206,113 @@ test('k-02: favori seçimi, sırası ve karo adı da kirli sayılır; kayıtlı 
   assert.equal(kirliMi(sayfa), true);
   yaz(etiket, '');
   assert.equal(kirliMi(sayfa), false, 'karo adı eski haline döndü');
+});
+
+test('B11: "Onay iste", "Onaylı (zorunlu)" ve parlaklık onay kutularının erişilebilir adı cihaz adını ve görünen metni içerir', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3_FAVORILI, cihazlar: CIHAZLAR_D3 });
+  const adlar = (satir) => satir.bul((o) => o.etiket === 'input' && o.type === 'checkbox').map((k) => k.getAttribute('aria-label'));
+
+  const salon = adlar(satirBul(sayfa, 'light.salon_lambasi'));
+  assert.ok(salon.includes('Salon Lambası: Onay iste'), salon.join(' | '));
+  assert.ok(salon.includes('Salon Lambası: Parlaklık ve renk ayarı'), salon.join(' | '));
+  assert.ok(adlar(satirBul(sayfa, 'scene.film')).includes('Film: Onay iste'));
+  assert.ok(adlar(satirBul(sayfa, 'button.pc_bilgisayari_kapat')).includes('Bilgisayarı Kapat: Onaylı (zorunlu)'), 'zorunlu onay kutusu da cihaz adını söyler');
+  // Görünen etiket metni (label-in-name) adın içinde geçer
+  const gorunen = satirBul(sayfa, 'light.salon_lambasi').bul((o) => o.className === 'onay-etiket').map((e) => e.textContent);
+  for (const metin of ['Onay iste', 'Parlaklık ve renk ayarı']) {
+    assert.ok(gorunen.includes(metin), 'görünen metin: ' + metin);
+    assert.ok(salon.some((ad) => ad.endsWith(': ' + metin)), 'ad görünen metni içerir: ' + metin);
+  }
+});
+
+test('B84: pano ve cihaz satırı kısayol iletisi girdiye aria-describedby ile bağlıdır (ekran okuyucu nedeni duyar)', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3_FAVORILI, cihazlar: CIHAZLAR_D3 });
+
+  const panoSatiri = sayfa.oge('panolarListesi').bul((o) => o.className === 'pano-satir')[0];
+  const panoKisayol = girdiler(panoSatiri)[2];
+  yaz(panoKisayol, 'Ctrl+Z');
+  const panoIletisi = panoSatiri.bul((o) => o.className === 'pano-hata')[0];
+  assert.ok(panoIletisi.id);
+  assert.equal(panoKisayol.getAttribute('aria-describedby'), panoIletisi.id);
+  assert.equal(panoIletisi.style.display, 'block');
+  assert.ok(panoIletisi.textContent.length > 0, 'neden yazılı');
+
+  const salon = satirBul(sayfa, 'light.salon_lambasi');
+  const [kisayol, etiket] = metinKutulari(salon).slice(0, 2);
+  const cihazIletisi = salon.bul((o) => o.className === 'cihaz-not' && o.id)[0];
+  assert.ok(cihazIletisi, 'cihaz iletisinin kimliği var');
+  assert.equal(kisayol.getAttribute('aria-describedby'), cihazIletisi.id);
+  assert.equal(etiket.getAttribute('aria-describedby'), cihazIletisi.id, 'karo adı hatası da aynı iletide');
+  const benzersiz = new Set(satirlar(sayfa).flatMap((sa) => sa.bul((o) => o.className === 'cihaz-not' && o.id).map((o) => o.id)));
+  assert.equal(benzersiz.size, satirlar(sayfa).filter((sa) => sa.bul((o) => o.className === 'cihaz-not' && o.id).length > 0).length, 'kimlikler satırlar arasında benzersiz');
+});
+
+test('B88: sessiz yenileme "Daha fazla göster" ile açılan satırları kapatmaz; Cihazları listele (sessiz değil) ilk sayfaya döner', async () => {
+  const cihazlar = {
+    ...CIHAZLAR_D3,
+    cihazlar: Array.from({ length: 120 }, (_, i) => ({ entity_id: `light.l${String(i).padStart(3, '0')}`, ad: `Lamba ${i}`, alan: 'light', alanEtiketi: 'Işıklar', durum: '', onayZorunlu: false, varsayilanOnay: false, kisayolUygun: true, gizli: false })),
+    eksik: [],
+    engelli: [],
+  };
+  const sayfa = await acilmisSayfa({ ayar: { ...AYAR_D3, favoriler: [] }, cihazlar });
+  assert.equal(satirlar(sayfa).length, 50);
+  sayfa.oge('btnDahaFazla').dispatchEvent({ type: 'click' });
+  assert.equal(satirlar(sayfa).length, 100);
+
+  await sayfa.favoriDegisti(); // arka plan tazelemesi (sessiz)
+  assert.equal(satirlar(sayfa).length, 100, 'sessiz yenileme sayfa boyutunu korur');
+
+  sayfa.oge('btnCihazlariYukle').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(satirlar(sayfa).length, 50, 'kullanıcının listeyi yeniden yüklemesi ilk sayfaya döner');
+});
+
+test('B89: yazılmış ama kaydedilmemiş geçersiz kısayolun işareti ve nedeni yeniden çizimde (arama, Pano ekle) kaybolmaz', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3_FAVORILI, cihazlar: CIHAZLAR_D3 });
+
+  // Cihaz satırı: geçersiz kısayol yaz, listeyi arama kutusuyla yeniden çizdir
+  const kisayolu = () => metinKutulari(satirBul(sayfa, 'light.salon_lambasi'))[0];
+  const notu = () => satirBul(sayfa, 'light.salon_lambasi').bul((o) => o.className === 'cihaz-not' && o.id)[0];
+  yaz(kisayolu(), 'xx+yy');
+  assert.ok(gecersizMi(kisayolu()));
+  yaz(sayfa.oge('cihazAra'), 'lamba');
+  yaz(sayfa.oge('cihazAra'), '');
+  assert.equal(kisayolu().value, 'xx+yy', 'yazılan değer korundu');
+  assert.ok(gecersizMi(kisayolu()), 'kırmızı çerçeve yeniden çizimde kaldı');
+  assert.equal(notu().style.display, 'block', 'neden görünür');
+  assert.ok(notu().textContent.length > 0);
+
+  // Pano satırı: 1. satıra geçersiz kısayol yaz, Pano ekle ile baştan çizdir
+  const panoKisayolu = () => girdiler(sayfa.oge('panolarListesi').bul((o) => o.className === 'pano-satir')[0])[2];
+  yaz(panoKisayolu(), 'xx+yy');
+  assert.ok(gecersizMi(panoKisayolu()));
+  sayfa.oge('btnPanoEkle').dispatchEvent({ type: 'click' });
+  assert.equal(panoKisayolu().value, 'xx+yy');
+  assert.ok(gecersizMi(panoKisayolu()), 'pano satırının işareti Pano ekle sonrası korundu');
+  const panoNotu = sayfa.oge('panolarListesi').bul((o) => o.className === 'pano-satir')[0].bul((o) => o.className === 'pano-hata')[0];
+  assert.equal(panoNotu.style.display, 'block');
+});
+
+test('B2: satır adına tıklamak onay kutusunu çevirir ve seçimi gerçekten işler (düz nesneyle dispatchEvent yok)', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3_FAVORILI, cihazlar: CIHAZLAR_D3 });
+  const satir = satirBul(sayfa, 'scene.film');
+  const kutu = satir.bul((o) => o.etiket === 'input' && o.type === 'checkbox')[0];
+  kutu.katiOlayKipi(); // gerçek tarayıcıda dispatchEvent({type:'change'}) TypeError verir
+  const ad = satir.bul((o) => o.className === 'cihaz-ad')[0];
+  const satirTikla = () => satir.dispatchEvent({ type: 'click', target: ad, stopPropagation() {}, preventDefault() {} }); // ad tıklaması satıra kabarcıklanır
+
+  satirTikla();
+  assert.equal(kutu.checked, true);
+  assert.equal(sayfa.oge('secilenSayisi').textContent, '3 favori seçili', 'sayaç güncellendi');
+  assert.equal(kirliMi(sayfa), true, 'kirli gösterge çıktı');
+  await kaydet(sayfa);
+  assert.ok(sonKayitYuku(sayfa, 'favorileriKaydet').some((g) => g.entity_id === 'scene.film'), 'Kaydet seçimi gönderir');
+
+  satirTikla();
+  assert.equal(kutu.checked, false);
+  assert.equal(sayfa.oge('secilenSayisi').textContent, '2 favori seçili');
+  await kaydet(sayfa);
+  assert.equal(sonKayitYuku(sayfa, 'favorileriKaydet').some((g) => g.entity_id === 'scene.film'), false, 'kaldırılan seçim kaydedilmez');
 });
 
 test('k-02: kapatırken sor: kirliyse beforeunload kapatmayı durdurur (ana süreç sorar), temizse durdurmaz; yazılmış ama kaydedilmemiş anahtar da sayılır', async () => {
@@ -415,6 +523,40 @@ test('h-27: kullanıcının kaydedilmemiş düzenlemesi yoksa yeni favoriler sun
   assert.equal(kirliMi(sayfa), false);
 });
 
+test('B10: arka planda KALDIRILAN favori, kaydedilmemiş düzenleme varken de seçimden ve taslak düzenlemelerden düşer; Kaydet onu geri getirmez', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3_FAVORILI, cihazlar: CIHAZLAR_D3 });
+  satirBul(sayfa, 'scene.film').bul((o) => o.etiket === 'input')[0].tikla(); // kullanıcı film'i seçti (kaydetmedi)
+  yaz(metinKutulari(satirBul(sayfa, 'light.gizli_ama_secili'))[1], 'Taslak ad'); // kaldırılacak favoride bekleyen karo adı
+  assert.equal(kirliMi(sayfa), true);
+
+  // Ana süreç (panel menüsü "Favoriden kaldır"): seçili gizli favori sunucudan çıktı
+  sayfa.sunucu.favoriler = sayfa.sunucu.favoriler.filter((f) => f.entity_id !== 'light.gizli_ama_secili');
+  await sayfa.favoriDegisti();
+
+  assert.deepEqual(sira(sayfa).map(siraMetni), ['Salon Lambası', 'Film'], 'kaldırılan favori sıradan düştü, kullanıcının film seçimi kaldı');
+  assert.equal(sayfa.oge('secilenSayisi').textContent, '2 favori seçili');
+  await kaydet(sayfa);
+  const kimlikler = sonKayitYuku(sayfa, 'favorileriKaydet').map((g) => g.entity_id);
+  assert.deepEqual(kimlikler, ['light.salon_lambasi', 'scene.film'], 'kaldırılan favori Kaydet ile geri gelmez');
+});
+
+test('B10: masaüstü karosu ana süreçte × ile kapatılınca, listesi düzenlenmiş olsa da Kaydet karoyu yeniden açmaz', async () => {
+  const favoriler = [...AYAR_D3_FAVORILI.favoriler, { entity_id: 'scene.film', ad: 'Film' }];
+  const sayfa = await acilmisSayfa({
+    ayar: { ...AYAR_D3_FAVORILI, favoriler, masaustuKarolari: ['light.salon_lambasi', 'scene.film'] },
+    cihazlar: CIHAZLAR_D3,
+  });
+  const kutular = () => sayfa.oge('masaustuKaroListesi').bul((o) => o.etiket === 'input');
+  assert.equal(kutular().length, 3);
+  kutular()[1].tikla(); // masaüstü listesi düzenlendi: gizli_ama_secili eklendi
+  sayfa.sunucu.masaustuKarolari = ['light.salon_lambasi']; // film karosu × ile kapatıldı
+  await sayfa.favoriDegisti();
+
+  await kaydet(sayfa);
+  const karolar = sonKayitYuku(sayfa).masaustuKarolari;
+  assert.deepEqual(karolar, ['light.salon_lambasi', 'light.gizli_ama_secili'], 'kapatılan karo geri gelmez, kullanıcının eklemesi kalır');
+});
+
 // ---------------------------------------------------------------------------
 // h-28: Türkçe harf katlamalı cihaz süzgeci
 // ---------------------------------------------------------------------------
@@ -559,6 +701,72 @@ test('g-06: soluk metin ve birincil düğme renkleri okunaklı (#9ca3af, #2563eb
   assert.ok(kontrast('#2563eb', '#ffffff') >= 4.5);
   assert.ok(kontrast('#9ca3af', '#181b22') >= 4.5, 'soluk metin kart zemininde okunaklı');
   assert.ok(kontrast('#9ca3af', '#101216') >= 4.5);
+});
+
+test('Tehlike düğmesi üzerine gelince (hover) zemin/yazı çifti dört paletin hepsinde en az 4,5:1; sabit beyaz yazı kalmadı', () => {
+  const kural = /\.buton-tehlike:hover:not\(:disabled\)\s*\{([^}]*)\}/.exec(HTML);
+  assert.ok(kural, 'hover kuralı var');
+  assert.match(kural[1], /background:\s*var\(--danger-hover-bg\)/);
+  assert.match(kural[1], /color:\s*var\(--danger-hover-text\)/);
+  assert.doesNotMatch(kural[1], /#[0-9a-f]{3,6}\b/i, 'kuralda sabit renk yok: palet değişkenleri kullanılır');
+  const parlaklik = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const kontrast = (a, b) => (Math.max(parlaklik(a), parlaklik(b)) + 0.05) / (Math.min(parlaklik(a), parlaklik(b)) + 0.05);
+  const zeminler = [...HTML.matchAll(/--danger-hover-bg:\s*(#[0-9a-f]{6});/gi)].map((m) => m[1]);
+  const yazilar = [...HTML.matchAll(/--danger-hover-text:\s*(#[0-9a-f]{6});/gi)].map((m) => m[1]);
+  // sıra: koyu varsayılan, açık tema, yüksek karşıtlık koyu, yüksek karşıtlık açık
+  assert.equal(zeminler.length, 4, 'dört palette de zemin tanımlı');
+  assert.equal(yazilar.length, 4, 'dört palette de yazı tanımlı');
+  zeminler.forEach((zemin, i) => assert.ok(kontrast(zemin, yazilar[i]) >= 4.5, `palet ${i + 1}: ${zemin} / ${yazilar[i]} = ${kontrast(zemin, yazilar[i]).toFixed(2)}`));
+  assert.ok(kontrast(zeminler[2], yazilar[2]) >= 7 && kontrast(zeminler[3], yazilar[3]) >= 7, 'yüksek karşıtlık paletleri 7:1');
+});
+
+test('Yüksek karşıtlıkta birincil düğme ve açık anahtar kenarlığı metin renginde (siyah zeminde #1e40af 2,41:1 kalırdı)', () => {
+  assert.match(HTML, /:root\[data-karsitlik\] \.buton-birincil\s*\{[^}]*border:\s*2px solid var\(--text-main\);[^}]*\}/);
+  assert.match(HTML, /:root\[data-karsitlik\] \.checkbox-etiket input\[type="checkbox"\]:checked\s*\{[^}]*border-color:\s*var\(--text-main\);[^}]*\}/);
+  // yüksek karşıtlık paletlerinde --text-main zeminle en az 7:1 (koyu: beyaz/siyah, açık: siyah/beyaz)
+  const hcKoyu = /:root\[data-karsitlik\]\s*\{([^}]*)\}/.exec(HTML)[1];
+  assert.match(hcKoyu, /--bg:\s*#000000/);
+  assert.match(hcKoyu, /--text-main:\s*#ffffff/);
+});
+
+test('CSS değişkenleri: yalnız bir kutuda tanımlı değişken (örn. --kenar) o kutunun dışındaki kurallarda kullanılmaz; emoji seçici kenarlığı genel değişkenle çizilir', () => {
+  const css = /<style[^>]*>([\s\S]*?)<\/style>/.exec(HTML)[1].replace(/\/\*[\s\S]*?\*\//g, '');
+  const kurallar = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ secici: m[1].trim().replace(/\s+/g, ' '), govde: m[2] }));
+  const genel = new Set();
+  const kapsamli = new Map(); // değişken -> tanımlandığı seçiciler
+  for (const { secici, govde } of kurallar) {
+    for (const [, ad] of govde.matchAll(/(--[\w-]+)\s*:/g)) {
+      if (/^(:root|html|\*)/.test(secici)) genel.add(ad);
+      else kapsamli.set(ad, [...(kapsamli.get(ad) ?? []), secici]);
+    }
+  }
+  for (const { secici, govde } of kurallar) {
+    for (const [, ad] of govde.matchAll(/var\((--[\w-]+)/g)) {
+      if (genel.has(ad)) continue;
+      const tanimlayanlar = kapsamli.get(ad) ?? [];
+      assert.ok(tanimlayanlar.some((t) => secici.startsWith(t)), `${secici}: ${ad} bu kuralın kapsamında tanımlı değil (kenarlık/renk geçersiz sayılır)`);
+    }
+  }
+  const secici = /\.emoji-secici\s*\{([^}]*)\}/.exec(HTML)[1];
+  assert.match(secici, /border:\s*1px solid var\(--input-border\)/);
+  assert.match(/\.emoji-izgara button\.emoji-oge:hover\s*\{([^}]*)\}/.exec(HTML)[1], /border-color:\s*var\(--input-border\)/);
+  assert.doesNotMatch(secici, /var\(--kenar\)/);
+});
+
+test('emoji seçicinin arama kutusu (type="search") diğer metin kutuları gibi biçimlenir; yüksek karşıtlıkta da kalın kenarlık alır', () => {
+  assert.match(HTML, /input\[type="number"\],\s*input\[type="search"\],\s*select\s*\{\s*width:\s*100%;/);
+  assert.match(HTML, /input\[type="search"\]:focus,\s*select:focus\s*\{/);
+  assert.match(HTML, /:root\[data-karsitlik\] input\[type="search"\],\s*:root\[data-karsitlik\] select\s*\{\s*border-width:\s*2px/);
+});
+
+test('güncelleme ilerleme çubuğunun erişilebilir adı var: durum metnine (guncellemeDurum) bağlı', () => {
+  const cubuk = /<progress\b[^>]*\bid="guncellemeIlerleme"[^>]*>/.exec(HTML);
+  assert.ok(cubuk, 'ilerleme çubuğu var');
+  assert.match(cubuk[0], /\baria-labelledby="guncellemeDurum"/);
+  assert.match(HTML, /\bid="guncellemeDurum"/, 'başvurulan durum metni var');
 });
 
 test('g-01: koyu varsayılan + prefers-color-scheme: light açık tema; color-scheme bildirilir; tema açıklaması gerçeği söyler', () => {
@@ -861,7 +1069,7 @@ test('k-11: anahtar göster/gizle, uzunluk bilgisi (anahtar metni değil), Enter
   assert.equal(sayfa.oge('anahtarUzunluk').textContent, '');
 });
 
-test('k-11: boş anahtarla gönderme açık hata verir ve alanı işaretler; çift gönderim engellenir', async () => {
+test('k-11: boş anahtarla gönderme açık hata verir ve alanı işaretler', async () => {
   const sayfa = await acilmisSayfa({ ayar: { ...AYAR, anahtarVar: false }, cihazlar: CIHAZLAR });
   sayfa.oge('btnAnahtarKaydet').dispatchEvent({ type: 'click' });
   await akit();
@@ -870,6 +1078,28 @@ test('k-11: boş anahtarla gönderme açık hata verir ve alanı işaretler; çi
   assert.ok(gecersizMi(sayfa.oge('anahtarGirdisi')));
   assert.equal(sayfa.cagrilar.some((c) => c[0] === 'anahtarKaydet'), false);
   assert.equal(sayfa.sonOdak(), sayfa.oge('anahtarGirdisi'));
+});
+
+test('k-11: doğrulama sürerken ikinci gönderim (tıklama ya da Enter) engellenir; anahtar yalnız bir kez gönderilir', async () => {
+  let ac;
+  const kapi = new Promise((coz) => {
+    ac = coz;
+  });
+  const sayfa = await acilmisSayfa({ ayar: { ...AYAR, anahtarVar: false }, cihazlar: CIHAZLAR, kaydetYaniti: async () => {
+    await kapi; // ana süreç anahtarı doğrularken bekler
+    return { ok: true, uyari: '' };
+  } });
+  yaz(sayfa.oge('anahtarGirdisi'), 'TEST_SAHTE_ANAHTAR_000000');
+  const dugme = sayfa.oge('btnAnahtarKaydet');
+  dugme.dispatchEvent({ type: 'click' });
+  assert.equal(dugme.disabled, true, 'doğrulama sürerken düğme kilitli');
+  dugme.dispatchEvent({ type: 'click' });
+  sayfa.oge('anahtarGirdisi').dispatchEvent(tusOlayi({ key: 'Enter' }));
+  await akit();
+  ac();
+  await akit();
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'anahtarKaydet').length, 1, 'çift gönderim tek IPC çağrısı olur');
+  assert.equal(dugme.disabled, false, 'doğrulama bitince düğme yeniden açılır');
 });
 
 // ---------------------------------------------------------------------------
@@ -1140,6 +1370,13 @@ test('k-13: yedek yoksa açıklama gösterilir; yedek listesi alınamazsa sayfa 
   const bos = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR });
   assert.match(bos.oge('yedekDurum').textContent, /Henüz geri dönülebilir bir yedek yok/);
   assert.equal(bos.oge('yedekListesi').children.length, 0);
+
+  // Liste isteği reddedilirse (IPC hatası) açılış yine tamamlanır; durum satırı hatayı söyler ve liste boş kalır
+  const hatali = await acilmisSayfa({ ayar: AYAR, cihazlar: CIHAZLAR, yedekleriGetirHata: true });
+  assert.ok(hatali.cagrilar.some((c) => c[0] === 'yedekleriGetir'), 'liste istendi');
+  assert.equal(hatali.oge('yedekDurum').textContent, AYARLAR_TR['ayar.yedek.listeAlinamadi']);
+  assert.equal(hatali.oge('yedekListesi').children.length, 0);
+  assert.equal(hatali.oge('kirliGosterge').style.display, 'none', 'açılış tamamlandı: sayfa çökmedi');
 });
 
 // ---------------------------------------------------------------------------

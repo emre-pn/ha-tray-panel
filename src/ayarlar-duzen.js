@@ -212,6 +212,13 @@
       return e;
     }
 
+    /** role=list kabındaki boş durum/hata iletisi de liste öğesi olur (listede listitem olmayan çocuk bırakılmaz). */
+    function bosSatir(metin) {
+      const e = el('div', 'ipucu', metin);
+      e.setAttribute('role', 'listitem');
+      return e;
+    }
+
     function dugme(metin, sinif, etiket) {
       const d = el('button', 'buton buton-ikincil buton-kucuk' + (sinif ? ' ' + sinif : ''), metin);
       d.type = 'button';
@@ -378,7 +385,7 @@
       kap.appendChild(emoji);
       const emojiSec = belge.createElement('button');
       emojiSec.type = 'button';
-      emojiSec.className = 'gorunum-emoji-sec';
+      emojiSec.className = 'buton buton-ikincil buton-kucuk gorunum-emoji-sec';
       emojiSec.textContent = t('ayar.gorunum.emojiSec');
       emojiSec.setAttribute('aria-label', t('ayar.gorunum.emojiSecEtiket', { ad: ad }));
       emojiSec.setAttribute('aria-expanded', 'false');
@@ -419,6 +426,18 @@
       function seciciKapat() {
         emojiSec.setAttribute('aria-expanded', 'false');
         if (secici) secici.kutu.style.display = 'none';
+      }
+
+      function seciciAcikMi() {
+        return !!secici && secici.kutu.style.display !== 'none';
+      }
+
+      // Esc seçiciyi kapatır, pencereyi değil (ayarlar.js'in belge düzeyindeki Esc işleyicisine ulaşmaz); odak "Emoji seç" düğmesine döner.
+      function seciciEscape(olay) {
+        olay.preventDefault();
+        olay.stopPropagation();
+        seciciKapat();
+        emojiSec.focus();
       }
 
       function emojiSeciliyor(deger) {
@@ -463,12 +482,13 @@
           bos.style.display = sonuc.length === 0 ? 'block' : 'none';
         }
         ara.addEventListener('input', ciz);
+        // Izgaradaki emoji düğmelerindeki Esc kutuya kabarır; arama kutusu da kendi Esc'ini alır.
+        kutu.addEventListener('keydown', function (olay) {
+          if (olay.key === 'Escape') seciciEscape(olay);
+        });
         ara.addEventListener('keydown', function (olay) {
           if (olay.key === 'Escape') {
-            olay.preventDefault();
-            olay.stopPropagation();
-            seciciKapat();
-            emojiSec.focus();
+            seciciEscape(olay);
           } else if (olay.key === 'Enter') {
             olay.preventDefault();
             const ilk = emojiAra(ara.value)[0];
@@ -479,8 +499,11 @@
         return { kutu: kutu, ara: ara, ciz: ciz };
       }
 
+      emojiSec.addEventListener('keydown', function (olay) {
+        if (olay.key === 'Escape' && seciciAcikMi()) seciciEscape(olay); // seçici kapalıyken Esc olduğu gibi geçer
+      });
       emojiSec.addEventListener('click', function () {
-        if (secici && secici.kutu.style.display !== 'none') {
+        if (seciciAcikMi()) {
           seciciKapat();
           return;
         }
@@ -710,10 +733,10 @@
 
     let taslak = []; // [{ id, ad, varliklar }] — düzenlenen sayfalar
     let kayitliSayfalar = '[]'; // sunucudaki sayfaların normalleştirilmiş JSON'u
-    let yuklendi = false;
     const acikSayfalar = new Set(); // üye listesi açık sayfalar
     const sayfaDugmeleri = new Map(); // sayfa kimliği -> { ad, yukari, asagi, cogalt, sil, uyeler }
-    let odakIstegi = null; // { id, parca } — bir sonraki çizimde odak
+    const uyeDugmeleri = new Map(); // sayfa kimliği + '\u0000' + favori kimliği -> { yukari, asagi } (üye satırındaki taşıma düğmeleri)
+    let odakIstegi = null; // { id, parca } ya da üye için { id, uye, parca } — bir sonraki çizimde odak
     let sonSecimImzasi = '';
 
     const sayfaAdi = function (s, sira) {
@@ -732,7 +755,6 @@
     function sayfalariYukle(ham) {
       taslak = sayfalariNormallestir(ham);
       kayitliSayfalar = JSON.stringify(taslak);
-      yuklendi = true;
       Array.from(acikSayfalar).forEach(function (id) {
         if (!sayfaBul(id)) acikSayfalar.delete(id);
       });
@@ -765,7 +787,13 @@
       odakIstegi = null;
       if (!istek) return;
       const d = sayfaDugmeleri.get(istek.id);
-      const hedef = d ? d[istek.parca] || d.ad : ortak.btnSayfaEkle;
+      let hedef = d ? d[istek.parca] || d.ad : ortak.btnSayfaEkle;
+      if (d && istek.uye !== undefined) {
+        // Üye taşındı: odak aynı üyenin düğmesinde kalır; uçtaki üyede o yön kapalıdır, karşı yöne, o da yoksa "Üyeler" düğmesine düşer.
+        const u = uyeDugmeleri.get(istek.id + '\u0000' + istek.uye);
+        const karsi = istek.parca === 'yukari' ? 'asagi' : 'yukari';
+        hedef = u && !u[istek.parca].disabled ? u[istek.parca] : u && !u[karsi].disabled ? u[karsi] : d.uyeler;
+      }
       if (hedef) ortak.odakla(hedef);
     }
 
@@ -775,7 +803,8 @@
       kap.setAttribute('aria-label', t('ayar.sayfa.listeEtiket'));
       kap.replaceChildren();
       sayfaDugmeleri.clear();
-      if (taslak.length === 0) kap.appendChild(el('div', 'ipucu', t('ayar.sayfa.bos')));
+      uyeDugmeleri.clear();
+      if (taslak.length === 0) kap.appendChild(bosSatir(t('ayar.sayfa.bos')));
       taslak.forEach(function (s, i) {
         kap.appendChild(sayfaSatiri(s, i));
       });
@@ -845,16 +874,18 @@
       });
       const sil = dugme(t('ayar.sayfa.sil'), 'buton-tehlike', t('ayar.sayfa.silEtiket', { ad: ad }));
       sil.addEventListener('click', function () {
-        if (!ortak.onayIste(t('ayar.sayfa.silOnay', { ad: ad }))) return;
         const eskiSira = taslak.findIndex(function (p) {
           return p.id === id;
         });
+        // Ad kutusuna yazılan ad taslağa işlenir ama satır yeniden çizilmez: onay ve duyuru çizim anındaki eski adı değil güncel adı söyler.
+        const guncelAd = eskiSira < 0 ? ad : sayfaAdi({ ad: adDuzelt(taslak[eskiSira].ad) }, eskiSira);
+        if (!ortak.onayIste(t('ayar.sayfa.silOnay', { ad: guncelAd }))) return;
         taslak = Islem.sayfayiSil(taslak, id);
         acikSayfalar.delete(id);
         const komsu = taslak[Math.min(eskiSira, taslak.length - 1)];
         odakIstegi = komsu ? { id: komsu.id, parca: 'ad' } : null;
         if (!komsu) ortak.odakla(ortak.btnSayfaEkle);
-        sayfaDegisti(t('ayar.sayfa.silindi', { ad: ad }));
+        sayfaDegisti(t('ayar.sayfa.silindi', { ad: guncelAd }));
       });
 
       const acik = acikSayfalar.has(id);
@@ -870,6 +901,18 @@
 
       [yukari, asagi, cogalt, sil, uyeler].forEach(function (d) {
         ust.appendChild(d);
+      });
+      // Ad kutusundan çıkınca düğme adları yeni adı söyler (satırı yeniden çizmek odağı düşürürdü).
+      girdi.addEventListener('change', function () {
+        const i = taslak.findIndex(function (p) {
+          return p.id === id;
+        });
+        const yeniAd = sayfaAdi({ ad: adDuzelt(girdi.value) }, i < 0 ? sira : i);
+        yukari.setAttribute('aria-label', t('ayar.sayfa.yukari', { ad: yeniAd }));
+        asagi.setAttribute('aria-label', t('ayar.sayfa.asagi', { ad: yeniAd }));
+        cogalt.setAttribute('aria-label', t('ayar.sayfa.cogaltEtiket', { ad: yeniAd }));
+        sil.setAttribute('aria-label', t('ayar.sayfa.silEtiket', { ad: yeniAd }));
+        uyeler.setAttribute('aria-label', t('ayar.sayfa.uyelerEtiket', { ad: yeniAd }));
       });
       const dugmeler = { ad: girdi, yukari: yukari, asagi: asagi, cogalt: cogalt, sil: sil, uyeler: uyeler };
       sayfaDugmeleri.set(id, dugmeler);
@@ -911,16 +954,18 @@
         const uAd = ortak.gorunenAd(kimlik);
         const u = el('div', 'sayfa-uye');
         u.setAttribute('role', 'listitem');
-        u.appendChild(el('span', 'sayfa-uye-ad', uAd));
+        const adOge = el('span', 'sayfa-uye-ad', uAd);
+        adOge.title = uAd; // tek satır + üç nokta ile kesilen uzun ad tam okunabilsin
+        u.appendChild(adOge);
         const yukari = dugme('↑', '', t('ayar.sayfa.uyeYukari', { ad: uAd }));
         yukari.disabled = j === 0;
         yukari.addEventListener('click', function () {
-          uyeyiTasi(id, kimlik, -1);
+          uyeyiTasi(id, kimlik, -1, 'yukari');
         });
         const asagi = dugme('↓', '', t('ayar.sayfa.uyeAsagi', { ad: uAd }));
         asagi.disabled = j === uyeler.length - 1;
         asagi.addEventListener('click', function () {
-          uyeyiTasi(id, kimlik, 1);
+          uyeyiTasi(id, kimlik, 1, 'asagi');
         });
         const cikar = dugme(t('ayar.sayfa.uyeCikar'), '', t('ayar.sayfa.uyeCikarEtiket', { ad: uAd }));
         cikar.addEventListener('click', function () {
@@ -932,8 +977,9 @@
           if (!olay.altKey || olay.ctrlKey || olay.shiftKey || olay.metaKey) return;
           if (olay.key !== 'ArrowUp' && olay.key !== 'ArrowDown') return;
           olay.preventDefault();
-          uyeyiTasi(id, kimlik, olay.key === 'ArrowUp' ? -1 : 1);
+          uyeyiTasi(id, kimlik, olay.key === 'ArrowUp' ? -1 : 1, olay.key === 'ArrowUp' ? 'yukari' : 'asagi');
         });
+        uyeDugmeleri.set(id + '\u0000' + kimlik, { yukari: yukari, asagi: asagi });
         u.appendChild(yukari);
         u.appendChild(asagi);
         u.appendChild(cikar);
@@ -963,7 +1009,7 @@
     }
 
     /** Sayfa içinde üyeyi taşır: yalnız görünen (seçili) üyeler arasında; seçili olmayanlar sona kalır (kayıtta budanır). */
-    function uyeyiTasi(id, kimlik, yon) {
+    function uyeyiTasi(id, kimlik, yon, parca) {
       const s = sayfaBul(id);
       if (!s) return;
       const gorunen = uyeKimlikleri(s);
@@ -973,6 +1019,7 @@
         return gorunen.indexOf(k) < 0;
       });
       s.varliklar = yeniGorunen.concat(kalan);
+      odakIstegi = { id: id, uye: kimlik, parca: parca }; // satırlar yeniden kurulur; odak taşınan üyenin düğmesine döner
       sayfalariCiz();
       ortak.kirliGuncelle();
       duyur(t('ayar.sayfa.uyeTasindi', { ad: ortak.gorunenAd(kimlik), n: yeniGorunen.indexOf(kimlik) + 1 }));
@@ -1000,19 +1047,21 @@
 
     let noktalar = [];
     let gecmisHatasi = false;
+    let odakGecmis = false; // geri dönüşten sonra: tıklanan düğme listeyle birlikte yok olur, odak ilk "Bu düzene dön" düğmesine verilir
 
     function gecmisiCiz() {
       const kap = ortak.gecmisListesi;
       kap.setAttribute('aria-label', t('ayar.gecmis.listeEtiket'));
       kap.replaceChildren();
       if (gecmisHatasi) {
-        kap.appendChild(el('div', 'ipucu', t('ayar.gecmis.listeHata')));
+        kap.appendChild(bosSatir(t('ayar.gecmis.listeHata')));
         return;
       }
       if (noktalar.length === 0) {
-        kap.appendChild(el('div', 'ipucu', t('ayar.gecmis.bos')));
+        kap.appendChild(bosSatir(t('ayar.gecmis.bos')));
         return;
       }
+      let ilkDon = null;
       noktalar.forEach(function (n) {
         const zaman = zamanMetni(n.zaman, ortak.dil());
         const satir = el('div', 'gecmis-satir');
@@ -1026,7 +1075,10 @@
         });
         satir.appendChild(don);
         kap.appendChild(satir);
+        if (!ilkDon) ilkDon = don;
       });
+      if (odakGecmis && ilkDon) ortak.odakla(ilkDon);
+      odakGecmis = false;
     }
 
     function noktayiDuzelt(n) {
@@ -1039,10 +1091,14 @@
       };
     }
 
+    let gecmisIstekNo = 0;
+
     async function gecmisiYenile() {
       if (!ortak.kopru || typeof ortak.kopru.duzenGecmisiniGetir !== 'function') return;
+      const no = (gecmisIstekNo += 1);
       try {
         const sonuc = await ortak.kopru.duzenGecmisiniGetir();
+        if (no !== gecmisIstekNo) return; // daha yeni bir istek var (aynı olayda birden çok yenileme): eski yanıt listeyi yeniden çizip odağı düşürmez
         if (sonuc && sonuc.ok && Array.isArray(sonuc.noktalar)) {
           noktalar = sonuc.noktalar.slice(0, 20).map(noktayiDuzelt).filter(function (n) {
             return n.id >= 0;
@@ -1052,6 +1108,7 @@
           gecmisHatasi = true;
         }
       } catch (hata) {
+        if (no !== gecmisIstekNo) return;
         gecmisHatasi = true;
       }
       gecmisiCiz();
@@ -1061,6 +1118,7 @@
       const kirli = typeof ortak.kirliMi === 'function' && ortak.kirliMi();
       if (!ortak.onayIste(kirli ? t('ayar.gecmis.donOnay') + ' ' + t('ayar.gecmis.donKirli') : t('ayar.gecmis.donOnay'))) return;
       dugmesi.disabled = true;
+      let yenilendi = false; // başarıda liste yeniden çizilir: eski düğme DOM'dan çıkar, odağı gecmisiCiz verir
       try {
         const sonuc = await ortak.kopru.duzeneDon(nokta.id);
         if (sonuc && sonuc.ok) {
@@ -1068,7 +1126,10 @@
           const parcalar = [t('ayar.gecmis.donuldu', { f: sonuc.favoriSayisi, s: sonuc.sayfaSayisi })];
           if (sonuc.atilan > 0) parcalar.push(ortak.cogul('ayar.gecmis.atilan', sonuc.atilan));
           ortak.bildirimGoster(parcalar.join(' '), sonuc.atilan > 0 ? 'uyari' : 'basarili');
+          yenilendi = true;
+          odakGecmis = true;
           await gecmisiYenile();
+          odakGecmis = false; // liste çizilmediyse (köprü yok / hata) bayrak bir sonraki çizime kalmasın
         } else {
           ortak.bildirimGoster((sonuc && sonuc.hata) || t('ayar.gecmis.donHata'), 'hata');
         }
@@ -1076,6 +1137,7 @@
         ortak.bildirimGoster(t('ayar.gecmis.donHata'), 'hata');
       } finally {
         dugmesi.disabled = false;
+        if (!yenilendi) ortak.odakla(dugmesi); // devre dışı kalan düğme odağı bırakmıştı; liste çizilmediyse geri verilir
       }
     }
 
@@ -1098,11 +1160,13 @@
           return;
         }
         panel.appendChild(el('div', 'cihaz-not', t('ayar.onar.ipucu')));
+        const yerel = Dil ? Dil.yerelAdi(ortak.dil()) : 'tr-TR';
         const secenekler = [['', t('ayar.onar.sec')]].concat(
           adaylar
             .slice()
             .sort(function (a, b) {
-              return a.ad < b.ad ? -1 : a.ad > b.ad ? 1 : 0;
+              // Arayüz dilinin alfabesiyle (Ç Ş Ğ İ Ö Ü Z'den sonraya atılmaz); eşitlikte kimlik belirler.
+              return String(a.ad).localeCompare(String(b.ad), yerel) || (a.entity_id < b.entity_id ? -1 : a.entity_id > b.entity_id ? 1 : 0);
             })
             .map(function (c) {
               return [c.entity_id, c.ad + ' (' + c.entity_id + ')'];
@@ -1207,9 +1271,6 @@
       kayitliSayfalar: function () {
         return JSON.parse(kayitliSayfalar);
       },
-      sayfalarYuklendi: function () {
-        return yuklendi;
-      },
       // geçmiş ve onarım
       gecmisiYenile: gecmisiYenile,
       onarmaKur: onarmaKur,
@@ -1219,7 +1280,6 @@
         sayfaKimligiDegisti(eski, yeni);
       },
       metinleriYenile: metinleriYenile,
-      duyur: duyur,
     };
   }
 

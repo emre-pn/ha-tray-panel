@@ -171,7 +171,7 @@ test('taşınabilir / kurulmamış / Windows dışı sürümde kutu kapalı (dev
 
 test('ön sürüm bilgisi durum satırında işaretlenir', async () => {
   const sayfa = await sayfaAc({ ayar: { uygulamaGuncelleme: true }, aracYaniti: { guncellemeDurumu: durumYaniti({ durum: 'yeni', surum: '1.5.0-beta.1', boyut: 3_000_000, onSurum: true }) } });
-  assert.equal(sayfa.oge(AD.durum).textContent, 'Yeni sürüm: 1.5.0-beta.1 (2.9 MB). İndirmek için “İndir”e bas. (ön sürüm)');
+  assert.equal(sayfa.oge(AD.durum).textContent, 'Yeni sürüm: 1.5.0-beta.1 (2,9 MB). İndirmek için “İndir”e bas. (ön sürüm)');
 });
 
 test('"Şimdi denetle" güncelleyici etkinken yeni sürümü "aşağıdan indir" diye söyler; etkin değilken eski sürüm sayfası metni kalır', async () => {
@@ -191,6 +191,20 @@ test('dil değişince güncelleme metinleri yeni dilde yeniden yazılır', async
   assert.equal(sayfa.oge(AD.durum).textContent, 'Neue Version: 1.4.0 (88 MB). Klicke auf „Herunterladen“.');
   assert.equal(sayfa.oge(AD.indir).textContent, 'Herunterladen');
   assert.equal(sayfa.oge(AD.kur).textContent, 'Installieren und neu starten');
+});
+
+test('B90: güncelleme boyutunun ondalık ayracı arayüz diline uyar (tr/de/fr/es virgül, en nokta)', async () => {
+  const sayfa = await sayfaAc({ ayar: { uygulamaGuncelleme: true }, aracYaniti: { guncellemeDurumu: durumYaniti({ durum: 'yeni', surum: '1.4.0', boyut: 4_400_000 }) } });
+  const durum = () => sayfa.oge(AD.durum).textContent;
+  assert.ok(durum().includes('(4,2 MB)'), 'tr: ' + durum());
+  await sayfa.dilDegisti('en');
+  assert.ok(durum().includes('(4.2 MB)'), 'en: ' + durum());
+  for (const kod of ['de', 'fr', 'es']) {
+    await sayfa.dilDegisti(kod);
+    assert.ok(durum().includes('(4,2 MB)'), kod + ': ' + durum());
+  }
+  const tam = await sayfaAc({ ayar: { uygulamaGuncelleme: true }, aracYaniti: { guncellemeDurumu: durumYaniti({ durum: 'yeni', surum: '1.4.0', boyut: 92_000_000 }) } });
+  assert.ok(tam.oge(AD.durum).textContent.includes('(88 MB)'), 'tam sayıda ayraç yok');
 });
 
 test('HTML: kutular etiketli, düğmeler type=button, ilerleme çubuğu var; satır içi betik ve innerHTML yok', () => {

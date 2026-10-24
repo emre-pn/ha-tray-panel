@@ -39,6 +39,14 @@
     'komut-satiri': 'ayar.etkinlik.kaynak.komutSatiri',
     masaustu: 'ayar.etkinlik.kaynak.masaustu',
     gecikmeli: 'ayar.etkinlik.kaynak.gecikmeli',
+    // 1.4.0 dış tetikler (src/lib/eylem-sinifi.js DIS_KAYNAKLAR) ve bildirim düğmesi (main.js itmeEylemi)
+    jumplist: 'ayar.etkinlik.kaynak.jumplist',
+    'kisayol-dosyasi': 'ayar.etkinlik.kaynak.kisayolDosyasi',
+    'yerel-api': 'ayar.etkinlik.kaynak.yerelApi',
+    protokol: 'ayar.etkinlik.kaynak.protokol',
+    'pc-olayi': 'ayar.etkinlik.kaynak.pcOlayi',
+    toplanti: 'ayar.etkinlik.kaynak.toplanti',
+    bildirim: 'ayar.etkinlik.kaynak.bildirim',
   };
   const ISLEM_ANAHTARLARI = {
     toggle: 'ayar.etkinlik.islem.toggle',
@@ -52,6 +60,20 @@
     'oda-kapat': 'ayar.etkinlik.islem.odaKapat',
     'gecikmeli-kur': 'ayar.etkinlik.islem.gecikmeliKur',
     'gecikmeli-iptal': 'ayar.etkinlik.islem.gecikmeliIptal',
+    'dis-tetik': 'ayar.etkinlik.islem.disTetik', // dış tetik kapısında durdurulan istek (main.js disTetikOlayiniGecmiseYaz)
+    'bildirim-dugme': 'ayar.etkinlik.islem.bildirimDugme',
+  };
+  // Kapıda durdurulan dış tetiklerin ve bildirim düğmesinin neden kodları; tabloda olmayan kod (ör. 'ha-hatasi/ag') olduğu gibi yazılır.
+  const NEDEN_ANAHTARLARI = {
+    kapali: 'ayar.etkinlik.neden.kapali',
+    'kaynak-izinsiz': 'ayar.etkinlik.neden.kaynakIzinsiz',
+    'onay-bekliyor': 'ayar.etkinlik.neden.onayBekliyor',
+    'anlik-yok': 'ayar.etkinlik.neden.anlikYok',
+    'anahtar-yok': 'ayar.etkinlik.neden.anahtarYok',
+    bulunamadi: 'ayar.etkinlik.neden.bulunamadi',
+    belirsiz: 'ayar.etkinlik.neden.belirsiz',
+    reddedildi: 'ayar.etkinlik.neden.reddedildi',
+    hata: 'ayar.etkinlik.neden.hata',
   };
   const SONUC_ANAHTARLARI = {
     ok: 'ayar.etkinlik.sonuc.ok',
@@ -86,7 +108,7 @@
 
   /**
    * @param {object} ortak ayarlar.js'in verdikleri: belge, kopru (window.evPaneli), cevir(anahtar, değişkenler), cogul(anahtar, n, değişkenler),
-   *   dil(), kirliGuncelle(), bildirimGoster(mesaj, tur); isteğe bağlı kısayol yardımcıları: kisayolBagla(girdi, {bosIzinli, kutu, degisti}),
+   *   dil(), kirliGuncelle(), bildirimGoster(mesaj, tur), onayIste(metin) (confirm); isteğe bağlı kısayol yardımcıları: kisayolBagla(girdi, {bosIzinli, kutu, degisti}),
    *   kisayolNormal(metin), kisayolGoster(metin), uyariKutusu(kutu, mesajlar)
    * @returns {object|null} Gerekli öğeler yoksa null (Ayarlar eylem bölümü olmadan çalışır)
    */
@@ -94,6 +116,7 @@
     const belge = ortak.belge;
     const kopru = ortak.kopru;
     const t = ortak.cevir;
+    const onayIste = ortak.onayIste || function () { return true; };
     const oge = function (kimlik) {
       return belge.getElementById(kimlik);
     };
@@ -128,6 +151,7 @@
         const girdi = oge(alan.ad);
         if (alan.tur === 'mantiksal') sonuc[alan.ad] = girdi.checked === true;
         else if (alan.kisayol) sonuc[alan.ad] = kisayolNormal(girdi.value);
+        else if (alan.tur === 'sayi') sonuc[alan.ad] = String(girdi.value).trim(); // ham metin: geçersiz değer düzeltilip gizlenmez, kayıt öncesi denetim (ayarlar.js) ve ana süreç karar verir
         else sonuc[alan.ad] = alanDegeri(alan, girdi.value);
       });
       return sonuc;
@@ -184,7 +208,7 @@
       const bilgi = olustur('div', '', '');
       bilgi.appendChild(olustur('div', '', k.ad || k.kimlik || '—'));
       const parcalar = [zamanMetni(k.zaman, ortak.dil()), etiket(KAYNAK_ANAHTARLARI, k.kaynak), etiket(ISLEM_ANAHTARLARI, k.islem)];
-      if (k.neden) parcalar.push(k.neden);
+      if (k.neden) parcalar.push(etiket(NEDEN_ANAHTARLARI, k.neden));
       bilgi.appendChild(olustur('div', 'yedek-bilgi', parcalar.join(' · ')));
       const sonuc = olustur('span', 'sira-konum' + (k.sonuc === 'ok' ? ' sira-konum-tepsi' : ''), etiket(SONUC_ANAHTARLARI, k.sonuc));
       satir.appendChild(bilgi);
@@ -221,6 +245,8 @@
     }
 
     function etkinlikTemizle() {
+      // Tüm yerel kayıt tek tıkla silinirdi; diğer silme düğmeleri (üstbilgi, sertifika, sayfa...) gibi önce sorulur.
+      if (!onayIste(t('ayar.etkinlik.temizleOnay'))) return Promise.resolve();
       btnTemizle.disabled = true;
       return Promise.resolve()
         .then(function () {

@@ -7,7 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { AYAR_D3, CIHAZLAR_D3, akit, acilmisSayfa, gorunurMetinler } = require('./ayarlar-sahte');
+const { AYAR_D3, CIHAZLAR_D3, HTML, akit, acilmisSayfa, gorunurMetinler } = require('./ayarlar-sahte');
 const AYARLAR = require('../src/lib/ceviri/ayarlar');
 
 const P = 'ayar.esitleme.';
@@ -75,11 +75,11 @@ test('klasör seçiminden vazgeçilirse hiçbir şey değişmez ve hata gösteri
   await tikla(vazgec, 'btnEsitlemeKlasor');
   assert.equal(klasor(vazgec), tr(`${P}klasorYok`));
   assert.equal(ileti(vazgec), '');
-  const nedenler = { 'yasak-klasor': 'hata.yasakKlasor', 'yol-gecersiz': 'hata.yolGecersiz', 'klasor-yok': 'hata.klasorYok', diyalog: 'hata.genel' };
+  const nedenler = { 'yasak-klasor': `${P}hata.yasakKlasor`, 'yol-gecersiz': `${P}hata.yolGecersiz`, 'klasor-yok': `${P}hata.klasorYok`, diyalog: `${P}hata.genel`, 'ayar-yazilamadi': 'ayar.kaydet.kaydedilemedi' };
   for (const [neden, anahtar] of Object.entries(nedenler)) {
     const sayfa = await ac({ esitlemeKlasoruSec: () => ({ ok: false, neden }) });
     await tikla(sayfa, 'btnEsitlemeKlasor');
-    assert.equal(ileti(sayfa), tr(`${P}${anahtar}`), neden);
+    assert.equal(ileti(sayfa), tr(anahtar), neden);
     assert.equal(sayfa.oge('esitlemeSonuc').className, 'ipucu alan-sonuc-sorun');
     assert.equal(sayfa.oge('btnEsitlemeKlasor').disabled, false, 'yeniden denenebilir');
   }
@@ -316,4 +316,77 @@ test('sözlük: eşitleme anahtarları beş dilde tanımlı; yer tutucular aynı
       assert.doesNotMatch(AYARLAR[dil][k], /[ğĞıİşŞ]/, `${dil}: ${k} Türkçeye özgü harf`);
     }
   }
+});
+
+test('klasör yolu kutusu (.baglanti-kutu) boşluksuz uzun yolda taşmaz: overflow-wrap: anywhere (CSS)', () => {
+  const kural = /\.baglanti-kutu\s*\{([^}]*)\}/.exec(HTML);
+  assert.ok(kural, '.baglanti-kutu kuralı var');
+  assert.match(kural[1], /overflow-wrap:\s*anywhere/);
+  assert.match(HTML, /id="esitlemeKlasor" class="baglanti-kutu"/, 'klasör yolu bu sınıfı kullanır');
+});
+
+test('odak: anahtar ya da düğme eylem sırasında pasifleşse de eylem bitince odak aynı öğeye döner; gizlenen "Parolayı kaldır"dan parola alanına geçer', async () => {
+  const sayfa = await ac({ esitleme: ACIK });
+  const kutu = sayfa.oge(KUTULAR.favoriler);
+  kutu.focus();
+  await isaretle(sayfa, KUTULAR.favoriler, false);
+  assert.deepEqual(esitlemeCagrilari(sayfa).at(-1), ['esitlemeyiAyarla', { bolumler: ['kisayollar', 'gorunum', 'bilgi', 'bildirim'] }]);
+  assert.equal(kutu.disabled, false);
+  assert.equal(sayfa.sonOdak(), kutu, 'bölüm anahtarı odağını korur');
+
+  const acik = sayfa.oge('esitlemeAcik');
+  acik.focus();
+  await isaretle(sayfa, 'esitlemeAcik', false);
+  assert.equal(sayfa.sonOdak(), acik, 'ana anahtar odağını korur');
+
+  const simdi = await ac({ esitleme: ACIK });
+  simdi.oge('btnEsitlemeSimdi').focus();
+  await tikla(simdi, 'btnEsitlemeSimdi');
+  assert.equal(simdi.sonOdak(), simdi.oge('btnEsitlemeSimdi'));
+
+  const parola = await ac({ esitleme: { ...ACIK, parolaVar: true } });
+  parola.oge('btnEsitlemeParolaSil').focus();
+  await tikla(parola, 'btnEsitlemeParolaSil');
+  assert.equal(gorunur(parola, 'btnEsitlemeParolaSil'), false);
+  assert.equal(parola.sonOdak(), parola.oge('esitlemeParola'), 'düğme gizlendi: odak parola alanına geçer');
+});
+
+test('odak: eylem sürerken kullanıcı odağı başka yere taşıdıysa geri çekilmez', async () => {
+  let coz;
+  const sayfa = await ac({ esitleme: ACIK, simdiEsitle: () => new Promise((c) => { coz = c; }) });
+  sayfa.oge('btnEsitlemeSimdi').focus();
+  sayfa.oge('btnEsitlemeSimdi').dispatchEvent({ type: 'click' });
+  await akit();
+  const baska = sayfa.oge('btnUstbilgiEkle'); // başka bölümdeki, eylemden etkilenmeyen bir öğe
+  baska.focus();
+  coz({ ok: true, neden: null, esitleme: { ...ACIK, asama: 'tamam' } });
+  await akit();
+  assert.equal(sayfa.sonOdak(), baska);
+});
+
+test('yoklama zinciri: eşitleniyorken tek bir durum isteği başarısız olursa yoklama sürer ve sonraki başarılı yanıt arayüzü günceller', async () => {
+  let cagri = 0;
+  const sayfa = await ac({
+    esitleme: { ...ACIK, asama: 'esitleniyor' },
+    esitlemeDurumuGetir: (d) => {
+      cagri += 1;
+      if (cagri === 2) throw new Error('ipc koptu'); // ilk yoklama düşer
+      return { ok: true, esitleme: JSON.parse(JSON.stringify(d.esitleme)) };
+    },
+  });
+  const yoklama = (s) => s.etkinZamanlayicilar().filter((z) => z.ms === 2000).at(-1);
+  const tetikle = async (z) => {
+    z.iptal = true;
+    z.islev();
+    await akit();
+  };
+  assert.ok(yoklama(sayfa), 'ilk yüklemeden sonra yoklama kurulur');
+  await tetikle(yoklama(sayfa));
+  assert.equal(cagri, 2);
+  assert.ok(yoklama(sayfa), 'istek başarısız oldu ama zincir kopmadı: yeni yoklama kuruldu');
+  sayfa.baglantiDeposu.esitleme = { ...sayfa.baglantiDeposu.esitleme, asama: 'tamam', son: { zaman: 1_800_000_000_000, uygulanan: 0, yazilan: 0 } };
+  await tetikle(yoklama(sayfa));
+  assert.match(durum(sayfa), /^Son eşitleme: /);
+  assert.equal(sayfa.oge('btnEsitlemeSimdi').disabled, false);
+  assert.equal(yoklama(sayfa), undefined, 'eşitleme bitti: yoklama durur');
 });

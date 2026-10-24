@@ -100,7 +100,7 @@ test('açılış: ayar özetinde bu alanlar yoksa (eski kayıt) güvenli varsay�
   assert.deepEqual(secenekler(sayfa, 'tercihEkran').map((s) => s[0]), [''], 'ekran listesi yoksa yalnız "tercih yok"');
   await kaydet(sayfa);
   const yuk = sonYuk(sayfa);
-  assert.deepEqual(yuk.tercihEkran, {});
+  assert.equal('tercihEkran' in yuk, false, 'ekran tercihi değişmedi: tepsiden yapılan seçimi eski form ezmesin');
   assert.deepEqual(yuk.masaustuKarolari, []);
   assert.equal(yuk.panelOpaklik, 100);
   assert.equal(kirliMi(sayfa), false);
@@ -145,14 +145,15 @@ test('ekran seçici: tercih yok + bağlı ekranlar; seçim yükte sınırlarıyl
   assert.deepEqual(sonYuk(sayfa).tercihEkran, {});
 });
 
-test('ekran seçici: kayıtlı ekran şu an bağlı değilse ayrı bir seçenekle görünür; dokunulmazsa aynı kayıt aynen gider (tercih silinmez)', async () => {
+test('ekran seçici: kayıtlı ekran şu an bağlı değilse ayrı bir seçenekle görünür; dokunulmazsa kayıt yükünde yok (sunucudaki tercih silinmez)', async () => {
   const sayfa = await ac({ tercihEkran: { id: 77, x: 3000, y: -200, genislik: 3840, yukseklik: 2160 } });
   assert.deepEqual(secenekler(sayfa, 'tercihEkran').map((s) => s[0]), ['', '1', '2', 'kayitli']);
   assert.equal(sayfa.oge('tercihEkran').value, 'kayitli');
   assert.match(secenekler(sayfa, 'tercihEkran').at(-1)[1], /şu an bağlı değil/);
   degistir(sayfa, 'panelOpaklik', '90', 'input'); // başka bir şeyi değiştir
   await kaydet(sayfa);
-  assert.deepEqual(sonYuk(sayfa).tercihEkran, { id: 77, x: 3000, y: -200, genislik: 3840, yukseklik: 2160 });
+  assert.equal('tercihEkran' in sonYuk(sayfa), false);
+  assert.deepEqual(sayfa.sunucu.tercihEkran, { id: 77, x: 3000, y: -200, genislik: 3840, yukseklik: 2160 }, 'tercih silinmedi');
 });
 
 test('ekran seçici: bozuk ekran girdileri (kimliksiz, sayı olmayan konum) listeye girmez', async () => {

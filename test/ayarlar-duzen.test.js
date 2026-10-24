@@ -431,6 +431,7 @@ test('sayfalar: başlangıçta boş; "Sayfa ekle" adsız sayfa ekler, adı kutuy
   const sayfa = await duzenSayfasi();
   assert.equal(sayfaSatirlari(sayfa).length, 0);
   assert.equal(sayfa.oge('sayfalarListesi').textContent, metin('ayar.sayfa.bos'));
+  assert.equal(sayfa.oge('sayfalarListesi').children[0].attributes.role, 'listitem', 'role=list kabındaki boş durum iletisi listitem');
   assert.equal(sayfa.oge('sayfaSayaci').textContent, metin('ayar.sayfa.sayac', { n: 0, enCok: 12 }));
   assert.equal(sayfa.oge('sayfalarListesi').attributes['aria-label'], metin('ayar.sayfa.listeEtiket'));
 
@@ -479,6 +480,34 @@ test('sayfalar: ekle ve geri sil kirli bırakmaz; silmek onay ister (vazgeçilir
   assert.equal(onayli.sonOdak(), onayli.oge('btnSayfaEkle'), 'son sayfa silinince odak "Sayfa ekle"ye gider');
 });
 
+test('sayfalar: yeni yazılan ad (kaydetmeden) silme onayında, "silindi" duyurusunda ve düğme adlarında kullanılır', async () => {
+  const sayfa = await duzenSayfasi({ onayYaniti: true });
+  sayfa.oge('btnSayfaEkle').dispatchEvent({ type: 'click' });
+  const satir = () => sayfaSatirlari(sayfa)[0];
+  const adKutusu = satir().bul((o) => o.etiket === 'input')[0];
+  yaz(adKutusu, '  Salon   akşam ');
+  adKutusu.dispatchEvent({ type: 'change' }); // ad kutusundan çıkış (blur)
+  assert.ok(etiketle(satir(), /^Salon akşam sayfasını sil$/), 'düğme adları yeni adı söyler');
+  assert.ok(etiketle(satir(), /^Salon akşam sayfasını çoğalt$/));
+  assert.ok(etiketle(satir(), /^Salon akşam sayfasını aşağı taşı$/));
+  assert.ok(!etiketle(satir(), /Sayfa 1/), 'eski ad kalmadı');
+
+  etiketle(satir(), /sayfasını sil$/).dispatchEvent({ type: 'click' });
+  assert.equal(sayfa.sorular.at(-1), metin('ayar.sayfa.silOnay', { ad: 'Salon akşam' }));
+  assert.equal(sayfaSatirlari(sayfa).length, 0);
+  assert.equal(duyuru(sayfa), metin('ayar.sayfa.silindi', { ad: 'Salon akşam' }));
+
+  // blur olmadan (yalnız input olayı) doğrudan Sil'e basılsa da onay güncel adı söyler; ad boşaltılırsa "Sayfa n" döner
+  sayfa.oge('btnSayfaEkle').dispatchEvent({ type: 'click' });
+  yaz(satir().bul((o) => o.etiket === 'input')[0], 'Mutfak');
+  etiketle(satir(), /sayfasını sil$/).dispatchEvent({ type: 'click' });
+  assert.equal(sayfa.sorular.at(-1), metin('ayar.sayfa.silOnay', { ad: 'Mutfak' }));
+  sayfa.oge('btnSayfaEkle').dispatchEvent({ type: 'click' });
+  yaz(satir().bul((o) => o.etiket === 'input')[0], '   ');
+  etiketle(satir(), /sayfasını sil$/).dispatchEvent({ type: 'click' });
+  assert.equal(sayfa.sorular.at(-1), metin('ayar.sayfa.silOnay', { ad: 'Sayfa 1' }));
+});
+
 test('sayfalar: favori ekle / çıkar / sırala yalnız SEÇİLİ favorilerle; engelli (kapı kuralı) favoriler üye listesinde ve adaylarda görünmez', async () => {
   const ayar = {
     ...AYAR_DUZEN,
@@ -506,6 +535,9 @@ test('sayfalar: favori ekle / çıkar / sırala yalnız SEÇİLİ favorilerle; e
   assert.deepEqual(guncel.bul((o) => o.className === 'sayfa-uye-ad').map((o) => o.textContent), ['Salon Lambası', 'Film']);
   assert.equal(kirliMi(sayfa), true);
 
+  // üç noktayla kesilebilen üye adının tam hali başlık (title) olarak da verilir
+  assert.deepEqual(guncel.bul((o) => o.className === 'sayfa-uye-ad').map((o) => [o.textContent, o.title]), [['Salon Lambası', 'Salon Lambası'], ['Film', 'Film']]);
+
   // sayfa içinde sırala
   etiketle(guncel, /Film sayfada yukarı$/).dispatchEvent({ type: 'click' });
   guncel = sayfaSatirlari(sayfa)[0];
@@ -526,6 +558,42 @@ test('sayfalar: favori ekle / çıkar / sırala yalnız SEÇİLİ favorilerle; e
   const yuk = sonYuk(sayfa).sayfalar;
   assert.deepEqual(yuk[0].varliklar.filter((k) => k === 'light.salon_lambasi'), ['light.salon_lambasi']);
   assert.equal(yuk[0].varliklar.includes('scene.film'), false);
+});
+
+test('sayfalar: üye ↑ ↓ düğmesi ve Alt+ok taşıyınca odak taşınan üyenin düğmesinde kalır; uçta karşı yöndeki düğmeye geçer', async () => {
+  const ayar = { ...AYAR_DUZEN, sayfalar: [{ id: 'abc12', ad: 'Hepsi', varliklar: ['light.salon_lambasi', 'scene.film', 'light.gizli_ama_secili'] }] };
+  const sayfa = await acilmisSayfa({ ayar, cihazlar: CIHAZLAR_D3 });
+  dugmeMetni(sayfaSatirlari(sayfa)[0], metin('ayar.sayfa.uyeler', { n: 3 })).dispatchEvent({ type: 'click' });
+  const adlar = () => sayfaSatirlari(sayfa)[0].bul((o) => o.className === 'sayfa-uye-ad').map((o) => o.textContent);
+  const dugme = (ad, yon) => etiketle(sayfaSatirlari(sayfa)[0], new RegExp(`^${ad} sayfada ${yon === 'yukari' ? 'yukarı' : 'aşağı'}$`));
+  const uyeSatiri = (ad) => sayfaSatirlari(sayfa)[0].bul((o) => o.className === 'sayfa-uye').find((u) => u.bul((c) => c.className === 'sayfa-uye-ad')[0].textContent === ad);
+  assert.deepEqual(adlar(), ['Salon Lambası', 'Film', 'Seçili Gizli']);
+
+  // ortadaki üye: tıklanan yöndeki düğme (yeniden kurulan DOM'daki yeni düğme) odakta kalır
+  const eskiDugme = dugme('Salon Lambası', 'asagi');
+  eskiDugme.dispatchEvent({ type: 'click' });
+  assert.deepEqual(adlar(), ['Film', 'Salon Lambası', 'Seçili Gizli']);
+  assert.notEqual(dugme('Salon Lambası', 'asagi'), eskiDugme, 'satırlar yeniden kuruldu');
+  assert.equal(sayfa.sonOdak(), dugme('Salon Lambası', 'asagi'));
+
+  // Alt+↑ (klavye): ortadaki üyede "yukarı" düğmesi odakta kalır
+  uyeSatiri('Seçili Gizli').dispatchEvent(tusOlayi({ key: 'ArrowUp', altKey: true }));
+  assert.deepEqual(adlar(), ['Film', 'Seçili Gizli', 'Salon Lambası']);
+  assert.equal(sayfa.sonOdak(), dugme('Seçili Gizli', 'yukari'));
+
+  // uç: sona inen üyenin "aşağı" düğmesi kapalıdır, odak "yukarı"ya geçer; başa çıkınca "aşağı"ya
+  dugme('Seçili Gizli', 'asagi').dispatchEvent({ type: 'click' });
+  assert.deepEqual(adlar(), ['Film', 'Salon Lambası', 'Seçili Gizli']);
+  assert.equal(dugme('Seçili Gizli', 'asagi').disabled, true);
+  assert.equal(sayfa.sonOdak(), dugme('Seçili Gizli', 'yukari'));
+  uyeSatiri('Film').dispatchEvent(tusOlayi({ key: 'ArrowDown', altKey: true }));
+  uyeSatiri('Film').dispatchEvent(tusOlayi({ key: 'ArrowDown', altKey: true }));
+  assert.deepEqual(adlar(), ['Salon Lambası', 'Seçili Gizli', 'Film']);
+  dugme('Film', 'yukari').dispatchEvent({ type: 'click' });
+  dugme('Film', 'yukari').dispatchEvent({ type: 'click' });
+  assert.deepEqual(adlar(), ['Film', 'Salon Lambası', 'Seçili Gizli']);
+  assert.equal(dugme('Film', 'yukari').disabled, true);
+  assert.equal(sayfa.sonOdak(), dugme('Film', 'asagi'));
 });
 
 test('sayfalar: üye listesi seçimle birlikte güncellenir (favori seçimi kalkınca sayfadan düşer, gösterilmez)', async () => {
@@ -630,6 +698,7 @@ const gecmisSatirlari = (sayfa) => sayfa.oge('duzenGecmisiListesi').bul((o) => o
 test('geçmiş: noktalar zaman, neden ve sayılarla listelenir; kimlik / ad göstermez; boş ve hata durumları', async () => {
   const bos = await duzenSayfasi();
   assert.equal(bos.oge('duzenGecmisiListesi').textContent, metin('ayar.gecmis.bos'));
+  assert.equal(bos.oge('duzenGecmisiListesi').children[0].attributes.role, 'listitem', 'role=list kabındaki boş durum iletisi listitem');
   assert.equal(cagriSayisi(bos, 'duzenGecmisiniGetir'), 1);
 
   const sayfa = await duzenSayfasi({ gecmis: NOKTALAR });
@@ -643,6 +712,7 @@ test('geçmiş: noktalar zaman, neden ve sayılarla listelenir; kimlik / ad gös
 
   const hatali = await duzenSayfasi({ gecmisYaniti: () => ({ ok: false }) });
   assert.equal(hatali.oge('duzenGecmisiListesi').textContent, metin('ayar.gecmis.listeHata'));
+  assert.equal(hatali.oge('duzenGecmisiListesi').children[0].attributes.role, 'listitem');
 
   // bilinmeyen neden yine de listelenir (kayıt nedeniyle), bozuk satırlar atılır
   const kirli = await duzenSayfasi({ gecmis: [{ id: 1, zaman: 5, neden: 'bilinmeyen', favoriSayisi: 2, sayfaSayisi: 0 }, { id: 'x' }, null] });
@@ -669,6 +739,24 @@ test('geçmiş: "Bu düzene dön" onay ister; onayla ana sürece o noktanın kim
   assert.equal(sayfaSatirlari(sayfa).length, 1, 'dönülen düzenin sayfaları görünür');
   assert.equal(sayfa.oge('secilenSayisi').textContent, metin('ayar.favori.secili', { n: 2 }).replace('{n}', '2'));
   assert.equal(cagriSayisi(sayfa, 'duzenGecmisiniGetir') >= 2, true, 'geçmiş listesi tazelenir (dönüş de yeni bir nokta ekler)');
+});
+
+test('geçmiş: geri dönüşten sonra tıklanan düğme listeyle yok olsa da odak listedeki "Bu düzene dön" düğmesine geçer; hata olursa aynı düğmede kalır', async () => {
+  const sayfa = await duzenSayfasi({ gecmis: NOKTALAR, donYaniti: () => ({ ok: true, favoriSayisi: 3, sayfaSayisi: 0, atilan: 0 }) });
+  const tiklanan = dugmeMetni(gecmisSatirlari(sayfa)[1], metin('ayar.gecmis.don'));
+  tiklanan.dispatchEvent({ type: 'click' });
+  await akit();
+  const yeniListe = gecmisSatirlari(sayfa).map((s) => dugmeMetni(s, metin('ayar.gecmis.don')));
+  assert.equal(yeniListe.includes(tiklanan), false, 'liste yeniden çizildi, tıklanan düğme belgede yok');
+  assert.ok(sayfa.sonOdak(), 'odak bir yere verildi');
+  assert.equal(sayfa.sonOdak(), yeniListe[0], 'odak listedeki ilk "Bu düzene dön" düğmesinde');
+
+  const hatali = await duzenSayfasi({ gecmis: NOKTALAR, donYaniti: () => ({ ok: false, hata: 'Bu düzen noktası artık yok.' }) });
+  const hataDugmesi = dugmeMetni(gecmisSatirlari(hatali)[1], metin('ayar.gecmis.don'));
+  hataDugmesi.dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(hataDugmesi.disabled, false);
+  assert.equal(hatali.sonOdak(), hataDugmesi, 'liste çizilmedi: odak devre dışı kalan düğmeye geri verilir');
 });
 
 test('geçmiş: onay verilmezse hiçbir çağrı yapılmaz; kaydedilmemiş değişiklik varken onay metni bunu da söyler; hata ve atlanan kayıtlar bildirilir', async () => {
@@ -738,6 +826,34 @@ test('onarım: yalnız HA’da bulunamayan satırda "Onar…" düğmesi; aynı t
   assert.equal(secimler(eksikSatir).length, 0);
   assert.equal(sayfa.sonOdak(), ac, 'vazgeçince odak "Onar…" düğmesine döner');
   assert.equal(cagriSayisi(sayfa, 'favoriyiOnar'), 0);
+});
+
+test('onarım: aday listesi arayüz dilinin alfabesiyle sıralanır (Türkçede Ç Ş Ğ İ Ö Ü sona atılmaz), eşit adlarda kimlik belirler', async () => {
+  const aday = (kimlik, ad) => ({ entity_id: kimlik, ad, alan: 'light', alanEtiketi: 'Işıklar', durum: '', onayZorunlu: false, varsayilanOnay: false, kisayolUygun: true, gizli: false });
+  const cihazlar = {
+    ...CIHAZLAR_ONAR,
+    cihazlar: [
+      ...CIHAZLAR_ONAR.cihazlar,
+      aday('light.isik', 'Işık'),
+      aday('light.salon_b', 'Salon'),
+      aday('light.yatak', 'Yatak odası'),
+      aday('light.cocuk', 'Çocuk odası'),
+      aday('light.utu', 'Ütü'),
+      aday('light.salon_a', 'Salon'),
+    ],
+  };
+  const sirala = async (ek = {}) => {
+    const sayfa = await onarSayfasi({ cihazlar, ...ek });
+    const eksikSatir = satirBul(sayfa, 'light.eski_lamba');
+    eksikSatir.bul((o) => o.etiket === 'button' && o.attributes['aria-expanded'] !== undefined)[0].dispatchEvent({ type: 'click' }); // "Onar…" düğmesi
+    return secimler(eksikSatir)[0].children.map((o) => o.value).filter((v) => v !== '' && !v.startsWith('light.gizli_'));
+  };
+  assert.deepEqual(await sirala(), ['light.cocuk', 'light.isik', 'light.salon_a', 'light.salon_b', 'light.utu', 'light.yatak']);
+  assert.deepEqual(
+    await sirala({ ayar: { ...AYAR_ONAR, dil: 'en', dilAyari: 'en', sistemDili: 'en' } }),
+    ['light.cocuk', 'light.isik', 'light.salon_a', 'light.salon_b', 'light.utu', 'light.yatak'],
+    'İngilizce sıralamada da Ç ve Ü kendi harflerinin yanında (Z sonrasına atılmaz)',
+  );
 });
 
 test('onarım: aday seçilip onaylanınca ana sürece (eski, yeni) gider; yerel seçim ve sayfa üyeliği yeni cihaza taşınır, kayıt onarımı geri almaz', async () => {
@@ -873,7 +989,7 @@ test('İngilizce: sayfalar, geçmiş, görünüm ve onarım metinleri yeni dilde
   assert.equal(sayfa.oge('sayfaSayaci').textContent, '1 / 12 pages');
   assert.equal(sayfa.oge('btnSayfaEkle').textContent, 'Add page');
   assert.ok(dugmeMetni(gecmisSatirlari(sayfa)[0], 'Go back to this layout'));
-  assert.match(gecmisSatirlari(sayfa)[0].textContent, /Before settings were saved · 3 favorites, 1 pages/);
+  assert.match(gecmisSatirlari(sayfa)[0].textContent, /Before settings were saved · Favorites: 3, pages: 1/);
   const isik = satirBul(sayfa, 'light.living_room');
   assert.equal(secimler(isik)[1].children[1].textContent, 'Normal');
   assert.ok(dugmeMetni(satirBul(sayfa, 'light.old_lamp'), 'Repair…'));
@@ -906,7 +1022,7 @@ test('düzen betiği yoksa Ayarlar eskisi gibi çalışır (EvAyarlarDuzen tanı
 
 // --- Emoji seçici (1.4.0) --------------------------------------------------------------------------------------------------
 
-const emojiSecDugmesi = (satir) => satir.bul((o) => o.className === 'gorunum-emoji-sec')[0];
+const emojiSecDugmesi = (satir) => satir.bul((o) => o.classList.contains('gorunum-emoji-sec'))[0];
 const seciciKutusu = (satir) => satir.bul((o) => o.className === 'emoji-secici')[0];
 const seciciOgeleri = (satir) => satir.bul((o) => o.className === 'emoji-oge');
 const seciciArama = (satir) => satir.bul((o) => o.className === 'emoji-ara')[0];
@@ -943,6 +1059,7 @@ test('emoji seçici: yalnız "Listeden seç" ile açılır, ad aksan / büyük-k
   assert.equal(dugme.style.display, '');
   assert.equal(dugme.attributes['aria-expanded'], 'false');
   assert.equal(dugme.textContent, metin('ayar.gorunum.emojiSec'));
+  for (const sinif of ['buton', 'buton-ikincil', 'buton-kucuk']) assert.ok(dugme.classList.contains(sinif), `"Seç" düğmesi ${sinif} sınıfını taşır (tarayıcı varsayılan görünümünde kalmaz)`);
 
   dugme.dispatchEvent({ type: 'click' });
   assert.equal(dugme.attributes['aria-expanded'], 'true');
@@ -992,6 +1109,45 @@ test('emoji seçici: yalnız "Listeden seç" ile açılır, ad aksan / büyük-k
   seciciArama(isik).dispatchEvent(tusOlayi({ key: 'Enter' }));
   assert.equal(emojiKutusu(isik).value, '🌙');
   assert.equal(seciciKutusu(isik).style.display, 'none');
+});
+
+test('emoji seçici: ızgaradaki düğmeden (kutuya kabarır) ve açıkken "Emoji seç" düğmesinden Esc seçiciyi kapatır, olay pencereye ulaşmaz; kapalıyken olay geçer', async () => {
+  const sayfa = await duzenSayfasi();
+  const isik = satirBul(sayfa, 'light.salon_lambasi');
+  degistir(secimler(isik)[2], 'emoji');
+  const dugme = emojiSecDugmesi(isik);
+  dugme.dispatchEvent({ type: 'click' });
+  assert.equal(seciciKutusu(isik).style.display, '');
+
+  // sahte DOM olayı kabartmaz: ızgara düğmesinden kabaran Esc doğrudan kutuya gönderilir
+  const izgaraEsc = tusOlayi({ key: 'Escape' });
+  seciciKutusu(isik).dispatchEvent(izgaraEsc);
+  assert.equal(seciciKutusu(isik).style.display, 'none');
+  assert.equal(dugme.attributes['aria-expanded'], 'false');
+  assert.equal(izgaraEsc.onlendi, true);
+  assert.equal(izgaraEsc.durduruldu, true, 'belge düzeyindeki Esc (pencereyi kapatır) çalışmaz');
+  assert.equal(sayfa.sonOdak(), dugme);
+
+  dugme.dispatchEvent({ type: 'click' });
+  assert.equal(seciciKutusu(isik).style.display, '');
+  const dugmeEsc = tusOlayi({ key: 'Escape' });
+  dugme.dispatchEvent(dugmeEsc);
+  assert.equal(seciciKutusu(isik).style.display, 'none');
+  assert.equal(dugme.attributes['aria-expanded'], 'false');
+  assert.equal(dugmeEsc.onlendi, true);
+  assert.equal(dugmeEsc.durduruldu, true);
+  assert.equal(sayfa.sonOdak(), dugme);
+
+  // seçici kapalıyken Esc engellenmez (pencere kapanma akışı olduğu gibi çalışır)
+  const kapaliEsc = tusOlayi({ key: 'Escape' });
+  dugme.dispatchEvent(kapaliEsc);
+  assert.equal(kapaliEsc.onlendi, false);
+  assert.equal(kapaliEsc.durduruldu, false);
+  const ilkAcilmamis = satirBul(sayfa, 'light.gizli_ama_secili');
+  degistir(secimler(ilkAcilmamis)[2], 'emoji');
+  const hicAcilmamis = tusOlayi({ key: 'Escape' });
+  emojiSecDugmesi(ilkAcilmamis).dispatchEvent(hicAcilmamis);
+  assert.equal(hicAcilmamis.onlendi, false, 'seçici hiç kurulmamışken de olay geçer');
 });
 
 test('emoji seçici: ad arayüz dilinde aranır (Almanca), simge listeden çizgi ikona dönülünce düğme ve seçici gizlenir, satır seçili değilken düğme kapalıdır', async () => {

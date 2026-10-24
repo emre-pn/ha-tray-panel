@@ -244,7 +244,8 @@ test('kural ekle: yeni satır açılır ve cihaz kutusuna odaklanır; doldurulup
 
 test('kural sil: satır kalkar, kirli olur, Kural Ekle düğmesine odaklanır; kaydedilince yükte yoktur', async () => {
   const sayfa = await sayfaAc();
-  const sil = kartlar(sayfa)[1].bul((o) => o.etiket === 'button' && o.attributes['aria-label'] === 'Uyarı kuralı 2 kuralını sil')[0];
+  const sil = kartlar(sayfa)[1].bul((o) => o.etiket === 'button' && o.attributes['aria-label'] === 'Uyarı kuralı 2 silinsin')[0];
+  assert.doesNotMatch(sil.attributes['aria-label'], /kural.*kural/i, 'ekran okuyucu etiketinde "kural" iki kez geçmez');
   sil.tikla();
   assert.equal(kartlar(sayfa).length, 2);
   assert.equal(sayfa.sonOdak(), sayfa.oge('btnKuralEkle'));
@@ -393,6 +394,9 @@ for (const [ad, sira, bozucu, etiket, mesaj, duzeltme] of DENETIMLER) {
     assert.equal(kartHatasi(kart), mesaj);
     const girdi = alan(kart, etiket);
     assert.ok(gecersizMi(girdi), 'hatalı girdi işaretli');
+    const hataOgesi = kart.bul((o) => o.className === 'kural-hata')[0];
+    assert.ok(hataOgesi.id, 'hata kutusunun kimliği var');
+    assert.equal(girdi.getAttribute('aria-describedby'), hataOgesi.id, 'hatalı girdi nedenine bağlı (ekran okuyucu okur)');
     assert.equal(sayfa.oge('bolumBildirimler').open, true);
     assert.equal(sayfa.oge('genelBildirim').textContent, 'Uyarı kurallarında düzeltilecek yerler var; kırmızı alanlara bak.');
     assert.match(sayfa.oge('genelBildirim').className, /bildirim-hata/);
@@ -400,6 +404,7 @@ for (const [ad, sira, bozucu, etiket, mesaj, duzeltme] of DENETIMLER) {
     assert.equal(sayfa.sonOdak(), girdi, 'ilk hatalı alana odaklanır');
     yaz(girdi, duzeltme);
     assert.equal(gecersizMi(girdi), false, 'düzenleyince işaret kalkar');
+    assert.equal(girdi.getAttribute('aria-describedby'), null, 'düzelince bağ kalkar');
     assert.equal(kartHatasi(kartlar(sayfa)[sira]), '');
   });
 }

@@ -34,6 +34,8 @@
       --danger-text: #fca5a5;
       --danger-bg: rgba(239, 68, 68, 0.15);
       --danger-border: rgba(239, 68, 68, 0.3);
+      --danger-hover-bg: #b91c1c;
+      --danger-hover-text: #ffffff;
       --warn-text: #fcd34d;
       --warn-bg: rgba(245, 158, 11, 0.1);
       --warn-border: rgba(245, 158, 11, 0.3);
@@ -73,6 +75,8 @@
         --danger-text: #b91c1c;
         --danger-bg: rgba(239, 68, 68, 0.1);
         --danger-border: rgba(185, 28, 28, 0.4);
+        --danger-hover-bg: #b91c1c;
+        --danger-hover-text: #ffffff;
         --warn-text: #92400e;
         --warn-bg: rgba(245, 158, 11, 0.14);
         --warn-border: rgba(180, 83, 9, 0.4);
@@ -119,6 +123,8 @@
       --danger-text: #ffb4b4;
       --danger-bg: #000000;
       --danger-border: #ffb4b4;
+      --danger-hover-bg: #ff6b6b;
+      --danger-hover-text: #000000;
       --warn-text: #ffe066;
       --warn-bg: #000000;
       --warn-border: #ffe066;
@@ -163,6 +169,8 @@
         --danger-text: #8a0000;
         --danger-bg: #ffffff;
         --danger-border: #8a0000;
+        --danger-hover-bg: #a00000;
+        --danger-hover-text: #ffffff;
         --warn-text: #5c3500;
         --warn-bg: #ffffff;
         --warn-border: #5c3500;
@@ -189,8 +197,18 @@
     :root[data-karsitlik] input[type="text"],
     :root[data-karsitlik] input[type="password"],
     :root[data-karsitlik] input[type="number"],
+    :root[data-karsitlik] input[type="search"],
     :root[data-karsitlik] select {
       border-width: 2px;
+    }
+
+    /* Birincil düğme ve açık anahtar zemini (koyu palette #1e40af) siyaha karşı yalnız 2,41:1: bileşen sınırı metin renginde kenarlıkla belirginleşir (WCAG 1.4.11). */
+    :root[data-karsitlik] .buton-birincil {
+      border: 2px solid var(--text-main);
+    }
+
+    :root[data-karsitlik] .checkbox-etiket input[type="checkbox"]:checked {
+      border-color: var(--text-main);
     }
 
     :root[data-karsitlik] :focus-visible {
@@ -462,6 +480,7 @@
     input[type="text"],
     input[type="password"],
     input[type="number"],
+    input[type="search"],
     select {
       width: 100%;
       background: var(--input-bg);
@@ -477,6 +496,7 @@
     input[type="text"]:focus,
     input[type="password"]:focus,
     input[type="number"]:focus,
+    input[type="search"]:focus,
     select:focus {
       border-color: var(--input-focus);
       box-shadow: 0 0 0 1px var(--input-focus);
@@ -649,8 +669,8 @@
     }
 
     .buton-tehlike:hover:not(:disabled) {
-      background: var(--danger);
-      color: #ffffff;
+      background: var(--danger-hover-bg);
+      color: var(--danger-hover-text);
     }
 
     .buton-satiri {
@@ -1023,7 +1043,7 @@
       gap: 6px;
       padding: 8px;
       background: var(--bg);
-      border: 1px solid var(--kenar);
+      border: 1px solid var(--input-border);
       border-radius: 8px;
     }
 
@@ -1054,7 +1074,7 @@
     }
 
     .emoji-izgara button.emoji-oge:hover {
-      border-color: var(--kenar);
+      border-color: var(--input-border);
     }
 
     .cihaz-ek input[type="number"].gorunum-sayi {
@@ -1219,6 +1239,12 @@
       min-width: 0;
     }
 
+    /* Kayıtlı üstbilginin adı değişmez (salt okunur): soluk metin ve "yasak" imleci, neden title'da yazar. */
+    .baglanti-satir input[type="text"]:read-only {
+      color: var(--text-dim);
+      cursor: not-allowed;
+    }
+
     .baglanti-satir .baglanti-satir-hata {
       flex-basis: 100%;
       margin-top: 0;
@@ -1230,6 +1256,7 @@
       padding: 10px 12px;
       margin-top: 8px;
       font-size: 13px;
+      overflow-wrap: anywhere; /* boşluksuz uzun yol (eşitleme klasörü) kutudan taşmaz */
     }
 
     .baglanti-kutu code,
@@ -1923,7 +1950,7 @@
     <div class="form-grubu">
       <div class="ipucu" style="margin-top: 0;" data-i18n="ayar.baglanti.sert.aciklama">Home Assistant adresin kendi (özel) bir sertifika kullanıyorsa, güvenilecek kök sertifikayı ekleyebilir ya da sunucu sertifikasının SHA-256 parmak izini sabitleyebilirsin. İkisi de yalnız yukarıda kayıtlı https Home Assistant adresleri için geçerlidir; başka hiçbir sitenin sertifika denetimine dokunulmaz. Sertifika hatalarını yok sayma seçeneği yoktur.</div>
       <div id="sertifikaAdresListesi" role="list" aria-labelledby="sertifikaBaslik"></div>
-      <div id="sertifikaOkunan" class="baglanti-kutu" role="group" style="display: none;"></div>
+      <div id="sertifikaOkunan" class="baglanti-kutu" role="region" style="display: none;"></div>
       <div class="ipucu" data-i18n="ayar.baglanti.sert.sabitUyari">Sabitleme, sunucu sertifikası yenilendiğinde (örneğin Let’s Encrypt ile her birkaç ayda bir) bağlantıyı keser; yeni parmak izini yeniden sabitlemen gerekir. Uzun ömürlü ya da kendi ürettiğin sertifikalar için uygundur.</div>
       <div class="bilgi-alt-baslik" id="sertifikaCaBaslik" data-i18n="ayar.baglanti.sert.caBaslik">Güvenilen kök sertifikalar</div>
       <div class="ipucu" style="margin-top: 0;" data-i18n="ayar.baglanti.sert.caAciklama">Kendi sertifika otoritenin (CA) kök sertifikasını (.pem, .crt, .cer) ekle. Yalnız Home Assistant adreslerinde geçerlidir. Özel anahtar içeren dosyalar kabul edilmez.</div>
@@ -2482,8 +2509,9 @@
 
       <div class="form-grubu">
         <label for="geriAlSureDk" data-i18n="ayar.eylem.geriAl.sure">Geri alma süresi (dakika)</label>
-        <input type="number" id="geriAlSureDk" min="1" max="60" step="1" inputmode="numeric" aria-describedby="geriAlSureIpucu">
+        <input type="number" id="geriAlSureDk" min="1" max="60" step="1" inputmode="numeric" aria-describedby="geriAlSureIpucu geriAlSureHata">
         <div class="ipucu" id="geriAlSureIpucu" data-i18n="ayar.eylem.geriAl.sureIpucu">1 ile 60 dakika arası. Süresi dolan eylem artık geri alınamaz.</div>
+        <div class="alan-hata" id="geriAlSureHata" style="display: none;"></div>
       </div>
 
       <div class="form-grubu">
@@ -2494,7 +2522,7 @@
       </div>
 
       <h4 class="bilgi-alt-baslik" style="margin-top: 24px;" data-i18n="ayar.eylem.gecikmeli.baslik">Zamanlı eylemler</h4>
-      <p class="bolum-aciklama" data-i18n="ayar.eylem.gecikmeli.aciklama">Paletten “salon 10 dk sonra kapat” ya da “fan 30dk” (şimdi aç, 30 dk sonra kapat) yazarak ışık, priz, vantilatör, nem alıcı ve yardımcı anahtarlar için zamanlı eylem kurabilirsin. Süre 1 dakika ile 24 saat arasındadır; en çok 10 bekleyen eylem olabilir. Bekleyenler yalnızca bu uygulamanın belleğindedir: uygulama kapanınca hepsi iptal olur, bilgisayar uykudayken çalışmaz (süre geçmişse eylem çalıştırılmaz ve sana söylenir). Bekleyenleri panelden ya da tepsi menüsünden iptal edebilirsin. Zamanı gelince eylem yine aynı güvenli yoldan geçer; kapı, kilit, alarm, garaj kapısı ve kepenk gibi cihazlar ve onay isteyen eylemler ertelenemez.</p>
+      <p class="bolum-aciklama" data-i18n="ayar.eylem.gecikmeli.aciklama">Paletten “salon 10 dk sonra kapat” ya da “fan 30dk” (şimdi aç, 30 dk sonra kapat) yazarak ışık, priz, vantilatör, nemlendirici ve yardımcı anahtarlar için zamanlı eylem kurabilirsin. Süre 1 dakika ile 24 saat arasındadır; en çok 10 bekleyen eylem olabilir. Bekleyenler yalnızca bu uygulamanın belleğindedir: uygulama kapanınca hepsi iptal olur, bilgisayar uykudayken çalışmaz (süre geçmişse eylem çalıştırılmaz ve sana söylenir). Bekleyenleri panelden ya da tepsi menüsünden iptal edebilirsin. Zamanı gelince eylem yine aynı güvenli yoldan geçer; kapı, kilit, alarm, garaj kapısı ve kepenk gibi cihazlar ve onay isteyen eylemler ertelenemez.</p>
 
       <div class="form-grubu">
         <label class="checkbox-etiket">
@@ -2504,7 +2532,7 @@
       </div>
 
       <h4 class="bilgi-alt-baslik" style="margin-top: 24px;" data-i18n="ayar.eylem.oda.baslik">Odalar</h4>
-      <p class="bolum-aciklama" data-i18n="ayar.eylem.oda.aciklama">Hızlı paneldeki karolar türe göre (Işık, Sahne, PC...) ya da Home Assistant’ta tanımlı odalara (alanlara) göre gruplanabilir. Odası olmayan karolar kendi türünde kalır. Oda kaydını okumak için Home Assistant’ta yönetici yetkisi gerekir; okunamazsa panel tür gruplu kalır. Odaya göre gruplamada her odanın başlığında “Odayı kapat” düğmesi çıkar: yalnızca o odadaki açık ışık, priz, vantilatör, sanal anahtar ve nem alıcıları, iki adımlı onayla kapatır. Kilit, alarm, kapı, garaj kapısı, kepenk, perde, klima ve onay isteyen cihazlara dokunmaz. Kapatma tek adım olarak geri alınabilir.</p>
+      <p class="bolum-aciklama" data-i18n="ayar.eylem.oda.aciklama">Hızlı paneldeki karolar türe göre (Işık, Sahne, PC...) ya da Home Assistant’ta tanımlı odalara (alanlara) göre gruplanabilir. Odası olmayan karolar kendi türünde kalır. Oda kaydını okumak için Home Assistant’ta yönetici yetkisi gerekir; okunamazsa panel tür gruplu kalır. Odaya göre gruplamada her odanın başlığında “Odayı kapat” düğmesi çıkar: yalnızca o odadaki açık ışık, priz, vantilatör, sanal anahtar ve nemlendiricileri, iki adımlı onayla kapatır. Kilit, alarm, kapı, garaj kapısı, kepenk, perde, klima ve onay isteyen cihazlara dokunmaz. Kapatma tek adım olarak geri alınabilir.</p>
 
       <div class="form-grubu">
         <label for="panelGruplama" data-i18n="ayar.eylem.oda.gruplama">Panel gruplaması</label>
@@ -2525,7 +2553,7 @@
       </div>
 
       <h4 class="bilgi-alt-baslik" style="margin-top: 24px;" data-i18n="ayar.eylem.diger.baslik">Favori olmayan cihazlar</h4>
-      <p class="bolum-aciklama" data-i18n="ayar.eylem.diger.aciklama">Açıkken paletin arama kutusuna “*” yazınca (ör. “*salon”, “*ışık”, “*sahne”) favori olmayan ışık, priz, vantilatör, sanal anahtar, nem alıcı ve sahneler aranır. Enter cihazı değiştirir (sahneyi çalıştırır); Shift+Enter “Aç / Kapat / Favoriye ekle / Home Assistant’ta aç” menüsünü gösterir. Liste, palet ilk kez “*” ile arandığında Home Assistant’tan tek bir okuma isteğiyle alınır, 2 dakika bellekte tutulur ve hiçbir yere kaydedilmez ya da gönderilmez. Kapı, kilit, alarm, garaj kapısı, kepenk, perde, script, düğme ve onay isteyen cihazlar bu listede hiç yer almaz; her işlem diğer eylemlerle aynı güvenli yoldan geçer ve geri alınabilir. Varsayılan olarak kapalıdır: “palet yalnızca favorileri arar” kuralını gevşetir.</p>
+      <p class="bolum-aciklama" data-i18n="ayar.eylem.diger.aciklama">Açıkken paletin arama kutusuna “*” yazınca (ör. “*salon”, “*ışık”, “*sahne”) favori olmayan ışık, priz, vantilatör, sanal anahtar, nemlendirici ve sahneler aranır. Enter cihazı değiştirir (sahneyi çalıştırır); Shift+Enter “Aç / Kapat / Favoriye ekle / Home Assistant’ta aç” menüsünü gösterir. Liste, palet ilk kez “*” ile arandığında Home Assistant’tan tek bir okuma isteğiyle alınır, 2 dakika bellekte tutulur ve hiçbir yere kaydedilmez ya da gönderilmez. Kapı, kilit, alarm, garaj kapısı, kepenk, perde, script, düğme ve onay isteyen cihazlar bu listede hiç yer almaz; her işlem diğer eylemlerle aynı güvenli yoldan geçer ve geri alınabilir. Varsayılan olarak kapalıdır: “palet yalnızca favorileri arar” kuralını gevşetir.</p>
 
       <div class="form-grubu">
         <label class="checkbox-etiket">
@@ -2752,7 +2780,7 @@
           <input type="checkbox" id="bildirimPil">
           <span data-i18n="ayar.bm.pil">Düşük pil bildirimleri</span>
         </label>
-        <div class="ipucu" data-i18n="ayar.bm.pilIpucu">Pil seviyesi eşiğin altına düşen cihazlar (kapı ve kilit pilleri hariç). Bunun için uygulama Home Assistant’tan durumları 10 dakikada bir okur.</div>
+        <div class="ipucu" data-i18n="ayar.bm.pilIpucu">Pil seviyesi eşiğe ya da altına düşen cihazlar (kapı ve kilit pilleri hariç). Bunun için uygulama Home Assistant’tan durumları 10 dakikada bir okur.</div>
       </div>
 
       <div class="form-grubu">
@@ -2813,7 +2841,7 @@
   <details class="bolum" id="bolumMobil">
     <summary><h3 class="bolum-baslik" data-i18n="ayar.mobil.baslik">Mobil bildirimler (Home Assistant)</h3></summary>
     <div class="bolum-icerik">
-      <p class="bolum-aciklama" data-i18n="ayar.mobil.aciklama">Bu bilgisayarı Home Assistant’a “Mobile App” cihazı olarak kaydedersen, HA’nın bu cihaza gönderdiği bildirimler (notify.mobile_app_…) Windows’ta görünür. Bildirimde eylem düğmesi varsa küçük bir kartta çıkar; bastığın düğme HA’ya “mobile_app_notification_action” olayı olarak gider. Hiçbir sensör, konum ya da cihaz bilgisi HA’ya gönderilmez. Kapı, kilit, alarm, garaj, bariyer, siren ve kepenk içeren bildirimler ve düğmeler hiçbir yerde gösterilmez.</p>
+      <p class="bolum-aciklama" data-i18n="ayar.mobil.aciklama">Bu bilgisayarı Home Assistant’a “Mobile App” cihazı olarak kaydedersen, HA’nın bu cihaza gönderdiği bildirimler (notify.mobile_app_…) Windows’ta görünür. Bildirimde eylem düğmesi varsa küçük bir kartta çıkar; bastığın düğme HA’ya “mobile_app_notification_action” olayı olarak gider. Yalnız cihaz adı, uygulama sürümü ve Windows sürümü gönderilir; sensör ya da konum gönderilmez. Kapı, kilit, alarm, garaj, bariyer, siren ve kepenk içeren bildirimler ve düğmeler hiçbir yerde gösterilmez.</p>
       <div class="form-grubu">
         <label class="checkbox-etiket">
           <input type="checkbox" id="mobilBildirimler">
@@ -3102,7 +3130,7 @@ Content-Type: application/json
           <button class="buton buton-ikincil" id="btnGuncellemeIndir" type="button" style="display: none;" data-i18n="ayar.guncelleme.indir">İndir</button>
           <button class="buton buton-birincil" id="btnGuncellemeKur" type="button" style="display: none;" data-i18n="ayar.guncelleme.kur">Kur ve yeniden başlat</button>
         </div>
-        <progress id="guncellemeIlerleme" max="100" value="0" style="display: none; width: 100%; margin-top: 8px;"></progress>
+        <progress id="guncellemeIlerleme" max="100" value="0" aria-labelledby="guncellemeDurum" style="display: none; width: 100%; margin-top: 8px;"></progress>
         <div class="ipucu" id="guncellemeDurum" role="status" aria-live="polite"></div>
       </div>
 

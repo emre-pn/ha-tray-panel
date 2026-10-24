@@ -7,10 +7,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const AYARLAR = require('../src/lib/ceviri/ayarlar');
 const { AYAR_D3, CIHAZLAR_D3, akit, acilmisSayfa, EYLEM_BETIK } = require('./ayarlar-sahte');
 
 const EVENTLER = { liste: 'etkinlikListesi', durum: 'etkinlikDurum', yenile: 'btnEtkinlikYenile', temizle: 'btnEtkinlikTemizle', tut: 'etkinlikGecmisi' };
-const sayfaAc = (ek = {}) => acilmisSayfa({ ayar: ek.ayar ?? { ...AYAR_D3 }, cihazlar: CIHAZLAR_D3, eylemYaniti: ek.eylemYaniti });
+const sayfaAc = (ek = {}) => acilmisSayfa({ ayar: ek.ayar ?? { ...AYAR_D3 }, cihazlar: CIHAZLAR_D3, eylemYaniti: ek.eylemYaniti, ...(ek.onayYaniti === undefined ? {} : { onayYaniti: ek.onayYaniti }) });
 const tikla = async (sayfa, kimlik) => {
   sayfa.oge(kimlik).dispatchEvent({ type: 'click', preventDefault() {}, stopPropagation() {} });
   await akit();
@@ -43,6 +44,43 @@ test('açılışta etkinlik geçmişi okunur ve satırlar çizilir: ad, kaynak, 
   assert.equal(sayfa.oge(EVENTLER.temizle).disabled, false);
 });
 
+const DIS_KAYITLAR = [
+  { zaman: 1_700_000_900_000, kaynak: 'protokol', kimlik: 'light.salon', ad: 'Salon lambası', islem: 'dis-tetik', sonuc: 'atlandi', neden: 'onay-bekliyor' },
+  { zaman: 1_700_000_800_000, kaynak: 'yerel-api', islem: 'dis-tetik', sonuc: 'atlandi', neden: 'kapali' },
+  { zaman: 1_700_000_700_000, kaynak: 'pc-olayi', kimlik: 'light.salon', ad: 'Salon lambası', islem: 'dis-tetik', sonuc: 'atlandi', neden: 'kaynak-izinsiz' },
+  { zaman: 1_700_000_600_000, kaynak: 'toplanti', islem: 'dis-tetik', sonuc: 'atlandi', neden: 'anlik-yok' },
+  { zaman: 1_700_000_500_000, kaynak: 'jumplist', islem: 'dis-tetik', sonuc: 'atlandi', neden: 'bulunamadi' },
+  { zaman: 1_700_000_400_000, kaynak: 'kisayol-dosyasi', islem: 'dis-tetik', sonuc: 'atlandi', neden: 'belirsiz' },
+  { zaman: 1_700_000_300_000, kaynak: 'protokol', kimlik: 'light.salon', ad: 'Salon lambası', islem: 'dis-tetik', sonuc: 'iptal', neden: 'reddedildi' },
+  { zaman: 1_700_000_200_000, kaynak: 'yerel-api', islem: 'dis-tetik', sonuc: 'atlandi', neden: 'anahtar-yok' },
+  { zaman: 1_700_000_100_000, kaynak: 'bildirim', islem: 'bildirim-dugme', sonuc: 'hata', neden: 'hata' },
+  { zaman: 1_700_000_000_000, kaynak: 'bildirim', islem: 'bildirim-dugme', sonuc: 'ok' },
+];
+const HAM_KODLAR = ['protokol', 'yerel-api', 'pc-olayi', 'toplanti', 'jumplist', 'kisayol-dosyasi', 'bildirim', 'bildirim-dugme', 'dis-tetik', 'kapali', 'kaynak-izinsiz', 'onay-bekliyor', 'anlik-yok', 'anahtar-yok', 'bulunamadi', 'belirsiz', 'reddedildi'];
+// satır metni: ad + zaman, sonra ' · ' ile kaynak, işlem, neden (sonuç rozeti sona yapışık); ham kod bir parçanın başında durur
+const hamKodVar = (satir) => satir.split(' · ').slice(1).some((parca) => HAM_KODLAR.some((kod) => parca === kod || (parca.startsWith(kod) && /^[A-ZÇĞİÖŞÜ]/.test(parca.slice(kod.length)))));
+
+test('dış tetik ve bildirim düğmesi kayıtları ham kodla değil, arayüz dilindeki etiketlerle çizilir (5 dil); bilinmeyen kod olduğu gibi kalır', async () => {
+  const sayfa = await sayfaAc({ eylemYaniti: { etkinlikListesi: { ok: true, acik: true, kayitlar: DIS_KAYITLAR } } });
+  const tr = satirlar(sayfa);
+  assert.equal(tr.length, DIS_KAYITLAR.length);
+  assert.match(tr[0], /evpaneli:\/\/ bağlantısı · Dış tetik · izin bekleniyor/);
+  assert.match(tr[1], /Yerel API · Dış tetik · Ayarlar’da kapalı/);
+  assert.match(tr[8], /Bildirim · Bildirim düğmesi · hata/);
+  assert.match(tr[9], /Bildirim · Bildirim düğmesi$|Bildirim · Bildirim düğmesiBaşarılı$/);
+  for (const s of tr) assert.equal(hamKodVar(s), false, s);
+
+  for (const dil of ['en', 'de', 'fr', 'es']) {
+    await sayfa.dilDegisti(dil);
+    const sozluk = AYARLAR[dil];
+    const satirMetinleri = satirlar(sayfa);
+    assert.equal(satirMetinleri.length, DIS_KAYITLAR.length);
+    assert.ok(satirMetinleri[0].includes(`${sozluk['ayar.etkinlik.kaynak.protokol']} · ${sozluk['ayar.etkinlik.islem.disTetik']} · ${sozluk['ayar.etkinlik.neden.onayBekliyor']}`), dil);
+    assert.ok(satirMetinleri[8].includes(`${sozluk['ayar.etkinlik.kaynak.bildirim']} · ${sozluk['ayar.etkinlik.islem.bildirimDugme']} · ${sozluk['ayar.etkinlik.neden.hata']}`), dil);
+    for (const s of satirMetinleri) assert.equal(hamKodVar(s), false, `${dil}: ${s}`);
+  }
+});
+
 test('kayıt yokken durum satırı söyler ve "Geçmişi temizle" kapalıdır; okuma hatası kısa bir iletiyle gösterilir', async () => {
   const bos = await sayfaAc();
   assert.equal(bos.oge(EVENTLER.durum).textContent, 'Henüz kayıt yok.');
@@ -67,10 +105,21 @@ test('"Yenile" listeyi yeniden okur; "Geçmişi temizle" ana sürece sorar, tabl
   await tikla(sayfa, EVENTLER.yenile);
   assert.equal(satirlar(sayfa).length, 3);
   await tikla(sayfa, EVENTLER.temizle);
+  assert.equal(sayfa.sorular.at(-1), AYARLAR.tr['ayar.etkinlik.temizleOnay'], 'silmeden önce onay sorulur');
   assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'etkinlikTemizle').length, 1);
   assert.equal(satirlar(sayfa).length, 0);
   assert.equal(sayfa.oge(EVENTLER.durum).textContent, 'Etkinlik geçmişi temizlendi.');
   assert.equal(sayfa.oge(EVENTLER.temizle).disabled, true);
+});
+
+test('"Geçmişi temizle" onay verilmezse hiçbir şey silmez: köprü çağrılmaz, tablo ve düğme olduğu gibi kalır', async () => {
+  const sayfa = await sayfaAc({ onayYaniti: false, eylemYaniti: { etkinlikListesi: { ok: true, acik: true, kayitlar: KAYITLAR }, etkinlikTemizle: () => ({ ok: true }) } });
+  await tikla(sayfa, EVENTLER.temizle);
+  assert.equal(sayfa.sorular.at(-1), AYARLAR.tr['ayar.etkinlik.temizleOnay']);
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'etkinlikTemizle').length, 0);
+  assert.equal(satirlar(sayfa).length, 3);
+  assert.equal(sayfa.oge(EVENTLER.temizle).disabled, false);
+  assert.notEqual(sayfa.oge(EVENTLER.durum).textContent, AYARLAR.tr['ayar.etkinlik.temizlendi']);
 });
 
 test('temizleme başarısızsa tablo korunur ve hata söylenir', async () => {
@@ -167,6 +216,44 @@ test('geri al alanları düzenlenince kirli olur; kaydetme yükü sayıyı ve k�
   assert.equal(sayfa.sunucu.geriAlKisayolu, 'Control+Alt+J');
 });
 
+
+test('geri alma süresi geçersizse (aralık dışı, boş, ondalık) kayıt yapılmaz: alan işaretlenir, odak alana gider, sunucudaki süre korunur; kirli göstergesi yanar', async () => {
+  for (const gecersiz of ['90', '61', '0', '-5', '', '   ', '1e1', '2.5']) {
+    const sayfa = await sayfaAc({ ayar: { ...AYAR_D3, geriAlSureDk: 30 } });
+    const alan = sayfa.oge('geriAlSureDk');
+    assert.equal(alan.value, '30');
+    yaz(alan, gecersiz);
+    assert.equal(kirliMi(sayfa), true, `"${gecersiz}" varsayılana çevrilip gizlenmez: kirli`);
+    await tikla(sayfa, 'btnAyarlariKaydet');
+    assert.equal(sayfa.cagrilar.some((c) => c[0] === 'ayarlariKaydet'), false, `"${gecersiz}": kayıt yapılmadı`);
+    assert.equal(sayfa.sunucu.geriAlSureDk, 30, 'sunucudaki süre 10 dakikaya düşmedi');
+    assert.ok(gecersizMi(alan));
+    assert.equal(sayfa.oge('geriAlSureHata').textContent, AYARLAR.tr['ayar.eylem.geriAl.sureHata']);
+    assert.equal(sayfa.oge('geriAlSureHata').style.display, 'block');
+    assert.equal(sayfa.sonOdak(), alan, 'odak hatalı alanda');
+    assert.equal(sayfa.oge('genelBildirim').textContent, AYARLAR.tr['ayar.eylem.geriAl.sureHata']);
+  }
+
+  // işaret yazdıkça kalkar; geçerli değer kaydedilir
+  const sayfa = await sayfaAc({ ayar: { ...AYAR_D3, geriAlSureDk: 30 } });
+  yaz(sayfa.oge('geriAlSureDk'), '90');
+  await tikla(sayfa, 'btnAyarlariKaydet');
+  assert.ok(gecersizMi(sayfa.oge('geriAlSureDk')));
+  yaz(sayfa.oge('geriAlSureDk'), '45');
+  assert.equal(gecersizMi(sayfa.oge('geriAlSureDk')), false);
+  assert.equal(sayfa.oge('geriAlSureHata').style.display, 'none');
+  await tikla(sayfa, 'btnAyarlariKaydet');
+  assert.equal(String(kayitYuku(sayfa).geriAlSureDk), '45');
+  assert.equal(String(sayfa.sunucu.geriAlSureDk), '45');
+
+  // kayıtlı değer 10 iken geçersiz yazı da fark edilir (eskiden her ikisi de "10" olup kirli göstergesi bile çıkmazdı)
+  const varsayilan = await sayfaAc({ ayar: { ...AYAR_D3, geriAlSureDk: 10 } });
+  yaz(varsayilan.oge('geriAlSureDk'), '90');
+  assert.equal(kirliMi(varsayilan), true);
+  await tikla(varsayilan, 'btnAyarlariKaydet');
+  assert.equal(varsayilan.cagrilar.some((c) => c[0] === 'ayarlariKaydet'), false);
+  assert.ok(gecersizMi(varsayilan.oge('geriAlSureDk')));
+});
 test('geri al kısayol kutusu boş bırakılabilir (kısayol yok) ve geçersiz/ayrılmış kısayol anında işaretlenir', async () => {
   const sayfa = await sayfaAc({ ayar: { ...AYAR_D3, geriAlKisayolu: 'Control+Alt+Z' } });
   yaz(sayfa.oge('geriAlKisayolu'), '');

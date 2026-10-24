@@ -791,3 +791,62 @@ test('Güvenlik davranışları dile bağlı değildir: Almanca, Fransızca ve �
     assert.equal(sayfa.sunucu.favoriler.some((f) => f.entity_id === 'light.hallway'), false, `${dil}: engelli varlık sunucuda favori kalmaz`);
   }
 });
+
+// --- Çeviri tutarlılığı bekçileri (terim, dilbilgisi) ----------------------------------------------------------
+
+test('de: Kısayollar bölümü her yerde "Tastenkombination(en)" (eşitleme ve içe aktarma önizlemesi gezintiyle aynı ad), "Tastenkürzel" yok', () => {
+  assert.match(AYARLAR.de['ayar.esitleme.bolum.kisayollar'], /^Tastenkombinationen/);
+  assert.match(AYARLAR.de['ayar.aktar.bolum.kisayollar'], /^Tastenkombinationen/);
+  for (const [anahtar, deger] of Object.entries(AYARLAR.de)) assert.doesNotMatch(deger, /Tastenkürzel/, `${anahtar}: "Tastenkürzel"`);
+});
+
+test('de dilbilgisi: "durch Gedrückthalten" isimleşmiş yazılır; odakIpucu cümlesi öznesini (Das Fenster) söyler', () => {
+  assert.doesNotMatch(AYARLAR.de['ayar.cihaz.yardimciUyari'], /durch gedrückt halten/);
+  assert.match(AYARLAR.de['ayar.cihaz.yardimciUyari'], /durch Gedrückthalten/);
+  assert.match(AYARLAR.de['ayar.pencere.odakIpucu'], /^Das Fenster wird nicht ausgeblendet/);
+});
+
+test('es: karo anlamındaki "mosaico" tekerlek ve oda açıklamalarında da kullanılır ("tarjeta" yalnız bilgi/medya kartı)', () => {
+  const kotu = /tarjetas? de luz|las tarjetas|tarjetas del panel|tarjetas sin habitación/i;
+  for (const anahtar of ['ayar.etk.tekerlekIpucu', 'ayar.eylem.oda.aciklama']) {
+    assert.doesNotMatch(AYARLAR.es[anahtar], kotu, anahtar);
+    assert.match(AYARLAR.es[anahtar], /mosaicos?/, anahtar);
+  }
+});
+
+test('fr: tepsi her yerde "zone de notification" ("barre d’état" yok), ipucu tek yazımla "info-bulle"; hitap "vous" (tu/ton/tes/tiens yok)', () => {
+  for (const [anahtar, deger] of Object.entries(AYARLAR.fr)) {
+    assert.doesNotMatch(deger, /barre d’état/, `${anahtar}: "barre d’état"`);
+    assert.doesNotMatch(deger, /infobulle/i, `${anahtar}: "infobulle" (tek yazım: info-bulle)`);
+    assert.doesNotMatch(deger, /(?<![\p{L}-])(tu|toi|tes|tiens|ton(?! de blanc))(?![\p{L}-])/iu, `${anahtar}: tutoiement`);
+  }
+  assert.equal(AYARLAR.fr['ayar.etkinlik.kaynak.tepsiMenu'], 'Menu de la zone de notification');
+  assert.match(AYARLAR.fr['ayar.aktar.onizle.devam'], /^Vos paramètres actuels.*Votre jeton d’accès/);
+  assert.match(AYARLAR.fr['ayar.aktar.onizle.degisiklikYok'], /identiques aux vôtres/);
+});
+
+test('de: kısayol örnekleri "Ctrl" yazar ("Strg" kısayol alanında geçersizdir); ayar.eylem.geriAl.kisayolIpucu tanınan kısayolu gösterir', () => {
+  for (const [anahtar, deger] of Object.entries(AYARLAR.de)) assert.doesNotMatch(deger, /Strg/, `${anahtar}: "Strg"`);
+  const { kisayolGecerliMi } = require('../src/lib/kisayol');
+  const ornek = AYARLAR.de['ayar.eylem.geriAl.kisayolIpucu'].match(/Standard ([A-Za-z+]+)\./)[1];
+  assert.equal(ornek, 'Ctrl+Alt+Z');
+  assert.equal(kisayolGecerliMi(ornek), true, 'ipucundaki varsayılan kısayol alanda geçerli');
+});
+
+test('"*" arama açıklaması: de menü etiketi paletteki gerçek etiketle ("Zu Favoriten") aynı; en "a “Turn on”"; en metinlerde "colour" yok', () => {
+  const YUZEY_SOZLUK = require('../src/lib/ceviri/yuzey');
+  const etiket = YUZEY_SOZLUK.de['yuzey.diger.favori'];
+  assert.match(AYARLAR.de['ayar.eylem.diger.aciklama'], new RegExp(`Ausschalten / ${etiket} / In Home Assistant öffnen`));
+  assert.doesNotMatch(AYARLAR.de['ayar.eylem.diger.aciklama'], /Zu Favoriten hinzufügen/);
+  assert.doesNotMatch(AYARLAR.en['ayar.eylem.diger.aciklama'], /an “Turn/);
+  assert.match(AYARLAR.en['ayar.eylem.diger.aciklama'], /a “Turn on/);
+  for (const [anahtar, deger] of Object.entries(AYARLAR.en)) assert.doesNotMatch(deger, /\bcolour/i, `${anahtar}: "colour" (ABD yazımı: color)`);
+});
+
+test('en: erişim anahtarı her yerde "access token" ("access key" yok); tr pil eşiği ipucu eşik dahil olduğunu söyler (<=)', () => {
+  for (const [anahtar, deger] of Object.entries(AYARLAR.en)) assert.doesNotMatch(deger, /access key/i, `${anahtar}: "access key"`);
+  assert.match(AYARLAR.en['ayar.oda.yetki'], /this access token/);
+  assert.match(AYARLAR.en['ayar.arac.aciklama'], /Your access token is never included/);
+  // bildirim-merkezi.js: p.yuzde <= ayar.pilEsigi (eşik dahil)
+  assert.match(AYARLAR.tr['ayar.bm.pilIpucu'], /^Pil seviyesi eşiğe ya da altına düşen/);
+});

@@ -185,6 +185,33 @@ test('kayıt yükü: kayıtlı sabitleme açıkken ve Ayarlar\'da dokunulmadıys
   assert.equal(sayfa.sunucu.panelSabit, true, 'sunucudaki değer korunur');
 });
 
+test('kayıt yükü: tepsi menüsünden de değişen alanlar (otomatikBaslat, pencereBoyutu, odakKaybindaGizle) YALNIZ Ayarlar sayfasında değiştirildiyse gider', async () => {
+  const sayfa = await sayfaAc({ otomatikBaslat: false, pencereBoyutu: 'hizli', odakKaybindaGizle: true });
+  isaretle(sayfa, 'karoTekerlegi', false); // başka bir alan
+  await kaydet(sayfa);
+  const yuk = sonYuk(sayfa);
+  for (const alan of ['otomatikBaslat', 'pencereBoyutu', 'odakKaybindaGizle']) {
+    assert.equal(alan in yuk, false, `${alan} değişmedi: tepsiden yapılan değişikliği eski form ezmesin`);
+  }
+  assert.equal(yuk.karoTekerlegi, false);
+
+  isaretle(sayfa, 'otomatikBaslat', true);
+  isaretle(sayfa, 'odakKaybindaGizle', false);
+  const boyut = sayfa.oge('pencereBoyutu');
+  boyut.value = 'genis';
+  boyut.dispatchEvent({ type: 'change' });
+  await kaydet(sayfa);
+  const sonra = sonYuk(sayfa);
+  assert.equal(sonra.otomatikBaslat, true);
+  assert.equal(sonra.odakKaybindaGizle, false);
+  assert.equal(sonra.pencereBoyutu, 'genis');
+  assert.equal(sayfa.sunucu.pencereBoyutu, 'genis');
+
+  isaretle(sayfa, 'karoTekerlegi', true);
+  await kaydet(sayfa);
+  for (const alan of ['otomatikBaslat', 'pencereBoyutu', 'odakKaybindaGizle']) assert.equal(alan in sonYuk(sayfa), false, `${alan}: kayıttan sonra yeniden değişmeden gönderilmez`);
+});
+
 // --- bağlantı bildirimi bekleme süresi -----------------------------------------------------------------------------------
 
 test('bekleme süresi: sınır dışı, kesirli ve sayı olmayan değer kaydı DURDURUR, alan işaretlenir ve hata metni yazılır; yazınca işaret kalkar', async () => {

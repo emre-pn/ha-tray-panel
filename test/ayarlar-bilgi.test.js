@@ -463,8 +463,22 @@ test('dil değişimi: seçenek adları, ipuçları ve satır düğmeleri yeni di
 
 test('güvenlik: bilgi bölümü yeni köprü işlevi, ağ isteği ya da depolama kullanmaz; kuralın açıklaması bölümde yazılı', () => {
   const bolum = BETIK.slice(BETIK.indexOf('--- Bilgi kartları'), BETIK.indexOf('--- Kısayol yakalama'));
+  assert.ok(bolum.length > 3000, 'bilgi bölümü bulunamadı');
   assert.doesNotMatch(bolum, /window\.evPaneli\.|fetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|navigator\./);
   assert.match(HTML, /data-i18n="ayar\.bilgi\.guvenlik"/);
   assert.match(AYARLAR.tr['ayar.bilgi.guvenlik'], /kilit, alarm, kapı, garaj kapısı, bariyer ve kepenk/);
   assert.match(AYARLAR.en['ayar.bilgi.guvenlik'], /locks, alarms, doors, garage doors, gates and shutters/);
+});
+
+test('B83: HA ulaşılamazken listenin son öğesi kaldırılınca odak listenin kendisine gider (boşluğa düşmez)', async () => {
+  const sayfa = await acilmisSayfa({ ayar: { ...AYAR, takvimler: ['calendar.aile'] }, cihazlar: { ok: false, hata: 'bağlanılamadı' } });
+  const liste = sayfa.oge('takvimlerListesi');
+  assert.equal(sayfa.oge('takvimlerEkle').disabled, true, 'aday yokken seçici pasif');
+  assert.equal(liste.tabIndex, -1, 'liste programla odaklanabilir');
+
+  const once = liste.odaklanma;
+  kaldirDugmesi(bilgiSatirlari(sayfa, 'takvimlerListesi')[0]).dispatchEvent({ type: 'click' });
+  assert.equal(bilgiSatirlari(sayfa, 'takvimlerListesi').length, 0);
+  assert.equal(liste.odaklanma, once + 1, 'odak listeye verildi');
+  assert.equal(sayfa.sonOdak(), liste);
 });

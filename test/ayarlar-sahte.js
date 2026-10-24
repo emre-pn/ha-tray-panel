@@ -65,7 +65,7 @@ class SahteOge {
     this.className = '';
     this._deger = '';
     this.checked = false;
-    this.disabled = false;
+    this._pasif = false;
     this.title = '';
     this.type = '';
     this.open = false;
@@ -96,12 +96,29 @@ class SahteOge {
     this._deger = String(deger);
   }
 
+  // Gerçek tarayıcıda odaktaki öğe pasifleşince odak belgenin gövdesine düşer (document.activeElement === body).
+  get disabled() {
+    return this._pasif;
+  }
+
+  set disabled(deger) {
+    this._pasif = Boolean(deger);
+    if (this._pasif && this.sahne && this.sahne.sonOdak === this) this.sahne.sonOdak = null;
+  }
+
   get textContent() {
     return this._metin + this.children.map((c) => c.textContent).join('');
   }
 
   set textContent(deger) {
     this._metin = String(deger);
+    this._cocuklariBirak();
+  }
+
+  /** Alt ağaç DOM'dan çıkarken odak içindeyse odak gövdeye düşer (gerçek tarayıcı davranışı). */
+  _cocuklariBirak() {
+    const odak = this.sahne && this.sahne.sonOdak;
+    if (odak && this.bul((o) => o === odak).length > 0) this.sahne.sonOdak = null;
     this.children = [];
   }
 
@@ -112,7 +129,7 @@ class SahteOge {
 
   replaceChildren(...cocuklar) {
     this._metin = '';
-    this.children = [];
+    this._cocuklariBirak();
     for (const c of cocuklar) this.appendChild(c);
   }
 
@@ -152,11 +169,29 @@ class SahteOge {
 
   /** Kullanıcı tıklaması: işaret kutusu değişir ve change olayı gider; sonra click olayı. */
   tikla() {
+    this.click();
+  }
+
+  /** HTMLElement.click(): etkin işaret kutusu çevrilir ve change gider; sonra click olayı (tarayıcının kendi olayları, dispatchEvent değil). */
+  click() {
     if (this.etiket === 'input' && this.type === 'checkbox' && !this.disabled) {
       this.checked = !this.checked;
-      this.dispatchEvent({ type: 'change', target: this });
+      this._olayVer({ type: 'change', target: this });
     }
-    this.dispatchEvent({ type: 'click', target: this, stopPropagation() {}, preventDefault() {} });
+    this._olayVer({ type: 'click', target: this, stopPropagation() {}, preventDefault() {} });
+  }
+
+  /** Olayı dispatchEvent'e uğramadan (tarayıcının kendi olayı gibi) dinleyicilere iletir. */
+  _olayVer(olay) {
+    olay.target ??= this;
+    for (const isleyici of this.dinleyiciler[olay.type] ?? []) isleyici(olay);
+  }
+
+  /** Gerçek EventTarget gibi: bu öğenin dispatchEvent'i düz nesneyle TypeError verir (yalnız Event kabul edilir). */
+  katiOlayKipi() {
+    this.dispatchEvent = () => {
+      throw new TypeError("Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.");
+    };
   }
 
   /** Alt ağaçta koşulu sağlayan tüm öğeler. */
@@ -255,6 +290,7 @@ function sayfayiKur({
   yedekler = [],
   aktarimYaniti = null,
   yedektenDonYaniti = null,
+  yedekleriGetirHata = false, // true: yedekleriGetir reddedilir (IPC hatası)
   aracYaniti = null, // arac grubu (o-40, o-41, o-44) köprü yanıtları: { surumDurumu, surumuDenetle, yenilikleriGetir, tanilamaGetir, tanilamaKopyala, gunlukKlasoruAc, odalariGetir } (işlev ya da nesne)
   depo = null,
   dilOlayi = true,
@@ -264,6 +300,7 @@ function sayfayiKur({
   gecmisYaniti = null,
   disYaniti = null, // 1.4.0 dis grubu köprü yanıtları: { disTetikDurumu, disKisayolOlustur, disBaglantiKopyala, disJetonKopyala, disJetonYenile, disIzinKaldir } (işlev ya da nesne)
   eylemYaniti = null, // eylem grubu köprü yanıtları: { etkinlikListesi, etkinlikTemizle, ... } (işlev ya da nesne)
+  cihazlariGetirBekle = null, // (sıra) => Promise | null: n. cihazlariGetir çağrısının yanıtını (çağrı anındaki verisiyle) söz çözülene dek geciktirir (yarış sınaması)
   baglantiYaniti = null, // bağlantı katmanı (o-55..o-58) köprü yanıtları (test/baglanti-sahte.js)
   koprudenKaldir = [], // köprüden (window.evPaneli) çıkarılacak işlev adları: eski bir preload'u taklit eder (sayfa typeof denetimleriyle çökmeden çalışmalı)
   aramaModulu = false, // true: src/lib/ayar-arama.js (window.EvAyarArama) yüklenir; belge.querySelectorAll('.bolum' vb.) GERÇEK ayarlar.html ağacından (test/mini-dom.js, dönen `aramaAgaci`) yanıtlanır.
@@ -392,13 +429,17 @@ function sayfayiKur({
     },
     cihazlariGetir: async () => {
       cagrilar.push(['cihazlariGetir']);
-      if (!cihazlar.ok) return cihazlar;
+      const bekle = cihazlariGetirBekle ? cihazlariGetirBekle(cagrilar.filter((c) => c[0] === 'cihazlariGetir').length) : null;
       const kayitli = new Set((sunucu.favoriler ?? []).map((f) => f.entity_id));
-      return {
-        ...cihazlar,
-        eksik: (cihazlar.eksik ?? []).filter((e) => kayitli.has(e.entity_id)),
-        engelli: (cihazlar.engelli ?? []).filter((e) => kayitli.has(e.entity_id)),
-      };
+      const yanit = cihazlar.ok
+        ? {
+            ...cihazlar,
+            eksik: (cihazlar.eksik ?? []).filter((e) => kayitli.has(e.entity_id)),
+            engelli: (cihazlar.engelli ?? []).filter((e) => kayitli.has(e.entity_id)),
+          }
+        : cihazlar;
+      if (bekle) await bekle;
+      return yanit;
     },
     favorileriKaydet: async (yuk) => {
       cagrilar.push(['favorileriKaydet', yuk]);
@@ -440,6 +481,7 @@ function sayfayiKur({
     },
     yedekleriGetir: async () => {
       cagrilar.push(['yedekleriGetir']);
+      if (yedekleriGetirHata) throw new Error('ipc');
       return { ok: true, yedekler: durum.yedekler };
     },
     yedektenDon: async (ad) => {
@@ -634,6 +676,11 @@ function sayfayiKur({
       return oge;
     },
     createElement: (etiket) => new SahteOge(etiket, null, durum),
+    body: { etiket: 'body' },
+    // Odak kayıtlıysa o öğe; yoksa (hiçbir öğe odaklanmadı ya da odaklı öğe DOM'dan çıktı/pasifleşti) gövde.
+    get activeElement() {
+      return durum.sonOdak || this.body;
+    },
     documentElement: {
       style: {},
       ozellikler: {},

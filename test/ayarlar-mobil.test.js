@@ -11,6 +11,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { AYAR_D3, CIHAZLAR_D3, akit, acilmisSayfa } = require('./ayarlar-sahte');
 const SOZLUK = require('../src/lib/ceviri/ayarlar');
+const ANA_SOZLUK = require('../src/lib/ceviri/ana');
+const { kayitGovdesi } = require('../src/lib/mobil-kayit');
 
 const AD = {
   kutu: 'mobilBildirimler',
@@ -218,6 +220,24 @@ test('dil değişince mobil metinleri yeni dilde yeniden yazılır (durum satır
   assert.equal(sayfa.oge(AD.durum).textContent, 'Registrado; escuchando notificaciones.');
 });
 
+test('düşen bildirim sayısı 1 iken her dilde tekil, 2 iken çoğul yazılır ("1 notification was not shown")', async () => {
+  const beklenen = {
+    en: ['1 notification was not shown because it arrived too quickly.', '2 notifications were not shown because they arrived too quickly.'],
+    de: ['1 Benachrichtigung wurde nicht angezeigt, weil sie zu schnell eintraf.', '2 Benachrichtigungen wurden nicht angezeigt, weil sie zu schnell eintrafen.'],
+    fr: ['1 notification n’a pas été affichée car elle est arrivée trop vite.', '2 notifications n’ont pas été affichées car elles sont arrivées trop vite.'],
+    es: ['No se mostró 1 notificación porque llegó demasiado rápido.', 'No se mostraron 2 notificaciones porque llegaron demasiado rápido.'],
+  };
+  const sayfa = await sayfaAc({ aracYaniti: { mobilDurumu: durumYaniti({ kayitli: true, etkin: true, kanal: 'dinliyor', dusenBildirim: 1 }) } });
+  assert.match(sayfa.oge(AD.durum).textContent, /Çok sık geldiği için 1 bildirim gösterilmedi.$/);
+  for (const [dil, [bir, iki]] of Object.entries(beklenen)) {
+    await sayfa.dilDegisti(dil);
+    assert.ok(sayfa.oge(AD.durum).textContent.endsWith(bir), `${dil}: ${sayfa.oge(AD.durum).textContent}`);
+    const cok = await sayfaAc({ aracYaniti: { mobilDurumu: durumYaniti({ kayitli: true, etkin: true, kanal: 'dinliyor', dusenBildirim: 2 }) } });
+    await cok.dilDegisti(dil);
+    assert.ok(cok.oge(AD.durum).textContent.endsWith(iki), `${dil}: ${cok.oge(AD.durum).textContent}`);
+  }
+});
+
 test('HTML: kutu etiketli, düğmeler type=button, durum satırı role=status; satır içi betik/innerHTML yok; bölüm katlı', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'ayarlar.html'), 'utf8');
   assert.match(html, /<details class="bolum" id="bolumMobil">/);
@@ -232,4 +252,44 @@ test('HTML: kutu etiketli, düğmeler type=button, durum satırı role=status; s
   assert.ok(mobilBolumu.length > 500);
   const kodYalnizca = mobilBolumu.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   assert.doesNotMatch(kodYalnizca, /innerHTML|insertAdjacentHTML|eval\(|webhook|fetch\(|localStorage/i);
+});
+
+test('B91: "Son bildirim" saati sistem yerel ayarına değil arayüz diline göre biçimlenir (tr/de 24 saat, en 12 saat)', async () => {
+  const sayfa = await sayfaAc({
+    ayar: { mobilBildirimler: true, mobilCihazAdi: 'Salon PC' },
+    aracYaniti: { mobilDurumu: durumYaniti({ kayitli: true, etkin: true, kanal: 'dinliyor', sonBildirim: 1_760_000_000_000 }) },
+  });
+  const durum = () => sayfa.oge(AD.durum).textContent;
+  assert.match(durum(), /Son bildirim: \d{2}:\d{2}\./, 'tr 24 saat');
+  await sayfa.dilDegisti('en');
+  assert.match(durum(), /Last notification: \d{1,2}:\d{2} (AM|PM)\./, 'en 12 saat');
+  await sayfa.dilDegisti('de');
+  assert.match(durum(), /: \d{2}:\d{2}\./, 'de 24 saat');
+  assert.doesNotMatch(durum(), /AM|PM/);
+});
+
+test('kayıt metinleri gerçeği söyler: cihaz adı, uygulama sürümü ve Windows sürümü gider; "cihaz bilgisi gönderilmez" denmez (5 dil, iki sözlük)', () => {
+  // Kayıt gövdesi gerçekte bu alanları taşır; onay iletisi ve Ayarlar açıklaması bunu gizlememeli.
+  const govde = kayitGovdesi({ cihazAdi: 'Salon PC', kimlik: { uygulamaKimligi: 'ev-paneli', uygulamaAdi: 'Ev Paneli', surum: '1.2.3', osSurumu: 'Windows 10.0.1' } });
+  for (const alan of ['device_name', 'app_version', 'os_version']) assert.ok(govde[alan], alan);
+  const yasak = {
+    tr: /cihaz bilgisi/i,
+    en: /device information/i,
+    de: /Geräteinformationen/,
+    fr: /information sur l’appareil/,
+    es: /información del dispositivo/,
+  };
+  const olmali = {
+    tr: /cihaz adı, uygulama sürümü ve Windows sürümü/,
+    en: /device name, app version and Windows version/,
+    de: /Gerätename, App-Version und Windows-Version/,
+    fr: /nom de l’appareil, la version de l’application et la version de Windows/,
+    es: /nombre del dispositivo, la versión de la aplicación y la versión de Windows/,
+  };
+  for (const dil of Object.keys(yasak)) {
+    for (const [ad, metin] of [['mobil.kaydolAyrinti', ANA_SOZLUK[dil]['mobil.kaydolAyrinti']], ['ayar.mobil.aciklama', SOZLUK[dil]['ayar.mobil.aciklama']]]) {
+      assert.doesNotMatch(metin, yasak[dil], `${dil} ${ad}: eski "cihaz bilgisi gönderilmez" cümlesi kalmış`);
+      assert.match(metin, olmali[dil], `${dil} ${ad}: gönderilen alanlar anılmıyor`);
+    }
+  }
 });

@@ -286,6 +286,109 @@ test('panolar: ekle/sil, en çok 6, boş satırlar yükten çıkar; metinler tex
   ]);
 });
 
+test('panolar: kayıtlı ve geçerli Ctrl+Alt kısayolunun altında AltGr uyarısı çıkmaz; yeniden çizilince geçersiz kısayol yine işaretli kalır', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3, cihazlar: CIHAZLAR_D3 });
+  const satirlar = () => sayfa.oge('panolarListesi').bul((o) => o.className === 'pano-satir');
+  const kisayolGirdisi = (n) => girdiler(satirlar()[n])[2];
+  const ileti = (n) => satirlar()[n].bul((o) => o.className === 'pano-hata')[0];
+  assert.equal(kisayolGirdisi(0).value, 'Ctrl+Alt+E');
+  assert.equal(ileti(0).children.length, 0, 'geçerli kayıtlı kısayol: AltGr uyarısı yok');
+  assert.equal(kisayolGirdisi(0).getAttribute('aria-invalid'), null);
+
+  // geçersiz kısayol yazılıp liste yeniden çizilince (satır eklenince) işaretli kalır
+  sayfa.oge('btnPanoEkle').dispatchEvent({ type: 'click' });
+  const yeniGirdi = kisayolGirdisi(1);
+  yeniGirdi.value = 'E';
+  yeniGirdi.dispatchEvent({ type: 'input' });
+  sayfa.oge('btnPanoEkle').dispatchEvent({ type: 'click' });
+  assert.equal(kisayolGirdisi(1).getAttribute('aria-invalid'), 'true');
+  assert.ok(ileti(1).children.length > 0, 'geçersiz kısayolun nedeni yazılı');
+  assert.equal(ileti(0).children.length, 0, 'geçerli satır yine uyarısız');
+});
+
+test('B86: cihaz listesi yükleniyor iletisi role=status, hata iletisi role=alert olur (ekran okuyucuya duyurulur)', async () => {
+  const cihazlar = { ...CIHAZLAR_D3 };
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3, cihazlar });
+  const ileti = () => sayfa.oge('cihazListesi').bul((o) => o.className.includes('liste-bos'))[0];
+  const yukleniyorRolu = [];
+  let basarili = true;
+  // cihazlariGetir çağrılırken (yükleniyor iletisi ekrandayken) okunan alan: o andaki iletiyi yakalar
+  Object.defineProperty(cihazlar, 'ok', {
+    get() {
+      yukleniyorRolu.push([ileti().textContent, ileti().getAttribute('role')]);
+      return basarili;
+    },
+  });
+  cihazlar.hata = 'Home Assistant’a ulaşılamadı.';
+
+  basarili = false;
+  sayfa.oge('btnCihazlariYukle').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.match(yukleniyorRolu[0][0], /çekiliyor/);
+  assert.equal(yukleniyorRolu[0][1], 'status', 'yükleniyor iletisi nazik duyuru');
+  assert.match(ileti().textContent, /ulaşılamadı/);
+  assert.ok(ileti().classList.contains('liste-hata'));
+  assert.equal(ileti().getAttribute('role'), 'alert', 'hata iletisi hemen duyurulur');
+});
+
+test('B87: yükleme sürerken anahtar silinirse eski yanıt gelince cihaz listesi anahtarsız durumda yeniden dolmaz', async () => {
+  let coz;
+  const kapi = new Promise((tamam) => { coz = tamam; });
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3, cihazlar: CIHAZLAR_D3, cihazlariGetirBekle: (n) => (n === 1 ? kapi : null) });
+  assert.equal(sayfa.cagrilar.filter((c) => c[0] === 'cihazlariGetir').length, 1, 'açılış yüklemesi sürüyor');
+
+  sayfa.oge('btnAnahtarSil').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.match(sayfa.oge('cihazListesi').textContent, /silindi/i);
+  coz(); // eski anahtarın yanıtı şimdi geldi
+  await akit();
+  assert.equal(satirlar(sayfa).length, 0, 'liste yeniden dolmadı');
+  assert.match(sayfa.oge('cihazListesi').textContent, /silindi/i, 'silindi iletisi kaldı');
+  assert.equal(sayfa.oge('btnKuralEkle').disabled, true, 'cihazlar yüklenmedi sayılır');
+});
+
+test('B87: yeni anahtar kaydedilince süren eski yüklemeye katılınmaz; taze bir yükleme onun ardından başlar', async () => {
+  let coz;
+  const kapi = new Promise((tamam) => { coz = tamam; });
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3, cihazlar: CIHAZLAR_D3, cihazlariGetirBekle: (n) => (n === 1 ? kapi : null) });
+  const istek = () => sayfa.cagrilar.filter((c) => c[0] === 'cihazlariGetir').length;
+  assert.equal(istek(), 1);
+
+  sayfa.oge('anahtarGirdisi').value = 'TEST_SAHTE_ANAHTAR_000000';
+  sayfa.oge('anahtarGirdisi').dispatchEvent({ type: 'input' });
+  sayfa.oge('btnAnahtarKaydet').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(istek(), 1, 'taze yükleme eskisinin bitmesini bekler (paralel istek yok)');
+  coz();
+  await akit();
+  assert.equal(istek(), 2, 'yeni anahtarla ikinci istek atıldı');
+  assert.ok(satirlar(sayfa).length > 0, 'liste dolu');
+});
+
+test('panolar: Pano ekle yeni satırın ad kutusuna, Sil komşu satıra (son satırsa Pano ekle düğmesine) odak verir', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR_D3, cihazlar: CIHAZLAR_D3 });
+  const satirlari = () => sayfa.oge('panolarListesi').bul((o) => o.className === 'pano-satir');
+  const adKutusu = (n) => girdiler(satirlari()[n])[0];
+  const silDugmesi = (n) => satirlari()[n].bul((o) => o.etiket === 'button')[0];
+
+  sayfa.oge('btnPanoEkle').dispatchEvent({ type: 'click' });
+  assert.equal(sayfa.sonOdak(), adKutusu(1), 'eklenen satırın ad kutusu odakta');
+  sayfa.oge('btnPanoEkle').dispatchEvent({ type: 'click' });
+  assert.equal(satirlari().length, 3);
+  assert.equal(sayfa.sonOdak(), adKutusu(2));
+
+  silDugmesi(1).dispatchEvent({ type: 'click' }); // 2. satır silindi
+  assert.equal(satirlari().length, 2);
+  assert.equal(sayfa.sonOdak(), adKutusu(1), 'yeni 2. satırın ad kutusu odakta');
+
+  silDugmesi(1).dispatchEvent({ type: 'click' }); // son satır silindi
+  assert.equal(sayfa.sonOdak(), adKutusu(0), 'son satır silinince önceki satıra gider');
+
+  silDugmesi(0).dispatchEvent({ type: 'click' }); // hiç satır kalmadı
+  assert.equal(satirlari().length, 0);
+  assert.equal(sayfa.sonOdak(), sayfa.oge('btnPanoEkle'));
+});
+
 test('panolar: reddedilen pano kısayolunun nedeni satırda görünür', async () => {
   const sayfa = await acilmisSayfa({
     ayar: { ...AYAR_D3, kisayolDurumlari: [{ id: 'pano:0', tur: 'pano', sira: 0, kisayol: 'Control+Alt+E', gecerli: false, durum: 'reddedildi', mesaj: 'Control+Alt+E başka bir kısayolla çakışıyor.' }] },
@@ -320,14 +423,30 @@ test('favori satırı: kısayol kutusu yalnız uygun (zararsız) eylemde, parlak
   assert.equal(kutular('scene.film')[0].disabled, true, 'seçilmemiş satırda pasif');
   assert.equal(kutular('light.salon_lambasi')[0].disabled, false);
 
-  // Kısayol kutusuna tıklamak satırın seçimini değiştirmez
+  // Kısayol kutusuna, onay etiketine ve ek alana tıklamak satırın seçimini değiştirmez.
+  // Sahte DOM'da kabarma yoktur; zincir elle gezilir ve stopPropagation çağrısı zinciri keser (gerçek tarayıcıdaki gibi).
+  const kabar = (zincir, hedef) => {
+    const olay = { type: 'click', target: hedef, durdu: false, stopPropagation() { this.durdu = true; }, preventDefault() {} };
+    for (const oge of zincir) {
+      oge.dispatchEvent(olay);
+      if (olay.durdu) break;
+    }
+  };
   const satir = satirBul(sayfa, 'light.salon_lambasi');
   const secim = girdiler(satir)[0];
   const once = secim.checked;
-  kutular('light.salon_lambasi')[0].dispatchEvent({ type: 'click', stopPropagation() {} });
   const ek = satir.bul((o) => o.className === 'cihaz-ek')[0];
-  ek.dispatchEvent({ type: 'click', target: ek, stopPropagation() {} });
-  assert.equal(secim.checked, once);
+  const onayEtiket = satir.bul((o) => o.className === 'onay-etiket')[0];
+  const kisayolKutusu = kutular('light.salon_lambasi')[0];
+  kabar([kisayolKutusu, ek, satir], kisayolKutusu);
+  assert.equal(secim.checked, once, 'kısayol kutusu tıklaması satırı tetiklemez');
+  kabar([ek, satir], ek);
+  assert.equal(secim.checked, once, 'ek alan tıklaması satırı tetiklemez');
+  kabar([onayEtiket, satir], onayEtiket);
+  assert.equal(secim.checked, once, 'onay etiketi tıklaması satırı tetiklemez');
+  // Denetim: zincirde durduran yoksa (boş alana tıklama) satır seçimi gerçekten tersine döner; test bu yüzden anlamlıdır
+  kabar([satir], satir);
+  assert.equal(secim.checked, !once, 'satırın kendisine tıklamak seçimi değiştirir');
 });
 
 test('favori kaydı yükü: kısayol ve parlaklık YALNIZ kullanıcı değiştirdiyse gider; boş kısayol (silme) gönderilir; değişiklik yoksa favori çağrısı hiç yapılmaz', async () => {
