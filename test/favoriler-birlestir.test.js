@@ -154,3 +154,21 @@ test('onayiDuzelt: zorunlu onaylı eylemde onay:false atılır; diğerleri korun
     { entity_id: 'light.b', ad: 'B' },
   ]);
 });
+
+test('hazır listedeki yeni favori: etiketAl verilirse etiket arayüz dilinde yazılır, verilmezse Türkçe; kullanıcı etiketi ve kayıtlı etiket önceliklidir', () => {
+  const en = (kimlik, varsayilan) => (kimlik === 'scene.gece_lambasi' ? 'Night light' : varsayilan);
+  const girdi = (ek = {}) => ({ mevcut: [], secilen: ['scene.gece_lambasi'], guvenliListe: guvenli(['scene.gece_lambasi', 'Gece lambası (HA)']), tumKimlikler: new Set(['scene.gece_lambasi']), ...ek });
+  assert.equal(favorileriBirlestir(girdi({ etiketAl: en })).yeni[0].etiket, 'Night light');
+  assert.equal(favorileriBirlestir(girdi()).yeni[0].etiket, 'Gece lambası', 'etiketAl yoksa eski davranış: Türkçe');
+  // hazır listede olmayan kimliğe etiket verilmez
+  const baska = favorileriBirlestir({ mevcut: [], secilen: ['light.masa'], guvenliListe: guvenli(['light.masa', 'Masa']), tumKimlikler: new Set(['light.masa']), etiketAl: en });
+  assert.equal(baska.yeni[0].etiket, undefined);
+  // kullanıcının yazdığı etiket önceliklidir
+  const kendi = favorileriBirlestir(girdi({ etiketAl: en, secilen: [{ entity_id: 'scene.gece_lambasi', etiket: 'Benim lamba' }] }));
+  assert.equal(kendi.yeni[0].etiket, 'Benim lamba');
+  // kayıtlı favorinin etiketi (boş bile olsa) yeniden dile göre doldurulmaz
+  const kayitli = favorileriBirlestir(girdi({ etiketAl: en, mevcut: [{ entity_id: 'scene.gece_lambasi', ad: 'Gece lambası (HA)', etiket: 'Eski ad' }] }));
+  assert.equal(kayitli.yeni[0].etiket, 'Eski ad');
+  const bos = favorileriBirlestir(girdi({ etiketAl: en, mevcut: [{ entity_id: 'scene.gece_lambasi', ad: 'Gece lambası (HA)' }] }));
+  assert.equal(bos.yeni[0].etiket, undefined);
+});

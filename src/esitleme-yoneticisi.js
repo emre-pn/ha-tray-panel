@@ -89,6 +89,7 @@ function esitlemeYoneticisiOlustur({
   let son = null; // { zaman, uygulanan, yazilan } (sayılar)
   let calisan = null;
   let tekrar = false;
+  let bekleyenSecenek = {}; // çalışan tura katılan isteklerin birleşik seçeneği (ek tur bunlarla koşar)
   let planliZamanlayici = null;
   let yoklamaZamanlayici = null;
   let izleyici = null;
@@ -346,7 +347,7 @@ function esitlemeYoneticisiOlustur({
     return { ok: yeniAsama !== 'hata', neden: yeniNeden, ...(ek.son ? { son: ek.son } : {}) };
   }
 
-  async function esitleIc({ elle = false, zorlaYaz = false }) {
+  async function esitleIc({ elle = false, parolaDegisimi = null }) {
     if (!etkinMi()) {
       asama = 'kapali';
       neden = null;
@@ -369,9 +370,39 @@ function esitlemeYoneticisiOlustur({
       gunlugeYaz('Klasör eşitleme: klasör okunamadı.');
       return bitir('hata', 'klasor-yok');
     }
-    const { belgeler, ana, sorunlar } = okunan;
+    let { belgeler, ana, sorunlar } = okunan;
+    let kaynakParola = parola; // birleştirilen içeriğin çözüldüğü parola (dosyaya yazım her zaman güncel parolayla)
     if (sorunlar.has('daha-yeni')) return bitir('hata', 'daha-yeni');
-    if (ana.neden && YAZMAYI_ENGELLEYEN.has(ana.neden) && !(zorlaYaz && (ana.neden === 'parola-gerekli' || ana.neden === 'parola-yanlis'))) return bitir('hata', ana.neden);
+    const eskiParolaBilinir = !!parolaDegisimi && parolaDegisimi.eski !== undefined;
+    const eskiyleOku = async () => {
+      try {
+        return await adaylariOku(klasor, parolaDegisimi.eski);
+      } catch {
+        return null;
+      }
+    };
+    if (ana.neden && YAZMAYI_ENGELLEYEN.has(ana.neden)) {
+      // Parola koyma/kaldırma: ana dosya yeni parolayla çözülemez ama ESKİ parolayla (ya da parolasız) çözülüyorsa dosya bu bilgisayarın ürettiği
+      // sürümdür ve yeni parolayla yeniden yazılması gerçek bir değiştirmedir. Eski parolayla da çözülemiyorsa (başka bilgisayarın parolası,
+      // yazım hatası) dosya başkasınındır: yazılmaz, kayıtlı parola yerinde kalır ve arayüz "parola yanlış/gerekli" gösterir.
+      const parolaDegisti = (ana.neden === 'parola-gerekli' || ana.neden === 'parola-yanlis') && eskiParolaBilinir;
+      if (!parolaDegisti) return bitir('hata', ana.neden);
+      const eskiOkuma = await eskiyleOku();
+      if (!eskiOkuma?.ana.belge) return bitir('hata', ana.neden);
+      // Birleştirme eski parolayla okunan içerikle yapılır: eski parolayı paylaşan başka bilgisayarın henüz alınmamış bölümleri (ve bu sürümün
+      // bilmediği bölümler) dosyadan düşmez, yerel içerik onların üzerine yazılmaz.
+      ({ belgeler, ana, sorunlar } = eskiOkuma);
+      kaynakParola = parolaDegisimi.eski;
+    } else if (ana.neden === 'sifresiz' && eskiParolaBilinir && !parolaDegisimi.eski) {
+      // İlk parola konuyor: düz dosya bir an önce bu bilgisayarın da güvendiği sürümdü; içeriği atılmaz, birleştirilip şifreli yazılır.
+      const eskiOkuma = await eskiyleOku();
+      if (eskiOkuma?.ana.belge) {
+        ({ belgeler, ana, sorunlar } = eskiOkuma);
+        kaynakParola = null;
+      }
+    }
+    if (sorunlar.has('daha-yeni')) return bitir('hata', 'daha-yeni');
+    const yenidenSifrele = kaynakParola !== parola; // içerik aynı kalsa da dosya yeni parolayla (ya da parolasız) yeniden yazılır
     if (ana.neden === 'bozuk' && !elle) return bitir('hata', 'bozuk'); // yarım inmiş dosya olabilir: elle istenmedikçe üzerine yazılmaz
     if (ana.neden === 'okunamadi') return bitir('hata', 'okunamadi');
 
@@ -384,7 +415,7 @@ function esitlemeYoneticisiOlustur({
       const anlik = bolumAnlik(a, ad);
       const ozetL = ozetle(anlik);
       const uzak = birlesik.bolumler[ad] ?? null;
-      const temiz = uzak ? uzakBolumTemizle(ad, uzak.ayarlar, { varsayilan, t, parolasiz: !parola, yerelFavoriler: a.favoriler }) : null;
+      const temiz = uzak ? uzakBolumTemizle(ad, uzak.ayarlar, { varsayilan, t, parolasiz: !kaynakParola, yerelFavoriler: a.favoriler }) : null;
       if (temiz?.ok && temiz.onayAtilan > 0) gunlugeYaz('Klasör eşitleme: parolasız dosyadaki onay gevşetmeleri yok sayıldı.');
       const ozetU = temiz?.ok ? temiz.ozet : null;
       let karar = bolumKarari({ durum: kayit.bolumler[ad], ozetL, uzak, ozetU, simdi: an, aygit: kayit.aygit });
@@ -467,7 +498,7 @@ function esitlemeYoneticisiOlustur({
     if (!metinSonucu.ok) yazimSorunu = metinSonucu.neden;
     else {
       const sade = (b) => kararliYaz(Object.fromEntries(Object.entries(b).map(([ad, g]) => [ad, { zaman: g.zaman, aygit: g.aygit, ayarlar: g.ayarlar }])));
-      const dosyaDegisti = !ana.belge || yazilanlar.length > 0 || sade(bolumler) !== sade(ana.belge.bolumler) || sade(birlesik.bilinmeyen) !== sade(ana.belge.bilinmeyen);
+      const dosyaDegisti = !ana.belge || yenidenSifrele || yazilanlar.length > 0 || sade(bolumler) !== sade(ana.belge.bolumler) || sade(birlesik.bilinmeyen) !== sade(ana.belge.bilinmeyen);
       // Ana dosya yoksa ve yazılacak bölüm de yoksa boş dosya oluşturulmaz.
       if (dosyaDegisti && Object.keys(bolumler).length + Object.keys(birlesik.bilinmeyen).length > 0) {
         if (!(await dosyayaYaz(klasor, metinSonucu.metin))) yazimSorunu = 'yazilamadi';
@@ -487,7 +518,7 @@ function esitlemeYoneticisiOlustur({
     const yeniKayit = { aygit: kayit.aygit, bolumler: kayit.bolumler };
     if (kararliYaz(yeniKayit) !== kararliYaz(duzNesne(a.esitlemeDurumu) ? a.esitlemeDurumu : {})) {
       a.esitlemeDurumu = yeniKayit;
-      ayarlariYaz();
+      if (ayarlariYaz() === false) gunlugeYaz('Klasör eşitleme: ayar kaydı yazılamadı.'); // bellekte kalır, sonraki yazımda diske gider
     }
     sonImza = await klasorImzasi();
     sonCalisma = simdi();
@@ -506,11 +537,15 @@ function esitlemeYoneticisiOlustur({
     return bitir('tamam', null, { son: sonOzet });
   }
 
+  const seceneklerBirlestir = (x, y) => ({ elle: x.elle === true || y.elle === true, parolaDegisimi: y.parolaDegisimi ?? x.parolaDegisimi });
+
   /** Eşitlemeyi çalıştırır; çalışırken gelen istek tek ek tur olarak birleşir. */
   function esitle(secenek = {}) {
     if (!etkinMi()) return Promise.resolve({ ok: false, neden: 'kapali' });
     if (calisan) {
+      // Katılan isteğin elle/parola değişimi izni düşmesin: ek tur birleşik seçenekle koşar.
       tekrar = true;
+      bekleyenSecenek = seceneklerBirlestir(bekleyenSecenek, secenek);
       return calisan;
     }
     calisan = (async () => {
@@ -521,7 +556,9 @@ function esitlemeYoneticisiOlustur({
         let tur = 0;
         do {
           tekrar = false;
-          sonuc = await esitleIc(tur === 0 ? secenek : {});
+          const bu = tur === 0 ? seceneklerBirlestir(secenek, bekleyenSecenek) : bekleyenSecenek; // ilk tur: bekleme sırasında katılanlar da dahil
+          bekleyenSecenek = {};
+          sonuc = await esitleIc(bu);
           tur += 1;
         } while (tekrar && tur < 3 && etkinMi());
         return sonuc;
@@ -530,6 +567,12 @@ function esitlemeYoneticisiOlustur({
         return bitir('hata', 'beklenmeyen');
       } finally {
         calisan = null;
+        // Tur sınırına (ya da hataya/kapanmaya) takılan katılımın seçeneği sonraki ilgisiz tura taşınmaz: bayat "elle" izni bozuk dosyanın,
+        // bayat parola değişimi eski parolayla şifreli dosyanın üzerine yazmayı açardı. Yerine olağan (izinsiz) bir tur planlanır.
+        const kalanVar = tekrar;
+        tekrar = false;
+        bekleyenSecenek = {};
+        if (kalanVar) planla(DEGISIKLIK_BEKLEME_MS);
       }
     })();
     return calisan;
@@ -623,18 +666,23 @@ function esitlemeYoneticisiOlustur({
     } catch {
       return { ok: false, neden: 'klasor-yok' };
     }
-    izlemeyiBirak();
     const a = ayar();
+    const onceki = { klasorEsitleme: a.klasorEsitleme, esitlemeKlasoru: a.esitlemeKlasoru, esitlemeDurumu: a.esitlemeDurumu };
     a.klasorEsitleme = false;
     a.esitlemeKlasoru = gecerli.yol;
     a.esitlemeDurumu = { aygit: yerelKayit().aygit }; // yeni klasör: bölüm kayıtları sıfırlanır (ilk eşitlemede klasördeki sürüm alınır)
+    if (ayarlariYaz() === false) {
+      // Ayar dosyası yazılamadı (yazım engelli ya da disk hatası): "seçildi" görünüp yeniden başlatınca kaybolmasın; önceki durum aynen kalır.
+      Object.assign(a, onceki);
+      return { ok: false, neden: 'ayar-yazilamadi' };
+    }
+    izlemeyiBirak();
     uygulanamayan.clear();
     yedekAlindi = false;
     asama = 'kapali';
     neden = null;
     son = null;
     sonYerelKilit = null;
-    ayarlariYaz();
     gunlugeYaz('Klasör eşitleme: klasör seçildi.');
     haberVer();
     return yanit();
@@ -644,6 +692,9 @@ function esitlemeYoneticisiOlustur({
   async function ayarla(girdi) {
     if (!duzNesne(girdi)) return { ok: false, neden: 'girdi-gecersiz' };
     const a = ayar();
+    const onceki = { klasorEsitleme: a.klasorEsitleme, bolumVar: Object.prototype.hasOwnProperty.call(a, 'esitlemeBolumleri'), esitlemeBolumleri: a.esitlemeBolumleri };
+    let acildi = false;
+    let kapandi = false;
     if (girdi.bolumler !== undefined) {
       const liste = bolumListesiDuzelt(girdi.bolumler);
       if (liste === undefined) return { ok: false, neden: 'girdi-gecersiz' };
@@ -663,21 +714,32 @@ function esitlemeYoneticisiOlustur({
         }
         if (!a.klasorEsitleme) {
           a.klasorEsitleme = true;
-          yedekGerekli = true;
-          yedekAlindi = false;
-          uygulanamayan.clear();
-          sonYerelKilit = null;
-          gunlugeYaz('Klasör eşitleme: açıldı.');
+          acildi = true;
         }
       } else if (a.klasorEsitleme) {
         a.klasorEsitleme = false;
-        izlemeyiBirak();
-        asama = 'kapali';
-        neden = null;
-        gunlugeYaz('Klasör eşitleme: kapatıldı.');
+        kapandi = true;
       }
     }
-    ayarlariYaz();
+    if (ayarlariYaz() === false) {
+      // Ayar dosyası yazılamadı: bellekteki değişiklik geri alınır (yanıtta "açık" görünüp yeniden başlatınca kaybolmasın); izleme ve zamanlayıcıya dokunulmaz.
+      a.klasorEsitleme = onceki.klasorEsitleme;
+      if (onceki.bolumVar) a.esitlemeBolumleri = onceki.esitlemeBolumleri;
+      else delete a.esitlemeBolumleri;
+      return { ok: false, neden: 'ayar-yazilamadi' };
+    }
+    if (acildi) {
+      yedekGerekli = true;
+      yedekAlindi = false;
+      uygulanamayan.clear();
+      sonYerelKilit = null;
+      gunlugeYaz('Klasör eşitleme: açıldı.');
+    } else if (kapandi) {
+      izlemeyiBirak();
+      asama = 'kapali';
+      neden = null;
+      gunlugeYaz('Klasör eşitleme: kapatıldı.');
+    }
     if (etkinMi()) {
       izlemeyiBaslat();
       if (asama === 'kapali') asama = 'bekliyor';
@@ -704,6 +766,7 @@ function esitlemeYoneticisiOlustur({
       kullanilabilir = false;
     }
     if (!kullanilabilir) return { ok: false, neden: 'sifreleme-yok' };
+    const { parola: eski } = await parolaOku(); // değişimden ÖNCEki parola (okunamazsa undefined: kanıt yok, dosyanın üzerine yazılmaz)
     try {
       await parolaDeposu.yaz(parola);
     } catch {
@@ -711,11 +774,12 @@ function esitlemeYoneticisiOlustur({
     }
     sifreleyici.temizle();
     gunlugeYaz('Klasör eşitleme: parola kaydedildi.');
-    if (etkinMi()) await esitle({ elle: true, zorlaYaz: true });
+    if (etkinMi()) await esitle({ elle: true, parolaDegisimi: { eski } });
     return yanit();
   }
 
   async function parolaSil() {
+    const { parola: eski } = await parolaOku(); // okunamazsa undefined: kanıt yok, üzerine yazılmaz
     try {
       await parolaDeposu.sil();
     } catch {
@@ -723,7 +787,7 @@ function esitlemeYoneticisiOlustur({
     }
     sifreleyici.temizle();
     gunlugeYaz('Klasör eşitleme: parola kaldırıldı.');
-    if (etkinMi()) await esitle({ elle: true, zorlaYaz: true }); // dosya parolasız yeniden yazılır
+    if (etkinMi()) await esitle({ elle: true, parolaDegisimi: { eski } }); // dosya eski parolayla çözülüyorsa parolasız yeniden yazılır
     return yanit();
   }
 

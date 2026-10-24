@@ -133,6 +133,12 @@ function hazirEtiketAl(hazir, etiketAl) {
   return typeof e === 'string' && e ? e : hazir.etiket;
 }
 
+/** Kaydı olmayan YENİ favorinin hazır liste etiketi (hazır listede değilse undefined); etiketAl ile arayüz dilinde, yoksa Türkçe. */
+function yeniHazirEtiket(kimlik, etiketAl) {
+  const hazir = HAZIR_HARITA.get(kimlik);
+  return hazir ? hazirEtiketAl(hazir, etiketAl) : undefined;
+}
+
 function etiketDuzelt(kimlik, etiket) {
   if (typeof etiket !== 'string') return null;
   const temiz = kisalt(etiket, ETIKET_SINIRI);
@@ -239,11 +245,11 @@ function favorileriDuzelt(liste) {
  * yükte olmayan alan MEVCUT kayıttan korunur. kisayol: '' = temizle; etiket (karo adı, k-06): '' = temizle (HA'daki ad görünür).
  * Yeni favoride etiket hazır listeden gelir.
  */
-function ekAlanlariBirlestir(kimlik, oge, kayit) {
+function ekAlanlariBirlestir(kimlik, oge, kayit, etiketAl) {
   const gelen = oge && typeof oge === 'object' ? oge : {};
   return {
     onay: typeof gelen.onay === 'boolean' ? gelen.onay : kayit?.onay,
-    etiket: typeof gelen.etiket === 'string' ? gelen.etiket : kayit ? kayit.etiket : hazirEtiket(kimlik) ?? undefined,
+    etiket: typeof gelen.etiket === 'string' ? gelen.etiket : kayit ? kayit.etiket : yeniHazirEtiket(kimlik, etiketAl),
     kisayol: typeof gelen.kisayol === 'string' ? gelen.kisayol : kayit?.kisayol,
     parlaklik: typeof gelen.parlaklik === 'boolean' ? gelen.parlaklik : kayit?.parlaklik,
     // 1.4.0 (o-31, o-16): '' = temizle / varsayılan; yükte olmayan alan kayıttan korunur.
@@ -274,14 +280,15 @@ function ekAlanlariBirlestir(kimlik, oge, kayit) {
  *  - Karo adı (etiket, k-06) kapı süzgecinden (adGuvenliMi) geçmelidir; geçmeyen ad `etiketHatalari` ile bildirilir, önceki ad korunur.
  *  - Karo görünümü (simge, renk, boyut; o-31): geçersiz ya da yasak değer `gorunumHatalari` ile bildirilir ve önceki değer korunur.
  *  - Sıra: yükteki sıra aynen yeni listenin sırasıdır (k-05); tepsi menüsü ve panel bu sırayı kullanır.
- * @param {{ mevcut: object[], secilen: unknown[], guvenliListe: Map<string,string>, tumKimlikler: Set<string> }} girdi
- *   secilen: kimlik metni ya da { entity_id, onay?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi? }; guvenliListe: kimlik -> HA'daki güncel ad
+ * @param {{ mevcut: object[], secilen: unknown[], guvenliListe: Map<string,string>, tumKimlikler: Set<string>, etiketAl?: (kimlik: string, varsayilan: string) => string }} girdi
+ *   secilen: kimlik metni ya da { entity_id, onay?, kisayol?, parlaklik?, simge?, renk?, boyut?, tepsi? }; guvenliListe: kimlik -> HA'daki güncel ad;
+ *   etiketAl: hazır listedeki YENİ favorinin etiketi (ana süreç o anki arayüz dilindeki adı verir; verilmezse Türkçe)
  * @returns {{ yeni: object[], eksik: string[], engelli: {entity_id:string, ad:string}[], kisayolHatalari: {entity_id:string, neden:string}[],
  *   etiketHatalari: {entity_id:string, neden:string}[], gorunumHatalari: {entity_id:string, alan:'simge'|'renk'|'boyut'}[],
  *   eylemHatalari?: {entity_id:string, neden:string}[] }}
  *   kisayolHatalari.neden: 'gecersiz' | 'sinif' | 'sinir'; etiketHatalari.neden: 'guvenlik'
  */
-function favorileriBirlestir({ mevcut, secilen, guvenliListe, tumKimlikler }) {
+function favorileriBirlestir({ mevcut, secilen, guvenliListe, tumKimlikler, etiketAl = null }) {
   const yeni = [];
   const eksik = [];
   const engelli = [];
@@ -294,13 +301,13 @@ function favorileriBirlestir({ mevcut, secilen, guvenliListe, tumKimlikler }) {
   let kisayollu = 0;
 
   function ekle(kimlik, ad, oge, kayit) {
-    const ek = ekAlanlariBirlestir(kimlik, oge, kayit);
+    const ek = ekAlanlariBirlestir(kimlik, oge, kayit, etiketAl);
     let f = favoriOlustur(kimlik, ad, ek);
     const istenenAd = typeof oge?.etiket === 'string' ? oge.etiket.trim() : '';
     if (istenenAd !== '' && f.etiket === undefined) {
       // İstenen karo adı süzgeçten geçmedi (ör. "Kapı ışığı"): reddedilir ve bildirilir; önceki ad korunur, sessizce silinmez.
       etiketHatalari.push({ entity_id: kimlik, neden: 'guvenlik' });
-      f = favoriOlustur(kimlik, ad, { ...ek, etiket: kayit ? kayit.etiket : hazirEtiket(kimlik) ?? undefined });
+      f = favoriOlustur(kimlik, ad, { ...ek, etiket: kayit ? kayit.etiket : yeniHazirEtiket(kimlik, etiketAl) });
     }
     // Görünüm alanları (o-31): istenen değer geçersizse bildirilir ve önceki değer korunur.
     const gorunumDuzeltmesi = {};
@@ -351,8 +358,9 @@ function favorileriBirlestir({ mevcut, secilen, guvenliListe, tumKimlikler }) {
 }
 
 /**
- * Hazır listedeki favorilerin eksik etiketini ve LED şeridin parlaklık kontrolünü tamamlar (şema göçü v4; idempotent).
- * Kullanıcının açıkça yazdığı değerler (parlaklik:false, kendi etiketi) korunur.
+ * Hazır listedeki favorilerin eksik etiketini ve LED şeridin parlaklık kontrolünü tamamlar (şema göçü v4; idempotent). YALNIZ tek seferlik
+ * göçte çağrılır (ayar-sema.js, oncekiSurum < 4): favoriOlustur boş etiketi ve parlaklik:false'ı kayda yazmadığı için burada "kullanıcı
+ * kapattı" ile "hiç ayarlanmadı" ayırt edilemez; bu yüzden hazirListeUygula çağırmaz. Kullanıcının kendi etiketi (dolu) korunur.
  */
 function hazirEtiketleriniTamamla(favoriler) {
   return favoriler.map((f) => {
@@ -380,7 +388,7 @@ function hazirEtiketleriniTamamla(favoriler) {
  * @returns {{ favoriler: object[], eklenenler: string[], atlananlar: {entity_id:string, neden:'yok'|'guvenlik'|'sinir'}[] }}
  */
 function hazirListeUygula(favoriler, varliklar, { yalnizca = null, etiketAl = null } = {}) {
-  const sonuc = hazirEtiketleriniTamamla(Array.isArray(favoriler) ? favoriler : []);
+  const sonuc = Array.isArray(favoriler) ? [...favoriler] : []; // mevcut favorilere dokunulmaz: kullanıcının boşalttığı etiket / kapattığı parlaklık geri gelmez
   const var_ = new Map((Array.isArray(varliklar) ? varliklar : []).filter((v) => v && typeof v.entity_id === 'string').map((v) => [v.entity_id, v]));
   const mevcutlar = new Set(sonuc.map((f) => f.entity_id));
   const eklenenler = [];

@@ -216,6 +216,20 @@ function aktaricKur({ klasor, ayarlar = ayarlarKur(), diyalog = {}, uygulanan = 
   return { aktarici, uygulanan, gunlukler };
 }
 
+test('dışa aktar: önerilen dosya adındaki tarih UTC değil yerel gündür (gece yarısından sonra önceki gün yazılmaz)', async () => {
+  const { klasor, temizle } = gecici();
+  try {
+    for (const [an, beklenen] of [[new Date(2026, 9, 24, 1, 30), '2026-10-24'], [new Date(2026, 9, 24, 23, 45), '2026-10-24'], [new Date(2026, 0, 5, 0, 5), '2026-01-05']]) {
+      const secenekler = [];
+      const { aktarici } = aktaricKur({ klasor, simdi: () => an, diyalog: { kaydet: (s) => (secenekler.push(s), { canceled: true }) } });
+      await aktarici.disaAktar(null);
+      assert.match(secenekler[0].defaultPath, new RegExp(`ev-paneli-ayarlar-${beklenen}\.json$`));
+    }
+  } finally {
+    temizle();
+  }
+});
+
 test('dışa aktar: diyalogdan seçilen dosyaya yazar (.json eklenir), yalnız dosya adı döner; iptal ve hata güvenli', async () => {
   const { klasor, temizle } = gecici();
   try {

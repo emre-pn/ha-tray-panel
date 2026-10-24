@@ -222,8 +222,14 @@ function duzenYoneticisiOlustur({
     const onceki = anlik();
     a.favoriler = onayiDuzelt(sonuc.favoriler);
     a.sayfalar = sonuc.sayfalar;
+    // Aynı favoriye bağlı masaüstü karosu ve tepsi orta tık eylemi de yeni kimliğe taşınır (çalışma anında yalnız favori kimlikler kabul
+    // edilir: eski kimlikte kalsalar karo masaüstünden kaybolur, orta tık boşa düşerdi). Tetik izinleri (tetikProtokolIzinleri) taşınmaz.
+    const karolar = Array.isArray(a.masaustuKarolari) && a.masaustuKarolari.includes(eski) ? [...new Set(a.masaustuKarolari.map((k) => (k === eski ? yeni : k)))] : null;
+    if (karolar) a.masaustuKarolari = karolar;
+    if (a.tepsiOrtaTik === eski) a.tepsiOrtaTik = yeni;
     degisimiIsle(onceki, 'onar');
     const yazildi = yaz();
+    if (karolar) masaustuKaydet(karolar); // karo pencereleri yeni kimlikle eşitlenir (liste zaten ayarda; geri dönüş değeri yaz() ile belirlenir)
     degisti({ ayarlardan: true });
     if (!yazildi) return { ok: false, neden: 'yazilamadi', hata: t('bildirim.ayarYazilamadi') };
     return { ok: true, favoriSayisi: a.favoriler.length };

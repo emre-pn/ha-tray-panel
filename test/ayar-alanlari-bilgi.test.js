@@ -189,7 +189,13 @@ test('dışa aktarma ve Ayarlar özeti: bilgi alanları aktarılır ve özete gi
   }
   assert.equal(ozet.ustKart1, 'saat');
   assert.deepEqual(ozet.sensorSeridi, ['sensor.a']);
-  assert.ok(!/anahtar|parola|token|webhook/i.test(JSON.stringify(BILGI_ALANLARI)), 'bilgi alanları sır içermez');
+  // Sır bekçisi GERÇEK tablodan beslenir (testin kendi ad listesinden değil): yeni bir alan eklenirse o da denetlenir
+  const SIR_DESENI = /anahtar|parola|token|webhook/i;
+  const sirAdlari = (adlar) => adlar.filter((a) => SIR_DESENI.test(a));
+  assert.deepEqual(sirAdlari(A.AYAR_ALANLARI.map((a) => a.ad)), [], 'alan tablosunda sır taşıyan ad yok');
+  assert.deepEqual(sirAdlari(aktarilan), [], 'dışa aktarılan alanlarda sır taşıyan ad yok');
+  assert.deepEqual(sirAdlari(Object.keys(A.ekAyarOzeti({}))), [], 'Ayarlar özetinde sır taşıyan ad yok');
+  assert.deepEqual(sirAdlari(['disWebhookKimligi', 'erisimAnahtari']), ['disWebhookKimligi', 'erisimAnahtari'], 'desen sır adlarını yakalar (bekçi etkisiz değil)');
 });
 
 test('ayar uygulama: yalnız değişen bilgi alanları bildirilir', () => {

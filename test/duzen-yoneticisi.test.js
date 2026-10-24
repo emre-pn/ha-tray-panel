@@ -287,6 +287,37 @@ test('onar: reddedilen durumlar — cihaz listesi yok, eski varlık HA\'da var, 
   for (const n of ['cihazlar', 'gecersiz', 'bulunuyor', 'guvenlik', 'alan', 'kayitsiz', 'zaten-var', 'noktaYok']) assert.notEqual(TR(`duzen.hata.${n}`), `duzen.hata.${n}`, `duzen.hata.${n} Türkçe metni var`);
 });
 
+test('onar: aynı favoriye bağlı masaüstü karosu ve tepsi orta tık eylemi de yeni kimliğe taşınır; ilgisiz değerler ve tetik izinleri değişmez, karo pencereleri tazelenir', () => {
+  const cihazlar = { guvenli: new Map([['light.salon_yeni', 'Salon (yeni)']]), tumKimlikler: new Set(['light.salon_yeni']) };
+  const { y, ayarlar, olaylar } = kur({ cihazlar, masaustu: [], favoriler: [fav('light.salon'), fav('light.baska')] });
+  ayarlar.masaustuKarolari = ['light.salon', 'light.baska'];
+  ayarlar.tepsiOrtaTik = 'light.salon';
+  ayarlar.tetikProtokolIzinleri = { 'light.salon': 'her-zaman' };
+  assert.equal(y.onar('light.salon', 'light.salon_yeni').ok, true);
+  assert.deepEqual(ayarlar.masaustuKarolari, ['light.salon_yeni', 'light.baska']);
+  assert.equal(ayarlar.tepsiOrtaTik, 'light.salon_yeni');
+  assert.deepEqual(ayarlar.tetikProtokolIzinleri, { 'light.salon': 'her-zaman' }, 'tetik izni yeni kimliğe taşınmaz');
+  assert.deepEqual(olaylar.masaustuYazimlari, [['light.salon_yeni', 'light.baska']], 'masaüstü karoları eşitlenir');
+
+  // ilgisiz değerler aynen kalır
+  const baska = kur({ cihazlar, masaustu: [], favoriler: [fav('light.salon'), fav('light.baska')] });
+  baska.ayarlar.masaustuKarolari = ['light.baska'];
+  baska.ayarlar.tepsiOrtaTik = 'light.baska';
+  assert.equal(baska.y.onar('light.salon', 'light.salon_yeni').ok, true);
+  assert.deepEqual(baska.ayarlar.masaustuKarolari, ['light.baska']);
+  assert.equal(baska.ayarlar.tepsiOrtaTik, 'light.baska');
+  assert.deepEqual(baska.olaylar.masaustuYazimlari, []);
+
+  // reddedilen onarımda ikisi de aynen kalır
+  const red = kur({ cihazlar: { guvenli: new Map(), tumKimlikler: new Set() }, masaustu: [], favoriler: [fav('light.salon')] });
+  red.ayarlar.masaustuKarolari = ['light.salon'];
+  red.ayarlar.tepsiOrtaTik = 'light.salon';
+  assert.equal(red.y.onar('light.salon', 'light.salon_yeni').ok, false);
+  assert.deepEqual(red.ayarlar.masaustuKarolari, ['light.salon']);
+  assert.equal(red.ayarlar.tepsiOrtaTik, 'light.salon');
+  assert.deepEqual(red.olaylar.masaustuYazimlari, []);
+});
+
 // --- masaüstüne sabitle (1.4.0) -------------------------------------------------------------------------------------------
 
 test('Masaüstüne sabitle: menüde tepsiden sonra görünür; seçilince yalnız sabitli liste yazılır (favori / sayfa / geçmiş değişmez), model tazelenir', async () => {

@@ -83,3 +83,19 @@ test('hazirListeUygula: yalnizca verilirse yalnız o kimlikler denenir (kullanı
   assert.deepEqual(bos.eklenenler, []);
   assert.deepEqual(bos.atlananlar, []);
 });
+
+test('hazirListeUygula: mevcut hazır favorinin boşaltılmış etiketi ve kapatılmış parlaklığı geri gelmez; eksik hazır karolar yine eklenir', () => {
+  const { HAZIR_LISTE, hazirListeUygula, hazirEtiketleriniTamamla } = require('../src/lib/favoriler');
+  const hepsi = HAZIR_LISTE.map((h) => ({ entity_id: h.kimlik, attributes: { friendly_name: h.etiket } }));
+  const led = 'light.masa_led_serit';
+  const kullanici = [{ entity_id: led, ad: 'LED şerit' }]; // etiket silinmiş, parlaklık kapatılmış
+  const sonuc = hazirListeUygula(kullanici, hepsi);
+  const f = sonuc.favoriler.find((x) => x.entity_id === led);
+  assert.deepEqual(f, { entity_id: led, ad: 'LED şerit' }, 'etiket ve parlaklık alanları eklenmedi');
+  assert.ok(sonuc.eklenenler.length > 0 && !sonuc.eklenenler.includes(led), 'eksik hazır karolar yine eklendi');
+  assert.deepEqual(kullanici, [{ entity_id: led, ad: 'LED şerit' }], 'girdi dizisi değiştirilmedi');
+  // tek seferlik şema göçü (ayar-sema v4) işlevi hâlâ çalışır
+  const goc = hazirEtiketleriniTamamla(kullanici)[0];
+  assert.equal(goc.parlaklik, true);
+  assert.equal(goc.etiket, 'LED şerit');
+});

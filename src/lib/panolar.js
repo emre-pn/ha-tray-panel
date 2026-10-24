@@ -17,7 +17,8 @@ const AD_SINIRI = 30;
  */
 function panoDuzelt(oge) {
   if (!oge || typeof oge !== 'object' || Array.isArray(oge)) return { pano: null, kisayolAtildi: false };
-  const ad = typeof oge.ad === 'string' ? oge.ad.replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim().slice(0, AD_SINIRI) : '';
+  // Sınır UTF-16 birimine değil kod noktasına göre uygulanır: sınırdaki emoji ikiye bölünüp eşleşmemiş vekil karakter bırakmasın.
+  const ad = typeof oge.ad === 'string' ? Array.from(oge.ad.replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim()).slice(0, AD_SINIRI).join('').trim() : '';
   const yol = typeof oge.yol === 'string' ? oge.yol.trim() : '';
   if (ad === '' || !yolGecerliMi(yol)) return { pano: null, kisayolAtildi: false };
   const pano = { ad, yol };

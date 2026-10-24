@@ -215,7 +215,8 @@ function ayarAktariciOlustur({ dialog, fs = require('node:fs'), ayarDizini, vars
     async disaAktar(pencere) {
       const aktarim = ayarlariDisaAktar(ayarlarAl(), { simdi: simdi(), t });
       if (!aktarim.ok) return hata(aktarim.hata);
-      const tarih = simdi().toISOString().slice(0, 10);
+      const an = simdi();
+      const tarih = `${an.getFullYear()}-${String(an.getMonth() + 1).padStart(2, '0')}-${String(an.getDate()).padStart(2, '0')}`; // yerel gün (UTC değil)
       let secim;
       try {
         secim = await dialog.showSaveDialog(pencere, {

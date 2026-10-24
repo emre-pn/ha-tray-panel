@@ -126,6 +126,17 @@ test('v4: varsayılan ayar dosyası güncel şemayı ve boş favori listesini ta
   assert.deepEqual(VARSAYILAN.panolar, []);
 });
 
+test('panoDuzelt: ad kod noktasına göre kesilir; sınırdaki emoji bölünmez, eşleşmemiş vekil karakter kalmaz', () => {
+  const sinirda = panoDuzelt({ ad: `${'a'.repeat(29)}😀b`, yol: '/lovelace/a' }).pano.ad;
+  assert.equal(sinirda.isWellFormed(), true);
+  assert.ok(Array.from(sinirda).length <= 30);
+  assert.equal(sinirda, `${'a'.repeat(29)}😀`, 'emoji bütün kaldı');
+  const tamSinir = panoDuzelt({ ad: '😀'.repeat(40), yol: '/lovelace/a' }).pano.ad;
+  assert.equal(Array.from(tamSinir).length, 30);
+  assert.equal(tamSinir.isWellFormed(), true);
+  assert.equal(panoDuzelt({ ad: `${'a'.repeat(29)} b`, yol: '/lovelace/a' }).pano.ad, 'a'.repeat(29), 'kesimde kalan sondaki boşluk atılır');
+});
+
 test('panoDuzelt/panolariDuzelt: ad kırpılır, denetim karakteri atılır, geçersiz kısayol atılır ve sayılır, 6 sınırı', () => {
   assert.deepEqual(panoDuzelt({ ad: '  Salon\u0000  ', yol: '/lovelace/salon' }).pano, { ad: 'Salon', yol: '/lovelace/salon' });
   assert.equal(panoDuzelt({ ad: 'x'.repeat(100), yol: '/lovelace/a' }).pano.ad.length, 30);

@@ -426,6 +426,111 @@ test(
 );
 
 test(
+  'parola koy/sil: dosya kayıtlı parolayla çözülmüyorsa (başka bilgisayarın parolası) üzerine yazılmaz; kayıtlı parola yerinde kalır, diğer bilgisayarın verisi korunur',
+  ortam(async (klasor) => {
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik', favoriler: [SALON] } });
+    await a.esitle();
+    assert.equal((await a.yonetici.parolaKoy('ortak-parola-123')).ok, true);
+    const metin = a.dosyaOku();
+
+    // (a) parolası olmayan B başka bir parola koyar: dosya A'nın parolasıyla şifreli, B'nin hiçbir parolası eskiyi açmaz
+    const b = bilgisayarKur({ klasor, aygit: AYGIT_B, ayarEk: { temaZorla: 'koyu' } });
+    const yanit = await b.yonetici.parolaKoy('yanlis-parola-9');
+    assert.equal(yanit.esitleme.asama, 'hata');
+    assert.equal(yanit.esitleme.neden, 'parola-yanlis');
+    assert.equal(b.dosyaOku(), metin, 'dosya ezilmedi');
+    assert.equal(b.parolaDeposu.oku(), 'yanlis-parola-9', 'kayıtlı parola yerinde kalır');
+    assert.equal(b.ayarlar.temaZorla, 'koyu');
+
+    // (d) kayıtlı parola zaten yanlışken parolaSil de dosyayı ezmez
+    const sil = await b.yonetici.parolaSil();
+    assert.equal(sil.esitleme.asama, 'hata');
+    assert.equal(sil.esitleme.neden, 'parola-gerekli');
+    assert.equal(b.dosyaOku(), metin, 'parolaSil dosyayı ezmedi');
+
+    // (b) doğru parolayı kaydedince A'nın verisi B'ye gelir, B'nin boş ayarları A'ya uygulanmaz
+    const dogru = await b.yonetici.parolaKoy('ortak-parola-123');
+    assert.equal(dogru.ok, true);
+    assert.equal(b.ayarlar.temaZorla, 'acik');
+    assert.deepEqual(b.ayarlar.favoriler.map((f) => f.entity_id), ['light.salon']);
+    assert.equal(a.ayarlar.temaZorla, 'acik');
+    const belge = dosyaBelgesi(b);
+    assert.equal(belge.sifreli, true);
+  }),
+);
+
+test(
+  'parola değiştirme meşru kalır: dosya eski parolayla çözülüyorsa yeni parolayla yeniden yazılır; parola kaldırılınca düz yazılır',
+  ortam(async (klasor) => {
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik', favoriler: [SALON] } });
+    await a.esitle();
+    assert.equal((await a.yonetici.parolaKoy('parola-bir-123')).ok, true);
+    // (c) parola-1 -> parola-2
+    const degis = await a.yonetici.parolaKoy('parola-iki-456');
+    assert.equal(degis.ok, true);
+    assert.equal(degis.esitleme.asama, 'tamam');
+    const c = bilgisayarKur({ klasor, aygit: AYGIT_B });
+    await c.parolaDeposu.yaz('parola-iki-456');
+    assert.equal((await c.esitle()).ok, true, 'dosya yeni parolayla çözülür');
+    assert.equal(c.ayarlar.temaZorla, 'acik');
+    const eski = bilgisayarKur({ klasor, aygit: AYGIT_B });
+    await eski.parolaDeposu.yaz('parola-bir-123');
+    assert.equal((await eski.esitle()).neden, 'parola-yanlis', 'eski parola artık açmaz');
+    // (d) kayıtlı parolayla çözülen dosya parolasız yazılır
+    const kaldir = await a.yonetici.parolaSil();
+    assert.equal(kaldir.esitleme.asama, 'tamam');
+    assert.equal(dosyaBelgesi(a).sifreli, undefined);
+    assert.equal(dosyaBelgesi(a).bolumler.gorunum.ayarlar.temaZorla, 'acik');
+  }),
+);
+
+test(
+  'parola değişimi eski parolayı paylaşan bilgisayarın henüz alınmamış bölümünü ezmez: dosya eski parolayla okunan içerikle birleşip yeni parolayla yazılır',
+  ortam(async (klasor) => {
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik', favoriler: [SALON] } });
+    await a.esitle();
+    assert.equal((await a.yonetici.parolaKoy('parola-bir-123')).ok, true);
+    // B aynı parolayı paylaşır, A'nın verisini alır, sonra temayı değiştirip eşitler
+    const b = bilgisayarKur({ klasor, aygit: AYGIT_B });
+    await b.parolaDeposu.yaz('parola-bir-123');
+    assert.equal((await b.esitle()).ok, true);
+    b.ilerle(60_000);
+    b.ayarlar.temaZorla = 'koyu';
+    assert.equal((await b.esitle()).ok, true);
+    // A, B'nin değişikliğini almadan parolayı değiştirir
+    const degis = await a.yonetici.parolaKoy('parola-iki-456');
+    assert.equal(degis.ok, true);
+    assert.equal(degis.esitleme.asama, 'tamam');
+    assert.equal(a.ayarlar.temaZorla, 'koyu', "B'nin yeni bölümü A'ya uygulandı");
+    const c = bilgisayarKur({ klasor, aygit: 'cccccccccccccccc' });
+    await c.parolaDeposu.yaz('parola-iki-456');
+    assert.equal((await c.esitle()).ok, true, 'dosya yeni parolayla çözülür');
+    assert.equal(c.ayarlar.temaZorla, 'koyu', "B'nin yeni bölümü dosyada kaldı");
+    assert.deepEqual(c.ayarlar.favoriler.map((f) => f.entity_id), ['light.salon']);
+  }),
+);
+
+test(
+  'ilk parola konurken düz dosyadaki başka bilgisayarın henüz alınmamış bölümü atılmaz; dosya şifreli yeniden yazılır',
+  ortam(async (klasor) => {
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik' } });
+    await a.esitle();
+    const b = bilgisayarKur({ klasor, aygit: AYGIT_B });
+    assert.equal((await b.esitle()).ok, true);
+    b.ilerle(60_000);
+    b.ayarlar.temaZorla = 'koyu';
+    assert.equal((await b.esitle()).ok, true);
+    assert.equal((await a.yonetici.parolaKoy('parola-bir-123')).ok, true);
+    assert.equal(a.ayarlar.temaZorla, 'koyu');
+    assert.equal(dosyaBelgesi(a).sifreli, true);
+    const c = bilgisayarKur({ klasor, aygit: 'cccccccccccccccc' });
+    await c.parolaDeposu.yaz('parola-bir-123');
+    assert.equal((await c.esitle()).ok, true);
+    assert.equal(c.ayarlar.temaZorla, 'koyu');
+  }),
+);
+
+test(
   'parola işlemleri: geçersiz/kısa parola ve şifreleme yokluğu reddedilir; parola hiçbir yanıtta, günlükte, ayar nesnesinde ya da dosyada geçmez',
   ortam(async (klasor) => {
     const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik' } });
@@ -534,6 +639,52 @@ test(
     assert.equal(a.izle.acik().length, 0);
     assert.equal(a.zaman.aralikSayisi(), 0);
     assert.equal(a.zaman.zamanlayiciSayisi(), 0);
+  }),
+);
+
+test(
+  'ayar dosyası yazılamazsa (ayarlariYaz false) klasör seçimi ve açma/kapama başarı döndürmez: bellekteki alanlar eski haline döner, izleme ve zamanlayıcıya dokunulmaz',
+  ortam(async (klasor) => {
+    const eski = path.join(klasor, 'eski');
+    const yeni = path.join(klasor, 'yeni');
+    fs.mkdirSync(eski);
+    fs.mkdirSync(yeni);
+    const a = bilgisayarKur({ klasor: eski, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik' } });
+    await a.esitle();
+    a.yonetici.baslat();
+    const durumOnce = JSON.stringify(a.ayarlar.esitlemeDurumu);
+    const izleyiciSayisi = a.izle.acik().length;
+    assert.equal(izleyiciSayisi, 1);
+    a.durum.ayarYazimiBasarili = false;
+
+    // klasör seçimi
+    a.durum.diyalog = yeni;
+    assert.deepEqual(await a.yonetici.klasorSec(), { ok: false, neden: 'ayar-yazilamadi' });
+    assert.equal(a.ayarlar.esitlemeKlasoru, eski);
+    assert.equal(a.ayarlar.klasorEsitleme, true);
+    assert.equal(JSON.stringify(a.ayarlar.esitlemeDurumu), durumOnce);
+    assert.equal(a.izle.acik().length, izleyiciSayisi, 'eski klasörün izleyicisi kapanmadı');
+
+    // kapatma
+    assert.deepEqual(await a.yonetici.ayarla({ acik: false }), { ok: false, neden: 'ayar-yazilamadi' });
+    assert.equal(a.ayarlar.klasorEsitleme, true);
+    assert.equal(a.izle.acik().length, izleyiciSayisi);
+    assert.equal(a.zaman.aralikSayisi(), 1);
+
+    // açma + bölüm seçimi
+    a.ayarlar.klasorEsitleme = false;
+    a.yonetici.kapat();
+    const bolumOnce = a.ayarlar.esitlemeBolumleri;
+    assert.deepEqual(await a.yonetici.ayarla({ acik: true, bolumler: ['gorunum'] }), { ok: false, neden: 'ayar-yazilamadi' });
+    assert.equal(a.ayarlar.klasorEsitleme, false, 'eşitleme açık görünmez');
+    assert.deepEqual(a.ayarlar.esitlemeBolumleri, bolumOnce);
+    assert.equal(a.izle.acik().length, 0);
+    assert.equal((await a.yonetici.durum()).acik, false);
+
+    // yazım düzelince aynı istek başarılı olur
+    a.durum.ayarYazimiBasarili = true;
+    assert.equal((await a.yonetici.ayarla({ acik: true })).ok, true);
+    assert.equal(a.ayarlar.klasorEsitleme, true);
   }),
 );
 
@@ -688,6 +839,57 @@ test(
     assert.ok(sonuclar.every((s) => s.ok));
     assert.equal(a.dosyaVarMi(), true);
     assert.deepEqual(fs.readdirSync(klasor), [DOSYA_ADI]);
+  }),
+);
+
+test(
+  'tur sınırına takılan katılımın "elle" izni sonraki otomatik tura taşınmaz: bozuk ana dosyanın üzerine yazılmaz; yerine olağan bir tur planlanır',
+  ortam(async (klasor) => {
+    const fsp = require('node:fs/promises');
+    let katil = false;
+    let a = null;
+    // Her turda klasör okunurken bir "Şimdi eşitle" isteği çalışan tura katılır: üç tur dolunca son katılım koşmadan kalır
+    const sarmal = { ...fsp, readdir: async (...args) => {
+      if (katil) a.yonetici.esitle({ elle: true });
+      return fsp.readdir(...args);
+    } };
+    a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik' }, fsOzel: sarmal });
+    await a.esitle();
+    katil = true;
+    assert.equal((await a.esitle()).ok, true);
+    katil = false;
+    assert.equal(a.zaman.zamanlayiciSayisi(), 1, 'koşmadan kalan katılım için olağan tur planlandı');
+    fs.writeFileSync(a.dosyaYolu(), '{"bicim": "ev-paneli-ayar', 'utf8'); // yarım inmiş dosya
+    const otomatik = await a.esitle();
+    assert.equal(otomatik.ok, false);
+    assert.equal(otomatik.neden, 'bozuk');
+    assert.equal(a.dosyaOku(), '{"bicim": "ev-paneli-ayar', 'bozuk dosyanın üzerine yazılmadı');
+    await a.zaman.tetikle(); // planlanan olağan tur da elle izni taşımaz
+    assert.equal(a.dosyaOku(), '{"bicim": "ev-paneli-ayar');
+  }),
+);
+
+test(
+  'çalışan (alt aralık beklemesindeki) tura katılan parola değişimi isteği seçeneklerini kaybetmez: dosya yeni parolayla yazılır, "parola yanlış" görünmez',
+  ortam(async (klasor) => {
+    const a = bilgisayarKur({ klasor, aygit: AYGIT_A, ayarEk: { temaZorla: 'acik', favoriler: [SALON] } });
+    await a.esitle();
+    assert.equal((await a.yonetici.parolaKoy('parola-bir-123')).ok, true);
+    // arka plan turu başlar ama son çalışmadan beri alt aralık geçmediği için sahte zamanlayıcıda bekler
+    const arkaPlan = a.yonetici.esitle({});
+    await new Promise((coz) => setImmediate(coz));
+    const degisim = a.yonetici.parolaKoy('parola-iki-456'); // çalışan tura katılır
+    await new Promise((coz) => setImmediate(coz));
+    await a.zaman.tetikle();
+    await arkaPlan;
+    const yanit = await degisim;
+    assert.equal(yanit.ok, true);
+    assert.equal(yanit.esitleme.asama, 'tamam');
+    assert.equal(yanit.esitleme.neden, null);
+    const b = bilgisayarKur({ klasor, aygit: AYGIT_B });
+    await b.parolaDeposu.yaz('parola-iki-456');
+    assert.equal((await b.esitle()).ok, true, 'dosya yeni parolayla çözülür');
+    assert.equal(b.ayarlar.temaZorla, 'acik');
   }),
 );
 

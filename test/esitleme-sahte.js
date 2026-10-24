@@ -118,11 +118,12 @@ function bilgisayarKur({ klasor, aygit = null, ayarEk = {}, acik = true, saat = 
     ...(aygit ? { esitlemeDurumu: { aygit } } : {}),
     ...ayarEk,
   });
-  // iceAktarSirasinda(ayarlar): içe aktarma sürerken (ör. kullanıcının Ayarlar'da yaptığı) başka bir değişikliği taklit eder
-  const durum = { ayarYazimi: 0, iceAktar: [], yedek: 0, gunluk: [], degisti: 0, uygulandi: [], iceAktarHatasi: false, iceAktarSirasinda: null, diyalog: secilecekKlasor, hata: null };
+  // ayarYazimiBasarili: false ise ayarlariYaz() false döner. iceAktarSirasinda(ayarlar): içe aktarma sürerken (ör. kullanıcının Ayarlar'da yaptığı) başka bir değişikliği taklit eder
+  const durum = { ayarYazimi: 0, iceAktar: [], yedek: 0, gunluk: [], degisti: 0, uygulandi: [], iceAktarHatasi: false, iceAktarSirasinda: null, diyalog: secilecekKlasor, hata: null, ayarYazimiBasarili: true };
   const zaman = sahteZaman(saat);
   const izle = sahteIzleyici();
   const yazildi = () => {
+    if (!durum.ayarYazimiBasarili) return false; // ayarlar.json yazılamadı (yazım engelli ya da disk hatası): main.js ayarlariYaz() false döner
     durum.ayarYazimi += 1;
     if (yerelDegistiBagli) yonetici.yerelDegisti();
     return true;
