@@ -48,7 +48,7 @@ test('sayfalariDuzelt: varlıklar — yinelenen, geçersiz biçim, karo olamayan
 test('sayfa adı: kısaltılır; kapı kuralına takılan ad sayfayı düşürmez, adsız bırakır', () => {
   assert.equal(S.sayfaAdiDuzelt('Oturma Odası'), 'Oturma Odası');
   assert.equal(S.sayfaAdiDuzelt('x'.repeat(100)).length, 24);
-  for (const yasak of ['Kapı', 'Garaj kapısı', 'Alarm', 'Kilitler', 'Front Door', 'Bariyer', 'Kepenk', 'K a p ı'.replace(/ /g, '­')]) {
+  for (const yasak of ['Kapı', 'Garaj kapısı', 'Alarm', 'Kilitler', 'Front Door', 'Bariyer', 'Kepenk', 'K a p ı'.replace(/ /g, '\u00AD')]) {
     assert.equal(S.sayfaAdiDuzelt(yasak), '', `"${yasak}" sayfa adı olamaz`);
   }
   for (const kotu of [null, 5, undefined, {}, 'y'.repeat(500)]) assert.equal(S.sayfaAdiDuzelt(kotu), '');

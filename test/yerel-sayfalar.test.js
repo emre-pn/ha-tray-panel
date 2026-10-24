@@ -177,6 +177,63 @@ test('offline.js: ana süreçten gelen durum güncellemeleri (deneniyor / nesne)
   assert.match(s.oge('aciklama').textContent, /art arda çöktü/);
 });
 
+test('offline.js: uygulamanın "Hareketi azalt" ayarı (hareket=azalt) <html data-hareket> yazar; alan yoksa ya da başka değerse işaret kalkar', () => {
+  const sorgulu = offlineKur('?durum=cevrimdisi&hareket=azalt');
+  assert.equal(sorgulu.kok.dataset.hareket, 'azalt', 'sayfa yüklenirken sorgudan');
+  const yok = offlineKur('?durum=cevrimdisi');
+  assert.equal('hareket' in yok.kok.dataset, false, 'ayar kapalıyken işaret yok');
+  assert.equal('hareket' in offlineKur('?durum=cevrimdisi&hareket=baska').kok.dataset, false, 'bilinmeyen değer yok sayılır');
+  // yerinde güncelleme (ayar sayfa açıkken değişebilir)
+  yok.durumGonder({ durum: 'cevrimdisi', sn: 5, hata: '', hareket: 'azalt' });
+  assert.equal(yok.kok.dataset.hareket, 'azalt');
+  yok.durumGonder('deneniyor');
+  assert.equal(yok.kok.dataset.hareket, 'azalt', 'dize güncellemesi (deneniyor) işarete dokunmaz');
+  yok.durumGonder({ durum: 'baglaniyor' });
+  assert.equal('hareket' in yok.kok.dataset, false, 'yükte alan yoksa işaret kalkar');
+  sorgulu.durumGonder({ durum: 'cevrimdisi', sn: 5, hata: '', hareket: 'azalt' });
+  assert.equal(sorgulu.kok.dataset.hareket, 'azalt');
+});
+
+test('offline.js (ekran okuyucu): "Tekrar Dene" bağlanılıyor başlığını, ardından gelen hatayı #duyuru canlı bölgesine yazar; otomatik turlar ve aynı hata tekrar duyurulmaz', () => {
+  const html = oku('src/offline.html');
+  assert.match(html, /<div[^>]*\bid="duyuru"[^>]*\brole="status"[^>]*\baria-live="polite"/);
+  const s = offlineKur('?durum=cevrimdisi&hata=HTTP_502&sn=3');
+  const duyuru = () => s.oge('duyuru').textContent;
+  assert.equal(duyuru(), '', 'sayfa yüklenişi duyurulmaz');
+  // ana sürecin otomatik denemesi: bağlanılıyor + aynı hata yeniden (kullanıcı bir şey yapmadı)
+  s.durumGonder('deneniyor');
+  s.durumGonder({ durum: 'cevrimdisi', sn: 4, hata: 'HTTP_502' });
+  assert.equal(duyuru(), '', 'otomatik tur duyurulmaz');
+  // kullanıcı Tekrar Dene'ye basar
+  s.oge('btnDene').tikla();
+  assert.equal(duyuru(), 'Ev sunucusuna bağlanılıyor…');
+  s.durumGonder({ durum: 'cevrimdisi', sn: 4, hata: 'HTTP_502' });
+  assert.match(duyuru(), /^Ev sunucusuna bağlanılamadı\. .*Sunucu hatası \(502\)/);
+  // aynı hata otomatik turlarda yeniden gelir: bölge değişmez (sentinel ezilmez)
+  s.oge('duyuru').textContent = 'SENTINEL';
+  s.durumGonder('deneniyor');
+  s.durumGonder({ durum: 'cevrimdisi', sn: 8, hata: 'HTTP_502' });
+  assert.equal(duyuru(), 'SENTINEL', 'aynı hata ikinci kez duyurulmaz');
+  // farklı bir hata yeni bilgidir
+  s.durumGonder({ durum: 'cevrimdisi', sn: 8, hata: 'ERR_CONNECTION_REFUSED' });
+  assert.match(duyuru(), /^Ev sunucusuna bağlanılamadı\. /);
+  assert.notEqual(duyuru(), 'SENTINEL');
+});
+
+test('offline.js (ekran okuyucu): dil değişimi duyurulmaz; köprü olmasa da duyuru bölgesi kullanılır', () => {
+  const s = offlineKur('?durum=cevrimdisi&hata=HTTP_502&sn=3&dil=tr');
+  s.oge('btnDene').tikla();
+  s.oge('duyuru').textContent = 'SENTINEL';
+  s.durumGonder({ durum: 'cevrimdisi', sn: 4, hata: 'HTTP_502', dil: 'en' }); // dil değişti + ilk hata sonucu: yeni anahtar
+  assert.match(s.oge('duyuru').textContent, /^Could not connect to the home server\. /);
+  s.oge('duyuru').textContent = 'SENTINEL';
+  s.durumGonder({ durum: 'cevrimdisi', sn: 4, hata: 'HTTP_502', dil: 'de' }); // yalnız dil değişti
+  assert.equal(s.oge('duyuru').textContent, 'SENTINEL', 'aynı durum başka dilde yeniden duyurulmaz');
+  const koprusuz = offlineKur('?durum=cevrimdisi', { baglanti: false });
+  assert.doesNotThrow(() => koprusuz.oge('btnDene').tikla());
+  assert.equal(koprusuz.oge('duyuru').textContent, 'Ev sunucusuna bağlanılıyor…');
+});
+
 // --- kose-sayfa.js ----------------------------------------------------------------------
 
 function koseKur() {

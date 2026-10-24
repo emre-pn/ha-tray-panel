@@ -45,6 +45,20 @@
   const adresKutusu = document.getElementById('adresKutusu');
   const yerelAdresDeger = document.getElementById('yerelAdresDeger');
   const disAdresDeger = document.getElementById('disAdresDeger');
+  const duyuru = document.getElementById('duyuru');
+
+  // Ekran okuyucu duyurusu (canlı bölge #duyuru). Yalnız kullanıcının "Tekrar Dene"si ve ardından gelen sonuç duyurulur; ana sürecin otomatik
+  // deneme turları (2-4-8-15 sn) ve dil değişimi duyurulmaz, aksi halde her turda "bağlanılıyor" ve aynı hata yeniden okunurdu.
+  // sonDuyuruAnahtari: dile bağlı olmayan durum anahtarı; aynı anahtar ikinci kez yazılmaz.
+  let sonDuyuruAnahtari = '';
+  function duyur(anahtar, metin) {
+    if (!duyuru || anahtar === sonDuyuruAnahtari) return;
+    sonDuyuruAnahtari = anahtar;
+    duyuru.textContent = metin;
+  }
+  const cevrimdisiAnahtari = function () {
+    return 'cevrimdisi:' + hataKodu;
+  };
 
   function adresleriGoster() {
     if (yerel || dis) {
@@ -88,6 +102,15 @@
       return { aciklama: t('offline.hata.sertifika'), ham: kod };
     }
     return { aciklama: t('offline.hata.bilinmeyen', { kod: kod }), ham: '' };
+  }
+
+  // Uygulamanın "Hareketi azalt" ayarı (ana süreç sorguya/yüke 'hareket=azalt' yazar): sayfa animasyonları durur (CSS :root[data-hareket]).
+  // Sistem tercihi (prefers-reduced-motion) CSS'te ayrıca karşılanır. Başka değer ya da alanın yokluğu işareti kaldırır.
+  function hareketUygula(deger) {
+    const kokOge = document.documentElement;
+    if (!kokOge || !kokOge.dataset) return;
+    if (deger === 'azalt') kokOge.dataset.hareket = 'azalt';
+    else delete kokOge.dataset.hareket;
   }
 
   let zamanlayici = null;
@@ -148,12 +171,15 @@
     btnDene.disabled = true;
   }
 
-  function gosterCevrimdisi() {
+  /** @param {'duyur'|'kaydet'|undefined} duyuru 'duyur': görünümü ekran okuyucuya bildir (yerinde güncelleme); 'kaydet': yalnız son duyurulan olarak işaretle (sayfa yüklenişi) */
+  function gosterCevrimdisi(duyuruKipi) {
     gorunum = 'cevrimdisi';
     ikonKapsayici.classList.remove('baglaniyor');
     ikonHata.style.display = 'block';
     ikonYukleniyor.style.display = 'none';
     metinleriYaz();
+    if (duyuruKipi === 'duyur') duyur(cevrimdisiAnahtari(), baslik.textContent + '. ' + aciklama.textContent);
+    else if (duyuruKipi === 'kaydet') sonDuyuruAnahtari = cevrimdisiAnahtari();
     btnDene.disabled = false;
     butonaOdaklan();
     if (zamanlayici) clearInterval(zamanlayici);
@@ -183,16 +209,18 @@
   }
 
   Dil.sayfayiCevir(document, t); // sabit metinler ve <html lang>
+  hareketUygula(params.get('hareket'));
   adresleriGoster();
 
   if (durum === 'baglaniyor') {
     gosterBaglaniyor();
   } else {
-    gosterCevrimdisi();
+    gosterCevrimdisi('kaydet'); // sayfa yüklenişi: ekran okuyucu sayfayı zaten okur; yalnız tekrar duyurulmasın diye işaretlenir
   }
 
   btnDene.addEventListener('click', function () {
     gosterBaglaniyor();
+    duyur('baglaniyor', baslik.textContent);
     if (window.evPaneli && window.evPaneli.tekrarDene) window.evPaneli.tekrarDene();
   });
 
@@ -202,7 +230,8 @@
 
   // Ana süreç sayfayı yeniden yüklemeden günceller (titreme olmasın):
   //  'deneniyor'  -> bağlanılıyor görünümü
-  //  { durum: 'baglaniyor' | 'cevrimdisi', sn, hata, yerel, dis, dil } -> ilgili görünüm, yeni geri sayım (dil: etkin arayüz dili)
+  //  { durum: 'baglaniyor' | 'cevrimdisi', sn, hata, yerel, dis, dil, hareket } -> ilgili görünüm, yeni geri sayım (dil: etkin arayüz dili;
+  //  hareket: 'azalt' ise animasyonlar durur, alan yoksa işaret kalkar)
   if (window.evPaneli && window.evPaneli.onBaglantiDurum) {
     window.evPaneli.onBaglantiDurum(function (yuk) {
       if (yuk === 'deneniyor') {
@@ -210,6 +239,7 @@
         return;
       }
       if (!yuk || typeof yuk !== 'object') return;
+      hareketUygula(yuk.hareket);
       dilKur(yuk.dil);
       yerel = String(yuk.yerel !== undefined && yuk.yerel !== null ? yuk.yerel : yerel);
       dis = String(yuk.dis !== undefined && yuk.dis !== null ? yuk.dis : dis);
@@ -220,7 +250,7 @@
       }
       hataKodu = String(yuk.hata !== undefined && yuk.hata !== null ? yuk.hata : '');
       kalanSure = saniyeCoz(yuk.sn, 30);
-      gosterCevrimdisi();
+      gosterCevrimdisi('duyur');
     });
   }
 

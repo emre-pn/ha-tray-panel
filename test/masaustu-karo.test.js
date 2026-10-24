@@ -223,6 +223,17 @@ test('masaustuKaroModeli: etiket 40 karakterle kısılır; bozuk baglanti alanla
   assert.equal(masaustuKaroModeli({ ...karo, etiket: 5 }).etiket, '');
 });
 
+test('masaustuKaroModeli: etiket kod noktası sınırında kesilir; emoji (vekil çifti) ortadan bölünmez, yarım vekil kalmaz', () => {
+  const karo = karoOlustur(favori('switch.priz'), varlik('switch.priz', 'on'));
+  const yarimVekil = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+  for (const etiket of ['a'.repeat(39) + '😀', 'a'.repeat(39) + '😀' + 'b', '😀'.repeat(60), 'a'.repeat(38) + '😀😀']) {
+    const sonuc = masaustuKaroModeli({ ...karo, etiket }).etiket;
+    assert.doesNotMatch(sonuc, yarimVekil, JSON.stringify(sonuc));
+    assert.ok(Array.from(sonuc).length <= 40, sonuc);
+    assert.equal(sonuc, Array.from(etiket).slice(0, 40).join(''));
+  }
+});
+
 // --- Konum kaydı -------------------------------------------------------------------------------------------------------------------
 
 test('karoSiniriDuzelt: tam sayıya yuvarlar, boyutu izinli aralığa kırpar; bozuk biçim null', () => {
@@ -276,6 +287,39 @@ test('karoKonumKaydiHesapla: girdi nesnesi değişmez; sabitlenemeyen kimlik ve 
   assert.deepEqual(karoKonumKaydiHesapla({ kimlik: 'light.salon', sinirlar: sinir, mevcut: null }), { 'light.salon': sinir }, 'bozuk mevcut boş sayılır');
 });
 
+test('karoSiniriDuzelt: metin boyutu çarpanı (olcek) en az/en çok sınırı aynı oranda büyütür; geçersiz çarpan 1 sayılır', () => {
+  const b = { x: 0, y: 0, width: 500, height: 350 };
+  assert.deepEqual(karoSiniriDuzelt(b, 1.5), b, '%150: 540x390 sınırı içinde, korunur');
+  assert.deepEqual(karoSiniriDuzelt(b), { x: 0, y: 0, width: 360, height: 260 }, 'çarpan yokken eski davranış: 360x260');
+  assert.deepEqual(karoSiniriDuzelt(b, 1), { x: 0, y: 0, width: 360, height: 260 });
+  assert.deepEqual(karoSiniriDuzelt({ x: 0, y: 0, width: 5000, height: 5000 }, 1.5), { x: 0, y: 0, width: 540, height: 390 });
+  assert.deepEqual(karoSiniriDuzelt({ x: 0, y: 0, width: 5000, height: 5000 }, 2), { x: 0, y: 0, width: 720, height: 520 });
+  assert.deepEqual(karoSiniriDuzelt({ x: 0, y: 0, width: 10, height: 10 }, 1.5), { x: 0, y: 0, width: 180, height: 132 }, 'en az da büyür');
+  for (const gecersiz of ['kocaman', NaN, 0.5, 3, Infinity, null, undefined, {}]) {
+    assert.deepEqual(karoSiniriDuzelt(b, gecersiz), { x: 0, y: 0, width: 360, height: 260 }, String(gecersiz));
+  }
+});
+
+test('karoKonumlariniDuzelt (ayar şeması, ölçekten bağımsız): %150\'de büyütülmüş kayıt korunur; en çok ölçek 2 (720x520) sınırıyla kırpılır', () => {
+  const sonuc = karoKonumlariniDuzelt({
+    'light.salon': { x: 1, y: 2, width: 500, height: 350 },
+    'switch.priz': { x: 1, y: 2, width: 5000, height: 5000 },
+    'fan.vantilator': { x: 1, y: 2, width: 10, height: 10 },
+  });
+  assert.deepEqual(sonuc['light.salon'], { x: 1, y: 2, width: 500, height: 350 });
+  assert.deepEqual(sonuc['switch.priz'], { x: 1, y: 2, width: 720, height: 520 });
+  assert.deepEqual(sonuc['fan.vantilator'], { x: 1, y: 2, ...KARO_BOYUT_SINIRLARI.en_az }, 'en az ölçek 1');
+});
+
+test('karoKonumKaydiHesapla: olcek ile büyük boyut kaydedilir (360x260\'a inmez); diğer karoların büyük kayıtları yeni kayıtla kırpılmaz', () => {
+  const buyuk = { x: 10, y: 20, width: 500, height: 350 };
+  assert.deepEqual(karoKonumKaydiHesapla({ kimlik: 'light.salon', sinirlar: buyuk, mevcut: {}, olcek: 1.5 }), { 'light.salon': buyuk });
+  assert.deepEqual(karoKonumKaydiHesapla({ kimlik: 'light.salon', sinirlar: buyuk, mevcut: {} }), { 'light.salon': { ...buyuk, width: 360, height: 260 } }, 'çarpan yok: eski davranış');
+  const sonuc = karoKonumKaydiHesapla({ kimlik: 'switch.priz', sinirlar: { x: 0, y: 0, width: 200, height: 120 }, mevcut: { 'light.salon': buyuk }, olcek: 1 });
+  assert.deepEqual(sonuc['light.salon'], buyuk, 'başka karonun %150 kaydı yeni kayıtla kırpılmaz');
+  assert.equal(karoKonumKaydiHesapla({ kimlik: 'light.salon', sinirlar: buyuk, mevcut: { 'light.salon': buyuk }, olcek: 1.5 }), null, 'değişiklik yok');
+});
+
 // --- Açılış konumu -----------------------------------------------------------------------------------------------------------------
 
 const tekEkran = ekranlariOzetle([ekranHam(1, 0, 0, 1920, 1080)], 1);
@@ -317,6 +361,48 @@ test('karoHedefi: kaydın ekranı sökülmüşse varsayılana düşer (görünme
   assert.equal(dusen.y, 16 + 2 * 124);
   assert.equal(karoHedefi({ kayit, sira: 2, ekranlar: ikiEkran }).kaynak, 'kayit', 'aynı kayıt ekran dönünce geçerli');
   for (const bozuk of [{ x: 'a' }, { x: 1, y: 1 }, [], 'x', 5]) assert.equal(karoHedefi({ kayit: bozuk, sira: 0, ekranlar: tekEkran }).kaynak, 'varsayilan');
+});
+
+test('karoHedefi: olcek ile kayıtlı büyük boyut korunur (%150\'de 500x350); olcek 1\'de 360x260\'a kırpılır; geçersiz olcek 1 sayılır', () => {
+  const kayit = { x: 300, y: 200, width: 500, height: 350 };
+  const h = karoHedefi({ kayit, sira: 0, ekranlar: tekEkran, olcek: 1.5 });
+  assert.deepEqual(h, { ...kayit, kaynak: 'kayit' });
+  assert.deepEqual(karoHedefi({ kayit, sira: 0, ekranlar: tekEkran, olcek: 1 }), { x: 300, y: 200, width: 360, height: 260, kaynak: 'kayit' });
+  assert.deepEqual(karoHedefi({ kayit, sira: 0, ekranlar: tekEkran }), { x: 300, y: 200, width: 360, height: 260, kaynak: 'kayit' });
+  assert.equal(karoHedefi({ kayit, sira: 0, ekranlar: tekEkran, olcek: 'x' }).width, 360);
+});
+
+test('karoHedefi: varsayılan boyut metin boyutuyla ölçeklenir (%150 -> 264x168); olcek verilmezse ya da 1 ise eski 176x112', () => {
+  assert.deepEqual(karoHedefi({ sira: 0, ekranlar: tekEkran, olcek: 1.5 }), { x: 1920 - 264 - 16, y: 16, width: 264, height: 168, kaynak: 'varsayilan' });
+  assert.deepEqual(karoHedefi({ sira: 0, ekranlar: tekEkran, olcek: 2 }), { x: 1920 - 352 - 16, y: 16, width: 352, height: 224, kaynak: 'varsayilan' });
+  assert.deepEqual(karoHedefi({ sira: 0, ekranlar: tekEkran, olcek: 1 }), karoHedefi({ sira: 0, ekranlar: tekEkran }));
+  for (const gecersiz of ['x', NaN, 0.5, 3, null]) assert.equal(karoHedefi({ sira: 0, ekranlar: tekEkran, olcek: gecersiz }).width, KARO_BOYUTU.width, String(gecersiz));
+  // ölçekli boyut CSS alanını tasarım boyutunda tutar: pencere / olcek = 176x112
+  const h = karoHedefi({ sira: 0, ekranlar: tekEkran, olcek: 1.5 });
+  assert.deepEqual([h.width / 1.5, h.height / 1.5], [KARO_BOYUTU.width, KARO_BOYUTU.height]);
+});
+
+test('karoHedefi: %150 ve %200\'de ardışık varsayılan karolar çakışmaz, pencere en az boyutundan küçük olmaz ve çalışma alanında kalır', () => {
+  const kesisir = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  const ekranlar = [tekEkran, ekranlariOzetle([ekranHam(1, 0, 0, 1920, 400)], 1)]; // yüksek ve kısa (sütun açan) çalışma alanı
+  for (const olcek of [1, 1.3, 1.5, 2]) {
+    for (const liste of ekranlar) {
+      if (olcek === 2 && liste !== tekEkran) continue; // %200 + 360 px yüksek çalışma alanı: altı sütun 1920 px'e sığmaz (gerçekçi olmayan birleşim)
+      const alan = liste[0].calismaAlani;
+      const hedefler = Array.from({ length: 6 }, (_, sira) => karoHedefi({ sira, ekranlar: liste, olcek }));
+      const enAz = { width: Math.round(KARO_BOYUT_SINIRLARI.en_az.width * olcek), height: Math.round(KARO_BOYUT_SINIRLARI.en_az.height * olcek) };
+      hedefler.forEach((h, i) => {
+        assert.ok(h.width >= enAz.width && h.height >= enAz.height, 'Electron pencereyi büyütmesin (üst üste binme): ' + JSON.stringify([olcek, h]));
+        assert.ok(h.x >= alan.x && h.y >= alan.y && h.x + h.width <= alan.x + alan.width && h.y + h.height <= alan.y + alan.height, 'çalışma alanında: ' + JSON.stringify([olcek, h]));
+        for (let j = i + 1; j < hedefler.length; j += 1) assert.equal(kesisir(h, hedefler[j]), false, 'çakışma: ' + JSON.stringify([olcek, h, hedefler[j]]));
+      });
+    }
+  }
+  // dikey adım = ölçekli yükseklik + boşluk (eskiden 124 sabitti ve %150'de 132 yüksek pencereler 8 px örtüşürdü)
+  const a0 = karoHedefi({ sira: 0, ekranlar: tekEkran, olcek: 1.5 });
+  const a1 = karoHedefi({ sira: 1, ekranlar: tekEkran, olcek: 1.5 });
+  assert.equal(a1.y - a0.y, a0.height + 12);
+  assert.equal(karoHedefi({ sira: 1, ekranlar: tekEkran }).y - karoHedefi({ sira: 0, ekranlar: tekEkran }).y, 124, 'çarpan 1: eski adım');
 });
 
 test('karoHedefi: ekran listesi boş ya da bozuksa 1280x720 yedek alan; sıra geçersizse 0', () => {

@@ -168,7 +168,7 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
     if (!sinirlar) return;
     // Pencere bizim yerleştirdiğimiz yerde duruyorsa (açılış, ekran değişimi) bu kullanıcının seçimi değildir: kayıtlı konum ezilmez.
     if (e.yerlesim && ayniSinir(sinirlar, e.yerlesim)) return;
-    const yeni = karoKonumKaydiHesapla({ kimlik: e.kimlik, sinirlar, mevcut: konumlariAl() });
+    const yeni = karoKonumKaydiHesapla({ kimlik: e.kimlik, sinirlar, mevcut: konumlariAl(), olcek: e.olcek });
     if (yeni) guvenli(() => konumKaydet(yeni), 'Masaüstü karosu konumu kaydedilemedi.');
     e.yerlesim = null; // kullanıcı taşıdı ve kayıt yapıldı: bundan sonraki her konum kullanıcının seçimidir
   }
@@ -201,8 +201,8 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
 
   function olustur(kimlik, sira) {
     if ((cokmeler.get(kimlik) ?? 0) >= EN_COK_COKME) return; // art arda çöken karo bu oturumda yeniden açılmaz
-    const hedef = karoHedefi({ kayit: konumlariAl()?.[kimlik] ?? null, sira, ekranlar: guvenli(() => ekranlarAl(), 'Ekranlar okunamadı.') ?? [] });
     const olcek = metinOlcegi();
+    const hedef = karoHedefi({ kayit: konumlariAl()?.[kimlik] ?? null, sira, ekranlar: guvenli(() => ekranlarAl(), 'Ekranlar okunamadı.') ?? [], olcek });
     // olcek: pencere sınırlarının dayandığı çarpan; yakinlastirma: sayfaya yazılmış yakınlaştırma (yeni sayfada 1; ilk modelle birlikte yazılır).
     const e = { kimlik, sira, pencere: null, yuklendi: false, gosterildi: false, sonModel: null, olcek, yakinlastirma: 1, kayitZamanlayicisi: null, bizKapatiyor: false, yerlesim: { x: hedef.x, y: hedef.y, width: hedef.width, height: hedef.height } };
     try {
@@ -385,8 +385,8 @@ function masaustuKarolariOlustur({ karolariAl, modelAl, eylem, konumlariAl, konu
         if (!canliMi(e) || typeof e.pencere.getBounds !== 'function' || typeof e.pencere.setBounds !== 'function') continue;
         guvenli(() => {
           const mevcut = e.pencere.getBounds();
-          const mevcutHedef = karoHedefi({ kayit: mevcut, sira: e.sira, ekranlar });
-          const kayitli = karoHedefi({ kayit: konumlariAl()?.[e.kimlik] ?? null, sira: e.sira, ekranlar });
+          const mevcutHedef = karoHedefi({ kayit: mevcut, sira: e.sira, ekranlar, olcek: e.olcek });
+          const kayitli = karoHedefi({ kayit: konumlariAl()?.[e.kimlik] ?? null, sira: e.sira, ekranlar, olcek: e.olcek });
           const kullaniciTasidi = !e.yerlesim || !ayniSinir(mevcut, e.yerlesim);
           const hedef = !kullaniciTasidi && kayitli.kaynak === 'kayit' ? kayitli : mevcutHedef.kaynak === 'kayit' ? mevcutHedef : kayitli;
           if (hedef.x === mevcut.x && hedef.y === mevcut.y && hedef.width === mevcut.width && hedef.height === mevcut.height) return;

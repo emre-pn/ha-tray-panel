@@ -23,6 +23,7 @@ const BETIK_KODU = BETIK.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s\/\/.*$/gm,
 const DIL = oku('src/lib/dil.js');
 const SOZLUK = oku('src/lib/ceviri/yuzey.js');
 const TEMA_RENK = oku('src/lib/tema-renk.js');
+const BILGI_BICIM = oku('src/lib/bilgi-bicim.js');
 
 class SahteOge {
   constructor(etiket = 'div', kimlik = null) {
@@ -83,6 +84,10 @@ class SahteOge {
 
   addEventListener(ad, isleyici) {
     (this.dinleyiciler[ad] ??= []).push(isleyici);
+  }
+
+  focus() {
+    SahteOge.odaktaki = this;
   }
 
   tikla() {
@@ -148,10 +153,12 @@ const karoModeli = (ek = {}) => ({
  * @param {boolean} [s.kopruYok] window.evKaro tanımsız
  * @param {boolean} [s.ceviriYok] EvDil/EvCeviriYuzey yüklenmedi
  * @param {boolean} [s.temaRenkYok] lib/tema-renk.js yüklenmedi
+ * @param {boolean} [s.bicimYok] lib/bilgi-bicim.js yüklenmedi
  * @param {object} [s.gorunum] durumAl yanıtındaki görünüm modeli
  * @param {boolean} [s.sistemAzalt] sistem "animasyonları azalt" (prefers-reduced-motion: reduce)
  */
-function sayfayiKur({ model = karoModeli(), dil, malzeme, gorunum, calistirYaniti = { ok: true }, kopruYok = false, ceviriYok = false, temaRenkYok = false, sistemAzalt = false, durumYaniti } = {}) {
+function sayfayiKur({ model = karoModeli(), dil, malzeme, gorunum, calistirYaniti = { ok: true }, kopruYok = false, ceviriYok = false, temaRenkYok = false, bicimYok = false, sistemAzalt = false, durumYaniti } = {}) {
+  SahteOge.odaktaki = null;
   const ogeler = new Map();
   for (const [, kimlik] of HTML.matchAll(/\bid="([^"]+)"/g)) {
     ogeler.set(kimlik, new SahteOge(new RegExp(`<(\\w+)[^>]*\\bid="${kimlik}"`).exec(HTML)?.[1] ?? 'div', kimlik));
@@ -209,6 +216,9 @@ function sayfayiKur({ model = karoModeli(), dil, malzeme, gorunum, calistirYanit
   const belge = {
     documentElement: kok,
     querySelectorAll: (secici) => ceviriOgeleri.filter((o) => (secici === '[data-i18n]' ? 'data-i18n' in o.attributes : 'data-i18n-attr' in o.attributes)),
+    get activeElement() {
+      return SahteOge.odaktaki ?? null;
+    },
     getElementById(kimlik) {
       const oge = ogeler.get(kimlik);
       assert.ok(oge, `masaustu-karo.html içinde #${kimlik} yok`);
@@ -230,6 +240,7 @@ function sayfayiKur({ model = karoModeli(), dil, malzeme, gorunum, calistirYanit
     vm.runInContext(DIL, sandbox, { filename: 'lib/dil.js' });
     vm.runInContext(SOZLUK, sandbox, { filename: 'lib/ceviri/yuzey.js' });
   }
+  if (!bicimYok) vm.runInContext(BILGI_BICIM, sandbox, { filename: 'lib/bilgi-bicim.js' });
   vm.runInContext(BETIK, sandbox, { filename: 'masaustu-karo-sayfa.js' });
   return {
     oge: (kimlik) => ogeler.get(kimlik),
@@ -239,6 +250,10 @@ function sayfayiKur({ model = karoModeli(), dil, malzeme, gorunum, calistirYanit
     durum: (yuk) => durumDinleyici(yuk),
     dilDegisti: (yuk) => dilDinleyici(yuk),
     ceviriOgeleri,
+    odaktaki: () => SahteOge.odaktaki,
+    odaginiSil: () => {
+      SahteOge.odaktaki = null;
+    },
     calistirmalar: () => cagrilar.filter((c) => c[0] === 'calistir').map((c) => c[1]),
     onayarDugmeleri: () => ogeler.get('onayarlar').children,
   };
@@ -259,7 +274,7 @@ test('HTML: katı CSP, satır içi betik/stil yok, yalnız yerel betikler; bekle
   assert.match(HTML, /Content-Security-Policy[^>]*default-src 'none'[^>]*script-src 'self'[^>]*style-src 'self'[^>]*connect-src 'none'/);
   assert.doesNotMatch(HTML, /<script(?![^>]*\bsrc=)[^>]*>\s*\S/i, 'satır içi betik yok');
   assert.doesNotMatch(HTML, /\sstyle=|\son\w+=/i, 'satır içi stil/olay yok');
-  assert.deepEqual([...HTML.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]), ['lib/dil.js', 'lib/ceviri/yuzey.js', 'lib/tema-renk.js', 'masaustu-karo-sayfa.js']);
+  assert.deepEqual([...HTML.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]), ['lib/dil.js', 'lib/ceviri/yuzey.js', 'lib/bilgi-bicim.js', 'lib/tema-renk.js', 'masaustu-karo-sayfa.js']);
   for (const kimlik of ['karo', 'baglanti', 'kaldir', 'ana', 'etiket', 'deger', 'onayarlar']) assert.match(HTML, new RegExp(`id="${kimlik}"`));
 });
 
@@ -307,10 +322,78 @@ test('ön ayar yoksa (parlaklık kapalı) ön ayar kutusu gizli; ulaşılamayan 
   assert.ok(s.onayarDugmeleri().every((d) => d.disabled === true));
 });
 
+test('parlaklık düğmeleri: ön ayar listesi aynıysa model güncellemesinde YENİDEN KURULMAZ (aynı öğeler), seçili sınıf/aria/devre dışı yerinde güncellenir', async () => {
+  const s = sayfayiKur({ model: karoModeli({ yuzde: 60 }) });
+  await akit();
+  const once = [...s.onayarDugmeleri()];
+  assert.equal(once.length, 3);
+  assert.deepEqual(once.map((d) => d.getAttribute('aria-pressed')), ['false', 'true', 'false']);
+  s.durum({ model: karoModeli({ yuzde: 100 }) });
+  const sonra = s.onayarDugmeleri();
+  assert.equal(sonra.length, 3);
+  sonra.forEach((d, i) => assert.equal(d, once[i], 'aynı düğme nesnesi: ' + i));
+  assert.deepEqual(sonra.map((d) => d.getAttribute('aria-pressed')), ['false', 'false', 'true']);
+  assert.deepEqual(sonra.map((d) => d.className), ['onayar', 'onayar', 'onayar secili']);
+  // bağlantı durumu / kullanılabilirlik değişince de aynı düğmeler yerinde devre dışı kalır
+  s.durum({ model: karoModeli({ yuzde: 100, kullanilabilir: false, baglanti: { canli: false, baglanti: 'yedek' } }) });
+  s.onayarDugmeleri().forEach((d, i) => {
+    assert.equal(d, once[i]);
+    assert.equal(d.disabled, true);
+  });
+  // etiket değişince aria-label güncellenir
+  s.durum({ model: karoModeli({ etiket: 'Mutfak' }) });
+  assert.equal(s.onayarDugmeleri()[0].getAttribute('aria-label'), 'Mutfak parlaklığı %25');
+  assert.equal(s.onayarDugmeleri()[0], once[0]);
+  // tıklama dinleyicisi yerinde güncellemeden sonra da doğru ön ayarı yollar
+  s.onayarDugmeleri()[2].tikla();
+  assert.deepEqual(s.calistirmalar(), [{ parlaklik: 100 }]);
+});
+
+test('parlaklık düğmeleri: ön ayar listesi değişince yeniden kurulur; kutu yalnız değişimde gizlenir/gösterilir', async () => {
+  const s = sayfayiKur({ model: karoModeli({ yuzde: 60 }) });
+  await akit();
+  const once = [...s.onayarDugmeleri()];
+  s.durum({ model: karoModeli({ parlaklikOnAyarlari: [25, 100] }) });
+  const sonra = s.onayarDugmeleri();
+  assert.deepEqual(sonra.map((d) => d.textContent), ['%25', '%100']);
+  assert.ok(sonra.every((d) => !once.includes(d)), 'liste değişti: yeni düğmeler');
+  s.durum({ model: karoModeli({ parlaklikOnAyarlari: [], yuzde: null }) });
+  assert.equal(s.onayarDugmeleri().length, 0);
+  assert.equal(s.oge('onayarlar').hidden, true);
+  s.durum({ model: karoModeli() });
+  assert.equal(s.oge('onayarlar').hidden, false);
+  assert.deepEqual(s.onayarDugmeleri().map((d) => d.textContent), ['%25', '%50', '%100']);
+});
+
+test('parlaklık düğmeleri: Enter ile ön ayar seçilip durum değişince klavye odağı düğmede kalır (yeniden kurulan listede de aynı değerli düğmeye taşınır)', async () => {
+  const s = sayfayiKur({ model: karoModeli({ yuzde: 25 }) });
+  await akit();
+  const dugme50 = s.onayarDugmeleri()[1];
+  dugme50.focus();
+  dugme50.tikla(); // Enter: eylem gider, HA onaylayınca karo:durum gelir
+  assert.deepEqual(s.calistirmalar(), [{ parlaklik: 50 }]);
+  s.durum({ model: karoModeli({ yuzde: 50 }) });
+  s.durum({ model: karoModeli({ yuzde: 50, baglanti: { canli: false, baglanti: 'yedek' } }) });
+  assert.equal(s.onayarDugmeleri()[1], dugme50, 'odaktaki düğme DOM\'dan çıkmadı');
+  assert.equal(s.odaktaki(), dugme50, 'odak yerinde');
+  assert.ok(s.onayarDugmeleri().includes(dugme50));
+  assert.equal(dugme50.getAttribute('aria-pressed'), 'true');
+  // liste değişip yeniden kurulursa odak aynı değerli yeni düğmeye taşınır
+  s.durum({ model: karoModeli({ yuzde: 50, parlaklikOnAyarlari: [50, 100] }) });
+  const yeni = s.onayarDugmeleri();
+  assert.deepEqual(yeni.map((d) => d.textContent), ['%50', '%100']);
+  assert.ok(!yeni.includes(dugme50));
+  assert.equal(s.odaktaki(), yeni[0], 'odak %50 düğmesinde kaldı');
+  // odak ön ayar düğmesinde değilken yeniden kurulumda odak çalınmaz
+  s.odaginiSil();
+  s.durum({ model: karoModeli({ yuzde: 50 }) });
+  assert.equal(s.odaktaki(), null);
+});
+
 test('sensör: değer + birim, salt okunur (ana düğme devre dışı, başlık yalnız etiket), ön ayar yok; değer yoksa tire', async () => {
   const s = sayfayiKur({ model: karoModeli({ id: 'sensor.sicaklik', etiket: 'Salon sıcaklığı', alan: 'sensor', durum: 'notr', yuzde: null, tiklanabilir: false, parlaklikOnAyarlari: [], ozellik: { deger: '21.5', sayi: 21.5, birim: '°C' } }) });
   await akit();
-  assert.equal(s.oge('deger').textContent, '21.5 °C');
+  assert.equal(s.oge('deger').textContent, '21,5 °C', 'sayı dil ayracıyla (tr: virgül)');
   assert.equal(s.oge('ana').disabled, true);
   assert.equal(s.oge('ana').title, 'Salon sıcaklığı');
   assert.equal(s.oge('onayarlar').hidden, true);
@@ -320,6 +403,52 @@ test('sensör: değer + birim, salt okunur (ana düğme devre dışı, başlık 
   assert.equal(s.oge('deger').textContent, '48');
   s.durum({ model: karoModeli({ alan: 'sensor', durum: 'notr', tiklanabilir: false, parlaklikOnAyarlari: [], ozellik: null }) });
   assert.equal(s.oge('deger').textContent, '—');
+});
+
+const sensorModeli = (ozellik, ek = {}) => karoModeli({ id: 'sensor.sicaklik', etiket: 'Salon sıcaklığı', alan: 'sensor', durum: 'notr', yuzde: null, tiklanabilir: false, parlaklikOnAyarlari: [], ozellik, ...ek });
+
+test('sensör: HA\'nın unknown / unavailable durumu ham İngilizce metin + birim olarak değil, çevrilmiş metin olarak yazılır (panelle aynı)', async () => {
+  const bekle = { tr: ['bilinmiyor', 'ulaşılamıyor'], en: ['unknown', 'unavailable'], de: ['unbekannt', 'nicht verfügbar'], fr: ['inconnu', 'indisponible'], es: ['desconocido', 'no disponible'] };
+  for (const [dil, [bilinmiyor, ulasilamiyor]] of Object.entries(bekle)) {
+    const s = sayfayiKur({ dil, model: sensorModeli({ deger: 'unknown', sayi: null, birim: '°C' }) });
+    await akit();
+    assert.equal(s.oge('deger').textContent, bilinmiyor, dil);
+    assert.equal(s.oge('ana').getAttribute('aria-label'), 'Salon sıcaklığı: ' + bilinmiyor, dil);
+    s.durum({ model: sensorModeli({ deger: 'unavailable', sayi: null, birim: '°C' }) });
+    assert.equal(s.oge('deger').textContent, ulasilamiyor, dil);
+  }
+});
+
+test('sensör: sayı hassasiyet ve dil ayracıyla yazılır (float artığı taşmaz); sayı olmayan metin değerine birim eklenmez', async () => {
+  const sayisal = (deger, ek = {}) => sensorModeli({ deger: String(deger), sayi: Number(deger), birim: '°C', hassasiyet: 1, ...ek });
+  const s = sayfayiKur({ dil: 'tr', model: sayisal('23.600000381469727') });
+  await akit();
+  assert.equal(s.oge('deger').textContent, '23,6 °C');
+  s.dilDegisti({ dil: 'en' });
+  assert.equal(s.oge('deger').textContent, '23.6 °C', 'dil değişince ayraç da değişir');
+  s.dilDegisti({ dil: 'de' });
+  assert.equal(s.oge('deger').textContent, '23,6 °C');
+  s.durum({ model: sayisal('45.2', { birim: '%' }) });
+  s.dilDegisti({ dil: 'tr' });
+  assert.equal(s.oge('deger').textContent, '%45,2');
+  s.dilDegisti({ dil: 'en' });
+  assert.equal(s.oge('deger').textContent, '45.2%');
+  s.durum({ model: sensorModeli({ deger: 'abc', sayi: null, birim: '°C' }) });
+  assert.equal(s.oge('deger').textContent, 'abc');
+  s.durum({ model: sensorModeli({ deger: '12:30', sayi: null, birim: 'h' }) });
+  assert.equal(s.oge('deger').textContent, '12:30');
+  s.durum({ model: sensorModeli({ deger: '', sayi: null, birim: '°C' }) });
+  assert.equal(s.oge('deger').textContent, '—');
+});
+
+test('sensör: biçimleyici (lib/bilgi-bicim.js) yüklenemese de karo çizilir; sayı eskisi gibi ham değer + birim, metin değeri birimsiz', async () => {
+  const s = sayfayiKur({ bicimYok: true, model: sensorModeli({ deger: '21.5', sayi: 21.5, birim: '°C' }) });
+  await akit();
+  assert.equal(s.oge('deger').textContent, '21.5 °C');
+  s.durum({ model: sensorModeli({ deger: 'unknown', sayi: null, birim: '°C' }) });
+  assert.equal(s.oge('deger').textContent, 'bilinmiyor');
+  s.durum({ model: sensorModeli({ deger: 'abc', sayi: null, birim: '°C' }) });
+  assert.equal(s.oge('deger').textContent, 'abc');
 });
 
 test('ikili sensör: açık/kapalı metni; bilinmiyorsa tire; sahne için "çalıştır" ipucu', async () => {
@@ -340,9 +469,12 @@ test('GÜVENLİK: HTML içeren etiket ve değer yalnız metin olarak yazılır (
   const s = sayfayiKur({ model: karoModeli({ etiket: kotu, alan: 'sensor', durum: 'notr', tiklanabilir: false, parlaklikOnAyarlari: [], ozellik: { deger: '<b>5</b>', birim: '</span>' } }) });
   await akit();
   assert.equal(s.oge('etiket').textContent, kotu);
-  assert.equal(s.oge('deger').textContent, '<b>5</b> </span>');
+  assert.equal(s.oge('deger').textContent, '<b>5</b>', 'sayı olmayan metin değerine birim eklenmez');
   assert.equal(s.oge('etiket').children.length, 0);
   assert.equal(s.oge('karo').getAttribute('aria-label'), kotu);
+  s.durum({ model: karoModeli({ etiket: kotu, alan: 'sensor', durum: 'notr', tiklanabilir: false, parlaklikOnAyarlari: [], ozellik: { deger: '5', sayi: 5, birim: '</span>' } }) });
+  assert.equal(s.oge('deger').textContent, '5 </span>');
+  assert.equal(s.oge('deger').children.length, 0);
 });
 
 test('bağlantı durumu: canlı, yedek, bağlanıyor, kapalı; bozuk bağlantı bilgisi boş', async () => {
@@ -545,7 +677,7 @@ test('çeviri betikleri yüklenemese de karo etiket ve değeriyle çizilir; meti
   assert.equal(s.oge('etiket').textContent, 'Salon');
   assert.equal(s.oge('deger').textContent, '');
   assert.doesNotMatch(s.oge('baglanti').textContent, /yuzey\.|masaustu\./);
-  const sensor = sayfayiKur({ ceviriYok: true, model: karoModeli({ alan: 'sensor', durum: 'notr', tiklanabilir: false, parlaklikOnAyarlari: [], ozellik: { deger: '5', birim: 'W' } }) });
+  const sensor = sayfayiKur({ ceviriYok: true, model: karoModeli({ alan: 'sensor', durum: 'notr', tiklanabilir: false, parlaklikOnAyarlari: [], ozellik: { deger: '5', sayi: 5, birim: 'W' } }) });
   await akit();
   assert.equal(sensor.oge('deger').textContent, '5 W');
 });

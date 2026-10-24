@@ -119,12 +119,18 @@
       100% { transform: rotate(360deg); }
     }
 
-    /* Hareketi azalt ayarı açıksa giriş canlandırması ve dönen simge durur (g-11). */
+    /* Hareketi azalt ayarı açıksa giriş canlandırması ve dönen simge durur (g-11): sistem tercihi (medya sorgusu) ve uygulamanın kendi
+       "Hareketi azalt" ayarı (ana süreç sayfaya hareket=azalt gönderir, offline.js <html data-hareket> yazar). */
     @media (prefers-reduced-motion: reduce) {
       .kart,
       .donen-cember {
         animation: none;
       }
+    }
+
+    :root[data-hareket="azalt"] .kart,
+    :root[data-hareket="azalt"] .donen-cember {
+      animation: none;
     }
 
     h1 {
@@ -155,6 +161,17 @@
       margin: -12px 0 24px;
       word-break: break-all;
       user-select: text;
+    }
+
+    /* Ekran okuyucuya yerinde durum değişimini bildiren görünmez canlı bölge (offline.js duyur) */
+    .gizli-duyuru {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
 
     .adres-kutusu {
@@ -258,6 +275,8 @@
   </style>
 </head>
 <body>
+
+  <div class="gizli-duyuru" id="duyuru" role="status" aria-live="polite"></div>
 
   <div class="kart" id="anaKart">
     <div class="ikon-alani" id="ikonKapsayici">

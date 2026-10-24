@@ -647,6 +647,27 @@ test('görünüm: görünümü ya da metin boyutunu okuyan işlev hata fırlatı
   assert.ok(o.gunlukler.some((m) => /metin boyutu okunamadı/.test(m)));
 });
 
+test('metin boyutu %150: karo ilk açılışta 264x168 (CSS alanı 176x112) açılır; sınırlar min 180x132 / max 540x390 içindedir', async () => {
+  const o = kur({ secili: ['light.salon', 'switch.priz'], olcek: 1.5 });
+  const [p, q] = await ac(o);
+  assert.deepEqual([p.secenekler.width, p.secenekler.height], [264, 168]);
+  assert.deepEqual([q.secenekler.width, q.secenekler.height], [264, 168]);
+  assert.ok(p.secenekler.width >= p.secenekler.minWidth && p.secenekler.height >= p.secenekler.minHeight);
+  assert.equal(q.secenekler.y - p.secenekler.y, 168 + 12, 'satır adımı ölçeklidir');
+  assert.equal(p.secenekler.x, q.secenekler.x);
+});
+
+test('metin boyutu %150: üst üste dizilen kayıtsız karoların açılış sınırları çakışmaz (en az boyutun altında kalıp büyütülmezler)', async () => {
+  const o = kur({ secili: ['light.salon', 'switch.priz', 'sensor.sicaklik'], olcek: 1.5 });
+  const pencereler = await ac(o);
+  const sinirlar = pencereler.map((p) => ({ x: p.secenekler.x, y: p.secenekler.y, width: p.secenekler.width, height: p.secenekler.height }));
+  sinirlar.forEach((a, i) => {
+    assert.ok(a.height >= pencereler[i].secenekler.minHeight && a.width >= pencereler[i].secenekler.minWidth);
+    for (const b of sinirlar.slice(i + 1)) assert.equal(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height, false, JSON.stringify([a, b]));
+  });
+  assert.ok(sinirlar.at(-1).y + sinirlar.at(-1).height <= 1040, 'son karo çalışma alanının altına taşmaz');
+});
+
 test('metin boyutu: sayfa yakınlaştırması ilk modelle birlikte uygulanır; pencerenin en az/en çok boyutu aynı oranda büyür', async () => {
   const o = kur({ secili: ['light.salon'], olcek: 1.5 });
   const [p] = await ac(o);
@@ -693,6 +714,29 @@ test('metin boyutu: yeni en az boyutun altında kalan pencere büyütülür, en 
   o.yonetici.gorunumuUygula();
   assert.deepEqual(p.setBoundsCagrilari.at(-1), { x: 300, y: 200, width: 360, height: 260 }, 'çarpan 1\'e dönünce en çok 360x260');
   assert.deepEqual(p.webContents.zoomlar, [1.5, 1]);
+});
+
+test('metin boyutu %150: kullanıcının büyüttüğü karo (500x350) 360x260\'a inmez; kayıt ve ekran değişimi boyutu korur', async () => {
+  const o = kur({ secili: ['light.salon'], olcek: 1.5 });
+  const [p] = await ac(o);
+  p.sinirlar = { x: 300, y: 200, width: 500, height: 350 }; // 1,5 katında geçerli (en çok 540x390)
+  p.emit('resize');
+  o.zamanlayiciTetikle();
+  assert.deepEqual(o.kaydedilenKonumlar.at(-1), { 'light.salon': { x: 300, y: 200, width: 500, height: 350 } }, 'kayıt 360x260\'a kırpılmadı');
+  const cagriSayisi = p.setBoundsCagrilari.length;
+  o.yonetici.ekranDegisti(); // monitör takma/sökme, çözünürlük değişimi
+  assert.equal(p.setBoundsCagrilari.length, cagriSayisi, 'kullanıcının seçtiği boyut küçültülmedi');
+  assert.deepEqual(p.sinirlar, { x: 300, y: 200, width: 500, height: 350 });
+  // yeniden açılış: kayıtlı boyut aynı çarpanla geri gelir
+  o.yonetici.kapat();
+  const yeni = kur({ secili: ['light.salon'], olcek: 1.5, konumlar: o.konumlar });
+  const [q] = await ac(yeni);
+  assert.deepEqual([q.secenekler.x, q.secenekler.y, q.secenekler.width, q.secenekler.height], [300, 200, 500, 350]);
+  // aynı kayıt çarpan 1'de açılınca pencere sınırına (360x260) iner ve kayıt silinmez
+  const bir = kur({ secili: ['light.salon'], olcek: 1, konumlar: o.konumlar });
+  const [r] = await ac(bir);
+  assert.deepEqual([r.secenekler.width, r.secenekler.height], [360, 260]);
+  assert.deepEqual(bir.konumlar['light.salon'], { x: 300, y: 200, width: 500, height: 350 });
 });
 
 test('metin boyutu: geçersiz çarpan (sayı değil, 1\'den küçük, 2\'den büyük, sonsuz) 1 sayılır', async () => {

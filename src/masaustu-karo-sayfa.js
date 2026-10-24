@@ -28,6 +28,7 @@
   const Sozluk = window.EvCeviriYuzey;
   // Çeviri betikleri yüklenemezse (paketleme hatası) metin yerine boş döner; karo etiket ve değeriyle yine de çizilir.
   let t = Dil && Sozluk ? Dil.cevirmen('tr', Sozluk) : function () { return ''; };
+  let dil = 'tr'; // etkin arayüz dili (sayı ayracı için); dilUygula günceller
   let model = null;
   let bekliyor = false; // bir eylem sürerken ikinci tıklama yok sayılır
   let hataZamanlayicisi = null;
@@ -37,7 +38,16 @@
     const o = m.ozellik;
     if (m.alan === 'sensor') {
       if (!o || o.deger === null || o.deger === undefined || o.deger === '') return '—';
-      return o.birim ? o.deger + ' ' + o.birim : String(o.deger);
+      // Panelle (yuzey-bilgi.js degerMetni) aynı mantık: sayı hassasiyet ve dil ayracıyla birimiyle yazılır; HA'nın 'unknown' / 'unavailable'
+      // durumları çevrilmiş metin olur; sayı olmayan metin değerine (ör. saat, 'abc') birim eklenmez.
+      const Bicim = window.EvBilgiBicim;
+      const sayi = Bicim && typeof Bicim.sensorSayisiMetni === 'function' ? Bicim.sensorSayisiMetni(o, { dil: dil }) : '';
+      if (sayi !== '') return sayi;
+      if (o.deger === 'unknown') return t('yuzey.bilgi.sensor.bilinmiyor');
+      if (o.deger === 'unavailable') return t('yuzey.durum.ulasilamiyor');
+      // Biçimleyici yüklenemediyse: sayısal değer eskisi gibi ham değer + birim
+      if (!Bicim && Number.isFinite(o.sayi) && o.birim) return o.deger + ' ' + o.birim;
+      return String(o.deger);
     }
     if (m.alan === 'binary_sensor') {
       if (!o || (o.acik !== true && o.acik !== false)) return '—';
@@ -71,24 +81,49 @@
     return fark <= 12 ? en : null; // ön ayarlardan hiçbirine yakın değilse (örn. %40 ile %50 arası) yakın olan; uzaksa hiçbiri
   }
 
+  /** Bir ön ayar düğmesinin görünür durumunu (metin, seçili sınıfı, aria, devre dışı) modele göre yazar; düğmeyi yeniden yaratmaz. */
+  function onayarDugmesiniGuncelle(d, p, secili, m) {
+    d.className = 'onayar' + (p === secili ? ' secili' : '');
+    d.textContent = t('yuzey.yuzde', { n: p });
+    d.setAttribute('aria-label', t('yuzey.karo.parlaklik', { etiket: m.etiket }) + ' ' + t('yuzey.yuzde', { n: p }));
+    d.setAttribute('aria-pressed', p === secili ? 'true' : 'false');
+    d.disabled = !m.kullanilabilir;
+  }
+
   function onayarlariCiz(m) {
-    onayarKutusu.textContent = '';
     const liste = Array.isArray(m.parlaklikOnAyarlari) ? m.parlaklikOnAyarlari : [];
-    onayarKutusu.hidden = liste.length === 0;
+    const gizli = liste.length === 0;
+    if (onayarKutusu.hidden !== gizli) onayarKutusu.hidden = gizli;
     const secili = secilenOnayar(m);
+    const mevcut = onayarKutusu.children;
+    // Ön ayar listesi değişmediyse düğmeler yerinde güncellenir: her model güncellemesinde (ışık yüzdesi, bağlantı durumu) düğmeleri silip
+    // yeniden kurmak odaktaki düğmeyi DOM'dan çıkarır, klavye odağı ve ekran okuyucu konumu kaybolurdu (yuzey-sayfa.js modelUygula 'odak korunur').
+    const ayni = mevcut.length === liste.length && liste.every(function (p, i) {
+      return mevcut[i].getAttribute('data-deger') === String(p);
+    });
+    if (ayni) {
+      liste.forEach(function (p, i) {
+        onayarDugmesiniGuncelle(mevcut[i], p, secili, m);
+      });
+      return;
+    }
+    // Liste değişti (parlaklık kontrolü açıldı/kapandı): yeniden kur; odak bir ön ayar düğmesindeyse aynı değerli yeni düğmeye taşınır.
+    const aktif = typeof document.activeElement === 'object' ? document.activeElement : null;
+    const odakDegeri = aktif && Array.prototype.indexOf.call(mevcut, aktif) >= 0 ? aktif.getAttribute('data-deger') : null;
+    onayarKutusu.textContent = '';
+    let odaklanacak = null;
     for (const p of liste) {
       const d = document.createElement('button');
       d.type = 'button';
-      d.className = 'onayar' + (p === secili ? ' secili' : '');
-      d.textContent = t('yuzey.yuzde', { n: p });
-      d.setAttribute('aria-label', t('yuzey.karo.parlaklik', { etiket: m.etiket }) + ' ' + t('yuzey.yuzde', { n: p }));
-      d.setAttribute('aria-pressed', p === secili ? 'true' : 'false');
-      d.disabled = !m.kullanilabilir;
+      d.setAttribute('data-deger', String(p));
+      onayarDugmesiniGuncelle(d, p, secili, m);
       d.addEventListener('click', function () {
         calistir({ parlaklik: p });
       });
       onayarKutusu.appendChild(d);
+      if (odakDegeri !== null && String(p) === odakDegeri) odaklanacak = d;
     }
+    if (odaklanacak && typeof odaklanacak.focus === 'function') odaklanacak.focus();
   }
 
   function ciz() {
@@ -163,6 +198,7 @@
   function dilUygula(yuk) {
     if (!Dil || !Sozluk || !yuk || typeof yuk !== 'object' || Dil.DILLER.indexOf(yuk.dil) < 0) return;
     t = Dil.cevirmen(yuk.dil, Sozluk);
+    dil = yuk.dil;
     Dil.sayfayiCevir(document, t);
     ciz();
   }

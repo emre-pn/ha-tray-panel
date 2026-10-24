@@ -235,10 +235,14 @@ test('koseKonumu (g-09): panelin üstünde ortalanan bildirim çalışma alanın
   const k = koseKonumu(ALAN, undefined, undefined, dar);
   assert.equal(k.x + k.width, 1920, 'sağ kenara yaslanır');
   assert.equal(k.y, dar.y - KOSE_BOYUTU.height - 8);
-  // panel sol kenarda (görev çubuğu solda): soldan taşmaz
+  // panel sol kenarda (görev çubuğu solda): soldan taşmaz. Çalışma alanı dar tutulur ki varsayılan köşe konumu panelle kesişsin
+  // (geniş alanda kesişmez, işlev engel dalına hiç girmez); ortalama x'i eksiye düşürür, kıstırma 0'a çeker.
   const solda = { x: 0, y: 600, width: 200, height: 420 };
-  const ks = koseKonumu({ x: 0, y: 0, width: 1920, height: 1040 }, undefined, undefined, { ...solda, x: 0 });
-  assert.ok(ks.x >= 0 && icinde(ks, ALAN));
+  const darAlan = { x: 0, y: 0, width: 400, height: 1040 };
+  const ks = koseKonumu(darAlan, undefined, undefined, solda);
+  assert.equal(ks.x, 0, 'soldan taşmaz');
+  assert.equal(ks.y, solda.y - KOSE_BOYUTU.height - 8, 'panelin üstüne taşınır');
+  assert.ok(icinde(ks, darAlan));
   // ölçekli bildirim (metin boyutu 1,3): panel kenardan uzaksa yine panelin üstünde ortalı (panelden geniş olsa da)
   const boyut = { width: KOSE_BOYUTU.width * 1.3, height: KOSE_BOYUTU.height * 1.3 };
   const panel = { x: 1400, y: 612, width: 360, height: 420 };

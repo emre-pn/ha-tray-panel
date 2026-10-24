@@ -21,6 +21,7 @@ const { VARLIK_KIMLIGI_DESENI } = require('./dogrulama');
 const { alanAl, adGuvenliMi } = require('./suzgec');
 const { eylemAlaniMi } = require('./alan-kaydi');
 const { karoOlustur } = require('./yuzey-modeli');
+const { kisalt } = require('./metin');
 const { enCokKesisenEkran, alanaSigdir, yeterinceGorunurMu } = require('./pencere-yerlesim');
 
 /** Aynı anda en çok bu kadar karo penceresi (her biri ayrı pencere/süreç yüküdür). */
@@ -48,16 +49,39 @@ function sabitlenebilirKimlikMi(kimlik) {
   return adGuvenliMi(kimlik, '');
 }
 
-/** Karo penceresi sınırı { x, y, width, height }: koordinatlar tam sayı, boyut izinli aralığa kırpılır; biçim bozuksa null. */
-function karoSiniriDuzelt(ham) {
+/** Metin boyutu çarpanı (Ayarlar > Görünüm): sonlu ve 1 ile 2 arasında değilse 1 (ana süreçteki metinOlcegi ile aynı doğrulama). */
+function olcekDuzelt(olcek) {
+  return typeof olcek === 'number' && Number.isFinite(olcek) && olcek >= 1 && olcek <= 2 ? olcek : 1;
+}
+
+/** Boyut kırpması: en az sınır `enAzOlcek`, en çok sınır `enCokOlcek` çarpanıyla büyür (pencere sınırları metin boyutuyla büyür). */
+function karoSiniriKirp(ham, enAzOlcek, enCokOlcek) {
   if (!duzNesneMi(ham) || !sonluSayi(ham.x) || !sonluSayi(ham.y) || !sonluSayi(ham.width) || !sonluSayi(ham.height)) return null;
   const { en_az: az, en_cok: cok } = KARO_BOYUT_SINIRLARI;
   return {
     x: Math.round(ham.x),
     y: Math.round(ham.y),
-    width: Math.min(cok.width, Math.max(az.width, Math.round(ham.width))),
-    height: Math.min(cok.height, Math.max(az.height, Math.round(ham.height))),
+    width: Math.min(Math.round(cok.width * enCokOlcek), Math.max(Math.round(az.width * enAzOlcek), Math.round(ham.width))),
+    height: Math.min(Math.round(cok.height * enCokOlcek), Math.max(Math.round(az.height * enAzOlcek), Math.round(ham.height))),
   };
+}
+
+/**
+ * Karo penceresi sınırı { x, y, width, height }: koordinatlar tam sayı, boyut izinli aralığa kırpılır; biçim bozuksa null.
+ * `olcek` (metin boyutu çarpanı, varsayılan 1): pencerenin en az/en çok boyutu aynı oranda büyüdüğünden (masaustu-karolari.js)
+ * kırpma da o oranla yapılır; yoksa %150'de büyütülen karo kayıtta ve yeniden yerleştirmede 360x260'a inerdi.
+ */
+function karoSiniriDuzelt(ham, olcek = 1) {
+  const o = olcekDuzelt(olcek);
+  return karoSiniriKirp(ham, o, o);
+}
+
+/**
+ * Ölçekten bağımsız (ayar şeması ve diskteki kayıtlar): en az ölçek 1, en çok ölçek 2. Kullanıcı başka bir metin boyutunda
+ * büyüttüğü karonun kaydı, bu kayıt başka bir ölçekte okunurken (ya da başka bir karo kaydedilirken) kırpılıp kaybolmaz.
+ */
+function karoSiniriGevsekDuzelt(ham) {
+  return karoSiniriKirp(ham, 1, 2);
 }
 
 /**
@@ -71,7 +95,7 @@ function karoKonumlariniDuzelt(ham) {
   for (const [kimlik, sinir] of Object.entries(ham)) {
     if (say >= EN_COK_KONUM_KAYDI) break;
     if (!sabitlenebilirKimlikMi(kimlik)) continue;
-    const duzgun = karoSiniriDuzelt(sinir);
+    const duzgun = karoSiniriGevsekDuzelt(sinir);
     if (!duzgun) continue;
     sonuc[kimlik] = duzgun;
     say += 1;
@@ -84,9 +108,9 @@ function karoKonumlariniDuzelt(ham) {
  * En çok EN_COK_KONUM_KAYDI kayıt tutulur: sınır aşılırsa EN ESKİ eklenen (nesne sırasıyla ilk) kayıt düşer; güncellenen karo sona taşınır.
  * @returns {object|null} yeni kayıt haritası ya da null
  */
-function karoKonumKaydiHesapla({ kimlik, sinirlar, mevcut = {} }) {
+function karoKonumKaydiHesapla({ kimlik, sinirlar, mevcut = {}, olcek = 1 }) {
   if (!sabitlenebilirKimlikMi(kimlik)) return null;
-  const yeni = karoSiniriDuzelt(sinirlar);
+  const yeni = karoSiniriDuzelt(sinirlar, olcek);
   if (!yeni) return null;
   const kayitlar = karoKonumlariniDuzelt(mevcut) ?? {};
   const eski = kayitlar[kimlik];
@@ -100,17 +124,21 @@ function karoKonumKaydiHesapla({ kimlik, sinirlar, mevcut = {} }) {
  * Karonun açılış sınırları (saf). Kayıtlı konum bağlı bir ekranda yeterince görünüyorsa o (çalışma alanına sığdırılmış);
  * aksi halde (kayıt yok ya da ekran sökülmüş) birincil ekranın sağ kenarında, sıra numarasına göre alta doğru dizilir; sığmazsa
  * yeni bir sütun açılır. Kayıt silinmez: ekran geri gelince konum yeniden geçerli olur.
- * @param {{kayit?: object|null, sira?: number, ekranlar?: object[]}} g ekranlar: ekranlariOzetle sonucu (birincil önce)
+ * @param {{kayit?: object|null, sira?: number, ekranlar?: object[], olcek?: number}} g ekranlar: ekranlariOzetle sonucu (birincil önce); olcek: metin boyutu çarpanı
  * @returns {{x:number,y:number,width:number,height:number,kaynak:'kayit'|'varsayilan'}}
  */
-function karoHedefi({ kayit = null, sira = 0, ekranlar = [] }) {
+function karoHedefi({ kayit = null, sira = 0, ekranlar = [], olcek = 1 }) {
   const liste = Array.isArray(ekranlar) ? ekranlar : [];
-  const duzgun = karoSiniriDuzelt(kayit);
+  const duzgun = karoSiniriDuzelt(kayit, olcek);
   if (duzgun) {
     const ekran = enCokKesisenEkran(liste, duzgun);
     if (ekran && yeterinceGorunurMu(duzgun, ekran)) return { ...alanaSigdir(duzgun, ekran.calismaAlani), kaynak: 'kayit' };
   }
-  const { width, height } = KARO_BOYUTU;
+  // Varsayılan boyut da metin boyutuyla büyür: sayfa setZoomFactor(olcek) ile yakınlaştığından 176x112 DIP pencere CSS'te küçülür
+  // (%150'de 117x75 px) ve içerik sıkışırdı; ölçekli boyut CSS alanını tasarım boyutunda (176x112) tutar. Satır/sütun adımı da ölçeklidir.
+  const o = olcekDuzelt(olcek);
+  const width = Math.round(KARO_BOYUTU.width * o);
+  const height = Math.round(KARO_BOYUTU.height * o);
   const alan = liste[0]?.calismaAlani ?? { x: 0, y: 0, width: 1280, height: 720 };
   const satir = Math.max(1, Math.floor((alan.height - 2 * KENAR_BOSLUGU + ARA_BOSLUK) / (height + ARA_BOSLUK)));
   const s = Number.isInteger(sira) && sira >= 0 ? sira : 0;
@@ -176,7 +204,7 @@ function masaustuKaroModeli(karo, baglanti = {}) {
   const sensorMu = karo.alan === 'sensor' || karo.alan === 'binary_sensor';
   return {
     id: karo.id,
-    etiket: typeof karo.etiket === 'string' ? karo.etiket.slice(0, ETIKET_SINIRI) : '',
+    etiket: typeof karo.etiket === 'string' ? kisalt(karo.etiket, ETIKET_SINIRI) : '', // kod noktası tabanlı: vekil çifti (emoji) ortadan bölünmez
     alan: karo.alan,
     durum: karo.durum,
     yuzde: Number.isFinite(karo.yuzde) ? karo.yuzde : null,
@@ -200,7 +228,9 @@ module.exports = {
   KARO_BOYUT_SINIRLARI,
   EN_COK_KONUM_KAYDI,
   sabitlenebilirKimlikMi,
+  olcekDuzelt,
   karoSiniriDuzelt,
+  karoSiniriGevsekDuzelt,
   karoKonumlariniDuzelt,
   karoKonumKaydiHesapla,
   karoHedefi,
