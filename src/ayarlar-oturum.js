@@ -90,6 +90,20 @@
       iletiYaz();
     }
 
+    /**
+     * Tıklanan düğme eylem sırasında pasifleşir ya da durum değişince gizlenir ve odak gövdeye düşer: odak başka yere gitmediyse
+     * önceki düğmeye (hâlâ kullanılabiliyorsa), değilse durumun sunduğu karşı düğmeye verilir
+     * (giriş başlayınca "Vazgeç"e, vazgeçince ya da oturum kapanınca "Tarayıcıyla giriş yap"a).
+     */
+    function odagiGeriVer(onceki) {
+      const kullanilabilir = function (oge) { return !!oge && oge !== belge.body && !oge.disabled && oge.style.display !== 'none'; };
+      const aktif = belge.activeElement;
+      if (kullanilabilir(aktif)) return;
+      const adaylar = onceki === girisDugmesi ? [girisDugmesi, iptalDugmesi] : onceki === iptalDugmesi || onceki === cikisDugmesi ? [onceki, girisDugmesi] : [];
+      const hedef = adaylar.find(kullanilabilir);
+      if (hedef && typeof hedef.focus === 'function') hedef.focus();
+    }
+
     /** Giriş sonucunu (ana süreçteki `son`) bir iletiye çevirir; yalnız bu sayfa bir girişi başlatmış/izlemişse. */
     function sonucuIsle(onceki, yeni) {
       const surerken = yeni && (yeni.asama === 'bekliyor' || yeni.asama === 'tamamlaniyor');
@@ -123,7 +137,10 @@
       } catch (err) {
         yanit = null;
       }
-      if (!yanit || !yanit.ok || !yanit.oturum) return null;
+      if (!yanit || !yanit.ok || !yanit.oturum) {
+        yoklamayiPlanla(); // tek bir başarısız istek yoklama zincirini koparmasın (olay da gelmezse arayüz 'bekliyor'da takılırdı)
+        return null;
+      }
       const onceki = oturum;
       oturum = yanit.oturum;
       // Oturum arka planda sona erdiyse (HA yenileme anahtarını reddetti) anahtar bölümü de tazelenir
@@ -137,6 +154,7 @@
 
     async function girisTiklandi() {
       if (mesgul) return;
+      const onceki = belge.activeElement;
       if (!onayIste(t(elleAnahtarVarMi() ? 'ayar.baglanti.oturum.girisOnayAnahtar' : 'ayar.baglanti.oturum.girisOnay'))) return;
       mesgul = true;
       iletisi(null);
@@ -153,26 +171,35 @@
       } finally {
         mesgul = false;
         await yenile();
+        odagiGeriVer(onceki);
       }
     }
 
     async function iptalTiklandi() {
       if (mesgul) return;
+      const onceki = belge.activeElement;
       mesgul = true;
       ciz();
       try {
-        await kopru.tarayiciGirisiniIptalEt();
-        girisGoruldu = false;
-        iletisi({ anahtar: 'ayar.baglanti.oturum.sonuc.iptal' });
+        const yanit = await kopru.tarayiciGirisiniIptalEt();
+        if (yanit && yanit.ok === false) {
+          // Kod değişimi başladı: ana süreç iptali reddetti, giriş birkaç saniyede tamamlanır (sonucu izlemeye devam edilir).
+          iletisi(yanit.neden === 'tamamlaniyor' ? { anahtar: 'ayar.baglanti.oturum.durum.tamamlaniyor' } : { anahtar: GENEL_HATA, tur: 'hata' });
+        } else {
+          girisGoruldu = false;
+          iletisi({ anahtar: 'ayar.baglanti.oturum.sonuc.iptal' });
+        }
       } catch (err) {
         iletisi({ anahtar: GENEL_HATA, tur: 'hata' });
       } finally {
         mesgul = false;
         await yenile();
+        odagiGeriVer(onceki);
       }
     }
 
     async function cikisTiklandi() {
+      const onceki = belge.activeElement;
       if (mesgul || !onayIste(t('ayar.baglanti.oturum.cikisOnay'))) return;
       mesgul = true;
       ciz();
@@ -190,6 +217,7 @@
       } finally {
         mesgul = false;
         await yenile();
+        odagiGeriVer(onceki);
         if (tamam) degistiHaberi('cikti');
       }
     }

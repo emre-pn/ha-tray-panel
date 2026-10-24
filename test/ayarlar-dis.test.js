@@ -174,6 +174,59 @@ test('PC olayları: açmak onay ister (reddedilirse kapalı kalır); kural eklen
   assert.equal(sayfa.sorular.at(-1), tr('ayar.dis.pcAcmaOnay'));
 });
 
+test('PC kuralı satırında seçici değişince liste yeniden çizilir ama klavye odağı aynı kimlikli yeni seçicide kalır (durum yenilemesinde de)', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR, disYaniti: { disTetikDurumu: DOLU_DURUM } });
+  sayfa.oge('btnDisPcKuralEkle').dispatchEvent({ type: 'click' });
+  const seciciler = () => sayfa.oge('disPcKuralListesi').children[0].bul((o) => o.etiket === 'select');
+  const [, , eskiFavori] = seciciler();
+  eskiFavori.focus();
+  sec(eskiFavori, 'scene.film');
+  const yeniFavori = seciciler()[2];
+  assert.notEqual(yeniFavori, eskiFavori, 'liste yeniden çizildi');
+  assert.equal(sayfa.sonOdak(), yeniFavori, 'odak DOM dışına çıkan eski seçiciden yeni seçiciye geçti');
+  assert.equal(sayfa.sonOdak().id, 'disPcKural1Favori');
+
+  const eskiOlay = seciciler()[0];
+  eskiOlay.focus();
+  await sayfa.disDurumDegisti();
+  const yeniOlay = seciciler()[0];
+  assert.notEqual(yeniOlay, eskiOlay, 'durum yenilemesi de listeyi yeniden çizer');
+  assert.equal(sayfa.sonOdak(), yeniOlay);
+  assert.equal(sayfa.sonOdak().id, 'disPcKural1Olay');
+
+  // kural girdisi dışındaki odak (örn. Ekle düğmesi) yeniden çizimde yer değiştirmez
+  sayfa.oge('btnDisPcKuralEkle').focus();
+  await sayfa.disDurumDegisti();
+  assert.equal(sayfa.sonOdak(), sayfa.oge('btnDisPcKuralEkle'));
+});
+
+test('PC kuralı: ikinci kural aynı olay + favoriyle gelmez; elle tekrar ya da boş favori yapılırsa satırda "kaydedilmez" uyarısı çıkar', async () => {
+  const sayfa = await acilmisSayfa({ ayar: AYAR, disYaniti: { disTetikDurumu: DOLU_DURUM } });
+  const ekle = () => sayfa.oge('btnDisPcKuralEkle').dispatchEvent({ type: 'click' });
+  const kart = (i) => sayfa.oge('disPcKuralListesi').children[i];
+  const uyari = (i) => kart(i).bul((o) => o.className === 'kural-hata')[0];
+  const seciciler = (i) => kart(i).bul((o) => o.etiket === 'select');
+  ekle();
+  ekle();
+  const [olay1, , favori1] = seciciler(0);
+  const [olay2, , favori2] = seciciler(1);
+  assert.deepEqual([olay1.value, favori1.value], ['kilit', 'light.salon']);
+  assert.deepEqual([olay2.value, favori2.value], ['kilitAcildi', 'light.salon'], 'aynı favoride kullanılmamış ilk olay seçilir');
+  assert.equal(uyari(1).textContent, '');
+
+  sec(olay2, 'kilit');
+  assert.equal(uyari(1).textContent, tr('ayar.dis.kural.tekrar'), 'üstteki satırla aynı (olay, favori): kayıtta düşer');
+  assert.equal(uyari(1).style.display, 'block');
+  assert.equal(uyari(0).textContent, '', 'ilk satır tutulur, uyarı yok');
+  sec(seciciler(1)[0], 'uyku');
+  assert.equal(uyari(1).textContent, '', 'olay değişince uyarı kalkar');
+
+  sec(seciciler(0)[2], '');
+  assert.equal(uyari(0).textContent, tr('ayar.dis.kural.favoriBos'));
+  assert.equal(uyari(1).textContent, '');
+  assert.equal(kirliMi(sayfa), true);
+});
+
 test('kayıtlı kurallar ve toplantı ışığı sunucudan yüklenir; listede olmayan favori "uygun değil" olarak korunur; bitiş favorisi yalnız seçilince görünür', async () => {
   const ayar = {
     ...AYAR,

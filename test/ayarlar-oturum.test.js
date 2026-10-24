@@ -210,3 +210,79 @@ test('sayfa yalnız oturum kanallarını çağırır; yanıtlardaki bilinmeyen a
   const metinler = sayfa.tumOgeler().map((o) => `${o.textContent}|${o.value ?? ''}`).join('\n');
   for (const sir of ['GIZLI-ERISIM-JETONU', 'GIZLI-YENILEME-JETONU', 'GIZLI-KOD']) assert.equal(metinler.includes(sir), false);
 });
+
+test('odak: giriş başlayınca odak "Vazgeç"e geçer, vazgeçince "Tarayıcıyla giriş yap"a döner; oturumu kapatınca da giriş düğmesine geçer', async () => {
+  const sayfa = await ac();
+  sayfa.oge('btnOturumGiris').focus();
+  await tikla(sayfa, 'btnOturumGiris');
+  assert.equal(sayfa.oge('btnOturumGiris').disabled, true);
+  assert.equal(sayfa.sonOdak(), sayfa.oge('btnOturumIptal'), 'pasifleşen giriş düğmesinin odağı Vazgeç düğmesine taşınır');
+  await tikla(sayfa, 'btnOturumIptal');
+  assert.equal(gorunur(sayfa, 'btnOturumIptal'), false);
+  assert.equal(sayfa.sonOdak(), sayfa.oge('btnOturumGiris'), 'Vazgeç gizlenince odak giriş düğmesine döner');
+
+  const cikis = await ac({ oturum: AKTIF });
+  cikis.oge('btnOturumCikis').focus();
+  await tikla(cikis, 'btnOturumCikis');
+  assert.equal(gorunur(cikis, 'btnOturumCikis'), false);
+  assert.equal(cikis.sonOdak(), cikis.oge('btnOturumGiris'));
+
+  // onay reddedilirse ya da odak başka yerdeyse odağa dokunulmaz
+  const hayir = await ac({ oturum: AKTIF }, { onayYaniti: false });
+  hayir.oge('btnOturumCikis').focus();
+  await tikla(hayir, 'btnOturumCikis');
+  assert.equal(hayir.sonOdak(), hayir.oge('btnOturumCikis'));
+  const baska = await ac();
+  baska.oge('btnUstbilgiEkle').focus();
+  await tikla(baska, 'btnOturumGiris');
+  assert.equal(baska.sonOdak(), baska.oge('btnUstbilgiEkle'), 'kullanıcı odağı başka yerde tutuyorsa çekilmez');
+});
+
+test('yoklama zinciri: giriş beklenirken tek bir durum isteği başarısız olursa yoklama sürer ve sonraki başarılı yanıt arayüzü günceller', async () => {
+  let cagri = 0;
+  const sayfa = await ac({
+    oturum: { ...AKTIF, var: false, asama: 'bekliyor', kalanSn: 200 },
+    oturumDurumuGetir: (d) => {
+      cagri += 1;
+      if (cagri === 2) return { ok: false }; // ilk yoklama düşer (olay da gelmedi)
+      return { ok: true, oturum: JSON.parse(JSON.stringify(d.oturum)) };
+    },
+  });
+  const yoklama = (s) => s.etkinZamanlayicilar().filter((z) => z.ms === 2500).at(-1);
+  const tetikle = async (z) => {
+    z.iptal = true;
+    z.islev();
+    await akit();
+  };
+  assert.ok(yoklama(sayfa));
+  await tetikle(yoklama(sayfa));
+  assert.equal(cagri, 2);
+  assert.ok(yoklama(sayfa), 'istek başarısız oldu ama zincir kopmadı: yeni yoklama kuruldu');
+  assert.equal(durum(sayfa), tr(`${P}durum.bekliyor`, { dk: 4 }), 'başarısız yoklamada son bilinen durum korunur');
+  sayfa.baglantiDeposu.oturum = { ...AKTIF, son: { sonuc: 'tamam', neden: null } };
+  await tetikle(yoklama(sayfa));
+  assert.equal(durum(sayfa), tr(`${P}durum.var`, { ana: '192.168.1.50:8123' }));
+  assert.equal(gorunur(sayfa, 'btnOturumIptal'), false);
+  assert.equal(gorunur(sayfa, 'btnOturumCikis'), true);
+  assert.equal(yoklama(sayfa), undefined, 'giriş bitti: yoklama durur');
+});
+
+test('vazgeç reddedilirse (kod değişimi başladı) "Vazgeçildi" yazılmaz; giriş tamamlanınca başarı iletisi gösterilir', async () => {
+  const sayfa = await ac({ tarayiciGirisiniIptalEt: () => ({ ok: false, neden: 'tamamlaniyor' }) });
+  await tikla(sayfa, 'btnOturumGiris');
+  await tikla(sayfa, 'btnOturumIptal');
+  assert.deepEqual(oturumCagrilari(sayfa), ['tarayiciGirisiBaslat', 'tarayiciGirisiniIptalEt']);
+  assert.notEqual(ileti(sayfa), tr(`${P}sonuc.iptal`), 'iptal edilmeyen giriş "Vazgeçildi" diye bildirilmez');
+  assert.equal(ileti(sayfa), tr(`${P}durum.tamamlaniyor`));
+  assert.equal(sayfa.oge('oturumSonuc').className, 'ipucu');
+  sayfa.baglantiDeposu.oturum = { ...AKTIF, son: { sonuc: 'tamam', neden: null } };
+  await olay(sayfa);
+  assert.equal(ileti(sayfa), tr(`${P}sonuc.tamam`), 'girisGoruldu korunduğu için sonuç yine iletiye çevrilir');
+  assert.equal(durum(sayfa), tr(`${P}durum.var`, { ana: '192.168.1.50:8123' }));
+
+  // bilinmeyen ret nedeni genel hata olur
+  const garip = await ac({ tarayiciGirisiniIptalEt: () => ({ ok: false, neden: 'x' }) });
+  await tikla(garip, 'btnOturumGiris');
+  await tikla(garip, 'btnOturumIptal');
+  assert.equal(ileti(garip), tr(`${P}hata.genel`));
+});

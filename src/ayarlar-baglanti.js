@@ -38,16 +38,20 @@
     const ustDurum = $('ustbilgiDurum');
     const ustDeneSonuc = $('ustbilgiDeneSonuc');
 
-    let ustSatirlari = []; // { ad, deger, mevcut, hata: { anahtar, degiskenler } | null }
+    let ustSatirlari = []; // { ad, deger, mevcut, hata: { anahtar, degiskenler, neden } | null }
     let ustEnCok = VARSAYILAN_EN_COK_USTBILGI;
     let ustKayitliSayi = 0;
     let ustKirli = false;
-    let ustIleti = null; // { anahtar, degiskenler, tur } | { ham, tur }: dil değişince aynı durumdan yeniden yazılır
+    let ustIleti = null; // { anahtar, degiskenler, tur: 'hata' | 'tamam' | 'bilgi' } | { ham, tur }: dil değişince aynı durumdan yeniden yazılır
     let ustMesgul = false;
 
     function ustIletiYaz() {
-      ustDurum.className = 'ipucu' + (ustIleti && ustIleti.tur === 'hata' ? ' alan-sonuc-sorun' : ustIleti && ustIleti.tur === 'tamam' ? ' alan-sonuc-tamam' : '');
-      if (ustKirli && !(ustIleti && ustIleti.tur === 'hata')) {
+      const hata = !!ustIleti && ustIleti.tur === 'hata';
+      // Hata iletisi düzenleme sırasında, "Sınanıyor…" (tur: 'bilgi') da sınama sürerken görünür kalır; kirli uyarısı bunları ezmez.
+      const kirliGoster = ustKirli && !hata && !(ustIleti && ustIleti.tur === 'bilgi');
+      // "Kaydedilmemiş değişiklik var" uyarısı başarı rengi taşımaz: sınıf, gösterilen metne göre seçilir.
+      ustDurum.className = 'ipucu' + (hata ? ' alan-sonuc-sorun' : !kirliGoster && ustIleti && ustIleti.tur === 'tamam' ? ' alan-sonuc-tamam' : '');
+      if (kirliGoster) {
         ustDurum.textContent = t('ayar.baglanti.ust.kirli');
         return;
       }
@@ -73,6 +77,18 @@
       ustIletiYaz();
     }
 
+    /**
+     * Odaktaki öğe DOM'dan çıkınca ya da pasifleşince odak gövdeye düşer: odak başka yere gitmediyse önceki öğeye (görünür ve etkinse),
+     * değilse yedeğe verilir. Klavye kullanıcısı sayfanın başına dönmek zorunda kalmasın.
+     */
+    function odagiGeriVer(onceki, yedek) {
+      const aktif = belge.activeElement;
+      if (aktif && aktif !== belge.body) return;
+      const kullanilabilir = function (oge) { return !!oge && oge !== belge.body && !oge.disabled && !(oge.style && oge.style.display === 'none'); };
+      const hedef = kullanilabilir(onceki) ? onceki : yedek;
+      if (hedef && typeof hedef.focus === 'function') hedef.focus();
+    }
+
     function ustSatirlariCiz() {
       ustListe.replaceChildren();
       ustSatirlari.forEach(function (satir, sira) {
@@ -80,20 +96,35 @@
         kap.className = 'baglanti-satir';
         kap.setAttribute('role', 'listitem');
 
+        const hata = belge.createElement('div');
+        hata.className = 'alan-hata baglanti-satir-hata';
+
         const ad = belge.createElement('input');
         ad.type = 'text';
         ad.maxLength = 64;
         ad.value = satir.ad;
         ad.placeholder = 'CF-Access-Client-Id';
         ad.readOnly = satir.mevcut; // kayıtlı satırın adı değişmez: kaldırıp yeniden eklenir (değer eşleşmesi ada bağlıdır)
+        if (satir.mevcut) ad.title = t('ayar.baglanti.ust.adSabit'); // neden yazılamadığı fare üstünde ve ekran okuyucuda söylenir
         ad.setAttribute('aria-label', t('ayar.baglanti.ust.adEtiketi'));
         ad.setAttribute('spellcheck', 'false');
         ad.setAttribute('autocomplete', 'off');
         ad.addEventListener('input', function () {
           satir.ad = ad.value;
-          satir.hata = null;
+          hataIsaretiniKaldir();
           ustKirletti();
         });
+
+        /** Girdi düzenlenince satırın hata işareti (modeldeki hata, kırmızı çerçeve, aria-invalid, hata kutusu) yeniden çizim beklenmeden kalkar; üstteki durum satırı kalır. */
+        function hataIsaretiniKaldir() {
+          satir.hata = null;
+          [ad, deger].forEach(function (g) {
+            g.classList.remove('gecersiz');
+            g.removeAttribute('aria-invalid');
+            g.removeAttribute('aria-describedby');
+          });
+          hata.style.display = 'none';
+        }
 
         const deger = belge.createElement('input');
         deger.type = 'password';
@@ -105,7 +136,7 @@
         deger.setAttribute('autocomplete', 'off');
         deger.addEventListener('input', function () {
           satir.deger = deger.value;
-          satir.hata = null;
+          hataIsaretiniKaldir();
           ustKirletti();
         });
 
@@ -118,13 +149,20 @@
           ustSatirlari.splice(sira, 1);
           ustKirletti();
           ustSatirlariCiz();
+          // Tıklanan düğme listeyle birlikte silindi: odak aynı sıradaki (yoksa sondaki) satıra, satır kalmadıysa "Üstbilgi ekle"ye geçer.
+          const komsu = ustListe.children[Math.min(sira, ustListe.children.length - 1)];
+          const hedef = komsu && komsu.children[0] ? komsu.children[0] : ustEkle;
+          if (typeof hedef.focus === 'function') hedef.focus();
         });
 
-        const hata = belge.createElement('div');
-        hata.className = 'alan-hata baglanti-satir-hata';
         if (satir.hata) {
+          hata.id = 'ustHata' + sira;
           hata.textContent = t(satir.hata.anahtar, satir.hata.degiskenler);
-          ad.classList.add('gecersiz');
+          // Değer sorunlarında değer girdisi, adla ilgili sorunlarda ad girdisi işaretlenir; ekran okuyucu hata kutusunu girdiyle birlikte okur.
+          const isaretli = satir.hata.neden === 'deger-yok' || satir.hata.neden === 'deger-gecersiz' ? deger : ad;
+          isaretli.classList.add('gecersiz');
+          isaretli.setAttribute('aria-invalid', 'true');
+          isaretli.setAttribute('aria-describedby', hata.id);
         } else {
           hata.style.display = 'none';
         }
@@ -157,7 +195,7 @@
       hatalar.forEach(function (h) {
         const anahtar = USTBILGI_HATALARI[h.neden] || 'ayar.baglanti.ust.hataGenel';
         const satir = ustSatirlari[h.sira];
-        const hata = { anahtar: anahtar, degiskenler: h.neden === 'cok-fazla' ? { n: ustEnCok } : undefined };
+        const hata = { anahtar: anahtar, degiskenler: h.neden === 'cok-fazla' ? { n: ustEnCok } : undefined, neden: h.neden };
         if (satir) satir.hata = hata;
         if (!ilk) ilk = hata;
       });
@@ -192,6 +230,7 @@
     }
 
     async function ustSilTiklandi() {
+      const onceki = belge.activeElement;
       if (ustMesgul || !onayIste(t('ayar.baglanti.ust.silOnay'))) return;
       ustMesgul = true;
       ustButonlariGuncelle();
@@ -209,6 +248,7 @@
       } finally {
         ustMesgul = false;
         ustButonlariGuncelle();
+        odagiGeriVer(onceki, ustEkle); // "Tümünü sil" mesgulken pasifleşti; başarıda da gizlendi
       }
     }
 
@@ -217,7 +257,7 @@
       ustMesgul = true;
       ustButonlariGuncelle();
       ustDeneSonuc.replaceChildren();
-      ustIletisi({ anahtar: 'ayar.baglanti.sinaniyor' });
+      ustIletisi({ anahtar: 'ayar.baglanti.sinaniyor', tur: 'bilgi' });
       try {
         const yanit = await kopru.ustbilgileriDene();
         ustIleti = null;

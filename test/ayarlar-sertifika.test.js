@@ -7,7 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { AYAR_D3, CIHAZLAR_D3, akit, acilmisSayfa } = require('./ayarlar-sahte');
+const { AYAR_D3, CIHAZLAR_D3, HTML, akit, acilmisSayfa } = require('./ayarlar-sahte');
 const { SAHTE_PARMAK } = require('./baglanti-sahte');
 const AYARLAR = require('../src/lib/ceviri/ayarlar');
 
@@ -65,7 +65,8 @@ test('sunucu sertifikasını oku: bilgiler gösterilir ama SABİTLEME yapılmaz;
   assert.ok(metinler.includes(tr(`${P}okunanSistem0`)));
   assert.ok(metinler.includes(tr(`${P}okunanUyari`)), 'karşılaştırma uyarısı gösterilir');
   assert.equal(sayfa.baglantiDeposu.sertifikaSabit.length, 0, 'okumak sabitlemez');
-  assert.equal(durumMetni(sayfa), '');
+  assert.equal(durumMetni(sayfa), tr(`${P}okundu`), 'sonuç canlı bölgedeki durum satırında duyurulur ("Sınanıyor…" boş bırakılmaz)');
+  assert.equal(sayfa.oge('sertifikaDurum').className, 'ipucu');
 
   await tikla(dugme(sayfa, 'sertifikaOkunan', tr(`${P}okunanSabitle`)));
   assert.deepEqual(sertCagrilari(sayfa)[1], ['parmakIziniSabitle', 'yerel', SAHTE_PARMAK]);
@@ -79,7 +80,7 @@ test('okunan sertifika panelinde Vazgeç: panel kapanır, sabitleme çağrısı 
   const sayfa = await ac({
     sertifikaOku: (tur) => ({
       ok: true, tur, anaBilgisayar: 'ha.example.com', kapi: 443, parmak: SAHTE_PARMAK, parmakBicimli: bicimle(SAHTE_PARMAK), ad: 'ha.example.com', veren: 'R3',
-      sanlar: [], baslangic: '2026-01-01T00:00:00.000Z', bitis: '2026-04-01T00:00:00.000Z', kendindenImzali: false, sistemGuveniyor: true,
+      sanlar: [], baslangic: '2026-01-01T12:00:00.000Z', bitis: '2026-04-01T12:00:00.000Z', kendindenImzali: false, sistemGuveniyor: true,
     }),
   });
   const dugmeSirasi = dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === tr(`${P}oku`));
@@ -187,14 +188,14 @@ test('kök sertifika ekleme hataları: neden kodu ilgili iletiye çevrilir', asy
 });
 
 test('kök sertifika sınırı: dört kök dolunca ekle düğmesi kapanır', async () => {
-  const dort = Array.from({ length: 4 }, (_, i) => ({ parmak: String(i).repeat(64), ad: `Kok ${i}`, bitis: '2035-01-01T00:00:00.000Z' }));
+  const dort = Array.from({ length: 4 }, (_, i) => ({ parmak: String(i).repeat(64), ad: `Kok ${i}`, bitis: '2035-01-01T12:00:00.000Z' }));
   const sayfa = await ac({ sertifikaCa: dort });
   assert.equal(sayfa.oge('btnSertifikaCaEkle').disabled, true);
   assert.equal(sayfa.oge('sertifikaCaListesi').children.length, 4);
 });
 
 test('kök sertifikayı kaldır: onay reddedilirse çağrı gitmez; onaylanırsa parmak izi gider ve liste güncellenir', async () => {
-  const kayit = [{ parmak: 'cd'.repeat(32), ad: 'Ev Kok CA', bitis: '2035-06-30T00:00:00.000Z' }];
+  const kayit = [{ parmak: 'cd'.repeat(32), ad: 'Ev Kok CA', bitis: '2035-06-30T12:00:00.000Z' }];
   const red = await acilmisSayfa({ ayar: AYAR_D3, cihazlar: CIHAZLAR_D3, onayYaniti: false, baglantiYaniti: { sertifikaCa: kayit } });
   await tikla(dugmeler(red, 'sertifikaCaListesi')[0]);
   assert.deepEqual(sertCagrilari(red), []);
@@ -208,7 +209,7 @@ test('kök sertifikayı kaldır: onay reddedilirse çağrı gitmez; onaylanırsa
 });
 
 test('dil değişince etiketler, okunan sertifika paneli ve ileti yeni dilde yeniden yazılır; veri korunur', async () => {
-  const sayfa = await ac({ sertifikaCa: [{ parmak: 'cd'.repeat(32), ad: 'Ev Kok CA', bitis: '2035-06-30T00:00:00.000Z' }] });
+  const sayfa = await ac({ sertifikaCa: [{ parmak: 'cd'.repeat(32), ad: 'Ev Kok CA', bitis: '2035-06-30T12:00:00.000Z' }] });
   await tikla(dugme(sayfa, 'sertifikaAdresListesi', tr(`${P}oku`)));
   await sayfa.dilDegisti('en');
   const en = (anahtar, d) => doldur(AYARLAR.en[anahtar], d);
@@ -242,4 +243,209 @@ test('eşzamanlı işlem koruması: iş sürerken ikinci tıklama yok sayılır,
   await akit();
   await akit();
   assert.equal(sayfa.oge('btnSertifikaCaEkle').disabled, false);
+});
+
+test('odak: "Elle gir" açılan parmak izi girdisine odak verir, kapatınca düğmeye döner; yeniden çizilen düğmeler odağı kaybettirmez', async () => {
+  const sayfa = await ac();
+  const alan = () => sayfa.oge('sertifikaAdresListesi').bul((e) => e.etiket === 'input')[0];
+  const elleGir = () => dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === tr(`${P}elleGir`));
+  elleGir()[1].focus();
+  await tikla(elleGir()[1]); // dış adres
+  assert.ok(alan(), 'giriş alanı açıldı');
+  assert.equal(sayfa.sonOdak(), alan(), 'odak yeni parmak izi girdisinde');
+  assert.equal(sayfa.sonOdak().attributes['aria-label'], tr(`${P}parmakEtiketi`));
+  // girdi açıkken başka bir tazeleme (ör. dil değişimi) odağı girdide tutar
+  await sayfa.dilDegisti('en');
+  assert.equal(sayfa.sonOdak(), alan());
+  // yeniden tıklanınca alan kapanır, odak "Elle gir" düğmesine döner
+  const kapatan = dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === AYARLAR.en[`${P}elleGir`])[1];
+  kapatan.focus();
+  await tikla(kapatan);
+  assert.equal(alan(), undefined);
+  assert.equal(sayfa.sonOdak(), dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === AYARLAR.en[`${P}elleGir`])[1]);
+});
+
+test('odak: okuma, sabitleme ve vazgeçme sonrası odak aynı yerdeki (yeniden kurulan) düğmeye ya da ilgili yedeğe döner', async () => {
+  const sayfa = await ac();
+  const oku = () => dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === tr(`${P}oku`));
+  const eski = oku()[1];
+  eski.focus();
+  await tikla(eski);
+  assert.equal(OKUNAN(sayfa).style.display, '');
+  assert.notEqual(oku()[1], eski, 'düğme yeniden kuruldu');
+  assert.equal(sayfa.sonOdak(), oku()[1], 'okuma bitince odak (yeni) okuma düğmesinde');
+  assert.equal(oku()[1].disabled, false);
+
+  // Vazgeç: panel kapanır, odak okuma düğmesine döner
+  const vazgec = dugme(sayfa, 'sertifikaOkunan', tr(`${P}okunanVazgec`));
+  vazgec.focus();
+  await tikla(vazgec);
+  assert.equal(OKUNAN(sayfa).style.display, 'none');
+  assert.equal(sayfa.sonOdak(), oku()[1]);
+
+  // Sabitle (okunan panelinden): panel kapanır, odak o adresin "Sabitlemeyi kaldır" düğmesine geçer
+  await tikla(oku()[0]);
+  const sabitle = dugme(sayfa, 'sertifikaOkunan', tr(`${P}okunanSabitle`));
+  sabitle.focus();
+  await tikla(sabitle);
+  assert.equal(durumMetni(sayfa), tr(`${P}sabitlendi`));
+  assert.equal(sayfa.sonOdak(), dugme(sayfa, 'sertifikaAdresListesi', tr(`${P}sabitKaldir`)));
+
+  // Sabitlemeyi kaldır: düğme yok olur, odak aynı adresin okuma düğmesine geçer
+  const kaldir = dugme(sayfa, 'sertifikaAdresListesi', tr(`${P}sabitKaldir`));
+  kaldir.focus();
+  await tikla(kaldir);
+  assert.equal(durumMetni(sayfa), tr(`${P}sabitKaldirildi`));
+  assert.equal(dugme(sayfa, 'sertifikaAdresListesi', tr(`${P}sabitKaldir`)), undefined);
+  assert.equal(sayfa.sonOdak(), oku()[0]);
+});
+
+test('odak: kök sertifika ekle/kaldır sonrası odak "Kök sertifika ekle" düğmesinde kalır; odak bölümün dışındaysa çekilmez', async () => {
+  const sayfa = await ac();
+  const ekle = sayfa.oge('btnSertifikaCaEkle');
+  ekle.focus();
+  await tikla(ekle);
+  assert.equal(sayfa.oge('sertifikaCaListesi').children.length, 1);
+  assert.equal(ekle.disabled, false);
+  assert.equal(sayfa.sonOdak(), ekle, 'iş sürerken pasifleşen düğme odağı geri alır');
+
+  const kaldir = dugmeler(sayfa, 'sertifikaCaListesi')[0];
+  kaldir.focus();
+  await tikla(kaldir);
+  assert.equal(sayfa.oge('sertifikaCaListesi').children[0].textContent, tr(`${P}caYok`));
+  assert.equal(sayfa.sonOdak(), ekle, 'kaldırılan satırın düğmesi yok: odak ekle düğmesine geçer');
+
+  // kullanıcı işlem sürerken odağı başka yere taşıdıysa geri çekilmez
+  let coz;
+  const bekleyen = await ac({ kokSertifikaEkle: () => new Promise((c) => { coz = c; }) });
+  bekleyen.oge('btnSertifikaCaEkle').focus();
+  bekleyen.oge('btnSertifikaCaEkle').dispatchEvent({ type: 'click' });
+  await akit();
+  bekleyen.oge('btnUstbilgiEkle').focus();
+  coz({ ok: true, eklenen: 1, atlanan: 0 });
+  await akit();
+  assert.equal(bekleyen.sonOdak(), bekleyen.oge('btnUstbilgiEkle'));
+});
+
+test('geçerlilik tarihleri YEREL güne göre yazılır (UTC+3\'te 22:30Z ertesi gündür); geçersiz tarih boş kalır', async (t) => {
+  const eskiTz = process.env.TZ;
+  process.env.TZ = 'Etc/GMT-3'; // UTC+3 (Türkiye)
+  t.after(() => {
+    if (eskiTz === undefined) delete process.env.TZ;
+    else process.env.TZ = eskiTz;
+  });
+  if (new Date('2026-12-31T22:30:00Z').getTimezoneOffset() !== -180) return t.skip('bu ortamda çalışma anında saat dilimi değiştirilemiyor');
+  const sayfa = await ac({
+    sertifikaOku: (tur) => ({
+      ok: true, tur, anaBilgisayar: '192.168.1.50', kapi: 8123, parmak: SAHTE_PARMAK, parmakBicimli: bicimle(SAHTE_PARMAK), ad: 'ha.test', veren: 'R3',
+      sanlar: [], baslangic: '2026-12-31T22:30:00.000Z', bitis: 'bu-bir-tarih-degil', kendindenImzali: false, sistemGuveniyor: false,
+    }),
+    sertifikaCa: [{ parmak: 'cd'.repeat(32), ad: 'Ev Kok CA', bitis: '2026-12-31T22:30:00.000Z' }],
+  });
+  assert.equal(sayfa.oge('sertifikaCaListesi').children[0].children[0].textContent, tr(`${P}caSatir`, { ad: 'Ev Kok CA', bitis: '2027-01-01' }));
+  await tikla(dugme(sayfa, 'sertifikaAdresListesi', tr(`${P}oku`)));
+  const metinler = OKUNAN(sayfa).children.map((c) => c.textContent);
+  assert.ok(metinler.includes(tr(`${P}okunanGecerlilik`, { bas: '2027-01-01', bit: '' })), 'başlangıç yerel gün, geçersiz bitiş boş');
+});
+
+test('erişilebilir adlar: yerel ve dış adres bloklarının aynı metinli düğmeleri benzersiz aria-label taşır; boş durum iletileri listitem olur', async () => {
+  const sayfa = await ac({ sertifikaSabit: [{ anaBilgisayar: '192.168.1.50', parmak: SAHTE_PARMAK }, { anaBilgisayar: 'ha.example.com', parmak: SAHTE_PARMAK }] });
+  const etiketler = (metin) => dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === metin).map((d) => d.attributes['aria-label']);
+  const yerel = tr(`${P}adresYerel`, { ana: '192.168.1.50:8123' });
+  const dis = tr(`${P}adresDis`, { ana: 'ha.example.com' });
+  assert.deepEqual(etiketler(tr(`${P}oku`)), [tr(`${P}okuEtiket`, { ad: yerel }), tr(`${P}okuEtiket`, { ad: dis })]);
+  assert.deepEqual(etiketler(tr(`${P}elleGir`)), [tr(`${P}elleGirEtiket`, { ad: yerel }), tr(`${P}elleGirEtiket`, { ad: dis })]);
+  assert.deepEqual(etiketler(tr(`${P}sabitKaldir`)), [tr(`${P}sabitKaldirEtiket`, { ad: yerel }), tr(`${P}sabitKaldirEtiket`, { ad: dis })]);
+  for (const metin of [tr(`${P}oku`), tr(`${P}elleGir`), tr(`${P}sabitKaldir`)]) {
+    const liste = etiketler(metin);
+    assert.equal(new Set(liste).size, liste.length, `${metin}: etiketler benzersiz`);
+    assert.ok(liste.every((e) => e.startsWith(metin)), 'görünen metin erişilebilir adın başında (label-in-name)');
+  }
+  // dil değişince etiketler yeni dilde
+  await sayfa.dilDegisti('en');
+  assert.ok(dugmeler(sayfa, 'sertifikaAdresListesi').some((d) => d.attributes['aria-label'] === doldur(AYARLAR.en[`${P}okuEtiket`], { ad: doldur(AYARLAR.en[`${P}adresYerel`], { ana: '192.168.1.50:8123' }) })));
+
+  // role=list kaplarındaki boş durum iletileri listitem
+  const bos = await ac({ sertifikaAdresleri: [] });
+  assert.equal(bos.oge('sertifikaAdresListesi').children[0].attributes.role, 'listitem');
+  assert.equal(bos.oge('sertifikaCaListesi').children[0].attributes.role, 'listitem');
+});
+
+test('okunan sertifika kutusu adlı bir bölgedir (role=region + aria-label, dil değişince yenilenir) ve okuma sonucu duyurulur', async () => {
+  assert.match(HTML, /id="sertifikaOkunan"[^>]*role="region"/);
+  assert.match(HTML, /id="sertifikaDurum" role="status" aria-live="polite"/, 'duyuru satırı canlı bölge');
+  const sayfa = await ac();
+  await tikla(dugme(sayfa, 'sertifikaAdresListesi', tr(`${P}oku`)));
+  assert.equal(OKUNAN(sayfa).attributes['aria-label'], tr(`${P}okunanBaslik`));
+  assert.equal(durumMetni(sayfa), tr(`${P}okundu`));
+  await sayfa.dilDegisti('en');
+  assert.equal(OKUNAN(sayfa).attributes['aria-label'], AYARLAR.en[`${P}okunanBaslik`]);
+  assert.equal(durumMetni(sayfa), AYARLAR.en[`${P}okundu`]);
+  // okuma hatasında kutu açılmaz, hata iletisi yazılır
+  const hata = await ac({ sertifikaOku: () => ({ ok: false, neden: 'baglanamadi' }) });
+  await tikla(dugme(hata, 'sertifikaAdresListesi', tr(`${P}oku`)));
+  assert.equal(durumMetni(hata), tr(`${P}hata.baglanamadi`));
+});
+
+test('Kaydet sonrası sertifika bölümü güncel adreslerle yenilenir: eski adresin okunan sertifikası ve elle girilen parmak izi başka adrese sabitlenemez', async () => {
+  let durumCagrisi = 0;
+  const sayfa = await ac({
+    durum: (d) => {
+      durumCagrisi += 1;
+      return { ok: true, ustbilgi: { adlar: [], enCok: 8 }, sertifika: { ca: [], sabit: [], adresler: JSON.parse(JSON.stringify(d.sertifikaAdresleri)), enCokCa: 4 } };
+    },
+  });
+  const okuDugmeleri = () => dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === tr(`${P}oku`));
+  const alanlar = () => sayfa.oge('sertifikaAdresListesi').bul((e) => e.etiket === 'input');
+  await tikla(okuDugmeleri()[1]); // dış adres A okunur
+  assert.equal(OKUNAN(sayfa).style.display, '');
+  await tikla(dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === tr(`${P}elleGir`))[1]);
+  alanlar()[0].value = bicimle(SAHTE_PARMAK);
+  alanlar()[0].dispatchEvent({ type: 'input' });
+  const once = durumCagrisi;
+
+  // kullanıcı dış adresi B yapıp Kaydet'e basar (ana süreçte ayar değişti)
+  sayfa.baglantiDeposu.sertifikaAdresleri = [{ tur: 'yerel', anaBilgisayar: '192.168.1.50', kapi: 8123 }, { tur: 'dis', anaBilgisayar: 'b.example.com', kapi: 443 }];
+  sayfa.oge('btnAyarlariKaydet').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.ok(durumCagrisi > once, 'Kaydet sonrası bağlantı durumu yeniden istendi');
+  assert.equal(adresMetinleri(sayfa)[1][0], tr(`${P}adresDis`, { ana: 'b.example.com' }));
+  assert.equal(OKUNAN(sayfa).style.display, 'none', 'A\'nın okunan sertifikası B için sabitlenemez: kutu kapandı');
+  assert.equal(alanlar().length, 0, 'A için açık elle giriş alanı kapandı');
+  assert.equal(sertCagrilari(sayfa).filter((c) => c[0] === 'parmakIziniSabitle').length, 0);
+
+  // aynı adres geri gelse bile eski taslak ve açık alan geri dönmez
+  sayfa.baglantiDeposu.sertifikaAdresleri = [{ tur: 'yerel', anaBilgisayar: '192.168.1.50', kapi: 8123 }, { tur: 'dis', anaBilgisayar: 'ha.example.com', kapi: 443 }];
+  sayfa.oge('btnAyarlariKaydet').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(alanlar().length, 0);
+
+  // adres değişmediyse okunan sertifika korunur
+  await tikla(okuDugmeleri()[1]);
+  sayfa.oge('btnAyarlariKaydet').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(OKUNAN(sayfa).style.display, '');
+});
+
+test('İçe aktarma sonrası sertifika bölümü güncel adreslerle yenilenir: eski adresin okunan sertifikası yeni adrese sabitlenemez', async () => {
+  let sayfa = null;
+  sayfa = await ac({
+    durum: (d) => ({ ok: true, ustbilgi: { adlar: [], enCok: 8 }, sertifika: { ca: [], sabit: [], adresler: JSON.parse(JSON.stringify(d.sertifikaAdresleri)), enCokCa: 4 } }),
+  }, {
+    aktarimYaniti: {
+      // yedekteki dış adres başka: ana süreçteki adres listesi içe aktarmayla değişir
+      icesonrasi: () => {
+        sayfa.baglantiDeposu.sertifikaAdresleri = [{ tur: 'yerel', anaBilgisayar: '192.168.1.50', kapi: 8123 }, { tur: 'dis', anaBilgisayar: 'b.example.com', kapi: 443 }];
+      },
+    },
+  });
+  const okuDugmeleri = () => dugmeler(sayfa, 'sertifikaAdresListesi').filter((d) => d.textContent === tr(`${P}oku`));
+  await tikla(okuDugmeleri()[1]); // dış adres A okunur
+  assert.equal(OKUNAN(sayfa).style.display, '');
+
+  sayfa.oge('btnIceAktar').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(adresMetinleri(sayfa)[1][0], tr(`${P}adresDis`, { ana: 'b.example.com' }));
+  assert.equal(OKUNAN(sayfa).style.display, 'none', "A'nın okunan sertifikası B için sabitlenemez: kutu kapandı");
+  assert.equal(sertCagrilari(sayfa).filter((c) => c[0] === 'parmakIziniSabitle').length, 0);
 });

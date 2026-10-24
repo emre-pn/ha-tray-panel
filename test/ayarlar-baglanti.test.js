@@ -7,7 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { AYAR_D3, CIHAZLAR_D3, akit, acilmisSayfa, duzles, gorunurMetinler } = require('./ayarlar-sahte');
+const { AYAR_D3, CIHAZLAR_D3, HTML, akit, acilmisSayfa, duzles, gorunurMetinler } = require('./ayarlar-sahte');
 const AYARLAR = require('../src/lib/ceviri/ayarlar');
 
 const GIZLI = 'GIZLI_TEST_DEGERI';
@@ -91,9 +91,15 @@ test('sunucu doğrulama hatası ilgili satırda gösterilir; satır işaretlenir
   assert.ok(adGirdisi(satir).classList.contains('gecersiz'));
   assert.equal(sayfa.oge('ustbilgiDurum').textContent, AYARLAR.tr['ayar.baglanti.ust.hata.adYasak']);
   assert.ok(sayfa.oge('ustbilgiDurum').className.includes('alan-sonuc-sorun'));
-  // yazmaya başlayınca satırın hata işareti temizlenir
+  // yazmaya başlayınca satırın hata işareti temizlenir: ekrandaki işaret hemen, model de (yeniden çizilince hata gelmez)
   yaz(adGirdisi(satir), 'X-Ek');
-  assert.equal(satir.satirHataTemizlendi, undefined);
+  assert.equal(adGirdisi(satir).classList.contains('gecersiz'), false, 'kırmızı çerçeve yazınca kalkar');
+  assert.equal(hataKutusu(satir).style.display, 'none', 'hata kutusu yazınca gizlenir');
+  await tikla(sayfa, 'btnUstbilgiEkle');
+  const yenidenCizilen = satirlar(sayfa)[0];
+  assert.equal(adGirdisi(yenidenCizilen).classList.contains('gecersiz'), false, 'model hatası da temizlendi');
+  assert.equal(hataKutusu(yenidenCizilen).style.display, 'none');
+  satirlar(sayfa)[1].children[2].dispatchEvent({ type: 'click' }); // eklenen boş satırı geri al
   await tikla(sayfa, 'btnUstbilgiKaydet');
   assert.equal(sayfa.oge('ustbilgiDurum').textContent, AYARLAR.tr['ayar.baglanti.ust.kaydedildi']);
 });
@@ -219,4 +225,158 @@ test('sunucu yanıtı kayıt dışı değişirse (olay) kaydedilmemiş düzenlem
   assert.equal(satirlar(sayfa).length, 2);
   assert.equal(adGirdisi(satirlar(sayfa)[1]).value, 'X-Yeni');
   assert.deepEqual(duzles(sayfa.baglantiDeposu.ustbilgiAdlari), ['X-Ek', 'X-Baska']);
+});
+
+test('B64: yazılmış ama kaydedilmemiş üstbilgi taslağı pencere kapanırken sorulur; kaydedince sorulmaz', async () => {
+  const sayfa = await ac({ ustbilgiAdlari: ['X-Ek'] });
+  assert.equal(sayfa.pencereOlayi('beforeunload').onlendi, false, 'temizken sormaz');
+
+  yaz(degerGirdisi(satirlar(sayfa)[0]), GIZLI);
+  const olay = sayfa.pencereOlayi('beforeunload');
+  assert.equal(olay.onlendi, true, 'üstbilgi taslağı kaybolacağı için sorulur');
+  assert.equal(olay.returnValue, '');
+
+  await tikla(sayfa, 'btnUstbilgiKaydet');
+  assert.equal(sayfa.pencereOlayi('beforeunload').onlendi, false, 'kaydedilince sorulmaz');
+});
+
+test('satırı kaldır: odak klavye kullanıcısının bağlamından çıkmaz (komşu satıra, satır kalmazsa "Üstbilgi ekle"ye)', async () => {
+  const sayfa = await ac({ ustbilgiAdlari: ['X-Bir', 'X-Iki', 'X-Uc'] });
+  const ikinciKaldir = kaldirDugmesi(satirlar(sayfa)[1]);
+  ikinciKaldir.focus();
+  ikinciKaldir.dispatchEvent({ type: 'click' });
+  const kalan = satirlar(sayfa);
+  assert.equal(kalan.length, 2);
+  assert.equal(sayfa.sonOdak(), adGirdisi(kalan[1]), 'silinen satırın yerine gelen satırın ad girdisi odaklanır');
+  assert.equal(adGirdisi(kalan[1]).value, 'X-Uc');
+
+  const sonKaldir = kaldirDugmesi(kalan[1]);
+  sonKaldir.focus();
+  sonKaldir.dispatchEvent({ type: 'click' });
+  assert.equal(sayfa.sonOdak(), adGirdisi(satirlar(sayfa)[0]), 'son satır silinince önceki satıra geçer');
+
+  const tekKaldir = kaldirDugmesi(satirlar(sayfa)[0]);
+  tekKaldir.focus();
+  tekKaldir.dispatchEvent({ type: 'click' });
+  assert.equal(satirlar(sayfa).length, 0);
+  assert.equal(sayfa.sonOdak(), sayfa.oge('btnUstbilgiEkle'));
+});
+
+test('tümünü sil: onaydan sonra gizlenen düğme yüzünden odak kaybolmaz ("Üstbilgi ekle"ye geçer); hatada düğme odağını korur', async () => {
+  const sayfa = await ac({ ustbilgiAdlari: ['X-Ek'] });
+  sayfa.oge('btnUstbilgiSil').focus();
+  await tikla(sayfa, 'btnUstbilgiSil');
+  assert.equal(sayfa.oge('btnUstbilgiSil').style.display, 'none');
+  assert.equal(sayfa.sonOdak(), sayfa.oge('btnUstbilgiEkle'));
+
+  const hatali = await ac({ ustbilgiAdlari: ['X-Ek'], ustbilgileriSil: async () => ({ ok: false }) });
+  hatali.oge('btnUstbilgiSil').focus();
+  await tikla(hatali, 'btnUstbilgiSil');
+  assert.equal(hatali.oge('btnUstbilgiSil').style.display, '');
+  assert.equal(hatali.sonOdak(), hatali.oge('btnUstbilgiSil'), 'pasifleşip yeniden etkinleşen düğme odağı geri alır');
+
+  const ret = await acilmisSayfa({ ayar: AYAR_D3, cihazlar: CIHAZLAR_D3, onayYaniti: false, baglantiYaniti: { ustbilgiAdlari: ['X-Ek'] } });
+  ret.oge('btnUstbilgiSil').focus();
+  await tikla(ret, 'btnUstbilgiSil');
+  assert.equal(ret.sonOdak(), ret.oge('btnUstbilgiSil'), 'onay reddedilirse odağa dokunulmaz');
+});
+
+test('"Kaydedildi" sonrası düzenleme: kaydedilmemiş uyarısı başarı (yeşil) rengiyle görünmez; hata iletisi renkli kalır', async () => {
+  const sayfa = await ac({ ustbilgiAdlari: ['X-Ek'] });
+  yaz(degerGirdisi(satirlar(sayfa)[0]), 'v1');
+  await tikla(sayfa, 'btnUstbilgiKaydet');
+  const durum = sayfa.oge('ustbilgiDurum');
+  assert.equal(durum.textContent, AYARLAR.tr['ayar.baglanti.ust.kaydedildi']);
+  assert.ok(durum.className.includes('alan-sonuc-tamam'));
+  yaz(degerGirdisi(satirlar(sayfa)[0]), 'v2');
+  assert.equal(durum.textContent, AYARLAR.tr['ayar.baglanti.ust.kirli']);
+  assert.ok(!durum.className.includes('alan-sonuc-tamam'), 'uyarı başarı rengi taşımaz');
+  assert.ok(!durum.className.includes('alan-sonuc-sorun'));
+
+  // hata iletisi düzenleme sırasında hata renginde görünür kalır
+  await tikla(sayfa, 'btnUstbilgiEkle');
+  yaz(adGirdisi(satirlar(sayfa)[1]), 'Authorization');
+  yaz(degerGirdisi(satirlar(sayfa)[1]), 'x');
+  await tikla(sayfa, 'btnUstbilgiKaydet');
+  assert.equal(durum.textContent, AYARLAR.tr['ayar.baglanti.ust.hata.adYasak']);
+  yaz(degerGirdisi(satirlar(sayfa)[1]), 'y');
+  assert.equal(durum.textContent, AYARLAR.tr['ayar.baglanti.ust.hata.adYasak']);
+  assert.ok(durum.className.includes('alan-sonuc-sorun'));
+});
+
+test('kaydedilmemiş değişiklik varken "Üstbilgileri dene": sınama sürerken "Sınanıyor…" görünür, bitince kirli uyarısına dönülür', async () => {
+  let coz;
+  const sayfa = await ac({
+    ustbilgiAdlari: ['X-Ek'],
+    ustbilgileriDene: () => new Promise((c) => { coz = c; }),
+  });
+  yaz(degerGirdisi(satirlar(sayfa)[0]), 'yeni_deger');
+  const durum = sayfa.oge('ustbilgiDurum');
+  assert.equal(durum.textContent, AYARLAR.tr['ayar.baglanti.ust.kirli']);
+  sayfa.oge('btnUstbilgiDene').dispatchEvent({ type: 'click' });
+  await akit();
+  assert.equal(sayfa.oge('btnUstbilgiDene').disabled, true);
+  assert.equal(durum.textContent, AYARLAR.tr['ayar.baglanti.sinaniyor'], 'kirli iken de ilerleme iletisi görünür');
+  coz({ ok: true, sonuclar: [{ tur: 'yerel', ok: true, ulasilabilir: true, neden: 'tamam', mesaj: 'm' }] });
+  await akit();
+  assert.equal(sayfa.oge('btnUstbilgiDene').disabled, false);
+  assert.equal(durum.textContent, AYARLAR.tr['ayar.baglanti.ust.kirli']);
+  assert.equal(sayfa.oge('ustbilgiDeneSonuc').children.length, 1);
+});
+
+test('kayıtlı satırın salt okunur adı nedenini title ile söyler; yeni satırda title yok; salt okunur girdi soluk gösterilir (CSS)', async () => {
+  const sayfa = await ac({ ustbilgiAdlari: ['X-Ek'] });
+  await tikla(sayfa, 'btnUstbilgiEkle');
+  const s = satirlar(sayfa);
+  assert.equal(adGirdisi(s[0]).readOnly, true);
+  assert.equal(adGirdisi(s[0]).title, AYARLAR.tr['ayar.baglanti.ust.adSabit']);
+  assert.equal(adGirdisi(s[1]).readOnly, false);
+  assert.equal(adGirdisi(s[1]).title, '');
+  await sayfa.dilDegisti('en');
+  assert.equal(adGirdisi(satirlar(sayfa)[0]).title, AYARLAR.en['ayar.baglanti.ust.adSabit']);
+  assert.match(HTML, /\.baglanti-satir input\[type="text"\]:read-only\s*\{[^}]*cursor: not-allowed/);
+});
+
+test('satır hatası sorunlu alanı işaretler: değer hatasında değer girdisi, ad hatasında ad girdisi (gecersiz + aria-invalid + aria-describedby); yazınca işaret kalkar', async () => {
+  const sayfa = await ac({});
+  await tikla(sayfa, 'btnUstbilgiEkle');
+  yaz(adGirdisi(satirlar(sayfa)[0]), 'CF-Access-Client-Id');
+  await tikla(sayfa, 'btnUstbilgiKaydet'); // değer boş: sunucu 'deger-yok' döner
+  let satir = satirlar(sayfa)[0];
+  assert.equal(hataKutusu(satir).textContent, AYARLAR.tr['ayar.baglanti.ust.hata.degerYok']);
+  assert.ok(hataKutusu(satir).id, 'hata kutusunun kimliği var');
+  assert.ok(degerGirdisi(satir).classList.contains('gecersiz'));
+  assert.equal(degerGirdisi(satir).getAttribute('aria-invalid'), 'true');
+  assert.equal(degerGirdisi(satir).getAttribute('aria-describedby'), hataKutusu(satir).id);
+  assert.ok(!adGirdisi(satir).classList.contains('gecersiz'), 'doğru yazılmış ad işaretlenmez');
+  assert.equal(adGirdisi(satir).getAttribute('aria-invalid'), null);
+
+  // değeri yazınca işaret ve satır hata kutusu kalkar
+  yaz(degerGirdisi(satir), 'x');
+  assert.ok(!degerGirdisi(satir).classList.contains('gecersiz'));
+  assert.equal(degerGirdisi(satir).getAttribute('aria-invalid'), null);
+  assert.equal(degerGirdisi(satir).getAttribute('aria-describedby'), null);
+  assert.equal(hataKutusu(satir).style.display, 'none');
+
+  // ad hatası (yasak ad): ad girdisi işaretlenir
+  yaz(adGirdisi(satir), 'Authorization');
+  await tikla(sayfa, 'btnUstbilgiKaydet');
+  satir = satirlar(sayfa)[0];
+  assert.equal(hataKutusu(satir).textContent, AYARLAR.tr['ayar.baglanti.ust.hata.adYasak']);
+  assert.ok(adGirdisi(satir).classList.contains('gecersiz'));
+  assert.equal(adGirdisi(satir).getAttribute('aria-invalid'), 'true');
+  assert.equal(adGirdisi(satir).getAttribute('aria-describedby'), hataKutusu(satir).id);
+  assert.ok(!degerGirdisi(satir).classList.contains('gecersiz'));
+  assert.equal(degerGirdisi(satir).getAttribute('aria-invalid'), null);
+
+  // sunucu 'deger-gecersiz' dönerse de değer girdisi işaretlenir; hata kutusu role=alert taşımaz (durum satırı zaten canlı bölge)
+  const gecersiz = await ac({ ustbilgileriKaydet: async () => ({ ok: false, hatalar: [{ sira: 0, neden: 'deger-gecersiz' }] }) });
+  await tikla(gecersiz, 'btnUstbilgiEkle');
+  yaz(adGirdisi(satirlar(gecersiz)[0]), 'X-Ek');
+  yaz(degerGirdisi(satirlar(gecersiz)[0]), 'a\nb');
+  await tikla(gecersiz, 'btnUstbilgiKaydet');
+  const g = satirlar(gecersiz)[0];
+  assert.equal(degerGirdisi(g).getAttribute('aria-invalid'), 'true');
+  assert.equal(adGirdisi(g).getAttribute('aria-invalid'), null);
+  assert.equal(hataKutusu(g).getAttribute('role'), null);
 });

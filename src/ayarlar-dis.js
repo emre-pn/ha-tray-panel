@@ -18,6 +18,7 @@
   const EN_COK_PC_KURALI = 8;
   const PC_OLAYLARI = ['kilit', 'kilitAcildi', 'uyku', 'uyanis'];
   const PC_ISLEMLERI = ['kapat', 'ac', 'calistir', 'geriYukle'];
+  const KURAL_GIRDI_KIMLIGI = /^disPcKural\d+(Olay|Islem|Favori)$/;
   const TOPLANTI_KAYNAKLARI = ['ikisi', 'mikrofon', 'kamera'];
   const TOPLANTI_BITISLERI = ['geriYukle', 'kapat', 'favori', 'yok'];
   // Sözlük anahtarları (düz tablolar: kullanılmayan / eksik anahtar testlerle yakalanır)
@@ -116,6 +117,7 @@
     let durumHatasi = false;
     let istekNo = 0;
     let kurallar = [];
+    const kuralGirdileri = new Map(); // son çizimdeki kural girdileri (kimlik -> öğe): yeniden çizimde odağı geri vermek için
     const secim = { kisayol: '', baglanti: '', toplantiFavori: '', toplantiBitisFavori: '' };
     const kayitli = { pcOlaylari: false, pcAcma: false, masaustu: false }; // sunucudaki (kaydedilmiş) değerler
     // Düğme sonuçları anahtar + değişkenle saklanır: dil değişince yeni dilde yeniden yazılır.
@@ -177,6 +179,7 @@
       const kutu = el('div', 'kural-alan');
       const etiket = el('label', '', etiketMetni);
       girdi.id = kimlik;
+      kuralGirdileri.set(kimlik, girdi);
       etiket.setAttribute('for', kimlik);
       kutu.appendChild(etiket);
       kutu.appendChild(girdi);
@@ -220,6 +223,7 @@
       alanEkle(ikili, 'disPcKural' + n + 'Olay', t('ayar.dis.kural.olay'), olay);
       olay.addEventListener('change', function () {
         k.olay = olay.value;
+        kurallariCiz(); // başka satırın "tekrar" uyarısı da değişebilir
         kirliGuncelle();
       });
       const islem = seciciKur(islemleri(k.kimlik).map(function (x) { return [x, t(ISLEM_ANAHTARLARI[x])]; }), k.islem, t('ayar.dis.kural.islem') + ': ' + grup);
@@ -233,10 +237,14 @@
 
       const uyari = el('div', 'kural-hata');
       kart.appendChild(uyari);
+      // Kayıtta sessizce düşen satırlar (boş favori, üstteki bir satırla aynı olay + favori: ana süreç pcKurallariDuzelt ilkini tutar) burada söylenir.
       const uyariYaz = function () {
-        const gerekli = k.islem !== 'kapat' && !g.pcAcma.checked;
-        uyari.textContent = gerekli ? t('ayar.dis.kural.acmaGerekli') : '';
-        uyari.style.display = gerekli ? 'block' : 'none';
+        const iletiler = [];
+        if (k.islem !== 'kapat' && !g.pcAcma.checked) iletiler.push(t('ayar.dis.kural.acmaGerekli'));
+        if (k.kimlik === '') iletiler.push(t('ayar.dis.kural.favoriBos'));
+        else if (kurallar.slice(0, sira).some(function (x) { return x.olay === k.olay && x.kimlik === k.kimlik; })) iletiler.push(t('ayar.dis.kural.tekrar'));
+        uyari.textContent = iletiler.join(' ');
+        uyari.style.display = iletiler.length > 0 ? 'block' : 'none';
       };
       uyariYaz();
       islem.addEventListener('change', function () {
@@ -254,9 +262,27 @@
     }
 
     function kurallariCiz() {
+      // Liste baştan kurulunca odaktaki seçici DOM'dan çıkar ve odak gövdeye düşer (Windows'ta kapalı seçicide her ok tuşu change üretir):
+      // odak bir kural girdisindeyse aynı kimlikli yeni girdiye geri verilir.
+      const etkin = document.activeElement;
+      const odakKimligi = etkin && typeof etkin.id === 'string' && KURAL_GIRDI_KIMLIGI.test(etkin.id) &&
+        (typeof g.pcKuralListesi.contains !== 'function' || g.pcKuralListesi.contains(etkin)) ? etkin.id : '';
+      kuralGirdileri.clear();
       g.pcKuralListesi.replaceChildren.apply(g.pcKuralListesi, kurallar.map(kuralSatiriKur));
+      if (odakKimligi && kuralGirdileri.has(odakKimligi)) odakla(kuralGirdileri.get(odakKimligi));
       g.pcKuralBos.textContent = kurallar.length === 0 ? t('ayar.dis.kural.bos') : '';
-      g.btnPcKuralEkle.disabled = kurallar.length >= EN_COK_PC_KURALI || kuralUygunlari().length === 0;
+      g.btnPcKuralEkle.disabled = kurallar.length >= EN_COK_PC_KURALI || yeniKuralAdayi() === null;
+    }
+
+    /** Eklenecek kuralın (olay, favori) çifti: henüz bir kuralda geçmeyen ilk çift (aynı çift kayıtta düşer). Hepsi doluysa null. */
+    function yeniKuralAdayi() {
+      for (const f of kuralUygunlari()) {
+        const olay = PC_OLAYLARI.find(function (o) {
+          return !kurallar.some(function (k) { return k.olay === o && k.kimlik === f.kimlik; });
+        });
+        if (olay) return { olay: olay, kimlik: f.kimlik, islem: f.acKapa === true ? 'kapat' : 'calistir' };
+      }
+      return null;
     }
 
     // --- durum satırları ----------------------------------------------------------------------------------------------
@@ -489,9 +515,9 @@
     g.btnJetonKopyala.addEventListener('click', jetonKopyala);
     g.btnJetonYenile.addEventListener('click', jetonYenile);
     g.btnPcKuralEkle.addEventListener('click', function () {
-      if (kurallar.length >= EN_COK_PC_KURALI || kuralUygunlari().length === 0) return;
-      const ilk = kuralUygunlari()[0];
-      kurallar.push({ olay: 'kilit', kimlik: ilk.kimlik, islem: ilk.acKapa === true ? 'kapat' : 'calistir' });
+      const aday = yeniKuralAdayi();
+      if (kurallar.length >= EN_COK_PC_KURALI || aday === null) return;
+      kurallar.push(aday);
       kurallariCiz();
       kirliGuncelle();
       const son = g.pcKuralListesi.children[g.pcKuralListesi.children.length - 1];

@@ -59,6 +59,11 @@
     let elleDegerleri = {};
     let ileti = null; // { anahtar, degiskenler, tur }
     let mesgul = false;
+    // Odak yönetimi: her çizim düğmeleri baştan kurar; tıklanan düğme silinince odak gövdeye düşerdi. Çizimden önce odaktaki öğenin anahtar
+    // zinciri ([kendisi, yedekler...]) saklanır, çizimden (işlem sürerken: işlem bittikten) sonra zincirdeki ilk kullanılabilir öğeye verilir.
+    let odakOgeleri = {}; // odak anahtarı -> öğe (her çizimde yeniden kurulur)
+    let odakZincirleri = {}; // odak anahtarı -> [anahtar, yedek anahtarlar...]
+    let odakIstegi = null;
 
     function iletiYaz() {
       durumSatiri.className = 'ipucu' + (ileti && ileti.tur === 'hata' ? ' alan-sonuc-sorun' : ileti && ileti.tur === 'tamam' ? ' alan-sonuc-tamam' : '');
@@ -74,8 +79,13 @@
       iletisi({ anahtar: hataAnahtari(neden), tur: 'hata' });
     }
 
+    /** ISO (UTC) zamanı YYYY-AA-GG olarak YEREL takvim gününe göre yazar (Windows sertifika görüntüleyicisi de yerel saati gösterir). */
     function tarihKisa(iso) {
-      return typeof iso === 'string' ? iso.slice(0, 10) : '';
+      if (typeof iso !== 'string') return '';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      const iki = function (n) { return (n < 10 ? '0' : '') + n; };
+      return String(d.getFullYear()).padStart(4, '0') + '-' + iki(d.getMonth() + 1) + '-' + iki(d.getDate());
     }
 
     function adresAdi(adres) {
@@ -90,7 +100,12 @@
       return null;
     }
 
-    function dugme(metin, sinif, tiklama, etiket) {
+    function odakKaydet(oge, zincir) {
+      odakOgeleri[zincir[0]] = oge;
+      odakZincirleri[zincir[0]] = zincir;
+    }
+
+    function dugme(metin, sinif, tiklama, etiket, odakZinciri) {
       const d = belge.createElement('button');
       d.type = 'button';
       d.className = 'buton ' + sinif + ' buton-kucuk';
@@ -98,7 +113,33 @@
       if (etiket) d.setAttribute('aria-label', etiket);
       d.disabled = mesgul;
       d.addEventListener('click', tiklama);
+      if (odakZinciri) odakKaydet(d, odakZinciri);
       return d;
+    }
+
+    function kullanilabilir(oge) {
+      return !!oge && oge !== belge.body && !oge.disabled && !(oge.style && oge.style.display === 'none');
+    }
+
+    /** Odak gövdeye düştüyse (ya da pasif/gizli bir öğede kaldıysa) zincirdeki ilk kullanılabilir öğeye verilir; kullanıcı başka yere geçtiyse dokunulmaz. */
+    function odagiGeriVer(zincir) {
+      if (kullanilabilir(belge.activeElement)) return;
+      for (let i = 0; i < zincir.length; i += 1) {
+        const hedef = odakOgeleri[zincir[i]];
+        if (kullanilabilir(hedef) && typeof hedef.focus === 'function') {
+          hedef.focus();
+          return;
+        }
+      }
+    }
+
+    function odakAnahtariBul(oge) {
+      if (!oge) return null;
+      const anahtarlar = Object.keys(odakOgeleri);
+      for (let i = 0; i < anahtarlar.length; i += 1) {
+        if (odakOgeleri[anahtarlar[i]] === oge) return anahtarlar[i];
+      }
+      return null;
     }
 
     function satir(sinif, metin) {
@@ -108,27 +149,39 @@
       return e;
     }
 
+    /** role=list kabındaki boş durum iletisi de bir liste öğesi olmalı (ekran okuyucu "0 öğe" demesin diye listitem). */
+    function bosSatir(metin) {
+      const e = satir('ipucu', metin);
+      e.setAttribute('role', 'listitem');
+      return e;
+    }
+
     function adresBloguCiz(adres, sabit) {
       const kutu = belge.createElement('div');
       kutu.className = 'baglanti-kutu';
       kutu.setAttribute('role', 'listitem');
-      kutu.appendChild(satir('', adres.tur ? adresAdi(adres) : adres.anaBilgisayar));
+      const adAdi = adres.tur ? adresAdi(adres) : adres.anaBilgisayar; // düğmelerin erişilebilir adı hangi adrese ait olduklarını söyler
+      kutu.appendChild(satir('', adAdi));
       const durum = sabit
         ? t('ayar.baglanti.sert.sabitDurum', { parmak: sabit.parmakBicimli })
         : t('ayar.baglanti.sert.sabitYok');
       kutu.appendChild(satir(sabit ? 'baglanti-parmak' : 'ipucu', durum));
 
+      const bk = (adres.tur || '-') + '/' + adres.anaBilgisayar; // blok anahtarı (odak anahtarları için)
       const dugmeler = belge.createElement('div');
       dugmeler.className = 'buton-satiri';
       if (adres.tur) {
-        dugmeler.appendChild(dugme(t('ayar.baglanti.sert.oku'), 'buton-ikincil', function () { okuTiklandi(adres.tur); }));
+        dugmeler.appendChild(dugme(t('ayar.baglanti.sert.oku'), 'buton-ikincil', function () { okuTiklandi(adres.tur); }, t('ayar.baglanti.sert.okuEtiket', { ad: adAdi }),
+          ['oku:' + bk, 'elle:' + bk, 'ca-ekle']));
         dugmeler.appendChild(dugme(t('ayar.baglanti.sert.elleGir'), 'buton-ikincil', function () {
           elleAcik[adres.anaBilgisayar] = !elleAcik[adres.anaBilgisayar];
-          cizTumu();
-        }));
+          // Açılınca odak yeni parmak izi girdisine geçer (düğme yeniden kuruldu); kapanınca düğmeye döner.
+          cizTumu(elleAcik[adres.anaBilgisayar] ? ['giris:' + bk, 'elle:' + bk, 'oku:' + bk, 'ca-ekle'] : null);
+        }, t('ayar.baglanti.sert.elleGirEtiket', { ad: adAdi }), ['elle:' + bk, 'oku:' + bk, 'ca-ekle']));
       }
       if (sabit) {
-        dugmeler.appendChild(dugme(t('ayar.baglanti.sert.sabitKaldir'), 'buton-ikincil', function () { sabitKaldirTiklandi(adres.anaBilgisayar); }));
+        dugmeler.appendChild(dugme(t('ayar.baglanti.sert.sabitKaldir'), 'buton-ikincil', function () { sabitKaldirTiklandi(adres.anaBilgisayar); }, t('ayar.baglanti.sert.sabitKaldirEtiket', { ad: adAdi }),
+          ['sabitKaldir:' + bk, 'oku:' + bk, 'elle:' + bk, 'ca-ekle']));
       }
       kutu.appendChild(dugmeler);
 
@@ -144,10 +197,11 @@
         alan.setAttribute('spellcheck', 'false');
         alan.setAttribute('autocomplete', 'off');
         alan.addEventListener('input', function () { elleDegerleri[adres.anaBilgisayar] = alan.value; });
+        odakKaydet(alan, ['giris:' + bk, 'elle:' + bk, 'oku:' + bk, 'ca-ekle']);
         giris.appendChild(alan);
         giris.appendChild(dugme(t('ayar.baglanti.sert.sabitle'), 'buton-birincil', function () {
           sabitleTiklandi(adres.tur, elleDegerleri[adres.anaBilgisayar] || '');
-        }));
+        }, undefined, ['sabitle:' + bk, 'sabitKaldir:' + bk, 'oku:' + bk, 'elle:' + bk, 'ca-ekle']));
         kutu.appendChild(giris);
       }
       return kutu;
@@ -156,7 +210,7 @@
     function adresleriCiz() {
       adresListesi.replaceChildren();
       const adresler = sertifika.adresler || [];
-      if (adresler.length === 0) adresListesi.appendChild(satir('ipucu', t('ayar.baglanti.sert.adresYok')));
+      if (adresler.length === 0) adresListesi.appendChild(bosSatir(t('ayar.baglanti.sert.adresYok')));
       const gorunenler = {};
       adresler.forEach(function (adres) {
         gorunenler[adres.anaBilgisayar] = true;
@@ -175,6 +229,7 @@
         return;
       }
       okunanKutu.style.display = '';
+      okunanKutu.setAttribute('aria-label', t('ayar.baglanti.sert.okunanBaslik')); // bölge adlı olsun (role=region, ayarlar.html)
       const baslik = satir('', t('ayar.baglanti.sert.okunanBaslik'));
       baslik.style.fontWeight = '600';
       okunanKutu.appendChild(baslik);
@@ -191,18 +246,20 @@
       okunanKutu.appendChild(satir('ipucu', t('ayar.baglanti.sert.okunanUyari')));
       const dugmeler = belge.createElement('div');
       dugmeler.className = 'buton-satiri';
-      dugmeler.appendChild(dugme(t('ayar.baglanti.sert.okunanSabitle'), 'buton-birincil', function () { sabitleTiklandi(okunan.tur, okunan.parmak); }));
+      const obk = (okunan.tur || '-') + '/' + okunan.anaBilgisayar;
+      dugmeler.appendChild(dugme(t('ayar.baglanti.sert.okunanSabitle'), 'buton-birincil', function () { sabitleTiklandi(okunan.tur, okunan.parmak); }, undefined,
+        ['okunan-sabitle', 'sabitKaldir:' + obk, 'oku:' + obk, 'elle:' + obk, 'ca-ekle']));
       dugmeler.appendChild(dugme(t('ayar.baglanti.sert.okunanVazgec'), 'buton-ikincil', function () {
         okunan = null;
-        okunanCiz();
-      }));
+        cizTumu();
+      }, undefined, ['okunan-vazgec', 'oku:' + obk, 'elle:' + obk, 'ca-ekle']));
       okunanKutu.appendChild(dugmeler);
     }
 
     function caCiz() {
       caListesi.replaceChildren();
       if (sertifika.ca.length === 0) {
-        caListesi.appendChild(satir('ipucu', t('ayar.baglanti.sert.caYok')));
+        caListesi.appendChild(bosSatir(t('ayar.baglanti.sert.caYok')));
         return;
       }
       sertifika.ca.forEach(function (k) {
@@ -213,18 +270,36 @@
         kutu.appendChild(satir('baglanti-parmak', k.parmakBicimli));
         const dugmeler = belge.createElement('div');
         dugmeler.className = 'buton-satiri';
-        dugmeler.appendChild(dugme(t('ayar.baglanti.sert.caKaldir'), 'buton-ikincil', function () { caKaldirTiklandi(k.parmak); }, t('ayar.baglanti.sert.caKaldirEtiket', { ad: k.ad })));
+        dugmeler.appendChild(dugme(t('ayar.baglanti.sert.caKaldir'), 'buton-ikincil', function () { caKaldirTiklandi(k.parmak); }, t('ayar.baglanti.sert.caKaldirEtiket', { ad: k.ad }),
+          ['ca-kaldir:' + k.parmak, 'ca-ekle']));
         kutu.appendChild(dugmeler);
         caListesi.appendChild(kutu);
       });
     }
 
-    function cizTumu() {
+    /**
+     * Tüm bölümü yeniden çizer. `yeniOdak`: odağın verileceği anahtar zinciri (yoksa o an odaktaki öğenin zinciri). İşlem sürerken (mesgul)
+     * düğmeler pasiftir: zincir saklanır ve işlem bitince yapılan çizimde uygulanır.
+     */
+    function cizTumu(yeniOdak) {
+      const aktif = belge.activeElement;
+      const aktifAnahtar = odakAnahtariBul(aktif);
+      if (yeniOdak) odakIstegi = yeniOdak;
+      else if (aktifAnahtar) odakIstegi = odakZincirleri[aktifAnahtar];
+      else if (aktif && aktif !== belge.body) odakIstegi = null; // kullanıcı odağı bölümün dışına taşıdı
+      odakOgeleri = {};
+      odakZincirleri = {};
       adresleriCiz();
       okunanCiz();
       caCiz();
       caEkleDugme.disabled = mesgul || sertifika.ca.length >= (sertifika.enCokCa || 4);
+      odakKaydet(caEkleDugme, ['ca-ekle']);
       iletiYaz();
+      if (!mesgul && odakIstegi) {
+        const istek = odakIstegi;
+        odakIstegi = null;
+        odagiGeriVer(istek);
+      }
     }
 
     function durumuUygula(durum) {
@@ -235,6 +310,16 @@
         adresler: Array.isArray(durum.sertifika.adresler) ? durum.sertifika.adresler : [],
         enCokCa: durum.sertifika.enCokCa,
       };
+      // Adresler Kaydet ile değişmiş olabilir: artık ayardaki adreslerle eşleşmeyen okunan sertifika kapatılır ve listede olmayan bilgisayarların
+      // elle girilen parmak izi taslakları atılır (yoksa bir adresin parmak izi başka adrese sabitlenebilirdi: ana süreç tür -> güncel adresi çözer).
+      const adresler = sertifika.adresler;
+      if (okunan && !adresler.some(function (a) { return a.tur === okunan.tur && a.anaBilgisayar === okunan.anaBilgisayar && (okunan.kapi === undefined || a.kapi === okunan.kapi); })) {
+        okunan = null;
+      }
+      const varOlan = {};
+      adresler.forEach(function (a) { varOlan[a.anaBilgisayar] = true; });
+      Object.keys(elleAcik).forEach(function (ana) { if (!varOlan[ana]) delete elleAcik[ana]; });
+      Object.keys(elleDegerleri).forEach(function (ana) { if (!varOlan[ana]) delete elleDegerleri[ana]; });
       cizTumu();
     }
 
@@ -273,7 +358,7 @@
         const yanit = await kopru.sertifikaOku(tur);
         if (yanit && yanit.ok) {
           okunan = yanit;
-          ileti = null;
+          ileti = { anahtar: 'ayar.baglanti.sert.okundu' }; // canlı bölgedeki durum satırı sonucun belirdiğini duyurur ("Sınanıyor…" silinir)
         } else {
           hataIletisi(yanit && yanit.neden);
         }
