@@ -99,7 +99,7 @@ Update by running `Ev-Paneli-Kurulum-1.4.1.exe` over the installed version. Your
 
 ### 1.4.0 — 2026-10-17
 
-Update by running `Ev-Paneli-Kurulum-1.4.0.exe` over the installed version. The settings schema is still 6: only new fields were added, so your settings, favorites and token stay as they are. The code is checked with `npm test` and `npm run kontrol`; it has not been tried in a real window, on a real Windows setup or against a real Home Assistant yet, so open the tray, the quick panel, the palette and Settings once before relying on it. Everything that reaches outside the app (external triggers, local API, `evpaneli://` links, mobile notifications, in-app updates, folder sync, camera snapshots) is off until you switch it on.
+Update by running `Ev-Paneli-Kurulum-1.4.0.exe` over the installed version. The settings schema goes from 5 to 6: only new fields are added, so your settings, favorites and token stay as they are, and the original file is first copied to `ayarlar.v5-yedek.json`. The code is checked with `npm test` and `npm run kontrol`; it has not been tried in a real window, on a real Windows setup or against a real Home Assistant yet, so open the tray, the quick panel, the palette and Settings once before relying on it. Everything that reaches outside the app (external triggers, local API, `evpaneli://` links, mobile notifications, in-app updates, folder sync, camera snapshots) is off until you switch it on.
 
 **Devices**
 
@@ -187,7 +187,7 @@ Güncelleme: kurulu sürümün üzerine `Ev-Paneli-Kurulum-1.2.0.exe` çalışt�
 
 ### 1.1.1 — 2026-10-07
 
-Güncelleme adımları: [Güncelleme (1.1.0'dan 1.1.1'e)](#7-güncelleme-110dan-111e). Yalnız bu düzeltme; ayar şeması ve diğer davranışlar 1.1.0 ile aynıdır.
+Güncelleme adımları: [Güncelleme (1.1.0'dan 1.1.1'e)](docs/KILAVUZ.md#7-güncelleme-110dan-111e). Yalnız bu düzeltme; ayar şeması ve diğer davranışlar 1.1.0 ile aynıdır.
 
 - **Olay:** 1.1.0 kurulduktan sonra Home Assistant'ta silinmiş (geçersiz) erişim anahtarıyla uygulama her açılışta aynı anda yaklaşık 8 kimlikli istek (her favori için `/api/states/...`, `/api/states`, WebSocket kimlik doğrulaması) gönderdi. Home Assistant'ın `ip_ban` özelliği 5 hatalı denemede bu bilgisayarın IP'sini engelledi; ev içi adres 403 verince uygulama dış adrese (`ha.example.com`, Cloudflare tüneli) geçip aynı geçersiz anahtarla yine ~6 istek attı ve **evin internet IP'si de engellendi** (evdeki her cihazın dış erişimi kesildi). Ban kaldırıldıktan 3 sn sonra uygulama yeniden açılınca bir saniyede yeniden engellendi.
 - **Yetki kesici:** Home Assistant bir anahtarı reddederse (REST 401 ya da canlı bağlantıda kimlik doğrulama reddi) o anahtarın yalnız parmak izi (SHA-256'nın ilk 16 hanesi) `yetki-kesici.json` dosyasına yazılır ve o anahtarla **hiçbir adrese** (ev içi ya da dış) hiçbir kimlikli istek gönderilmez; canlı bağlantı kurulmaz, yoklamalar, tepsi favorileri, panel, palet, eylem kısayolları ve `--eylem` ağa çıkmaz. Uygulama yeniden başlasa da kayıt geçerlidir. Yalnız Ayarlar'dan **farklı** bir anahtar kaydedince kesici açılır (aynı anahtarı yeniden kaydetmek açmaz; "Anahtarı sil" kaydı temizler).
@@ -204,7 +204,7 @@ Güncelleme adımları: [Güncelleme (1.1.0'dan 1.1.1'e)](#7-güncelleme-110dan-
 
 ### 1.1.0 — 2026-10-07
 
-Güncelleme adımları ve ilk açılışta olacaklar: [Güncelleme (1.0.0'dan 1.1.0'a)](#6-güncelleme-100dan-110a). Ayar şeması 1'den 5'e yükselir. Kapı Kuralı'nın ayrıntısı: [Kapı Kuralı](#-kapı-kuralı).
+Güncelleme adımları ve ilk açılışta olacaklar: [Güncelleme (1.0.0'dan 1.1.0'a)](docs/KILAVUZ.md#6-güncelleme-100dan-110a). Ayar şeması 1'den 5'e yükselir. Kapı Kuralı'nın ayrıntısı: [Kapı Kuralı](docs/KILAVUZ.md#-kapı-kuralı).
 
 - **Pencere ve kısayollar:** başka yere tıklayınca gizleme (Ayarlar'dan kapatılabilir), `Ctrl+W` ile gizleme, tepsi simgesi ve kısayolun yalnız pencere görünür ve odaktayken gizlemesi; pencere imlecin olduğu monitörde açılır, hızlı (560 × 780) ve geniş (1280 × 820) boyut ayrı hatırlanır (`Ctrl+Shift+G`); uzun gizli kalınca ana panoya dönüş; pencere içi yakınlaştırma, geri/ileri, yenileme ve `F11`; geçersiz kısayol diğer ayarların kaydını engellemez; Windows'ta kapatılmış otomatik başlatma kaydı uygulama tarafından ezilmez (1.0.0'dan 1.1.0'a ilk güncellemede 1.0.0'ın kaldırıcısı kaydı yine siler; ayrıntı aşağıda).
 - **Ağ ve bağlantı:** Cloudflare 5xx/403 yanıtı bağlandı sayılmaz; hata sayfasında artan beklemeyle (2, 4, 8, 15, 30 sn) otomatik yeniden deneme, uyanışta ve ekran kilidi açılışında beklemeden deneme; ev içi adres `https://` olabilir, adres yoklaması yanıtın gerçekten Home Assistant olduğunu doğrular ve yönlendirmeyi izlemez, düz `http://` yalnız ev ağı adreslerinde kabul edilir.

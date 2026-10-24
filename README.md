@@ -92,7 +92,7 @@ The app controls real devices, so a few rules are built in and are not configura
 
 - Locks, alarm panels, sirens, doors, garage doors, gates, intercoms, shutters and similar devices are never listed, added to favorites, bound to a hotkey or run. Scenes that contain them are blocked too.
 - Doorbell, door, entrance and intercom cameras are never listed or shown. Only curtains, blinds, shades and awnings count as covers; garage doors, gates and shutters stay blocked.
-- Actions such as shutting down a PC, closing a valve or running an automation need a press-and-hold (about one second) to run.
+- Actions such as shutting down a PC, closing a valve or running an automation need a press-and-hold (about 0.8 seconds) to run.
 - The access token is encrypted with Electron `safeStorage` (Windows DPAPI). It never goes into logs or exports, and an address is checked without the token before the token is sent to it.
 - Valves, automations and cameras, and anything that asks for confirmation, can never be started from outside the app (external triggers, local API, links, PC events).
 - If Home Assistant rejects the token, the app stops using it everywhere instead of retrying, so it will not trigger Home Assistant's IP ban.

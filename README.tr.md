@@ -33,7 +33,7 @@ Ev Paneli, [Home Assistant](https://www.home-assistant.io/) için bir Windows te
 - Zor kurulumlar için bağlantı seçenekleri: özel HTTP üstbilgileri (örneğin Cloudflare Access), özel kök sertifika ya da sabitlenmiş sertifika, tarayıcıyla giriş ve seçtiğin bir klasör üzerinden ayar eşitleme.
 - Açık, koyu ve yüksek karşıtlıklı tema; hazır ya da özel renkler, metin boyutu, Windows 11 mika/akrilik görünüm; Türkçe, İngilizce, Almanca, Fransızca ve İspanyolca arayüz.
 - Solda kategorilere ayrılmış Ayarlar (Bağlantı, Favoriler, Görünüm ve diğerleri); arama hepsinde arar. Ayarları dışa/içe aktarma ve otomatik yedekler, sır içermeyen tanılama raporu; sürüm denetimi ve uygulama içi güncelleme varsayılan olarak kapalıdır. İçe aktarma, uygulanmadan önce bir önizleme gösterir.
-- Kurulum gerektirmeyen taşınabilir sürüm.
+- Kurulum gerektirmeyen taşınabilir sürüm. Ayar klasörünü kurulu uygulamayla paylaşır; bu yüzden 1.3.0 ya da daha eski bir sürümü onunla yan yana çalıştırma: onlar ayar dosyasını yeni alanlar (favoriler, karo alanları, dil) olmadan yeniden yazar. Uygulama bir sonraki açılışta bunları kaydedilmiş eski sürüm yedeğinden geri yükler.
 
 ## Ekran görüntüleri
 
@@ -92,7 +92,7 @@ Uygulama gerçek cihazları yönettiği için bazı kurallar yerleşik ve deği�
 
 - Kilitler, alarm panelleri, sirenler, kapılar, garaj kapıları, bariyerler, diafonlar, kepenkler ve benzerleri hiçbir zaman listelenmez, favoriye eklenmez, kısayola bağlanmaz ve çalıştırılmaz. Bunları içeren sahneler de engellenir.
 - Kapı zili, kapı, giriş ve diafon kameraları hiçbir zaman listelenmez ya da gösterilmez. Yalnız perde, jaluzi, gölgelik ve tente kapak sayılır; garaj kapısı, bariyer ve kepenk engelli kalır.
-- Bilgisayarı kapatmak, vanayı kapatmak ya da bir otomasyonu çalıştırmak gibi eylemler için yaklaşık bir saniye basılı tutmak gerekir.
+- Bilgisayarı kapatmak, vanayı kapatmak ya da bir otomasyonu çalıştırmak gibi eylemler için yaklaşık 0,8 saniye basılı tutmak gerekir.
 - Erişim anahtarı Electron `safeStorage` (Windows DPAPI) ile şifrelenir. Günlüğe ya da dışa aktarılan dosyaya girmez; bir adrese gönderilmeden önce o adres anahtarsız doğrulanır.
 - Vana, otomasyon ve kamera ile onay isteyen hiçbir eylem uygulamanın dışından (dış tetik, yerel API, bağlantı, bilgisayar olayı) başlatılamaz.
 - Home Assistant anahtarı reddederse uygulama tekrar denemek yerine o anahtarı her yerde kullanmayı bırakır; böylece HA'nın IP yasağına takılmazsın.

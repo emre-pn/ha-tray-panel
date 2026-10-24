@@ -51,6 +51,9 @@ body:
       options:
         - English
         - Türkçe
+        - Deutsch
+        - Français
+        - Español
   - type: textarea
     id: log
     attributes:
