@@ -129,7 +129,20 @@ test('sabit durum renkleri: tema-renk.js\'teki canlı/yedek/hata/yıkıcı/rozet
   const acik = degiskenler(secicidenGovde(YUZEY_KURALLARI, ':root', ACIK_MEDYA));
   for (const [sema, css] of [['koyu', koyu], ['acik', acik]]) {
     const d = T.paletUret({ sema }).degiskenler;
-    for (const ad of ['--canli', '--yedek', '--hata', '--yikici']) assert.equal(d[ad], css[ad], `${sema} ${ad}`);
+    for (const ad of ['--canli', '--yedek', '--yedek-metin', '--hata', '--yikici']) assert.equal(d[ad], css[ad], `${sema} ${ad}`);
+  }
+});
+
+test('--yedek-metin: uyarı metinleri (.kart-uyari, .serit-uyari, .sensor-uyari) metin rengini --yedek-metin değişkeninden alır; yüksek karşıtlık blokları da tanımlar', () => {
+  const govde = YUZEY_KURALLARI.filter((k) => /.kart-uyari/.test(k.secici) && /.sensor-uyari/.test(k.secici) && k.medya === '').map((k) => k.govde).join(';');
+  assert.match(govde, /color:\s*var\(--yedek-metin\)/);
+  assert.doesNotMatch(govde, /color:\s*var\(--yedek\)/);
+  // --yedek yalnız dolgu / kenar / çizgi olarak kalır: hiçbir kuralda metin rengi (color:) olarak kullanılmaz
+  for (const k of YUZEY_KURALLARI) assert.doesNotMatch(k.govde, /(^|[;\s])color:\s*var\(--yedek\)/, k.secici);
+  const karsitlik = yuksekKarsitlikPaletleri(YUZEY_KURALLARI);
+  for (const sema of ['koyu', 'acik']) {
+    assert.equal(karsitlik[sema]['--yedek-metin'], karsitlik[sema]['--yedek'], sema);
+    assert.match(karsitlik[sema]['--yedek-metin'], /^#[0-9a-f]{6}$/);
   }
 });
 
@@ -212,9 +225,113 @@ test('yüksek karşıtlık: panel kenarlıkları kalınlaşır; kullanılamayan 
   const kural = (secici, medya = '') => YUZEY_KURALLARI.filter((k) => k.secici.split(',').map(bosluksuz).includes(secici) && k.medya === medya).map((k) => k.govde).join(';');
   assert.match(kural(':root[data-karsitlik] .karo'), /border-width:\s*2px/);
   assert.match(kural(':root[data-karsitlik] .karo.durum-acik'), /border-width:\s*3px/);
-  assert.match(kural(':root[data-karsitlik] .karo.yok'), /opacity:\s*1/);
+  assert.doesNotMatch(kural(':root[data-karsitlik] .karo.yok'), /opacity/, 'ölü opacity:1 kalmadı (taban kural zaten soluklaştırmıyor)');
+  assert.match(kural(':root[data-karsitlik] .karo.yok'), /border-style:\s*dotted/);
+  assert.match(kural(':root[data-karsitlik] .kart.yok'), /border-style:\s*dotted/);
   assert.match(kural(':root[data-karsitlik] button:focus-visible'), /outline-width:\s*3px/);
   assert.match(kural(':root[data-karsitlik] .palet-satir.secili'), /box-shadow/);
+});
+
+test('yüksek karşıtlık: sekme şeridi — kuyu ve seçili sekme kenarlık taşır, gösterge zemini kuyudan ayrışır, odak halkası şeritte kırpılmaz (B25)', () => {
+  const kural = (secici, medya = '') => YUZEY_KURALLARI.filter((k) => k.secici.split(',').map(bosluksuz).includes(secici) && k.medya === medya).map((k) => k.govde).join(';');
+  assert.match(kural(':root[data-karsitlik] .sekmeler'), /border:\s*2px solid var\(--kenar\)/);
+  assert.match(kural(':root[data-karsitlik] .sekmeler::before'), /background:\s*var\(--karo-uzerinde\)/);
+  assert.match(kural(':root[data-karsitlik] .sekmeler::before'), /box-shadow:\s*inset 0 0 0 2px var\(--kenar\)/);
+  assert.match(kural(':root[data-karsitlik] .sekmeler:not([data-gosterge]) .sekme.secili'), /box-shadow:\s*inset 0 0 0 2px var\(--kenar\)/);
+  // genel odak halkası 3px + 2px kayma kırpılırdı: sekmede halka sekmenin içine alınır
+  assert.match(kural(':root[data-karsitlik] .sekme:focus-visible'), /outline-offset:\s*-3px/);
+  // kuyu (--bg) ile gösterge zemini ve kenarlık iki temada da ayrışır
+  const { koyu, acik } = yuksekKarsitlikPaletleri(YUZEY_KURALLARI);
+  for (const [ad, p] of [['koyu', koyu], ['açık', acik]]) {
+    assert.ok(kontrast(p['--kenar'], p['--bg']) >= 3, `${ad}: sekme kenarlığı kuyudan ayrışır`);
+    assert.ok(kontrast(p['--kenar'], p['--karo-uzerinde']) >= 3, `${ad}: seçili sekme çerçevesi gösterge zemininden ayrışır`);
+    assert.ok(kontrast(p['--metin'], p['--karo-uzerinde']) >= 7, `${ad}: seçili sekme metni`);
+  }
+});
+
+test('iklim kartı: 36 px yuvarlak düğme biçimi yalnız − / + (adim) düğmelerine verilir; onaylı "Uygula" düğmesi daireye zorlanmaz (B26)', () => {
+  const kural = (secici) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === '').map((k) => k.govde).join(';');
+  assert.match(kural('.kart-iklim .kart-sayisal .kart-dugme.adim'), /border-radius:\s*50%/);
+  assert.match(kural('.kart-iklim .kart-sayisal .kart-dugme.adim'), /width:\s*36px/);
+  assert.equal(kural('.kart-iklim .kart-sayisal .kart-dugme'), '', 'adim sınıfsız seçici (Uygula düğmesini de vuran) kalmadı');
+  // basılı tutma dolumu doğrusal 800 ms kalır
+  assert.match(kural('.kart-dugme.basili::after'), /animation:\s*dolum 800ms linear/);
+});
+
+test('alt çubuk: display veren .alt-dugme kuralı hidden özniteliğini ezmez; "Geri al" hidden iken gizlenir (B27)', () => {
+  const sirali = YUZEY_KURALLARI.filter((k) => k.medya === '');
+  const dizin = (secici, desen) => sirali.findIndex((k) => k.secici === secici && desen.test(k.govde));
+  const gizle = dizin('.alt-dugme[hidden]', /display:\s*none/);
+  const gosterim = sirali.map((k, i) => (k.secici === '.alt-dugme' && /display:\s*inline-flex/.test(k.govde) ? i : -1)).filter((i) => i >= 0);
+  assert.ok(gizle >= 0, '.alt-dugme[hidden] { display: none }');
+  assert.ok(gosterim.length > 0 && gosterim.every((i) => i < gizle), 'gizleme kuralı inline-flex bloğundan SONRA gelir (aynı özgüllükte sonraki kazanır)');
+  assert.match(oku('src/yuzey.html'), /<button id="geriAl"[^>]*\bhidden\b/);
+});
+
+test('pasif görünüm: Geri al, bildirim hapı ve seçici liste :disabled iken solar; hover pasif düğmede tepki vermez (B144)', () => {
+  const govde = (secici) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === '').map((k) => k.govde).join(';');
+  const pasif = govde('.bildirim-dugme:disabled, .alt-dugme:disabled, .kart-liste:disabled');
+  assert.match(pasif, /opacity:\s*0\.5/);
+  assert.match(pasif, /cursor:\s*default/);
+  assert.ok(govde('.alt-dugme:hover:not(:disabled)') !== '', '.alt-dugme hover yalnız etkin düğmede');
+  assert.ok(govde('.bildirim-dugme:hover:not(:disabled)') !== '', '.bildirim-dugme hover yalnız etkin düğmede');
+  assert.equal(govde('.alt-dugme:hover'), '');
+  assert.equal(govde('.bildirim-dugme:hover'), '');
+});
+
+test('karo hover: durum / etiket metni hover zeminlerinde (--karo-uzerinde, tonlu açık karo) iki temada >= 4,5:1 (B145)', () => {
+  const govde = (secici) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === '').map((k) => k.govde).join(';');
+  assert.match(govde('.karo:hover .karo-durum, .kok.soluk .karo:hover .karo-durum, .serit-oge:hover .serit-etiket, button.bilgi-kart:hover .bilgi-etiket'), /color:\s*var\(--soluk-secili\)/);
+  assert.match(govde('.karo.durum-acik:hover .karo-durum'), /color:\s*var\(--metin\)/);
+  // sıra: hover kuralları ".kok.soluk .karo.durum-acik .karo-durum" ve ".karo.durum-acik .karo-durum"dan sonra gelir (eşit özgüllükte sonraki kazanır)
+  const sirali = YUZEY_KURALLARI.filter((k) => k.medya === '').map((k) => k.secici);
+  const sira = (baslangic) => sirali.findIndex((x) => x.startsWith(baslangic));
+  assert.ok(sira('.karo.durum-acik:hover .karo-durum') > sira('.kok.soluk .karo.durum-acik .karo-durum'));
+  assert.ok(sira('.karo.durum-acik:hover .karo-durum') > sira('.karo:hover .karo-durum'), 'açık karo hover kuralı soluk hover kuralından sonra');
+  assert.ok(sira('.karo:hover .karo-durum') > sira('.karo.durum-acik .karo-durum'));
+  // .karo.durum-acik:hover zemini: color-mix(renk %20, karo-uzerinde); varsayılan renk --acik
+  const karis = (a, b, yuzde) => {
+    const k = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const [x, y] = [k(a), k(b)];
+    return '#' + x.map((v, i) => Math.round(v * yuzde + y[i] * (1 - yuzde)).toString(16).padStart(2, '0')).join('');
+  };
+  const koyu = degiskenler(secicidenGovde(YUZEY_KURALLARI, ':root', ''));
+  const acik = degiskenler(secicidenGovde(YUZEY_KURALLARI, ':root', ACIK_MEDYA));
+  for (const [ad, p] of [['koyu', koyu], ['açık', acik]]) {
+    const tonlu = karis(p['--acik'], p['--karo-uzerinde'], 0.2);
+    assert.ok(kontrast(p['--metin'], tonlu) >= 4.5, `${ad}: açık karo hover durum metni`);
+    assert.ok(kontrast(p['--soluk-secili'], p['--karo-uzerinde']) >= 4.5, `${ad}: kapalı karo / çip hover metni`);
+    assert.ok(kontrast(p['--acik'], tonlu) < 4.5, `${ad}: (kural gerekçesi) --acik tonlu hover zeminde yeterli olmazdı`);
+  }
+});
+
+test('kullanılamayan cihaz kartı soluklaştırılmaz: .kart.yok opaklık yerine kesikli çerçeve taşır (B146, B159)', () => {
+  const govde = (secici) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === '').map((k) => k.govde).join(';');
+  assert.doesNotMatch(govde('.kart.yok'), /opacity/);
+  assert.match(govde('.kart.yok'), /border-style:\s*dashed/);
+  assert.doesNotMatch(YUZEY_KURALLARI.filter((k) => /\.kart\.yok/.test(k.secici)).map((k) => k.govde).join(';'), /opacity/, 'hiçbir .kart.yok kuralı opaklık içermez');
+  assert.doesNotMatch(YUZEY_KURALLARI.filter((k) => /\.karo\.yok/.test(k.secici) && !/::after/.test(k.secici)).map((k) => k.govde).join(';'), /opacity/);
+});
+
+test('canlı bölge #ipucu boşken display:none olmaz (ekran okuyucu ağaçta kalan bölgeye eklenen metni duyurur) ve yer kaplamaz (B147)', () => {
+  const govde = YUZEY_KURALLARI.filter((k) => k.secici === '.ipucu:empty' && k.medya === '').map((k) => k.govde).join(';');
+  assert.doesNotMatch(govde, /display:\s*none/);
+  assert.match(govde, /height:\s*0\b/);
+  assert.match(govde, /padding:\s*0\b/);
+  assert.match(govde, /overflow:\s*hidden/);
+  assert.match(oku('src/yuzey.html'), /<div id="ipucu" class="ipucu" role="status" aria-live="polite"><\/div>/);
+});
+
+test('palet satırı: grup / durum metni tek satıra kısaltılır (en çok %40), rozet sarılmaz ve küçülmez; etiket ezilmez (B148)', () => {
+  const govde = (secici) => YUZEY_KURALLARI.filter((k) => k.secici === secici && k.medya === '').map((k) => k.govde).join(';');
+  const kisalt = govde('.palet-grup, .palet-durum');
+  assert.match(kisalt, /max-width:\s*40%/);
+  assert.match(kisalt, /overflow:\s*hidden/);
+  assert.match(kisalt, /text-overflow:\s*ellipsis/);
+  assert.match(kisalt, /white-space:\s*nowrap/);
+  assert.match(govde('.rozet'), /flex:\s*none/);
+  assert.match(govde('.rozet'), /white-space:\s*nowrap/);
+  assert.match(govde('.palet-durum'), /min-width:\s*56px/);
 });
 
 test('yüksek karşıtlık: özel palet değişkenleri yok sayılır (CSS özgüllüğü: sabit palet satır içi değişkenden önce gelmez ama ana süreç karşıtlıkta palet göndermez)', () => {
@@ -272,9 +389,30 @@ test('animasyonlar: hareketi azalt ayarı (data-hareket) karo geçişlerini kapa
   // köşe bildirimi (1.6.1): kartın kendisi canlanmaz (pencere ana süreçte solar ve hareketi azalt'a uyar); içerik hareketi yalnız data-hareket yokken
   assert.match(KOSE_CSS, /:root:not\(\[data-hareket\]\):not\(\[data-gecis\]\) \.bildirim\.gorunur \.yazi\s*\{\s*animation:\s*yazi-gir/);
   assert.doesNotMatch(KOSE_CSS, /(^|\n)\s*\.bildirim\s*\{[^}]*(transition|animation)/);
-  // geçiş animasyonu seçilmeden (data-gecis yok) :root[data-hareket] kuralı dışında hiçbir karo geçişi yeniden tanımlanmaz
-  const gecisliKaro = YUZEY_KURALLARI.filter((k) => k.secici.startsWith(':root[data-gecis] .karo') && /transition/.test(k.govde));
-  assert.ok(gecisliKaro.every((k) => k.medya === HAREKET_VAR));
+  // kozmetik katmanın (:root[data-gecis]) hiçbir geçişi prefers-reduced-motion: no-preference dışına sızmaz (filtre boş kalırsa iddia anlamsız olur)
+  const gecisliGecis = YUZEY_KURALLARI.filter((k) => k.secici.includes('[data-gecis]') && /transition/.test(k.govde));
+  assert.ok(gecisliGecis.length > 0, 'filtre boş değil');
+  for (const k of gecisliGecis) assert.equal(k.medya, HAREKET_VAR, `${k.secici}: prefers-reduced-motion: no-preference içinde değil`);
+});
+
+test('köşe bildirimi süs geçişi (data-gecis): giriş transition değil keyframes ile; kose-sayfa.js sınıfı kaldırıp ekleyince her bildirimde yeniden oynar', () => {
+  const kural = KOSE_CSS.match(/:root\[data-gecis\]:not\(\[data-hareket\]\) \.bildirim\.gorunur \.yazi\s*\{([^}]*)\}/);
+  assert.ok(kural, 'data-gecis kuralı .gorunur sınıfına bağlı');
+  assert.match(kural[1], /animation:\s*yazi-gecis\b/);
+  assert.doesNotMatch(kural[1], /transition/);
+  assert.match(KOSE_CSS, /@keyframes yazi-gecis\s*\{[^@]*opacity:\s*0[^@]*transform:\s*translateX\(18px\)/);
+  // eski çözüm: data-gecis ile transition (sınıf kaldırılıp eklenince iptal olur) geri gelmemeli
+  assert.doesNotMatch(KOSE_CSS, /\[data-gecis\][^{]*\{[^}]*transition/);
+  const sayfa = oku('src/kose-sayfa.js');
+  assert.match(sayfa, /classList\.remove\('gorunur'\);\s*void kutu\.offsetWidth;\s*kutu\.classList\.add\('gorunur'\)/);
+});
+
+test('çevrimdışı sayfası: uygulamanın "Hareketi azalt" ayarı (data-hareket) belirme ve dönen simge animasyonunu da durdurur', () => {
+  const html = oku('src/offline.html');
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.kart,\s*\.donen-cember\s*\{\s*animation:\s*none/);
+  const kural = html.match(/:root\[data-hareket="azalt"\] \.kart,\s*:root\[data-hareket="azalt"\] \.donen-cember\s*\{([^}]*)\}/);
+  assert.ok(kural, 'data-hareket kuralı var');
+  assert.match(kural[1], /animation:\s*none/);
 });
 
 test('işlevsel hareket (1.4.1, 2.0 yaylar): basma, başarı rozeti, bekleme yayı, sarsıntı ve panel açılışı varsayılan açık; hareketi azalt kapatır; yıkıcı karo basınca küçülmez', () => {

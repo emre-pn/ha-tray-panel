@@ -68,7 +68,7 @@
   // Sayfaya yazılabilen CSS değişkenleri (yuzey.css ve kose-bildirim.css :root). Renderer bunların dışındakini yazmaz.
   const DEGISKEN_ADLARI = Object.freeze([
     '--bg', '--bg-ust', '--karo', '--karo-uzerinde', '--kenar', '--metin', '--soluk', '--soluk-eski', '--soluk-secili',
-    '--acik', '--acik-eski', '--canli', '--yedek', '--hata', '--vurgu', '--yikici', '--vurgu-metin', '--yikici-metin',
+    '--acik', '--acik-eski', '--canli', '--yedek', '--yedek-metin', '--hata', '--vurgu', '--yikici', '--vurgu-metin', '--yikici-metin',
     '--rozet-metin', '--basari', '--bilgi', '--isaret-metin',
     ...KARO_RENK_ADLARI.map((ad) => `--renk-${ad}`),
     ...SERI_RENKLERI.koyu.map((_, i) => `--seri-${i}`),
@@ -231,7 +231,8 @@
       '--acik': uydur(m.acik),
       '--acik-eski': uydur(m.acikEski),
       '--canli': d.canli,
-      '--yedek': d.yedek,
+      '--yedek': d.yedek, // dolgu / kenar / rozet zemini: sabit
+      '--yedek-metin': uydur(d.yedek), // aynı renk METİN olarak (uyarı satırları): dört yüzeyde >= 4,5
       '--hata': d.hata,
       '--vurgu': vurguRengi,
       '--yikici': d.yikici,

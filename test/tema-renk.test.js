@@ -17,6 +17,7 @@ const METIN_CIFTLERI = [
   ['--acik-eski', '--karo'], ['--acik-eski', '--bg'],
   ['--vurgu-metin', '--bg'], ['--vurgu-metin', '--karo'], ['--vurgu-metin', '--karo-uzerinde'],
   ['--yikici-metin', '--bg'], ['--yikici-metin', '--karo'], ['--yikici-metin', '--karo-uzerinde'],
+  ['--yedek-metin', '--bg'], ['--yedek-metin', '--bg-ust'], ['--yedek-metin', '--karo'], ['--yedek-metin', '--karo-uzerinde'],
   ['--rozet-metin', '--vurgu'], ['--rozet-metin', '--yikici'], ['--rozet-metin', '--hata'], ['--rozet-metin', '--yedek'], ['--rozet-metin', '--canli'],
 ];
 
@@ -252,4 +253,21 @@ test('gorunumUygula: beyaz liste dışı değişken adı ve geçersiz değer yaz
 test('gorunumUygula: kök öğe eksik ya da yarım olsa da fırlatmaz', () => {
   assert.doesNotThrow(() => T.gorunumUygula(null, { karsitlik: true }));
   assert.doesNotThrow(() => T.gorunumUygula({}, { degiskenler: { '--bg': '#112233' } }));
+});
+
+test('--yedek-metin: uyarı metni rengi dört yüzeyin hepsinde >= 4,5 (özel açık/koyu uç arka planlar dahil, hover zemini --karo-uzerinde); --yedek dolgu olarak sabit kalır', () => {
+  const zeminler = ['--bg', '--bg-ust', '--karo', '--karo-uzerinde'];
+  for (const arkaPlan of ['#e0e0e0', '#b3b3b3', '#d2d9ff', '#dbdbdb', '#c0c0c0', '#808080', '#333333', '#2b2b2b', '#101010', '#fafafa', '#7a7a7a']) {
+    for (const sema of ['koyu', 'acik']) {
+      const palet = T.paletUret({ sema, arkaPlan });
+      const d = palet.degiskenler;
+      for (const zemin of zeminler) {
+        assert.ok(T.kontrast(d['--yedek-metin'], d[zemin]) >= T.HEDEF_KONTRAST, `${arkaPlan} ${palet.sema}: --yedek-metin / ${zemin} = ${T.kontrast(d['--yedek-metin'], d[zemin]).toFixed(2)}`);
+      }
+      assert.ok(['#f59e0b', '#9a4a06'].includes(d['--yedek']), 'dolgu rengi sabit');
+    }
+  }
+  // sabit durum renginin kendisi okunur zeminde zaten yeterliyse uydurma onu değiştirmez
+  assert.equal(T.paletUret({ sema: 'koyu' }).degiskenler['--yedek-metin'], '#f59e0b');
+  assert.equal(T.paletUret({ sema: 'acik' }).degiskenler['--yedek-metin'], '#9a4a06');
 });

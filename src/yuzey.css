@@ -45,6 +45,7 @@ html {
   --acik-eski: #e0b038;
   --canli: #10b981;
   --yedek: #f59e0b;
+  --yedek-metin: #f59e0b;
   --hata: #ef4444;
   --vurgu: #60a5fa;
   --yikici: #f87171;
@@ -110,6 +111,7 @@ html {
     --acik-eski: #a35006;
     --canli: #047857;
     --yedek: #9a4a06;
+    --yedek-metin: #9a4a06;
     --hata: #b91c1c;
     --vurgu: #1d4ed8;
     --yikici: #b91c1c;
@@ -184,6 +186,7 @@ input:focus-visible,
 }
 
 .kok {
+  position: relative; /* .ipucu alttaki şeritlerin üstüne biner (B20) */
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -204,7 +207,6 @@ input:focus-visible,
 .serit,
 .bildirim,
 .palet-kutusu,
-.ipucu,
 .palet-serit,
 .gecikmeli-serit,
 .alt {
@@ -385,7 +387,7 @@ input:focus-visible,
   border-radius: 999px;
 }
 
-.bildirim-dugme:hover {
+.bildirim-dugme:hover:not(:disabled) {
   background: var(--karo-uzerinde);
 }
 
@@ -714,6 +716,20 @@ input:focus-visible,
   color: var(--acik);
 }
 
+/* Üstüne gelince zemin --karo-uzerinde'ye (açık karoda tonlu --karo-uzerinde'ye) koyulaşır: soluk metin orada 4,5:1'in altına inerdi.
+   Soluk metin hover'da --soluk-secili olur; açık karonun durumu --metin olur (tonlu zeminde --acik 4,5'in altında). Sıra önemli:
+   .kok.soluk kuralıyla eşit özgüllükte sonra gelen kazanır */
+.karo:hover .karo-durum,
+.kok.soluk .karo:hover .karo-durum,
+.serit-oge:hover .serit-etiket,
+button.bilgi-kart:hover .bilgi-etiket {
+  color: var(--soluk-secili);
+}
+
+.karo.durum-acik:hover .karo-durum {
+  color: var(--metin);
+}
+
 /* Kullanılamayan karo: soluklaşmaz (okunur kalır); kesikli çerçeve, düz zemin ve üstü çizili simge */
 .karo.yok {
   background: var(--bg-ust);
@@ -792,8 +808,15 @@ input:focus-visible,
   border-radius: 12px;
 }
 
-.hazir:hover {
+.hazir:hover:not(:disabled) {
   background: var(--karo-uzerinde);
+}
+
+/* Ulaşılamayan ışıkta ayrıntıdaki hazır seviyeler ve kaydırıcı pasiftir (B139) */
+.hazir:disabled,
+.kaydirici:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Işığın o anki seviyesine en yakın hazır düğme (g-02) */
@@ -864,8 +887,10 @@ input:focus-visible,
   border-radius: 20px; /* iç içe yarıçap (1.4.2): içteki düğmeler ve kapak 8 px + 12 px dolgu */
 }
 
+/* Kullanılamayan cihaz kartı soluklaştırılmaz (opaklık metni 4,5:1'in altına indirirdi, "Ulaşılamıyor" okunmazdı): kesikli çerçeve, düz zemin;
+   pasif düğmeler kendi :disabled görünümüyle solar */
 .kart.yok {
-  opacity: 0.55;
+  border-style: dashed;
 }
 
 .kart-baslik {
@@ -1172,13 +1197,57 @@ input:focus-visible,
 }
 
 .ipucu {
+  /* Akıştan çıkar (B20): metin belirip silinince içerik alanı daralıp genişlemez, pencere boyutu değişmez (basılı tutulan karo
+     yerinden kaymaz). Panelde yuzey-sayfa.js (ipucuKonumla) bottom'ı alt şeritlerin (zamanlı şerit, alt düğmeler) toplam yüksekliği
+     yapar: ipucu içerik alanının alt kenarına biner, düğmeleri örtmez. Palette bottom: 0 kalır ve düğmesiz kısayol şeridinin yerine
+     geçer. Tıklamaları her durumda altındakine bırakır */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  pointer-events: none;
   padding: 6px 12px;
   font-size: 12px;
   color: var(--acik);
+  background: var(--bg);
+  border-top: 1px solid var(--kenar);
 }
 
+/* Malzemede --bg yarı saydamdır: ipucunun arkasındaki karo yazıları okunmasın diye zemin koyulaşır ve arkası bulanıklaşır */
+:root[data-malzeme] .ipucu:not(:empty) {
+  background: var(--karo-uzerinde);
+  backdrop-filter: blur(16px);
+}
+
+/* Palette ipucu kısayol şeridiyle aynı yüksekliktedir (.palet-serit dolgusu): şeridin üst çizgisi ipucunun altında kalır, çift çizgi olmaz */
+.mod-palet .ipucu:not(:empty) {
+  padding-bottom: 8px;
+}
+
+/* Palette ipucu kısayol şeridinin yerine geçer: şeridin yazısı arkadan görünmesin (şeritte düğme yoktur; alt düğmeler hiç gizlenmez) */
+:root[data-malzeme] .kok:has(.ipucu:not(:empty)) .palet-serit {
+  opacity: 0;
+}
+
+/* Canlı bölge (role=status) boşken de erişilebilirlik ağacında kalır: display:none olsaydı metin görünür olurken eklenen içerik ekran okuyucuda
+   duyurulmazdı. Boşken yer kaplamaz (doğal yükseklik ölçümü değişmez); mutlak konumlu olduğundan üst çizgisi de kalkar, alt şeridin üstünde çizgi bırakmaz (B20) */
 .ipucu:empty {
-  display: none;
+  display: block;
+  height: 0;
+  padding: 0;
+  border-top: 0;
+  overflow: hidden;
+}
+
+/* Yalnız ekran okuyucuya duyurulan canlı bölge (palet boş / yükleniyor / eşleşme yok); görsel yer kaplamaz */
+.gorunmez {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Palet altı kısayol ipucu şeridi (k-08); panelde gizli */
@@ -1205,7 +1274,7 @@ input:focus-visible,
   border-radius: 10px;
 }
 
-.alt-dugme:hover {
+.alt-dugme:hover:not(:disabled) {
   color: var(--metin);
   background: var(--karo);
   border-color: var(--kenar);
@@ -1312,9 +1381,7 @@ input:focus-visible,
 
 /* 1.4.0 eylem grubu (o-12): "Geri al" yalnız geri alınacak bir girdi varken görünür; diğer iki düğmeyi sıkıştırmasın */
 .alt-geri-al {
-  flex: 0 1 auto;
   max-width: 40%;
-  padding: 7px 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1407,7 +1474,18 @@ input:focus-visible,
   color: var(--soluk);
 }
 
+/* Uzun grup adı / durum metni (çalan parça başlığı, seçici değeri) satırı bölüp cihaz adını ezmesin: tek satır, en çok %40, kısaltılır */
+.palet-grup,
+.palet-durum {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rozet {
+  flex: none;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   padding: 1px 7px;
   font-size: 12px;
@@ -1631,7 +1709,7 @@ button.bilgi-kart:hover {
 .serit-uyari,
 .sensor-uyari {
   font-weight: 600;
-  color: var(--yedek);
+  color: var(--yedek-metin);
 }
 
 .kart-uyari {
@@ -1873,6 +1951,12 @@ button.bilgi-kart:hover {
   background: var(--karo-uzerinde);
 }
 
+/* Ekleme isteği yanıt beklerken (aria-busy): odak düğmede kalsın diye disabled kullanılmaz; yalnız soluk görünür, ikinci istek kodda engellenir */
+.liste-ekle-dugme[aria-busy='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Takvim */
 .takvim-gun {
   margin-top: 6px;
@@ -1965,6 +2049,12 @@ button.bilgi-kart:hover {
   background: var(--karo);
   border: 1px solid var(--kenar);
   border-radius: 8px;
+}
+
+/* Yükleniyor: dolu grafik kutusunun (396 px panelde ~ birim satırı + 354x188 grafik + imleç satırı + istatistik kutuları) yüksekliğini tutar;
+   aralık / karşılaştırma seçiminde kutu bir satıra çökmez, altındaki çipler yerinden oynamaz */
+.detay-grafik.bekliyor {
+  min-height: 260px;
 }
 
 .detay-birim {
@@ -3033,7 +3123,8 @@ button.hero-hava:hover {
   border-color: color-mix(in srgb, var(--vurgu) 35%, var(--kenar));
 }
 
-.kart-iklim .kart-sayisal .kart-dugme {
+/* Yalnız − / + (adim): onaylı favoride aynı satıra eklenen metinli "Uygula" düğmesi dikdörtgen kalır, metni kırpılmaz ve 800 ms dolum çubuğu görünür */
+.kart-iklim .kart-sayisal .kart-dugme.adim {
   width: 36px;
   height: 36px;
   min-width: 0;
@@ -3065,6 +3156,19 @@ button.hero-hava:hover {
   font-size: 12px;
   border: 0;
   border-radius: 8px;
+}
+
+/* display:inline-flex tarayıcının [hidden] kuralını ezerdi: geri alınacak bir şey yokken "Geri al" da görünür kalıyordu */
+.alt-dugme[hidden] {
+  display: none;
+}
+
+/* Pasif düğme / liste etkin gibi görünmesin (button { color: inherit } ve .kart-liste rengi UA'nın pasif rengini eziyordu) */
+.bildirim-dugme:disabled,
+.alt-dugme:disabled,
+.kart-liste:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .alt-dugme::before {
@@ -3123,6 +3227,7 @@ button.hero-hava:hover {
   --acik-eski: #ffd400;
   --canli: #3ddc84;
   --yedek: #ffd400;
+  --yedek-metin: #ffd400;
   --hata: #ff6b6b;
   --vurgu: #5cc8ff;
   --yikici: #ff7b7b;
@@ -3172,6 +3277,7 @@ button.hero-hava:hover {
     --acik-eski: #6b3300;
     --canli: #005a2f;
     --yedek: #7a3b00;
+    --yedek-metin: #7a3b00;
     --hata: #a50000;
     --vurgu: #004fc4;
     --yikici: #a50000;
@@ -3222,9 +3328,9 @@ button.hero-hava:hover {
   border-width: 3px;
 }
 
-/* Kullanılamayan karo soluklaştırılmaz (opaklık kontrastı düşürür); noktalı kenarlıkla ayırt edilir */
-:root[data-karsitlik] .karo.yok {
-  opacity: 1;
+/* Kullanılamayan karo ve kart soluklaştırılmaz (opaklık kontrastı düşürür); noktalı kenarlıkla ayırt edilir */
+:root[data-karsitlik] .karo.yok,
+:root[data-karsitlik] .kart.yok {
   border-style: dotted;
 }
 
@@ -3233,6 +3339,26 @@ button.hero-hava:hover {
 :root[data-karsitlik] .icerik:focus-visible {
   outline-width: 3px;
   outline-offset: 2px;
+}
+
+/* Sekme şeridi (1.7.0 kuyu görünümü kenarlığı ve gölgesi siyah zeminde görünmez): kuyuya ve seçili sekmeye düz kenarlık; odak halkası
+   şeridin (overflow) kırpmayacağı biçimde sekmenin içine alınır */
+:root[data-karsitlik] .sekmeler {
+  border: 2px solid var(--kenar);
+}
+
+:root[data-karsitlik] .sekmeler::before {
+  background: var(--karo-uzerinde);
+  box-shadow: inset 0 0 0 2px var(--kenar);
+}
+
+:root[data-karsitlik] .sekmeler:not([data-gosterge]) .sekme.secili {
+  background: var(--karo-uzerinde);
+  box-shadow: inset 0 0 0 2px var(--kenar);
+}
+
+:root[data-karsitlik] .sekme:focus-visible {
+  outline-offset: -3px;
 }
 
 :root[data-karsitlik] .palet-satir.secili {
