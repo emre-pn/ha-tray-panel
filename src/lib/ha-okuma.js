@@ -13,7 +13,8 @@
  *  - yanıttaki metinleri süzer (takvim/yapılacaklar başlığı, bildirim metni, alan adı: guvenliMetin) ve yalnız gerekli alanları döner,
  *  - hız sınırlıdır: uç+girdi başına önbellek (TTL) ve aynı istek sürerken ikinci istek ağa çıkmaz; küresel dakika sınırı,
  *  - HA yanıt vermezse, bağlantı yoksa ya da hata dönerse SESSİZCE boş döner (fırlatmaz); günlüğe yalnız sabit metin,
- *  - yönetici gerektirebilecek WS komutları 'unauthorized' (ya da 'unknown_command') dönerse o uç oturum boyunca kapanır.
+ *  - yönetici gerektirebilecek WS komutları 'unauthorized' (ya da 'unknown_command') dönerse o uç, anahtar ya da adres değişip
+ *    sifirla() çağrılana kadar kapanır.
  *
  * API (ajanlar için):
  *   gecmis(kimlikler, { saat } | { baslangic, bitis })  -> Promise<{ [kimlik]: {t: number(ms), d: number|string|null}[] }>
@@ -37,6 +38,8 @@
  *       dinleyici({id, baslik, metin, zaman}[] (en yeni önce, en çok 20), { gizlenen: number }). Başlığı ya da metni süzgeçten
  *       geçmeyen bildirim HİÇ gösterilmez; yalnız sayısı `gizlenen` olarak verilir ("N gizlendi").
  *   kapaliUclar() -> string[]  oturum boyunca kapanmış uçlar (tanı için; sırsız)
+ *   sifirla() -> void  anahtar ya da adres değişti: kapanmış uçlar, önbellek, kapaklar ve hız sayacı unutulur; sıfırlamadan önce
+ *       başlamış okumalar sonuçlarını önbelleğe yazmaz ve uç kapatmaz. Bildirim aboneliğine dokunulmaz.
  *
  * Test sahtesi: test/ha-okuma.test.js'teki sahteOkuma() (sahte haIstek + sahte ws.komut/abone + depo).
  */
@@ -85,6 +88,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
   const kapali = new Set();
   const kapaklar = new Map(); // kapak yolu -> { t, ttl, deger: data adresi | null }  (en çok EN_COK_KAPAK, en eski çıkar)
   let agOkumalari = []; // son 60 sn'deki ağ okumalarının zamanları
+  let nesil = 0; // sifirla() her çağrıldığında artar: eski anahtar/adresle başlamış okuma sonucunu yeni duruma yazmaz
 
   function agHakkiVarMi() {
     const t = simdi();
@@ -106,10 +110,12 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
     if (!taze && kayit && simdi() - kayit.t < TTL[uc]) return kayit.deger;
     if (!taze && surenler.has(tam)) return surenler.get(tam);
     if (!agHakkiVarMi()) return kayit ? kayit.deger : bosDeger();
+    const buNesil = nesil;
     const soz = (async () => {
       try {
         const deger = await is();
         if (deger === undefined) return kayit ? kayit.deger : bosDeger(); // geçici sorun: önbelleğe yazılmaz
+        if (buNesil !== nesil) return deger; // okuma sürerken sifirla() çağrıldı: eski anahtar/adresin verisi önbelleğe girmez
         if (onbellek.size > 200) onbellek.clear();
         onbellek.set(tam, { t: simdi(), deger });
         return deger;
@@ -117,7 +123,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
         gunluk(`HA okuma ucu yanıt vermedi (${uc}); boş gösteriliyor.`);
         return kayit ? kayit.deger : bosDeger();
       } finally {
-        surenler.delete(tam);
+        if (buNesil === nesil) surenler.delete(tam); // sıfırlamadan sonra başlayan yeni okumanın kaydı silinmesin
       }
     })();
     surenler.set(tam, soz);
@@ -126,10 +132,11 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
 
   /** WS komutu: başarısızsa undefined (geçici) ya da kapatan kodda uç kapanır. */
   async function wsKomut(uc, ileti) {
-    if (typeof ws?.komut !== 'function') return undefined;
+    if (typeof ws?.komut !== 'function' || kapali.has(uc)) return undefined; // kapanmış uç (ör. 'cihazlar') her yenilemede yeniden sorulmaz
+    const buNesil = nesil;
     const yanit = await ws.komut(ileti);
     if (yanit?.ok) return yanit.sonuc;
-    if (KAPATAN_KODLAR.has(yanit?.kod)) {
+    if (KAPATAN_KODLAR.has(yanit?.kod) && buNesil === nesil) { // sıfırlamadan önceki anahtarın reddi yeni anahtarı kapatmaz
       kapali.add(uc);
       gunluk(`HA okuma ucu kullanılamıyor (${uc}); özellik kapalı kalacak.`);
     }
@@ -265,6 +272,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
       if (!(await izinliMi(kimlik, ['weather']))) return [];
       return oku('hava', `${kimlik}|${tur}`, () =>
         new Promise((coz) => {
+          const buNesil = nesil;
           let bitti = false;
           let birak = () => {};
           const bitir = (deger) => {
@@ -277,7 +285,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
           const zamanlayici = zaman.setTimeout(() => bitir(undefined), 10_000);
           birak = ws.abone({ type: 'weather/subscribe_forecast', entity_id: kimlik, forecast_type: tur }, (yuk) => {
             if (yuk?.hata) {
-              if (KAPATAN_KODLAR.has(yuk.hata)) kapali.add('hava');
+              if (KAPATAN_KODLAR.has(yuk.hata) && buNesil === nesil) kapali.add('hava');
               return bitir(undefined);
             }
             const liste = Array.isArray(yuk?.olay?.forecast) ? yuk.olay.forecast : null;
@@ -309,6 +317,7 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
       if (surenler.has(anahtar)) return surenler.get(anahtar);
       if (!agHakkiVarMi()) return kayit ? kayit.deger : null;
       const soz = (async () => {
+        const buNesil = nesil;
         let deger = null;
         try {
           const yanit = await haIstek(yol, { ikili: true, enCokBayt: KAPAK_EN_COK_BAYT });
@@ -316,8 +325,9 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
         } catch {
           gunluk('HA okuma ucu yanıt vermedi (kapak); boş gösteriliyor.');
         } finally {
-          surenler.delete(anahtar);
+          if (buNesil === nesil) surenler.delete(anahtar);
         }
+        if (buNesil !== nesil) return deger; // okuma sürerken sifirla() çağrıldı: kapak önbelleğe girmez
         if (kapaklar.size >= EN_COK_KAPAK && !kapaklar.has(yol)) kapaklar.delete(kapaklar.keys().next().value);
         kapaklar.delete(yol);
         kapaklar.set(yol, { t: simdi(), ttl: deger ? KAPAK_TTL_MS : KAPAK_HATA_TTL_MS, deger });
@@ -435,6 +445,16 @@ function haOkumaOlustur({ haIstek, ws, durumAl = () => undefined, simdi = () => 
     },
 
     kapaliUclar: () => [...kapali].sort(),
+
+    /** Anahtar ya da adres değişti: kapanmış uçlar, önbellek, kapaklar ve hız sayacı unutulur (bildirim aboneliğine dokunulmaz). */
+    sifirla() {
+      nesil += 1;
+      onbellek.clear();
+      surenler.clear();
+      kapaklar.clear();
+      kapali.clear();
+      agOkumalari = [];
+    },
   };
 }
 

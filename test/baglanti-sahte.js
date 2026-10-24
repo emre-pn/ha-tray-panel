@@ -112,8 +112,8 @@ function baglantiKopruSahtesi({ cagrilar, secenek = {} }) {
           ad: 'ha.test',
           veren: 'Test Kok CA',
           sanlar: ['ha.test', '192.168.1.50'],
-          baslangic: '2026-01-01T00:00:00.000Z',
-          bitis: '2030-01-01T00:00:00.000Z',
+          baslangic: '2026-01-01T12:00:00.000Z', // öğlen: yerel saat dilimine bağlı gün kaymasın
+          bitis: '2030-01-01T12:00:00.000Z',
           kendindenImzali: false,
           sistemGuveniyor: false,
         };
@@ -139,7 +139,7 @@ function baglantiKopruSahtesi({ cagrilar, secenek = {} }) {
         cagrilar.push(['kokSertifikaEkle']);
         if (typeof secenek.kokSertifikaEkle === 'function') return secenek.kokSertifikaEkle(durum);
         if (durum.sertifikaCa.length >= 4) return { ok: false, neden: 'cok-fazla' };
-        durum.sertifikaCa.push({ parmak: 'cd'.repeat(32), ad: 'Ev Kok CA', bitis: '2035-06-30T00:00:00.000Z' });
+        durum.sertifikaCa.push({ parmak: 'cd'.repeat(32), ad: 'Ev Kok CA', bitis: '2035-06-30T12:00:00.000Z' });
         return { ok: true, eklenen: 1, atlanan: 0 };
       },
       // ---- Tarayıcıyla giriş (o-57) ----

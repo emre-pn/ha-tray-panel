@@ -163,6 +163,7 @@ function baglantiYoneticisiOlustur({
       return { ok: true, adlar: sonuc.adlar };
     }
     if (sonuc.sifreleme) return { ok: false, sifreleme: true, hata: t('ana.sifrelemeYok') };
+    if (sonuc.yazilamadi) return { ok: false, hata: t('baglanti.ustKaydedilemedi') };
     return { ok: false, hatalar: sonuc.hatalar };
   }
 

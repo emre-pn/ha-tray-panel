@@ -27,6 +27,7 @@ const KESINTI_NEDENLERI = Object.freeze([
   'duraklatildi',
   'dogrulama',
   'auth-gonderilemedi',
+  'anahtar-yenilenemedi', // tarayıcı oturumu anahtarı şimdi yenilenemedi (ağ ya da HA geçici sorunu); HA kapalıyken uzun kesintide hep bu neden görülür
 ]);
 
 function varsayilanZaman() {
@@ -130,9 +131,13 @@ function baglantiBildirimiOlustur({ koptu, geldi, etkinMi = () => true, gecikmeS
       bildirildi = false; // canlı bağlantı kapatıldı / anahtar yok ya da reddedildi / yapılandırma durumu
       if (d.baglanti === 'kapali' && d.neden === 'anahtar-yok') canliydi = false;
     },
-    /** Ayar değişti (bildirim kapatıldı ya da süre değişti): bekleyen zamanlayıcı yeni süreyle yeniden kurulur, kapalıysa iptal edilir. */
+    /**
+     * Ayar değişti (bildirim açıldı/kapatıldı ya da süre değişti): süren kesinti için zamanlayıcı kalan süreyle yeniden kurulur; kapalıyken
+     * dolan zamanlayıcı da (kesinti sürüyorsa) yeniden kurulur, böylece kesinti sırasında açılan ayar "koptu" ve "geri geldi"yi getirir.
+     * Kapalıysa süre dolunca sureDoldu sessizce biter.
+     */
     ayarDegisti() {
-      if (zamanlayici === null || kesintiBasi === null) return;
+      if (kesintiBasi === null || bildirildi) return;
       zamanlayiciyiTemizle();
       const gecen = zaman.simdi() - kesintiBasi;
       const kalan = Math.max(0, gecikmeSn(gecikmeSnAl()) * 1000 - gecen);

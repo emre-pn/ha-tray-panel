@@ -60,16 +60,18 @@ function canliAd(varlik) {
 /**
  * Ayarlar'daki kamera aday listesi: HA'daki tüm durumlardan, kamera Kapı Kuralı'ndan (kapı/zil/diafon/giriş elenir) geçenler, ada göre sıralı.
  * @param {unknown} durumlar GET /api/states yanıtı
+ * @param {string} [dil] arayüz dili (tr, en, de, fr, es): sıralama o dilin karşılaştırma kuralıyla yapılır (cihaz listesiyle tutarlı); bilinmiyorsa 'tr'
  * @returns {{entity_id: string, ad: string}[]}
  */
-function kameraAdaylari(durumlar) {
+function kameraAdaylari(durumlar, dil = 'tr') {
   if (!Array.isArray(durumlar)) return [];
   const sonuc = [];
   for (const v of durumlar) {
     if (!v || typeof v.entity_id !== 'string' || alanAl(v.entity_id) !== 'camera' || !kameraGuvenliMi(v)) continue;
     sonuc.push({ entity_id: v.entity_id, ad: canliAd(v) || v.entity_id });
   }
-  return sonuc.sort((a, b) => a.ad.localeCompare(b.ad, 'tr') || a.entity_id.localeCompare(b.entity_id));
+  const yerel = ['tr', 'en', 'de', 'fr', 'es'].includes(dil) ? dil : 'tr';
+  return sonuc.sort((a, b) => a.ad.localeCompare(b.ad, yerel) || a.entity_id.localeCompare(b.entity_id));
 }
 
 /**

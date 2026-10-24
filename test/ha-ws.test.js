@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { haWsOlustur, PING_ARALIGI_MS, PONG_BEKLEME_MS, KURULUM_ZAMAN_ASIMI_MS } = require('../src/ha-ws');
 const { durumDeposuOlustur } = require('../src/lib/durum-deposu');
+const { kesintiMi } = require('../src/lib/baglanti-bildirimi');
 
 const ANAHTAR = 'SAHTE-ERISIM-ANAHTARI-0123456789';
 
@@ -80,7 +81,7 @@ function sahteOrtam(secenek = {}) {
   const ayar = { etkin: true, anahtar: ANAHTAR, adres: 'http://192.168.1.10:8123', izlenen: ['light.a', 'switch.b'], ...secenek };
   const ws = haWsOlustur({
     WebSocketSinifi: 'sinif' in secenek ? secenek.sinif : SahteSoket,
-    adresAl: async () => ayar.adres,
+    adresAl: secenek.adresAl ?? (async () => ayar.adres),
     anahtarAl: async () => ayar.anahtar,
     izlenen: () => ayar.izlenen,
     depo,
@@ -623,6 +624,30 @@ test('h-08: canlı bağlantı koptuğunda yetki köprüsüne "canlıydı" bilgis
   assert.deepEqual(koptular, [true, false]);
 });
 
+test('B3: kesici "dogrulanamadi" derken engelliMi de true ise kalıcı yedek olur: "duraklatildi" geri çekilme döngüsü, adres yoklaması ve kesinti sayımı yok', async () => {
+  let adresIstegi = 0;
+  const yetki = {
+    parmakIzi: () => 'a'.repeat(16),
+    reddedildiMi: () => false,
+    dogrulanamadiMi: () => true,
+    engelliMi: () => true, // gerçek kesici karar().izin:false'u da bekletme sayar
+    gecit: async () => assert.fail('geçide girilmemeli'),
+    reddedildi: () => {},
+    koptu: () => {},
+  };
+  const o = sahteOrtam({ yetki, adresAl: async () => { adresIstegi += 1; return 'https://ha.example'; } });
+  o.ws.baslat();
+  await akit();
+  assert.deepEqual(o.ws.durum(), { baglanti: 'yedek', canli: false, neden: 'dogrulanamadi' });
+  assert.equal(kesintiMi(o.ws.durum()), false);
+  assert.equal(adresIstegi, 0, 'adres yoklaması yok');
+  assert.equal(o.zaman.bekleyen(), 0, 'yeniden bağlanma zamanlayıcısı kurulmadı');
+  o.zaman.ilerle(10 * 60_000);
+  await akit();
+  assert.equal(o.soketler.length, 0);
+  assert.deepEqual(o.ws.durum(), { baglanti: 'yedek', canli: false, neden: 'dogrulanamadi' });
+});
+
 test('abonelikYenile: canlı değilken yenidenBaglan gibi davranır', async () => {
   const o = sahteOrtam({ izlenen: ['light.a'] });
   assert.equal(o.ws.canliMi(), false);
@@ -769,4 +794,17 @@ test('o-61: mobile_app bildirim kanalı aboneliği kurulur, olay dinleyiciye gid
   s.yayinla({ id: abone2.id, type: 'result', success: false, error: { code: 'not_found', message: 'gizli ayrıntı webhook' } });
   assert.deepEqual(hatalar, [{ hata: 'not_found' }], 'hata iletisi (message) alınmaz');
   birak2();
+});
+
+test('izleniyorMu: yalnız aboneliğin izlenen kümesindeki kimlikler için true (eylem katmanı bayat depo kaydına güvenmesin)', async () => {
+  const o = sahteOrtam();
+  assert.equal(o.ws.izleniyorMu('light.a'), false, 'abone olmadan küme boş');
+  await canliYap(o);
+  assert.equal(o.ws.izleniyorMu('light.a'), true);
+  assert.equal(o.ws.izleniyorMu('switch.b'), true);
+  assert.equal(o.ws.izleniyorMu('light.baska'), false, 'izlenmeyen varlık: olayları depoya işlenmez');
+  o.ayar.izlenen = ['light.a', 'light.baska'];
+  o.ws.abonelikYenile();
+  assert.equal(o.ws.izleniyorMu('light.baska'), true);
+  assert.equal(o.ws.izleniyorMu('switch.b'), false);
 });

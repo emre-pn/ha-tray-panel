@@ -81,11 +81,12 @@ const BELIRSIZ_SUNUCU_DURUMLARI = new Set([502, 504, 520, 522, 524]);
 
 /**
  * İstek HA'ya (ya da Cloudflare'e) HİÇ ulaşmadan oluşan, dolayısıyla güvenle yeniden denenebilir ağ hataları: bağlantı reddi,
- * DNS, ağ/yol yok, TLS el sıkışma/sertifika hatası, yönlendirme reddi. Başka her hata (reset, "terminated", sınıflandırılamayan)
+ * DNS (ERR_NAME_*, ERR_DNS_*), geçersiz adres, bağlantı kurulamadı (ERR_CONNECTION_FAILED), ağ/yol yok, TLS el sıkışma/sertifika hatası,
+ * yönlendirme reddi. Başka her hata (reset, closed, aborted, "terminated", sınıflandırılamayan)
  * istek gönderildikten sonra olmuş olabilir: HA 401'i sayıp yanıtı yolda kaybettirmiş olabilir.
  */
 const GONDERIM_ONCESI_HATA =
-  /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ENETDOWN|EADDRNOTAVAIL|UND_ERR_CONNECT_TIMEOUT|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_INTERNET_DISCONNECTED|ERR_ADDRESS_UNREACHABLE|ERR_NETWORK_ACCESS_DENIED|ERR_PROXY_CONNECTION_FAILED|ERR_TUNNEL_CONNECTION_FAILED|ERR_CERT_|ERR_SSL_|CERT_|SELF_SIGNED|redirect/i;
+  /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ENETDOWN|EADDRNOTAVAIL|UND_ERR_CONNECT_TIMEOUT|ERR_NAME_NOT_RESOLVED|ERR_NAME_RESOLUTION_FAILED|ERR_DNS_|ERR_ADDRESS_INVALID|ERR_CONNECTION_FAILED|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_INTERNET_DISCONNECTED|ERR_ADDRESS_UNREACHABLE|ERR_NETWORK_ACCESS_DENIED|ERR_PROXY_CONNECTION_FAILED|ERR_TUNNEL_CONNECTION_FAILED|ERR_CERT_|ERR_SSL_|CERT_|SELF_SIGNED|redirect/i;
 
 function gonderimOncesiHatasiMi(hata) {
   const metin = [hata?.code, hata?.message, hata?.cause?.code, hata?.cause?.message, hata?.cause?.cause?.code].filter((m) => typeof m === 'string').join(' ');

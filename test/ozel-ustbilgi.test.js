@@ -151,7 +151,7 @@ test('istekUstbilgilerineEkle: aynı adlı Chromium üstbilgisinin yerine kullan
 
 // ---- Şifreli depo ----
 
-function sahteDepo({ yazmaHatasi = false } = {}) {
+function sahteDepo({ yazmaHatasi = false, yazmaHatasiMesaji = 'sifreleme-yok' } = {}) {
   let metin = null;
   const cagrilar = { yaz: 0, sil: 0 };
   return {
@@ -161,7 +161,7 @@ function sahteDepo({ yazmaHatasi = false } = {}) {
     anahtarAl: async () => metin,
     async yaz(m) {
       cagrilar.yaz += 1;
-      if (yazmaHatasi) throw new Error('sifreleme-yok');
+      if (yazmaHatasi) throw new Error(yazmaHatasiMesaji);
       metin = m;
     },
     async sil() {
@@ -235,6 +235,27 @@ test('ustbilgiDeposuOlustur: şifreleme yoksa kayıt reddedilir ve bellek deği�
   const s = await d.kaydet([{ ad: 'X-Ek', deger: 'v' }]);
   assert.deepEqual(s, { ok: false, sifreleme: true });
   assert.equal(d.sayi(), 0);
+});
+
+test('B44: dosya yazma hatası (EPERM/ENOSPC) "şifreleme yok" sayılmaz: yazilamadi döner, liste değişmez; doğrulama başarısızlığı şifreleme sayılır', async () => {
+  const onceki = [{ ad: 'X-Eski', deger: 'e' }];
+  for (const mesaj of ['EPERM: operation not permitted', 'ENOSPC: no space left on device']) {
+    const depo = sahteDepo();
+    const d = ustbilgiDeposuOlustur({ depo });
+    await d.kaydet(onceki);
+    depo.yaz = async () => {
+      throw new Error(mesaj);
+    };
+    assert.deepEqual(await d.kaydet([{ ad: 'X-Yeni', deger: 'v' }]), { ok: false, yazilamadi: true }, mesaj);
+    assert.deepEqual(d.adlar(), ['X-Eski'], 'liste değişmedi');
+    depo.sil = async () => {
+      throw new Error(mesaj);
+    };
+    assert.deepEqual(await d.kaydet([]), { ok: false, yazilamadi: true }, 'boş liste (silme) hatası da yazilamadi');
+    assert.deepEqual(d.adlar(), ['X-Eski']);
+  }
+  const d2 = ustbilgiDeposuOlustur({ depo: sahteDepo({ yazmaHatasi: true, yazmaHatasiMesaji: 'dogrulama-basarisiz' }) });
+  assert.deepEqual(await d2.kaydet([{ ad: 'X-Ek', deger: 'v' }]), { ok: false, sifreleme: true });
 });
 
 test('ustbilgiDeposuOlustur: sil ve değişiklik dinleyicisi', async () => {

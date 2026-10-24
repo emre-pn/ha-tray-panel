@@ -8,6 +8,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { GECIKME_SINIRI, KESINTI_NEDENLERI, gecikmeSn, kesintiMi, baglantiBildirimiOlustur } = require('../src/lib/baglanti-bildirimi');
 
@@ -246,4 +248,75 @@ test('bildirim işlevi fırlatsa da izleme bozulmaz; geçersiz girdiler yok say�
   b.durum(kopuk('kapandi'));
   b.sifirla();
   assert.deepEqual(b.durumBilgisi(), { canliydi: false, kesintiBasi: null, bildirildi: false, bekliyor: false });
+});
+
+test('anahtar-yenilenemedi gerçek kesintidir: kesinti ortasında gelse de sayaç sıfırlanmaz, "koptu" ve "geri geldi" gelir', () => {
+  assert.equal(kesintiMi({ baglanti: 'baglaniyor', canli: false, neden: 'anahtar-yenilenemedi' }), true);
+  assert.equal(kesintiMi({ baglanti: 'yedek', canli: false, neden: 'anahtar-yenilenemedi' }), true);
+
+  const o = ortam({ sn: 60 });
+  o.b.durum(CANLI);
+  o.b.durum(kopuk('kapandi'));
+  o.ilerle(30);
+  o.b.durum(kopuk('anahtar-yenilenemedi')); // HA kapalı: anahtar yenileme isteği de başarısız
+  o.ilerle(31);
+  assert.deepEqual(o.olaylar.map((x) => x[0]), ['koptu'], 'sayaç sıfırlanmadı: ilk kopmadan 61 sn sonra');
+  o.b.durum(kopuk('anahtar-yenilenemedi', 'yedek')); // "koptu" gösterildikten sonra gelen neden "geri geldi"yi silmez
+  o.ilerle(600);
+  o.b.durum(CANLI);
+  assert.deepEqual(o.olaylar.map((x) => x[0]), ['koptu', 'geldi']);
+});
+
+
+test('ha-ws.js kesinti nedenleri: koptu(...) nedenlerinin hepsi KESINTI_NEDENLERI içinde, kalıcı/yapılandırma nedenleri değil', () => {
+  const kaynak = fs.readFileSync(path.join(__dirname, '..', 'src', 'ha-ws.js'), 'utf8');
+  const nedenler = (desen) => new Set([...kaynak.matchAll(desen)].map((m) => m[1]));
+  const gecici = nedenler(/\bkoptu\('([a-z-]+)'\)/g);
+  assert.ok(gecici.size >= 8, 'ha-ws.js içinde geçici kopma nedenleri bulunmalı');
+  for (const neden of gecici) assert.ok(KESINTI_NEDENLERI.includes(neden), `koptu('${neden}') KESINTI_NEDENLERI içinde olmalı`);
+  const kalici = nedenler(/\b(?:kaliciYedek|durumuAyarla)\((?:'[a-z]+', )?'([a-z-]+)'\)/g);
+  for (const neden of ['yetki', 'dogrulanamadi', 'izlenen-yok', 'abonelik-yok', 'ws-yok', 'anahtar-yok']) assert.ok(kalici.has(neden), `${neden} ha-ws.js içinde bulunmalı`);
+  for (const neden of kalici) assert.ok(!KESINTI_NEDENLERI.includes(neden), `kalıcı/yapılandırma nedeni '${neden}' kesinti sayılmamalı`);
+});
+
+test('kesinti sürerken ayar sonradan açılırsa: süre dolmuşsa "koptu" hemen, dönüşte "geri geldi" gelir', () => {
+  const o = ortam({ etkin: false, sn: 60 });
+  o.b.durum(CANLI);
+  o.b.durum(kopuk('kapandi'));
+  o.ilerle(70); // zamanlayıcı kapalıyken doldu: sessizce bitti
+  assert.deepEqual(o.olaylar, []);
+  o.b.ayarDegisti(); // kapalıyken ayar değişimi bir şey göstermez
+  o.ilerle(10);
+  assert.deepEqual(o.olaylar, []);
+  o.ayar.etkin = true;
+  o.b.ayarDegisti(); // 90. sn: kalan süre 0, "koptu" hemen gelir
+  o.ilerle(0);
+  assert.deepEqual(o.olaylar.map((x) => x[0]), ['koptu']);
+  o.b.ayarDegisti();
+  o.ilerle(30);
+  assert.equal(o.olaylar.length, 1, '"koptu" bildirildikten sonra ayar değişimi ikinci bildirim üretmez');
+  o.b.durum(CANLI);
+  assert.deepEqual(o.olaylar.map((x) => x[0]), ['koptu', 'geldi']);
+
+  const p = ortam({ etkin: false, sn: 60 });
+  p.b.durum(CANLI);
+  p.b.durum(kopuk('kapandi'));
+  p.ilerle(20);
+  p.ayar.etkin = true;
+  p.b.ayarDegisti(); // süre dolmadan açıldı: kalan 40 sn
+  p.ilerle(39);
+  assert.deepEqual(p.olaylar, []);
+  p.ilerle(2);
+  assert.deepEqual(p.olaylar.map((x) => x[0]), ['koptu']);
+
+  const q = ortam({ etkin: false, sn: 60 });
+  q.b.durum(CANLI);
+  q.b.durum(kopuk('kapandi'));
+  q.ilerle(70);
+  q.b.ayarDegisti();
+  q.b.durum(CANLI); // kesinti bitti: ayar sonradan açılsa da eski kesinti için bildirim yok
+  q.ayar.etkin = true;
+  q.b.ayarDegisti();
+  q.ilerle(120);
+  assert.deepEqual(q.olaylar, []);
 });

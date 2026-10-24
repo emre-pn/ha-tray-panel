@@ -113,6 +113,7 @@ test('yükleme dosyayı yeniden doğrular: bozuk JSON boş sayılır; sahte/CA o
     const bozuk = await depoAc(g.yol);
     assert.equal(bozuk.depo.bos(), true);
     assert.equal(bozuk.gunluk.length, 1, 'okunamayan dosya günlüğe düşer');
+    assert.equal(fs.readFileSync(`${g.yol}.bozuk`, 'utf8'), '{bozuk', 'bozuk içerik .bozuk adıyla kenara alındı');
 
     const iyi = kokUret('Iyi Kok');
     const caOlmayan = sertifikaUret({ cn: 'Yaprak', san: ['x.test'] });
@@ -194,6 +195,95 @@ test('dinleyici yükleme ve her değişiklikte çağrılır; dinleyici hatası k
     const dosya = JSON.parse(fs.readFileSync(g.yol, 'utf8'));
     assert.deepEqual(dosya.sabit.map((s) => s.anaBilgisayar).sort(), ['a.test', 'b.test', 'c.test']);
     assert.equal(dosya.surum, 1);
+  } finally {
+    g.temizle();
+  }
+});
+
+/** readFileSync'i ilk `basarisiz` çağrıda `kod` hatasıyla düşüren, yazmaları kaydeden gerçek-dosya sarmalayıcısı. */
+function geciciOkumaHataliFs({ basarisiz = 1, kod = 'EBUSY' } = {}) {
+  let okuma = 0;
+  const yazilanlar = [];
+  return {
+    yazilanlar,
+    okumaSayisi: () => okuma,
+    fs: {
+      readFileSync: (...a) => {
+        okuma += 1;
+        if (okuma <= basarisiz) throw Object.assign(new Error(`${kod}: resource busy or locked`), { code: kod });
+        return fs.readFileSync(...a);
+      },
+      writeFileSync: fs.writeFileSync,
+      promises: {
+        mkdir: fs.promises.mkdir,
+        rm: fs.promises.rm,
+        rename: fs.promises.rename,
+        writeFile: async (...a) => {
+          yazilanlar.push(a[0]);
+          return fs.promises.writeFile(...a);
+        },
+      },
+    },
+  };
+}
+
+test('B45: dosya okunamazsa (EBUSY) kayıt boş yüklenir ama dosyanın üzerine YAZILMAZ: hâlâ okunamıyorsa yazilamadi, okunabiliyorsa eski kayıtlar korunarak yazılır', async () => {
+  const g = geciciKlasor();
+  try {
+    fs.writeFileSync(g.yol, JSON.stringify({ surum: 1, ca: [], sabit: [{ anaBilgisayar: 'ha.ornek.com', parmak: HEX_A }] }), 'utf8');
+    const once = fs.readFileSync(g.yol, 'utf8');
+
+    // 1) kilit sürüyor: açılışta ve ilk değişiklikte okunamıyor
+    const kilitli = geciciOkumaHataliFs({ basarisiz: 2 });
+    const gunluk = [];
+    const depo = sertifikaDeposuOlustur({ dosyaYolu: g.yol, fs: kilitli.fs, gunluk: (m) => gunluk.push(m) });
+    await depo.yukle();
+    assert.equal(depo.bos(), true);
+    assert.deepEqual(await depo.sabitle('baska.ornek.com', HEX_B), { ok: false, neden: 'yazilamadi' });
+    assert.deepEqual(kilitli.yazilanlar, [], 'okunamayan dosyanın üzerine yazılmadı');
+    assert.equal(fs.readFileSync(g.yol, 'utf8'), once, 'diskteki sabitleme duruyor');
+    assert.equal(fs.existsSync(`${g.yol}.bozuk`), false, 'okuma hatası bozuk dosya sayılmaz');
+
+    // 2) kilit kalktı: dosya yeniden okunur, eski sabitleme korunur
+    assert.deepEqual(await depo.sabitle('baska.ornek.com', HEX_B), { ok: true });
+    assert.deepEqual(depo.sabitler().map((x) => x.anaBilgisayar).sort(), ['baska.ornek.com', 'ha.ornek.com']);
+    const sonra = JSON.parse(fs.readFileSync(g.yol, 'utf8'));
+    assert.deepEqual(sonra.sabit.map((x) => x.anaBilgisayar).sort(), ['baska.ornek.com', 'ha.ornek.com'], 'eski sabitleme ezilmedi');
+  } finally {
+    g.temizle();
+  }
+});
+
+test('B46: başarısız yazmanın geri alması, kuyrukta sonra gelen başarılı işlemin bellek durumunu ezmez; bellek ve disk aynı kalır', async () => {
+  const g = geciciKlasor();
+  try {
+    let yazma = 0;
+    const sahteFs = {
+      readFileSync: fs.readFileSync,
+      promises: {
+        mkdir: fs.promises.mkdir,
+        rm: fs.promises.rm,
+        rename: fs.promises.rename,
+        writeFile: async (...a) => {
+          yazma += 1;
+          if (yazma === 1) throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+          return fs.promises.writeFile(...a);
+        },
+      },
+    };
+    const depo = sertifikaDeposuOlustur({ dosyaYolu: g.yol, fs: sahteFs, gunluk: () => {} });
+    await depo.yukle();
+    let bildirim = 0;
+    depo.degistiDinle(() => {
+      bildirim += 1;
+    });
+    const [a, b] = await Promise.all([depo.sabitle('a.test', HEX_A), depo.sabitle('b.test', HEX_B)]);
+    assert.deepEqual(a, { ok: false, neden: 'yazilamadi' });
+    assert.deepEqual(b, { ok: true });
+    assert.deepEqual(depo.sabitler().map((x) => x.anaBilgisayar), ['b.test'], 'bellek yalnız başarılı işlemi içerir');
+    const disk = JSON.parse(fs.readFileSync(g.yol, 'utf8'));
+    assert.deepEqual(disk.sabit.map((x) => x.anaBilgisayar), ['b.test'], 'disk bellekle aynı');
+    assert.equal(bildirim, 1, 'dinleyici yalnız başarılı işlem için çağrıldı');
   } finally {
     g.temizle();
   }

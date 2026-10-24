@@ -178,7 +178,14 @@ function karoDurumu(varlik) {
   return { durum: 'yok', yuzde: null }; // unknown vb.
 }
 
-/** sensor.pc_ses_default_device metninden etkin çıkış: 'hoparlor' | 'kulaklik' | null. */
+/** Aksansız, küçük harfli anahtar sözcükler (tr, en, de, fr, es). */
+const KULAKLIK_SOZCUKLERI = ['kulaklik', 'headphone', 'headset', 'kopfhorer', 'ohrhorer', 'casque', 'ecouteur', 'auricular', 'cascos'];
+const HOPARLOR_SOZCUKLERI = ['hoparlor', 'speaker', 'lautsprecher', 'haut-parleur', 'hautparleur', 'altavo'];
+
+/**
+ * sensor.pc_ses_default_device metninden etkin çıkış: 'hoparlor' | 'kulaklik' | null. Windows cihaz adı Windows'un diliyle gelir:
+ * 5 arayüz dilinin sözcükleri (aksanlar atıldıktan sonra) tanınır. Önce kulaklık bakılır.
+ */
 function aktifCikis(durumMetni) {
   if (typeof durumMetni !== 'string') return null;
   const m = durumMetni
@@ -186,8 +193,8 @@ function aktifCikis(durumMetni) {
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .replace(/ı/g, 'i');
-  if (m.includes('kulaklik') || m.includes('headphone') || m.includes('headset')) return 'kulaklik';
-  if (m.includes('hoparlor') || m.includes('speaker')) return 'hoparlor';
+  if (KULAKLIK_SOZCUKLERI.some((k) => m.includes(k))) return 'kulaklik';
+  if (HOPARLOR_SOZCUKLERI.some((k) => m.includes(k))) return 'hoparlor';
   return null;
 }
 

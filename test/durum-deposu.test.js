@@ -164,7 +164,14 @@ test('karoDurumu (1.4.0 cihaz grubu): perde ve vana open/opening açık, closed 
   assert.deepEqual(karoDurumu(varlik('automation.a', 'unavailable')), { durum: 'yok', yuzde: null });
 });
 
-test('aktifCikis: Türkçe/İngilizce çıkış adlarından hoparlör ya da kulaklık', () => {
+test('aktifCikis: Türkçe/İngilizce/Almanca/Fransızca/İspanyolca çıkış adlarından hoparlör ya da kulaklık', () => {
+  assert.equal(aktifCikis('Lautsprecher (Realtek Audio)'), 'hoparlor');
+  assert.equal(aktifCikis('Kopfhörer (USB)'), 'kulaklik');
+  assert.equal(aktifCikis('Haut-parleurs (Realtek Audio)'), 'hoparlor');
+  assert.equal(aktifCikis('Casque (USB)'), 'kulaklik');
+  assert.equal(aktifCikis('Écouteurs'), 'kulaklik');
+  assert.equal(aktifCikis('Altavoces (Realtek Audio)'), 'hoparlor');
+  assert.equal(aktifCikis('Auriculares (USB)'), 'kulaklik');
   assert.equal(aktifCikis('Hoparlör (Realtek Audio)'), 'hoparlor');
   assert.equal(aktifCikis('Kulaklık (USB)'), 'kulaklik');
   assert.equal(aktifCikis('KULAKLIK'), 'kulaklik');

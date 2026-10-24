@@ -241,6 +241,19 @@ test('ustbilgileriKaydet: kaba biçim reddi, doğrulama hataları ve şifreleme 
   });
   const s = await y2.ustbilgileriKaydet([{ ad: 'X-Ek', deger: 'v' }]);
   assert.deepEqual(s, { ok: false, sifreleme: true, hata: 'ana.sifrelemeYok' });
+
+  // B44: disk/izin hatası şifreleme sorunu değildir: ayrı ileti
+  const dolu = sahteDepo();
+  dolu.yaz = async () => {
+    throw new Error('ENOSPC: no space left on device');
+  };
+  const y3 = baglantiYoneticisiOlustur({
+    ayarlarAl: () => ({}),
+    ustbilgiDeposu: ustbilgiDeposuOlustur({ depo: dolu }),
+    fetchTemel: async () => ({}),
+    t: (a) => a,
+  });
+  assert.deepEqual(await y3.ustbilgileriKaydet([{ ad: 'X-Ek', deger: 'v' }]), { ok: false, hata: 'baglanti.ustKaydedilemedi' });
 });
 
 test('ustbilgileriDene: kayıtlı adresler anahtarsız yoklanır; ayarsız adres atlanır', async () => {

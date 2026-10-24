@@ -365,10 +365,79 @@ test('alanlar: yönetici gerektiren komut unauthorized dönerse uç oturum boyun
     },
   });
   assert.deepEqual((await b.okuma.alanlar()).varlikAlanlari, { 'light.a': 'salon' });
+  // B42: kapanmış 'cihazlar' ucu önbellek bitince yeniden sorulmaz, günlük satırı tekrarlanmaz
+  b.ilerle(6 * 60_000);
+  assert.deepEqual((await b.okuma.alanlar()).varlikAlanlari, { 'light.a': 'salon' });
+  assert.equal(b.komutlar.filter((k) => k.type === 'config/device_registry/list').length, 1, 'cihaz kaydı yalnız bir kez soruldu');
+  assert.equal(b.komutlar.filter((k) => k.type === 'config/area_registry/list').length, 2, 'alanlar yine yenilendi');
+  assert.equal(b.gunlukler.filter((m) => m.includes('özellik kapalı kalacak')).length, 1);
+  assert.deepEqual(b.okuma.kapaliUclar(), ['cihazlar']);
   // bağlantı yoksa geçici: kapanmaz, sonra yeniden denenir
   const c = sahteOkuma();
   await c.okuma.alanlar();
   assert.deepEqual(c.okuma.kapaliUclar(), []);
+});
+
+test('B41: sifirla() kapanmış uçları ve önbelleği unutur (anahtar/adres değişti): yetkili anahtarla uç yeniden denenir', async () => {
+  const yanit = { 'config/area_registry/list': { ok: false, kod: 'unauthorized' }, 'auth/current_user': { ok: false, kod: 'unauthorized' } };
+  const o = sahteOkuma({ wsYanit: yanit });
+  assert.deepEqual(await o.okuma.alanlar(), { alanlar: [], varlikAlanlari: {} });
+  assert.equal(await o.okuma.yoneticiMi(), null);
+  assert.deepEqual(o.okuma.kapaliUclar(), ['alanlar', 'yonetici']);
+  // yönetici yetkili anahtar girildi
+  yanit['config/area_registry/list'] = { ok: true, sonuc: [{ area_id: 'salon', name: 'Salon' }] };
+  yanit['config/entity_registry/list_for_display'] = { ok: true, sonuc: { entities: [{ ei: 'light.a', ai: 'salon' }] } };
+  yanit['auth/current_user'] = { ok: true, sonuc: { is_admin: true } };
+  const once = o.komutlar.length;
+  assert.deepEqual(await o.okuma.alanlar(), { alanlar: [], varlikAlanlari: {} }, 'sıfırlamadan önce uç kapalı');
+  assert.equal(o.komutlar.length, once, 'kapalı uç ağa çıkmaz');
+  o.okuma.sifirla();
+  assert.deepEqual(o.okuma.kapaliUclar(), []);
+  assert.deepEqual((await o.okuma.alanlar()).varlikAlanlari, { 'light.a': 'salon' });
+  assert.equal(await o.okuma.yoneticiMi(), true);
+  assert.ok(o.komutlar.length > once, 'komut yeniden gönderildi');
+  // önbellek de silinir: başka bir sunucunun verisi TTL boyunca gösterilmez
+  yanit['config/area_registry/list'] = { ok: true, sonuc: [{ area_id: 'mutfak', name: 'Mutfak' }] };
+  assert.deepEqual((await o.okuma.alanlar()).alanlar, [{ id: 'salon', ad: 'Salon' }], 'önbellekten');
+  o.okuma.sifirla();
+  assert.deepEqual((await o.okuma.alanlar()).alanlar, [{ id: 'mutfak', ad: 'Mutfak' }]);
+});
+
+test('B41: sifirla()dan önce başlamış okuma sonucunu önbelleğe yazmaz ve ucu kapatmaz; yeni okuma etkilenmez', async () => {
+  let birak;
+  const bekle = new Promise((coz) => {
+    birak = coz;
+  });
+  const yanit = {
+    'config/area_registry/list': async () => {
+      await bekle;
+      return { ok: true, sonuc: [{ area_id: 'eski', name: 'Eski sunucu' }] };
+    },
+    'config/entity_registry/list_for_display': { ok: true, sonuc: { entities: [] } },
+  };
+  const o = sahteOkuma({ wsYanit: yanit });
+  const eski = o.okuma.alanlar();
+  await akit();
+  o.okuma.sifirla();
+  yanit['config/area_registry/list'] = { ok: true, sonuc: [{ area_id: 'yeni', name: 'Yeni sunucu' }] };
+  assert.deepEqual((await o.okuma.alanlar()).alanlar, [{ id: 'yeni', ad: 'Yeni sunucu' }]);
+  birak();
+  await eski;
+  assert.deepEqual((await o.okuma.alanlar()).alanlar, [{ id: 'yeni', ad: 'Yeni sunucu' }], 'eski okuma yeni önbelleği ezmedi');
+
+  // eski anahtarın reddi (sıfırlamadan sonra gelir) yeni anahtarın ucunu kapatmaz
+  let reddet;
+  const reddi = new Promise((coz) => {
+    reddet = coz;
+  });
+  const y2 = { 'auth/current_user': async () => (await reddi, { ok: false, kod: 'unauthorized' }) };
+  const p = sahteOkuma({ wsYanit: y2 });
+  const bekleyen = p.okuma.yoneticiMi();
+  await akit();
+  p.okuma.sifirla();
+  reddet();
+  assert.equal(await bekleyen, null);
+  assert.deepEqual(p.okuma.kapaliUclar(), [], 'eski anahtarın reddi yeni oturumu kapatmadı');
 });
 
 test('yapılacaklar: başlık süzülür, tamamlandı bayrağı; yönetici bilgisi', async () => {

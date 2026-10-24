@@ -7,6 +7,10 @@
  *
  * Yükleme sırasında her kayıt yeniden doğrulanır (PEM'den parmak izi yeniden hesaplanır): dosya elle bozulsa bile yalnız geçerli, süresi
  * içindeki kök CA'lar ve 64 haneli parmak izleri etkin olur. `fs` dışarıdan verilir (testlerde gerçek geçici klasör ya da sahte).
+ *
+ * Dosya OKUNAMADIYSA (kilit, izin, antivirüs: ENOENT dışı okuma hatası) bellek boş kalır ama `okunamadi` işaretlenir: dosyanın üzerine
+ * ASLA yazılmaz (yetki-kesici.js ile aynı kural). Her değişiklik önce dosyayı bir kez yeniden okumayı dener; okunamıyorsa
+ * { ok:false, neden:'yazilamadi' } döner. İçeriği bozuk (JSON ya da şema) dosya `.bozuk` adıyla kenara kopyalanır, kayıt boş sayılır.
  */
 
 const { EN_COK_CA, EN_COK_SABIT, anaBilgisayarCoz, kokBilgisi } = require('./sertifika');
@@ -25,6 +29,7 @@ function sertifikaDeposuOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = Date
   let kokler = []; // { parmak, ad, pem, baslangic, bitis }
   let sabitler = []; // { anaBilgisayar, parmak, eklendi }
   let yuklendi = false;
+  let okunamadi = false; // dosya var ama okunamadı: bellek boş, diskteki içerik ezilmesin
   let yuklemeSozu = null;
   let yazmaSirasi = Promise.resolve();
   const dinleyiciler = new Set();
@@ -66,15 +71,36 @@ function sertifikaDeposuOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = Date
    * Kaydı okur. Dosya küçüktür (birkaç genel sertifika) ve açılışta bir kez okunur: eşzamanlı okuma, yükleme çağrısı döner dönmez
    * kayıtların hazır olmasını sağlar; böylece ilk canlı bağlantı/HA penceresi isteği kayıt bilinmeden başlamaz (yarış yok).
    */
+  function dosyayiOku() {
+    let metin;
+    try {
+      metin = fs.readFileSync(dosyaYolu, 'utf8');
+    } catch (hata) {
+      kokler = [];
+      sabitler = [];
+      if (hata?.code === 'ENOENT') return; // ilk açılış: kayıt yok
+      okunamadi = true;
+      gunluk('Sertifika güveni dosyası şimdi okunamadı; okunana kadar değişiklik yazılmayacak.');
+      return;
+    }
+    okunamadi = false;
+    try {
+      belgedenKur(JSON.parse(metin));
+    } catch {
+      kokler = [];
+      sabitler = [];
+      try {
+        fs.writeFileSync(`${dosyaYolu}.bozuk`, metin, 'utf8'); // kurtarılabilir içerik sonraki yazmayla ezilmeden önce kenara alınır (en iyi çaba)
+      } catch {
+        // kopya alınamadı: kayıt yine boş sayılır
+      }
+      gunluk('Sertifika güveni dosyası okunamadı; kayıt boş sayıldı.');
+    }
+  }
+
   function yukle() {
     if (!yuklemeSozu) {
-      try {
-        belgedenKur(JSON.parse(fs.readFileSync(dosyaYolu, 'utf8')));
-      } catch (hata) {
-        kokler = [];
-        sabitler = [];
-        if (hata && hata.code !== 'ENOENT') gunluk('Sertifika güveni dosyası okunamadı; kayıt boş sayıldı.');
-      }
+      dosyayiOku();
       yuklendi = true;
       yuklemeSozu = Promise.resolve();
       bildir();
@@ -89,41 +115,51 @@ function sertifikaDeposuOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = Date
     return { surum: SURUM, ca: kokler.map((k) => ({ ...k })), sabit: sabitler.map((s) => ({ ...s })) };
   }
 
-  /** Yazmalar sıraya girer; kayıt atomik (geçici dosya + yeniden adlandırma). Başarısızlıkta bellek durumu eski haline döner. */
-  function yaz(oncekiKokler, oncekiSabitler) {
-    const gonderilen = JSON.stringify(belge());
-    const is = yazmaSirasi.then(async () => {
-      const gecici = `${dosyaYolu}.tmp`;
+  /** Tek yazma: atomik (geçici dosya + yeniden adlandırma). Çağıran yazmaSirasi içinde olmalıdır; geri almayı çağıran yapar. */
+  async function yazIc() {
+    const gecici = `${dosyaYolu}.tmp`;
+    try {
+      await fs.promises.writeFile(gecici, JSON.stringify(belge()), 'utf8');
+      await fs.promises.rename(gecici, dosyaYolu);
+      return { ok: true };
+    } catch {
       try {
-        await fs.promises.writeFile(gecici, gonderilen, 'utf8');
-        await fs.promises.rename(gecici, dosyaYolu);
-        return { ok: true };
+        await fs.promises.rm(gecici, { force: true });
       } catch {
+        // temizlik en iyi çabadır
+      }
+      gunluk('Sertifika güveni dosyası yazılamadı; değişiklik geri alındı.');
+      return { ok: false, neden: 'yazilamadi' };
+    }
+  }
+
+  /**
+   * Değişiklik: anlık görüntü, uygulama, yazma ve (hata olursa) geri alma işinin TAMAMI yazma sırasındadır; böylece başarısız bir
+   * yazmanın geri alması, kuyrukta sonra gelen başarılı işlemin bellek durumunu eski görüntüyle ezmez.
+   */
+  function degistir(uygula) {
+    const is = yazmaSirasi.then(async () => {
+      await hazir();
+      if (okunamadi) {
+        dosyayiOku(); // geçici kilit kalkmış olabilir
+        if (okunamadi) return { ok: false, neden: 'yazilamadi' }; // hâlâ okunamıyor: diskteki içerik ezilmez
+        bildir(); // dosya şimdi okundu: bellek diskle eşlendi
+      }
+      const oncekiKokler = kokler;
+      const oncekiSabitler = sabitler;
+      const sonuc = uygula();
+      if (!sonuc.ok) return sonuc;
+      const yazildi = await yazIc();
+      if (!yazildi.ok) {
         kokler = oncekiKokler;
         sabitler = oncekiSabitler;
-        try {
-          await fs.promises.rm(gecici, { force: true });
-        } catch {
-          // temizlik en iyi çabadır
-        }
-        gunluk('Sertifika güveni dosyası yazılamadı; değişiklik geri alındı.');
-        return { ok: false, neden: 'yazilamadi' };
+        return yazildi;
       }
+      bildir();
+      return sonuc;
     });
     yazmaSirasi = is.catch(() => {});
     return is;
-  }
-
-  async function degistir(uygula) {
-    await hazir();
-    const oncekiKokler = kokler;
-    const oncekiSabitler = sabitler;
-    const sonuc = uygula();
-    if (!sonuc.ok) return sonuc;
-    const yazildi = await yaz(oncekiKokler, oncekiSabitler);
-    if (!yazildi.ok) return yazildi;
-    bildir();
-    return sonuc;
   }
 
   /** Doğrulanmış kök CA bilgilerini ekler (kokBilgisi çıktısı). Aynı parmak izi tekrar eklenmez. */

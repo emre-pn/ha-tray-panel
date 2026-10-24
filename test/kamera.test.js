@@ -67,6 +67,16 @@ test('kameraAdaylari: yalnız kamera alanı ve güvenli olanlar; ada göre sıra
   for (const kotu of [undefined, null, {}, 'x', 5]) assert.deepEqual(K.kameraAdaylari(kotu), []);
 });
 
+test('B43: kameraAdaylari arayüz dilinin karşılaştırma kuralıyla sıralanır (de: Ofen, Öl, Oz; tr: Ofen, Oz, Öl); bilinmeyen dil tr sayılır', () => {
+  const durumlar = [durum('camera.a', 'Oz'), durum('camera.b', 'Öl'), durum('camera.c', 'Ofen')];
+  const adlar = (dil) => K.kameraAdaylari(durumlar, dil).map((k) => k.ad);
+  assert.deepEqual(adlar('de'), ['Ofen', 'Öl', 'Oz']);
+  assert.deepEqual(adlar('tr'), ['Ofen', 'Oz', 'Öl']);
+  assert.deepEqual(adlar(undefined), ['Ofen', 'Oz', 'Öl'], 'varsayılan tr');
+  assert.deepEqual(adlar('xx'), ['Ofen', 'Oz', 'Öl'], 'bilinmeyen dil tr');
+  for (const dil of ['en', 'fr', 'es']) assert.equal(adlar(dil).length, 3, dil);
+});
+
 test('kameraAdaylari: ad kısaltılır ve görüntü/adres alanı içermez', () => {
   const [aday] = K.kameraAdaylari([durum('camera.uzun', 'U'.repeat(300), 'idle', { entity_picture: '/api/camera_proxy/camera.uzun?token=GIZLI', access_token: 'GIZLI' })]);
   assert.ok(aday.ad.length <= 40);

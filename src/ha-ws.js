@@ -480,6 +480,7 @@ function haWsOlustur({
     let taban = null;
     let anahtar = null;
     let reddedilmis = false;
+    let dogrulanamadi = false;
     let bekletilmis = false;
     try {
       anahtar = await anahtarAl();
@@ -494,14 +495,18 @@ function haWsOlustur({
       // soğuma sürerken de (adrese bakılmaksızın) yoklama dahil hiçbir şey ağa çıkmaz.
       const parmakIziOn = anahtar && yetki ? yetki.parmakIzi(anahtar) : null;
       reddedilmis = !!parmakIziOn && yetki.reddedildiMi(parmakIziOn);
-      bekletilmis = !!parmakIziOn && !reddedilmis && yetki.engelliMi(parmakIziOn);
-      taban = anahtar && !reddedilmis && !bekletilmis ? await adresAl() : null;
+      // Belirsiz deneme sınırı aşılmış anahtar da engelliMi sayılır; ama o geçici bir soğuma DEĞİL, kullanıcı onayı bekleyen kalıcı
+      // bir durumdur: 'duraklatildi' döngüsüne sokulmaz (aşağıda kaliciYedek), adres yoklaması da yapılmaz.
+      dogrulanamadi = !!parmakIziOn && !reddedilmis && !!yetki.dogrulanamadiMi?.(parmakIziOn);
+      bekletilmis = !!parmakIziOn && !reddedilmis && !dogrulanamadi && yetki.engelliMi(parmakIziOn);
+      taban = anahtar && !reddedilmis && !dogrulanamadi && !bekletilmis ? await adresAl() : null;
     } catch {
       taban = null;
     }
     if (bu !== surum || kapatildi || askida) return; // bu arada durduruldu ya da yeni deneme başladı
     if (!anahtar) return durumuAyarla('kapali', 'anahtar-yok'); // anahtar kaydedilince yenidenBaglan çağrılır
     if (reddedilmis) return kaliciYedek('yetki'); // yeni (farklı parmak izli) anahtar kaydedilince yenidenBaglan çağrılır
+    if (dogrulanamadi) return kaliciYedek('dogrulanamadi'); // kullanıcı Ayarlar'dan "Yeniden dene" (yenidenBaglan) diyene kadar döngü yok
     if (bekletilmis) return koptu('duraklatildi'); // soğuma bitince yeniden denenir
     if (!taban) return koptu('adres-yok');
     const url = anahtarIcinGuvenliAdresMi(taban) ? p.websocketAdresi(taban) : null;
@@ -601,6 +606,8 @@ function haWsOlustur({
     },
     durum: () => ({ baglanti, canli: baglanti === 'canli', neden: sonNeden }),
     canliMi: () => baglanti === 'canli',
+    /** Kimlik, canlı aboneliğin izlenen kümesinde mi (durum olayları yalnız bunlar için depoya işlenir)? */
+    izleniyorMu: (kimlik) => izlenenKume.has(kimlik),
 
     /**
      * 1.4.0: yalnız okuyan WS komutu (ha-ws-protokol.js OKUMA_KOMUTLARI). Yalnız canlı bağlantıda gönderilir; HİÇBİR zaman

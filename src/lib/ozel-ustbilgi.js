@@ -270,7 +270,8 @@ function ustbilgiDeposuOlustur({ depo, gunluk = () => {} }) {
     sayi: () => liste.length,
     /**
      * Listeyi doğrular ve şifreli yazar (boş liste kaydı siler). deger null olan öğe mevcut değeri korur.
-     * @returns {Promise<{ok: true, adlar: string[]} | {ok: false, hatalar: object[]} | {ok: false, sifreleme: true}>}
+     * sifreleme: Windows şifreleme hizmeti yok ya da yazılan veri geri çözülemedi; yazilamadi: dosya yazılamadı (disk dolu, izin yok, kilit...).
+     * @returns {Promise<{ok: true, adlar: string[]} | {ok: false, hatalar: object[]} | {ok: false, sifreleme: true} | {ok: false, yazilamadi: true}>}
      */
     kaydet(girdi) {
       return siraya(async () => {
@@ -279,8 +280,10 @@ function ustbilgiDeposuOlustur({ depo, gunluk = () => {} }) {
         try {
           if (dogrulama.liste.length === 0) await depo.sil();
           else await depo.yaz(JSON.stringify(dogrulama.liste));
-        } catch {
-          return { ok: false, sifreleme: true };
+        } catch (hata) {
+          // Yalnız gerçek şifreleme sorunu "şifreleme yok" sayılır; disk/izin hatası ayrı bildirilir (kullanıcı olmayan bir şifreleme sorununu aramasın).
+          if (hata?.message === 'sifreleme-yok' || hata?.message === 'dogrulama-basarisiz') return { ok: false, sifreleme: true };
+          return { ok: false, yazilamadi: true };
         }
         liste = dogrulama.liste;
         degisti();

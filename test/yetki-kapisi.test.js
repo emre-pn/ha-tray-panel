@@ -13,6 +13,7 @@ const { HaHatasi, hataMetni, haIstemcisiOlustur } = require('../src/ha-istemcisi
 const { haWsOlustur } = require('../src/ha-ws');
 const { DURAKLATMA_MS, EN_COK_BELIRSIZ_IYI, yetkiKesiciOlustur } = require('../src/lib/yetki-kesici');
 const { durumDeposuOlustur } = require('../src/lib/durum-deposu');
+const { kesintiMi } = require('../src/lib/baglanti-bildirimi');
 const { sinirliEszamanli } = require('../src/lib/sinirli-eszamanli');
 
 const ANAHTAR = 'SAHTE_ERISIM_ANAHTARI_ABCDEFGHIJ_0123456789';
@@ -315,6 +316,7 @@ function sahteZaman() {
       }
       t = hedef;
     },
+    bekleyen: () => bekleyenler.size,
   };
 }
 
@@ -796,6 +798,28 @@ test('(tur2-P2) sınıflandırılamayan ağ hatası (yalın "fetch failed") kiml
   // Electron net.fetch: hata iletisi "net::ERR_..." biçiminde
   await adresDegistirir(() => new TypeError('net::ERR_CONNECTION_REFUSED'), 'net::ERR_CONNECTION_REFUSED');
   await adresDegistirir(() => new TypeError('net::ERR_NAME_NOT_RESOLVED'), 'net::ERR_NAME_NOT_RESOLVED');
+  // B39: bağlantı kurulmadan oluşan öbür Chromium DNS/adres hataları da gönderim öncesidir
+  for (const kod of ['ERR_NAME_RESOLUTION_FAILED', 'ERR_DNS_TIMED_OUT', 'ERR_DNS_MALFORMED_RESPONSE', 'ERR_ADDRESS_INVALID', 'ERR_CONNECTION_FAILED']) {
+    await adresDegistirir(() => new TypeError(`net::${kod}`), `net::${kod}`);
+  }
+});
+
+test('(B39) DNS/adres hatasıyla düşen kimlikli istek BELİRSİZ sayılmaz: sayaç artmaz, anahtar "dogrulanamadi" olmaz, sonraki istek yeniden tek doğrulamayla başlar', async () => {
+  for (const kod of ['ERR_NAME_RESOLUTION_FAILED', 'ERR_DNS_TIMED_OUT', 'ERR_ADDRESS_INVALID', 'ERR_CONNECTION_FAILED']) {
+    const o = kur({
+      ha: () => {
+        throw new TypeError(`net::${kod}`);
+      },
+    });
+    const p = o.kesici.parmakIzi(ANAHTAR);
+    for (let i = 0; i < 3; i += 1) assert.notEqual(await hataTuru(o.istemci.haIstek('/api/states')), 'belirsiz', kod);
+    assert.equal(o.kesici.belirsizSayisi(p), 0, kod);
+    assert.equal(o.kesici.dogrulanamadiMi(p), false, kod);
+    o.durum.ha = GECERLI_HA; // ağ düzeldi
+    const once = o.kimlikliler().length;
+    assert.equal((await o.istemci.haIstek('/api/states/light.a')).entity_id, 'light.a', kod);
+    assert.equal(o.kimlikliler().length - once, 2, `${kod}: tek doğrulama + asıl istek`);
+  }
 });
 
 test("(tur2-P3) doğrulama isteği 8 sn'de kesilmez (ev içi 15 sn, dış adres 30 sn): yavaş HA/tünelde HA'nın saydığı yanıtsız deneme olmasın", async () => {
@@ -843,6 +867,9 @@ test('(tur2-P3) WS: anahtar "dogrulanamadi" durumundaysa soket açılmaz ve yeni
   await akit();
   assert.equal(o.soketler.length, 0);
   assert.equal(o.cagrilar.length, 0, 'ne yoklama ne kimlikli istek');
+  assert.deepEqual(o.ws.durum(), { baglanti: 'yedek', canli: false, neden: 'dogrulanamadi' }, 'kalıcı yedek: "duraklatildi" geri çekilme döngüsü yok');
+  assert.equal(kesintiMi(o.ws.durum()), false, 'gerçek kesinti sayılmaz: "bağlantı koptu" bildirimi gelmez');
+  assert.equal(o.zaman.bekleyen(), 0, 'bekleyen yeniden bağlanma zamanlayıcısı yok');
   o.kesici.yenidenDene();
   o.ws.yenidenBaglan();
   await akit();
