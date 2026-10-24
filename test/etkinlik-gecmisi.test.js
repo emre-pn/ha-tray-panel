@@ -10,7 +10,7 @@ const YOL = 'C:\\veri\\etkinlik-gecmisi.json';
 function kur({ fs = sahteFs(), acik = true } = {}) {
   const saat = sahteSaat();
   const gunlukler = [];
-  const g = etkinlikGecmisiOlustur({ dosyaYolu: YOL, fs, simdi: saat.simdi, zaman: saat, gunluk: (m) => gunlukler.push(m), acikMi: () => acik });
+  const g = etkinlikGecmisiOlustur({ dosyaYolu: YOL, fs, simdi: saat.simdi, zaman: saat, gunluk: (m) => gunlukler.push(m), acikMi: typeof acik === 'function' ? acik : () => acik }); // işlev: ayar çalışırken değiştirilebilir
   return { g, fs, saat, gunlukler };
 }
 
@@ -79,12 +79,30 @@ test('ad kısaltılır (60 karakter)', () => {
   assert.equal(g.liste()[0].ad.length, 60);
 });
 
-test('ayar kapalıyken ekle() hiçbir şey yazmaz; temizle yine çalışır', () => {
+test('ayar kapalıyken ekle() hiçbir şey yazmaz; temizle yine çalışır', async () => {
   const { g, fs, saat } = kur({ acik: false });
   assert.equal(g.ekle({ kaynak: 'panel', kimlik: 'light.salon', islem: 'toggle', sonuc: 'ok' }), false);
   assert.equal(g.sayi(), 0);
-  saat.ileri(1000);
+  assert.equal(saat.bekleyen(), 0, 'kapalıyken zamanlayıcı kurulmaz');
+  await saat.ileri(1000);
   assert.equal(fs.yazimlar.length, 0);
+
+  // Kullanıcı geçmiş açıkken kayıt biriktirip sonra ayarı kapatırsa: kayıtlar kalır, temizle yine silip dosyaya yazar
+  let acik = true;
+  const k = kur({ acik: () => acik });
+  k.g.ekle({ kaynak: 'panel', kimlik: 'light.salon', islem: 'toggle', sonuc: 'ok' });
+  await k.saat.ileri(600);
+  assert.equal(JSON.parse(k.fs.dosyalar.get(YOL)).kayitlar.length, 1, 'açıkken kayıt yazıldı');
+  acik = false;
+  assert.equal(k.g.ekle({ kaynak: 'panel', kimlik: 'switch.priz', islem: 'turn_off', sonuc: 'ok' }), false, 'kapalıyken yeni kayıt girmez');
+  assert.equal(k.g.sayi(), 1, 'kapatmak eski kayıtları silmez');
+  const yazimOnce = k.fs.yazimlar.length;
+  await k.saat.ileri(1000);
+  assert.equal(k.fs.yazimlar.length, yazimOnce, 'kapalıyken ekle() yazma planlamaz');
+  k.g.temizle();
+  assert.equal(k.g.sayi(), 0, 'temizle kapalıyken de listeyi boşaltır');
+  await k.saat.ileri(600);
+  assert.deepEqual(JSON.parse(k.fs.dosyalar.get(YOL)).kayitlar, [], 'temizle kapalıyken de dosyaya yazılır');
 });
 
 test('yazma: gecikmeli ve atomik (.tmp + yeniden adlandırma); bosalt hemen yazar; kirli değilse yazmaz; dosyada sır alanı yok', async () => {
@@ -166,4 +184,48 @@ test('temizle: listeyi boşaltır ve dosyaya yazılır; dinleyici ekleme ve temi
 test('kaydiDuzelt: zaman yoksa varsayılan, geçerli zaman korunur', () => {
   assert.equal(kaydiDuzelt({ kaynak: 'panel', islem: 'oda-kapat', sonuc: 'ok' }, 77).zaman, 77);
   assert.equal(kaydiDuzelt({ zaman: 12, kaynak: 'panel', islem: 'oda-kapat', sonuc: 'ok' }, 77).zaman, 12);
+});
+
+test('yukle: geçici okuma hatası (EBUSY) bozulma sayılmaz; dosya ezilmez, okunabilince diskteki kayıtlar korunarak birleştirilir', () => {
+  const eski = JSON.stringify({ surum: 1, kayitlar: Array.from({ length: 150 }, (_, i) => ({ zaman: 1000 - i, kaynak: 'panel', kimlik: 'light.salon', islem: 'toggle', sonuc: 'ok' })) });
+  const fs = sahteFs({ [YOL]: eski });
+  const gercekOku = fs.readFileSync;
+  let kilitli = true;
+  fs.readFileSync = (y, k) => {
+    if (kilitli) throw Object.assign(new Error('meşgul'), { code: 'EBUSY' });
+    return gercekOku(y, k);
+  };
+  const { g, gunlukler } = kur({ fs });
+  assert.equal(g.yukle(), 0);
+  assert.deepEqual(gunlukler, ['Etkinlik geçmişi dosyası okunamadı; yazma ertelendi.']);
+  g.ekle({ kaynak: 'panel', kimlik: 'switch.priz', islem: 'turn_on', sonuc: 'ok' });
+  assert.equal(g.bosalt(), false, 'dosya hâlâ kilitli: yazılmaz');
+  assert.equal(fs.dosyalar.get(YOL), eski, 'özgün dosya değişmedi');
+  assert.equal(fs.yazimlar.length, 0);
+  kilitli = false;
+  assert.equal(g.bosalt(), true);
+  const yazilan = JSON.parse(fs.dosyalar.get(YOL)).kayitlar;
+  assert.equal(yazilan.length, 151, '150 eski + 1 yeni');
+  assert.equal(yazilan[0].kimlik, 'switch.priz', 'yeni kayıt zaman sırasına göre başta');
+  assert.equal(g.sayi(), 151);
+});
+
+test('temizle: okuma hatası sürerken kullanıcı temizlerse dosya bilerek sıfırlanır; bozuk JSON yine boş başlar', () => {
+  const fs = sahteFs({ [YOL]: JSON.stringify({ surum: 1, kayitlar: [{ zaman: 5, kaynak: 'panel', kimlik: 'light.salon', islem: 'toggle', sonuc: 'ok' }] }) });
+  const gercekOku = fs.readFileSync;
+  fs.readFileSync = () => {
+    throw new Error('meşgul');
+  };
+  const { g } = kur({ fs });
+  g.yukle();
+  g.temizle();
+  assert.equal(g.bosalt(), true);
+  assert.deepEqual(JSON.parse(fs.dosyalar.get(YOL)).kayitlar, []);
+  fs.readFileSync = gercekOku;
+
+  const bozuk = kur({ fs: sahteFs({ [YOL]: '{bozuk' }) });
+  bozuk.g.yukle();
+  bozuk.g.ekle({ kaynak: 'panel', kimlik: 'light.salon', islem: 'toggle', sonuc: 'ok' });
+  assert.equal(bozuk.g.bosalt(), true);
+  assert.equal(JSON.parse(bozuk.fs.dosyalar.get(YOL)).kayitlar.length, 1);
 });

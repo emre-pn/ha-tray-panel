@@ -93,6 +93,7 @@ function kur(ayarlar = {}, secenek = {}) {
     haIstek: async (yol) => {
       istekler.push(yol);
       if (durum.taramaHatasi) throw new Error('ag');
+      if (durum.bekle) return durum.bekle;
       return durum.taramaYaniti;
     },
     depo: { al: (k) => durumlar.get(k) },
@@ -533,4 +534,89 @@ test('akış: yerel kapatılan pil öğesi panelde görünmez', async () => {
   assert.deepEqual(await k.akis.kapat(ilkAnahtar(k.akis)), { ok: true });
   assert.equal(k.akis.model().sayi, 0);
   assert.equal(k.kapatilan.kume.has('pil:sensor.a_pil'), true);
+});
+
+test('akış: biriken özet beklerken masaüstü yansıtması kapatılırsa özet çıkmaz, sayaç sıfırlanır', async () => {
+  const k = kur();
+  k.akis.baslat();
+  k.abonelikler.dinleyici([], {});
+  const liste = [];
+  for (let i = 0; i < YANSITMA_SINIRI + 2; i += 1) {
+    liste.push(haB(`n${i}`, `Bildirim ${i}`));
+    k.abonelikler.dinleyici([...liste], {});
+  }
+  assert.equal(k.akis.durum().biriken, 2);
+  k.durum.ayar.bildirimMasaustu = false;
+  k.akis.ayarDegisti();
+  assert.equal(k.akis.durum().biriken, 0);
+  await k.zaman.ilerle(YANSITMA_PENCERESI_MS + 1);
+  assert.equal(k.gosterilen.length, YANSITMA_SINIRI, 'özet penceresi gösterilmez');
+  assert.equal(k.akis.durum().biriken, 0);
+});
+
+test('akış: ayar açık kalırsa biriken özet yine çıkar (ayar değişimi başka bir şeyse)', async () => {
+  const k = kur();
+  k.akis.baslat();
+  k.abonelikler.dinleyici([], {});
+  const liste = [];
+  for (let i = 0; i < YANSITMA_SINIRI + 2; i += 1) {
+    liste.push(haB(`n${i}`, `Bildirim ${i}`));
+    k.abonelikler.dinleyici([...liste], {});
+  }
+  k.durum.ayar.bildirimPilEsigi = 30;
+  k.akis.ayarDegisti();
+  assert.equal(k.akis.durum().biriken, 2);
+  await k.zaman.ilerle(YANSITMA_PENCERESI_MS + 1);
+  assert.equal(k.gosterilen.length, YANSITMA_SINIRI + 1);
+});
+
+test('akış: ayar özet zamanlayıcısı dolmadan hemen önce kapatılsa da (zamanlayıcıdaki ayar denetimi) özet çıkmaz', async () => {
+  const k = kur();
+  k.akis.baslat();
+  k.abonelikler.dinleyici([], {});
+  const liste = [];
+  for (let i = 0; i < YANSITMA_SINIRI + 1; i += 1) {
+    liste.push(haB(`n${i}`, `Bildirim ${i}`));
+    k.abonelikler.dinleyici([...liste], {});
+  }
+  k.durum.ayar.bildirimMasaustu = false; // ayarDegisti çağrılmadan (yarış): özet yine de gösterilmez
+  await k.zaman.ilerle(YANSITMA_PENCERESI_MS + 1);
+  assert.equal(k.gosterilen.length, YANSITMA_SINIRI);
+});
+
+test('akış: istek sürerken kaynaklar kapatılırsa havadaki tarama yanıtı uygulanmaz', async () => {
+  const k = kur({ bildirimPil: true, bildirimGuncelleme: false });
+  k.akis.baslat();
+  let coz;
+  k.durum.bekle = new Promise((r) => (coz = r));
+  const tarama = k.akis.taraSimdi(); // istek havada
+  k.durum.ayar.bildirimPil = false;
+  k.durum.ayar.bildirimGuncelleme = false;
+  k.akis.ayarDegisti();
+  coz([pil('sensor.a_pil', '5')]);
+  await tarama;
+  assert.equal(k.akis.durum().pil, 0, 'kapalı kaynağın verisi bellekte kalmaz');
+  assert.equal(k.akis.durum().taramaHazir, false);
+  assert.equal(k.akis.durum().tarama, false, 'yeniden planlanmaz');
+  // yeniden açılınca model eski veriyle dolu başlamaz
+  k.durum.bekle = null;
+  k.durum.ayar.bildirimPil = true;
+  k.akis.ayarDegisti();
+  assert.equal(k.akis.model().sayi, 0);
+});
+
+test('akış: istek sürerken kaynak kapatılıp yeniden açılırsa eski yanıt yine uygulanmaz', async () => {
+  const k = kur({ bildirimPil: true });
+  k.akis.baslat();
+  let coz;
+  k.durum.bekle = new Promise((r) => (coz = r));
+  const tarama = k.akis.taraSimdi();
+  k.durum.ayar.bildirimPil = false;
+  k.akis.ayarDegisti();
+  k.durum.ayar.bildirimPil = true;
+  k.akis.ayarDegisti();
+  coz([pil('sensor.a_pil', '5')]);
+  await tarama;
+  assert.equal(k.akis.durum().pil, 0);
+  assert.equal(k.akis.durum().taramaHazir, false);
 });

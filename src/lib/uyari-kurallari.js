@@ -384,7 +384,7 @@ function yerelGunDakikasi(ms) {
  * @param {(ms: number) => number} [bag.yerelDakika] gün içi yerel dakika (sessiz saatler; test için)
  */
 function uyariDegerlendiriciOlustur({ kurallarAl, durumAl, uyar, simdi = () => Date.now(), zaman = varsayilanZaman(), t = TR, gunluk = () => {}, yerelDakika = yerelGunDakikasi }) {
-  const durumlar = new Map(); // kural kimliği -> { imza, hazir, onceki, aktif, tetiklendi, zamanlayici, sonBildirim }
+  const durumlar = new Map(); // kural kimliği -> { imza, kural, hazir, onceki, aktif, tetiklendi, zamanlayici, sonBildirim }
   let isinmaBitis = 0;
   let gizlenenSayisi = 0;
   let dakikaGecmisi = []; // son bildirim zamanları (hız sınırı)
@@ -398,9 +398,12 @@ function uyariDegerlendiriciOlustur({ kurallarAl, durumAl, uyar, simdi = () => D
       d = null; // kural değişti: taban çizgisi yeniden alınır
     }
     if (!d) {
-      d = { imza, hazir: false, onceki: undefined, aktif: false, tetiklendi: false, zamanlayici: null, sonBildirim: -Infinity };
+      d = { imza, kural, hazir: false, onceki: undefined, aktif: false, tetiklendi: false, zamanlayici: null, sonBildirim: -Infinity };
       durumlar.set(kural.id, d);
     }
+    // İmza yalnız varlık, koşul ve süreyi kapsar: metin, windows, sessiz saatler ve bekleme düzenlemesi durumu (ve süren sayacı) bozmaz,
+    // ama süre dolunca bildirim EN GÜNCEL kuralla üretilsin diye başvuru her değerlendirmede tazelenir.
+    d.kural = kural;
     return d;
   }
 
@@ -474,6 +477,12 @@ function uyariDegerlendiriciOlustur({ kurallarAl, durumAl, uyar, simdi = () => D
     }, kural.sure * 1000);
   }
 
+  /** Bekleyen "sure" sayacı, gelen (yinelenen) durumla hâlâ geçerli mi? (düzey koşulu sürüyor / geçişte durum değişmedi) */
+  function bekleyenSureSuruyorMu(kural, d, varlik) {
+    if (kural.kosul.tur === 'gecis') return d.onceki === varlik.state;
+    return d.aktif && kosulSaglaniyorMu(kural.kosul, varlik);
+  }
+
   function isle(kural) {
     const d = kuralDurumu(kural);
     const varlik = durumAl(kural.varlik);
@@ -481,6 +490,12 @@ function uyariDegerlendiriciOlustur({ kurallarAl, durumAl, uyar, simdi = () => D
       // henüz bilinmiyor ya da HA'da yok: taban çizgisi sıfırlanır (varlık dönünce yeniden taban alınır)
       zamanlayiciyiIptalEt(d);
       d.hazir = false;
+      return;
+    }
+    if (d.hazir && d.zamanlayici !== null && simdi() < isinmaBitis && bekleyenSureSuruyorMu(kural, d, varlik)) {
+      // Isınmada (WS yeniden kurulumu, toplu yükleme) AYNI durum yinelenir: sürmekte olan "sure" sayacı silinmez, yoksa süreli kural
+      // (ör. "pompa 10 dk'dan uzun açık kaldı") tam gerektiği anda kalıcı olarak sessiz kalır. Durum ya da koşul değiştiyse taban alınır.
+      d.onceki = varlik.state;
       return;
     }
     if (!d.hazir || simdi() < isinmaBitis) {
@@ -497,7 +512,7 @@ function uyariDegerlendiriciOlustur({ kurallarAl, durumAl, uyar, simdi = () => D
       const hedef = varlik.state;
       sureyiBaslat(kural, d, (hemen) => {
         const guncel = hemen ? varlik : durumAl(kural.varlik);
-        if (guncel && guncel.state === hedef) tetikle(kural, d, guncel);
+        if (guncel && guncel.state === hedef) tetikle(d.kural, d, guncel);
       });
       return;
     }
@@ -508,7 +523,7 @@ function uyariDegerlendiriciOlustur({ kurallarAl, durumAl, uyar, simdi = () => D
       d.tetiklendi = false;
       sureyiBaslat(kural, d, (hemen) => {
         const guncel = hemen ? varlik : durumAl(kural.varlik);
-        if (d.aktif && !d.tetiklendi && guncel && kosulSaglaniyorMu(kosul, guncel)) tetikle(kural, d, guncel);
+        if (d.aktif && !d.tetiklendi && guncel && kosulSaglaniyorMu(kosul, guncel)) tetikle(d.kural, d, guncel);
       });
     } else if (!saglaniyor && d.aktif) {
       d.aktif = false;

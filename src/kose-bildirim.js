@@ -319,6 +319,18 @@ function koseBildirimiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malze
       gizlemeZamanlayicisi = setTimeout(sonraki, sureMs); // süre çizgisi bitince pencere solarak gizlenir (CIKIS_SOLMA_MS)
     } catch {
       gunluk('Köşe bildirimi gösterilemedi.');
+      // Zamanlayıcı kurulmadan çıkılırsa pencere önceki içerikle görünür kalır ve sonraki 'bilgi' kayıtları "pencere dolu" sanılıp hiç çizilmezdi:
+      // eski zamanlayıcı temizlenir, çizilemeyen bilgi Windows bildirimine düşer; hata zaten geriBildirim'de Windows bildirimi olarak gösterilir (ikinci kez
+      // çıkmaz), ok yalnız onay geri bildirimidir (düşmez); sıra ilerler.
+      clearTimeout(gizlemeZamanlayicisi);
+      if (bilgi) {
+        try {
+          yedekGoster(kayit);
+        } catch {
+          gunluk('Köşe bildirimi yedeği gösterilemedi.');
+        }
+      }
+      sonraki(); // kuyruktan çıkarıp ilerlediğinden sonlanır; sıra boşsa pencere gizlenir
     }
   }
 

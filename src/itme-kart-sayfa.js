@@ -50,6 +50,7 @@
     d.type = 'button';
     d.className = 'dugme';
     d.textContent = String(metin).slice(0, 40);
+    d.title = String(metin).slice(0, 40); // dar kartta üç noktayla kısalan başlığın tamamı ipucu olarak görünür
     d.addEventListener('click', function () {
       dugmeleriKapat();
       if (window.evItme && typeof window.evItme.eylem === 'function') window.evItme.eylem(no, sira);

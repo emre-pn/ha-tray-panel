@@ -203,6 +203,15 @@ function itmeKartiOlustur({ gunluk = () => {}, yedekGoster = () => {}, malzemeAl
       zamanlayici = setTimeout(() => bitir(kart.kartNo), KART_SURESI_MS);
     } catch {
       gunluk('İtme kartı gösterilemedi.');
+      // Kart "görünen" işaretli kalırsa zamanlayıcı hiç kurulmaz ve sonraki kartlar sonsuza dek sırada bekler: kartı kapat, Windows
+      // bildirimine düşür (ileti kaybolmaz) ve sıradakine geç. Kuyruk sınırlı olduğundan özyineleme sonlanır.
+      const sonuc = kuyruk.bitir(kart.kartNo);
+      try {
+        yedekGoster(kart);
+      } catch {
+        gunluk('İtme kartı yedek bildirimi gösterilemedi.');
+      }
+      if (sonuc.kapandi) ilerle(sonuc.sonraki);
     }
   }
 

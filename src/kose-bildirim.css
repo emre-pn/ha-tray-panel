@@ -319,15 +319,22 @@ body {
   box-shadow: inset 0 0 0 2px var(--metin);
 }
 
-/* Kozmetik geçiş (o-34, varsayılan KAPALI): yazı sağdan kayarak girer. Yalnız :root[data-gecis] ve hareket azaltılmamışken. */
+/* Kozmetik geçiş (o-34, varsayılan KAPALI): yazı sağdan kayarak girer. Yalnız :root[data-gecis] ve hareket azaltılmamışken.
+   Keyframes kullanılır (transition değil): kose-sayfa.js her bildirimde "gorunur" sınıfını kaldırıp yeniden ekleyerek animasyonu baştan başlatır;
+   transition'da aynı numara hedefi başlangıca eşitleyip geçişi iptal ederdi ve yalnız oturumdaki ilk bildirim kayardı. */
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-gecis]:not([data-hareket]) .bildirim .yazi {
+  :root[data-gecis]:not([data-hareket]) .bildirim.gorunur .yazi {
+    animation: yazi-gecis 160ms ease-out both;
+  }
+}
+
+@keyframes yazi-gecis {
+  from {
     opacity: 0;
     transform: translateX(18px);
-    transition: opacity 160ms ease-out, transform 160ms ease-out;
   }
 
-  :root[data-gecis]:not([data-hareket]) .bildirim.gorunur .yazi {
+  to {
     opacity: 1;
     transform: none;
   }

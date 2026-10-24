@@ -293,3 +293,52 @@ test('HTML: kart alertdialog, düğmeler type=button, katı CSP, sayfa betiği �
   const css = oku('src/itme-kart.css');
   assert.doesNotMatch(css, /url\(\s*['"]?https?:|@import/);
 });
+
+test('düğme zemini/kenarı palet değişkenlerinden türer: Windows şemasına zıt özel arka planda da metin okunur', () => {
+  const css = oku('src/itme-kart.css');
+  const kural = (secici) => {
+    const i = css.indexOf(`${secici} {`);
+    assert.ok(i >= 0, secici);
+    return css.slice(i, css.indexOf('}', i));
+  };
+  // :root dışında --dugme-bg / --dugme-sinir sabit renk olarak yazılmaz (yalnız yüksek karşıtlık blokları sabit kalır)
+  const sabitler = [...css.matchAll(/--dugme-(bg|sinir):\s*(#[0-9a-f]{3,8})/gi)];
+  const karsitlikBaslangic = css.indexOf(':root[data-karsitlik]');
+  for (const m of sabitler) assert.ok(m.index > karsitlikBaslangic, `sabit ${m[0]} yalnız yüksek karşıtlık bloğunda olabilir`);
+  assert.match(css, /--dugme-bg:\s*color-mix\(in srgb, var\(--metin\) \d+%, var\(--bg\)\)/);
+  assert.match(css, /--dugme-sinir:\s*color-mix\(in srgb, var\(--metin\) \d+%, var\(--bg\)\)/);
+  // vurgulu düğme palet vurgusunu ve onun kontrastlı metnini kullanır
+  const ilk = kural('.dugme:first-child');
+  assert.match(ilk, /background:\s*var\(--vurgu, var\(--dugme-vurgu\)\)/);
+  assert.match(ilk, /color:\s*var\(--vurgu-metin, var\(--dugme-vurgu-metin\)\)/);
+  // türetilen zeminle palet metni her iki zıt şemada >= 4,5
+  const Tema = require('../src/lib/tema-renk');
+  const yuzde = Number(/--dugme-bg:\s*color-mix\(in srgb, var\(--metin\) (\d+)%/.exec(css)[1]);
+  for (const sema of ['koyu', 'acik']) {
+    for (const arkaPlan of ['#ffffff', '#101820', '#808080', '#e0e0e0', '#333333']) {
+      const d = Tema.paletUret({ sema, arkaPlan }).degiskenler;
+      const zemin = Tema.karistir(d['--bg'], d['--metin'], yuzde / 100);
+      assert.ok(Tema.kontrast(d['--metin'], zemin) >= 4.5, `${sema} ${arkaPlan}: ${Tema.kontrast(d['--metin'], zemin)}`);
+    }
+  }
+});
+
+test('düğmeler tek satırda kalır (ileti metni ezilmez); kısalan başlığın tamamı title ipucuyla verilir', () => {
+  const css = oku('src/itme-kart.css');
+  const blok = (secici) => {
+    const i = css.indexOf(`\n${secici} {`);
+    assert.ok(i >= 0, secici);
+    return css.slice(i, css.indexOf('}', i));
+  };
+  assert.doesNotMatch(blok('.dugmeler'), /flex-wrap:\s*wrap\b/);
+  assert.match(blok('.dugmeler'), /flex-wrap:\s*nowrap/);
+  assert.match(blok('.dugme'), /min-width:\s*0/);
+  assert.match(blok('.mesaj'), /min-height:\s*calc\(2 \* 1\.35em\)/);
+  const s = sayfaKur();
+  const uzun = 'Alarmı sustur ve kamerayı aç hemen';
+  s.gonder(yuk({ dugmeler: [uzun, 'B'] }));
+  assert.deepEqual(s.dugmeler().map((d) => d.title), [uzun, 'B']);
+  assert.equal(s.dugmeler()[0].textContent, uzun);
+  s.gonder(yuk({ kartNo: 8, dugmeler: ['<b>x</b>'.repeat(20)] }));
+  assert.equal(s.dugmeler()[0].title.length, 40, 'title de textContent gibi 40 karakterle sınırlı');
+});

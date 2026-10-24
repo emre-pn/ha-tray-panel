@@ -77,6 +77,7 @@ function bildirimAkisiOlustur({ okumaAl, haIstek, depo, ayarAl, goster, degisti 
   let aboneBirak = null;
   let taramaZamanlayicisi = null;
   let taramada = false;
+  let taramaKusagi = 0; // kaynaklar kapatılınca artar: havadaki eski tarama yanıtı uygulanmaz
   let taramaHatasiYazildi = false;
   let durdu = false;
   let yansitmaZamanlari = [];
@@ -121,7 +122,7 @@ function bildirimAkisiOlustur({ okumaAl, haIstek, depo, ayarAl, goster, degisti 
     birikenZamanlayicisi = null;
     const n = biriken;
     biriken = 0;
-    if (n <= 0 || durdu) return;
+    if (n <= 0 || durdu || ayar().bildirimMasaustu === false) return; // ayar bekleyen özet varken kapatılmış olabilir
     yansitmaZamanlari.push(simdi());
     guvenliGoster({ kaynak: 'ha', baslik: t('uygulama.ad'), metin: birikenMetni(n, t), simge: '🔔', windows: false });
   }
@@ -177,11 +178,17 @@ function bildirimAkisiOlustur({ okumaAl, haIstek, depo, ayarAl, goster, degisti 
     taramaZamanlayicisi = null;
     if (durdu || taramada || !taramaGerekli()) return;
     taramada = true;
+    const kusak = taramaKusagi;
     let basarili = false;
     try {
-      basarili = merkez.taramaGuncelle(await haIstek('/api/states'));
-      if (!basarili) gunluk('Bildirim taraması geçersiz yanıt aldı.');
-      else taramaHatasiYazildi = false;
+      const yanit = await haIstek('/api/states');
+      if (durdu || kusak !== taramaKusagi || !taramaGerekli()) {
+        // İstek sürerken pil ve güncelleme bildirimleri kapatıldı: yanıt atılır (kapalı kaynağın verisi bellekte kalmaz)
+      } else {
+        basarili = merkez.taramaGuncelle(yanit);
+        if (!basarili) gunluk('Bildirim taraması geçersiz yanıt aldı.');
+        else taramaHatasiYazildi = false;
+      }
     } catch {
       if (!taramaHatasiYazildi) gunluk('Bildirim taraması yapılamadı.');
       taramaHatasiYazildi = true;
@@ -200,6 +207,12 @@ function bildirimAkisiOlustur({ okumaAl, haIstek, depo, ayarAl, goster, degisti 
     if (durdu) return;
     const a = ayar();
     const taramaOncekiGerekli = taramaZamanlayicisi !== null || taramada;
+    if (a.bildirimMasaustu === false) {
+      // Masaüstü yansıtması kapatıldı: bekleyen "ve N bildirim daha" özeti de çıkmaz
+      if (birikenZamanlayicisi !== null) zaman.clearTimeout(birikenZamanlayicisi);
+      birikenZamanlayicisi = null;
+      biriken = 0;
+    }
     merkez.ayarla({ kalici: a.bildirimKalici === true, pil: a.bildirimPil === true, guncelleme: a.bildirimGuncelleme === true, pilEsigi: a.bildirimPilEsigi });
     // HA kalıcı bildirimleri
     if (a.bildirimKalici === true) {
@@ -218,6 +231,7 @@ function bildirimAkisiOlustur({ okumaAl, haIstek, depo, ayarAl, goster, degisti 
     } else {
       if (taramaZamanlayicisi !== null) zaman.clearTimeout(taramaZamanlayicisi);
       taramaZamanlayicisi = null;
+      taramaKusagi += 1;
       merkez.taramaSifirla();
     }
     // Uyarı kuralları

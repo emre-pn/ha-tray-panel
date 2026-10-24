@@ -521,3 +521,55 @@ test('yükleme beklerken HA kartı temizlerse (gizle) bekleyen kart sıfırlanı
     o.temizle();
   }
 });
+
+test('gösterim fırlatırsa kart kuyrukta takılı kalmaz: ileti Windows bildirimine düşer, sıradaki kart çizilir, sonraki bildirim de çizilir', async () => {
+  const o = kur();
+  try {
+    o.kart.goster(bildirim('A', { etiket: 'a' }));
+    await o.akit();
+    const p = o.pencereler[0];
+    // A başarıyla çizildi. Şimdi send fırlatsın; B sırada, C ondan sonra gelir.
+    const gercekSend = p.webContents.send.bind(p.webContents);
+    let atilacak = 1;
+    p.webContents.send = (kanal, yuk) => {
+      if (kanal === 'itme:goster' && atilacak > 0) {
+        atilacak -= 1;
+        throw new Error('Render frame was disposed before WebFrameMain could be accessed');
+      }
+      gercekSend(kanal, yuk);
+    };
+    o.kart.goster(bildirim('B', { etiket: 'b' })); // A görünürken sıraya girer
+    assert.equal(o.kart.eylemSec(1, 0)?.eylem, 'ONAYLA_42'); // A kapanır, B çizilmeye çalışılır, send fırlatır
+    assert.deepEqual(o.yedekler.map((y) => y.mesaj), ['B'], 'çizilemeyen kart Windows bildirimine düştü');
+    assert.equal(o.kart.gorunen(), null, 'kart kuyrukta takılı kalmadı');
+    assert.equal(p.gorunur, false, 'sıra boşaldı, pencere gizlendi');
+    assert.ok(o.gunlukler.includes('İtme kartı gösterilemedi.'));
+    o.kart.goster(bildirim('C', { etiket: 'c' }));
+    assert.deepEqual(o.mesajlar(p).map((m) => m.mesaj), ['A', 'C'], 'sonraki bildirim yutulmadı');
+    assert.equal(o.kart.gorunen().mesaj, 'C');
+  } finally {
+    o.temizle();
+  }
+});
+
+test('gösterim fırlatırsa sıradaki kart çizilir (iki kart sırada iken ilkinin hatası ikinciyi engellemez)', async () => {
+  const o = kur();
+  try {
+    o.kart.goster(bildirim('A', { etiket: 'a' }));
+    await o.akit();
+    const p = o.pencereler[0];
+    const gercekSend = p.webContents.send.bind(p.webContents);
+    p.webContents.send = (kanal, yuk) => {
+      if (kanal === 'itme:goster' && yuk.mesaj === 'B') throw new Error('disposed');
+      gercekSend(kanal, yuk);
+    };
+    o.kart.goster(bildirim('B', { etiket: 'b' }));
+    o.kart.goster(bildirim('C', { etiket: 'c' }));
+    o.kart.eylemSec(1, 0);
+    assert.deepEqual(o.yedekler.map((y) => y.mesaj), ['B']);
+    assert.deepEqual(o.mesajlar(p).map((m) => m.mesaj), ['A', 'C']);
+    assert.equal(o.kart.gorunen().mesaj, 'C');
+  } finally {
+    o.temizle();
+  }
+});

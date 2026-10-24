@@ -103,12 +103,41 @@ function etkinlikGecmisiOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = () =
   let kayitlar = [];
   let kirli = false;
   let zamanlayici = null;
+  // Dosya VAR ama okunamadı (kilitli: antivirüs, yedekleme, eşitleme...): bu bozulma DEĞİLDİR. Geçmiş boş başlar ama dosya ezilmez;
+  // yazmadan önce yeniden okunur ve diskteki kayıtlar bellektekilerle birleştirilir (ayar dosyasındaki "okunamayan dosya ezilmez" ilkesi).
+  let okunamadi = false;
   const dinleyiciler = new Set();
+
+  /** Diskteki kayıtlar; dosya yoksa []; okunamazsa null. Bozuk JSON [] (özgün davranış: boş başla). */
+  function diskKayitlari() {
+    let ham;
+    try {
+      if (!fs.existsSync(dosyaYolu)) return [];
+      ham = fs.readFileSync(dosyaYolu, 'utf8');
+    } catch {
+      return null;
+    }
+    try {
+      return kayitlariDuzelt(JSON.parse(String(ham).replace(/^﻿/, '')));
+    } catch {
+      return [];
+    }
+  }
 
   function yaz() {
     zaman.clearTimeout(zamanlayici);
     zamanlayici = null;
     if (!kirli) return true;
+    if (okunamadi) {
+      const disk = diskKayitlari();
+      if (disk === null) {
+        gunluk('Etkinlik geçmişi dosyası hâlâ okunamıyor; yazma ertelendi.');
+        return false; // kirli kalır; bir sonraki ekle()/bosalt()'ta yeniden denenir
+      }
+      // bellekteki kayıtlar yükleme sonrasında eklendi (diskte yok); zaman sırasına göre (yeni önde) birleşir, eşitlikte bellek önde
+      kayitlar = [...kayitlar, ...disk].sort((a, b) => b.zaman - a.zaman).slice(0, EN_COK_KAYIT);
+      okunamadi = false;
+    }
     const gecici = `${dosyaYolu}.tmp`;
     try {
       const yol = String(dosyaYolu).replace(/[\\/][^\\/]*$/, '');
@@ -141,10 +170,18 @@ function etkinlikGecmisiOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = () =
   return {
     yukle() {
       kayitlar = [];
+      okunamadi = false;
+      let ham;
       try {
         if (!fs.existsSync(dosyaYolu)) return 0;
-        const ham = JSON.parse(String(fs.readFileSync(dosyaYolu, 'utf8')).replace(/^﻿/, ''));
-        kayitlar = kayitlariDuzelt(ham);
+        ham = fs.readFileSync(dosyaYolu, 'utf8');
+      } catch {
+        okunamadi = true;
+        gunluk('Etkinlik geçmişi dosyası okunamadı; yazma ertelendi.');
+        return 0;
+      }
+      try {
+        kayitlar = kayitlariDuzelt(JSON.parse(String(ham).replace(/^﻿/, '')));
       } catch {
         gunluk('Etkinlik geçmişi dosyası okunamadı; liste boş başlatıldı.');
         kayitlar = [];
@@ -173,7 +210,8 @@ function etkinlikGecmisiOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = () =
     },
 
     temizle() {
-      if (kayitlar.length === 0) return;
+      if (kayitlar.length === 0 && !okunamadi) return;
+      okunamadi = false; // kullanıcı eylemi: disk içeriği de bilerek sıfırlanır
       kayitlar = [];
       yazmayiPlanla();
       degistiBildir();

@@ -44,6 +44,7 @@ const METIN_SINIRI = 200;
 const KAPATILAN_EN_COK = 200;
 const KAPATILAN_OMRU_MS = 90 * 24 * 60 * 60 * 1000;
 const PIL_ESIGI_VARSAYILAN = 20;
+const PIL_ESIGI_AZAMI = 50; // ayarlanabilir pil eşiğinin üst sınırı (ayarla); tarama bunun üstündeki pilleri hiç tutmaz
 const SURUM_DESENI = /^[A-Za-z0-9._+~:-]{1,30}$/;
 const KAPATILAN_ANAHTAR_DESENI = /^(pil|guncelleme):[a-z0-9_]+\.[a-z0-9_]+(:[A-Za-z0-9._+~:-]{1,30})?$/;
 
@@ -53,7 +54,7 @@ const KAPATILAN_ANAHTAR_DESENI = /^(pil|guncelleme):[a-z0-9_]+\.[a-z0-9_]+(:[A-Z
 
 /**
  * HA kalıcı bildirimleri Markdown olabilir; köşe/panel düz metin gösterir. Bağlantı ve görsel yalnız etiketiyle kalır (adres
- * gösterilmez), başlık/liste/alıntı/kod işaretleri atılır, HTML etiketleri silinir, boşluklar teke iner. Sonuç yeniden süzülmelidir.
+ * gösterilmez), başlık/madde/alıntı/kod işaretleri atılır (numaralı liste sayıları KALIR: Türkçede "2. kat" bir sıra sayısıdır), HTML etiketleri silinir, boşluklar teke iner. Sonuç yeniden süzülmelidir.
  * @param {unknown} metin
  * @returns {string}
  */
@@ -70,7 +71,6 @@ function duzMetin(metin) {
   s = s.replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, ''); // başlık işareti
   s = s.replace(/^[ \t]{0,3}>[ \t]?/gm, ''); // alıntı
   s = s.replace(/^[ \t]*[-*+][ \t]+/gm, '• '); // madde işareti
-  s = s.replace(/^[ \t]*\d{1,3}[.)][ \t]+/gm, ''); // numaralı liste
   s = s.replace(/(\*\*|__)(.+?)\1/g, '$2'); // kalın
   s = s.replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?!\w)/g, '$1$2'); // italik
   s = s.replace(/~~(.+?)~~/g, '$1'); // üstü çizili
@@ -146,26 +146,39 @@ function guncellemeVarligi(varlik) {
 
 /**
  * /api/states yanıtından (ham dizi) pil ve güncelleme varlıklarını çıkarır. Dizi değilse null.
+ * Sınırlar (EN_COK_PIL / EN_COK_GUNCELLEME) yalnız GÖSTERİLEBİLİR adaylara uygulanır: eşiğin (en çok PIL_ESIGI_AZAMI) altındaki
+ * pil ve bekleyen güncelleme. Sağlıklı pil ve güncel ("off") güncelleme haritaya girmez, sınırı tüketmez; böylece büyük kurulumda
+ * /api/states sırasının sonundaki düşük pil ya da bekleyen güncelleme kaybolmaz. Ulaşılamıyor / bilinmiyor varlıklar sınırın dışında
+ * kalır (taramaGuncelle öncekini korumak ve kapatmayı budamamak için onlara bakar). Pil adayları sınırı aşarsa en düşük yüzdeliler kalır.
  * @returns {{piller: Map<string, object>, guncellemeler: Map<string, object>}|null}
  */
 function varliklariTara(varliklar) {
   if (!Array.isArray(varliklar)) return null;
-  const piller = new Map();
+  const pilAdaylari = [];
+  const belirsizPiller = [];
   const guncellemeler = new Map();
+  let bekleyen = 0;
   for (const v of varliklar.slice(0, EN_COK_TARANAN)) {
-    if (piller.size >= EN_COK_PIL && guncellemeler.size >= EN_COK_GUNCELLEME) break;
     if (!v || typeof v !== 'object' || typeof v.entity_id !== 'string') continue;
     const alan = alanAl(v.entity_id);
     if (alan === 'update') {
-      if (guncellemeler.size >= EN_COK_GUNCELLEME) continue;
       const g = guncellemeVarligi(v);
-      if (g) guncellemeler.set(g.kimlik, g);
+      if (!g) continue;
+      if (g.belirsiz) guncellemeler.set(g.kimlik, g);
+      else if (g.bekliyor && bekleyen < EN_COK_GUNCELLEME) {
+        guncellemeler.set(g.kimlik, g);
+        bekleyen += 1;
+      }
     } else if (alan === 'sensor' || alan === 'binary_sensor') {
-      if (piller.size >= EN_COK_PIL) continue;
       const p = pilVarligi(v);
-      if (p) piller.set(p.kimlik, p);
+      if (!p) continue;
+      if (p.belirsiz) belirsizPiller.push(p);
+      else if (p.dusuk || (p.yuzde !== null && p.yuzde <= PIL_ESIGI_AZAMI)) pilAdaylari.push(p);
     }
   }
+  if (pilAdaylari.length > EN_COK_PIL) pilAdaylari.sort((a, b) => (a.yuzde ?? -1) - (b.yuzde ?? -1)); // sıralama kararlı: eşitlikte tarama sırası
+  const piller = new Map();
+  for (const p of [...pilAdaylari.slice(0, EN_COK_PIL), ...belirsizPiller]) piller.set(p.kimlik, p);
   return { piller, guncellemeler };
 }
 
@@ -214,11 +227,53 @@ function kapatilanDeposuOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = () =
   let kayitlar = [];
   let kirli = false;
   let zamanlayici = null;
+  // Dosya VAR ama okunamadı (kilitli: antivirüs, yedekleme...): bu bozulma DEĞİLDİR. Liste boş başlar ama dosya ezilmez; yazmadan önce
+  // yeniden okunur ve diskteki kayıtlar bellektekilerle birleştirilir (ayar dosyasındaki "okunamayan dosya ezilmez" ilkesi).
+  let okunamadi = false;
+  const okunamadiSilinen = new Set(); // okunamadi iken bellekten silinen anahtarlar: birleştirmede geri gelmesin
+
+  /** Diskteki kayıtlar; dosya yoksa []; okunamazsa null. Bozuk JSON da [] (özgün davranış: boş başla). */
+  function diskKayitlari() {
+    let ham;
+    try {
+      if (!fs.existsSync(dosyaYolu)) return [];
+      ham = fs.readFileSync(dosyaYolu, 'utf8');
+    } catch {
+      return null;
+    }
+    try {
+      return kapatilanlariDuzelt(JSON.parse(String(ham).replace(/^﻿/, '')), simdi());
+    } catch {
+      return [];
+    }
+  }
+
+  /** Bellekteki (yeni) kayıtlar ile diskteki kayıtlar: anahtar tekil, en yeni önde, en çok KAPATILAN_EN_COK. */
+  function birlestir(disk) {
+    const gorulen = new Set();
+    const sonuc = [];
+    for (const k of [...kayitlar, ...disk.filter((d) => !okunamadiSilinen.has(d.anahtar))]) {
+      if (gorulen.has(k.anahtar)) continue;
+      gorulen.add(k.anahtar);
+      sonuc.push(k);
+    }
+    return sonuc.sort((a, b) => b.zaman - a.zaman).slice(0, KAPATILAN_EN_COK);
+  }
 
   function yaz() {
     zaman.clearTimeout(zamanlayici);
     zamanlayici = null;
     if (!kirli) return true;
+    if (okunamadi) {
+      const disk = diskKayitlari();
+      if (disk === null) {
+        gunluk('Bildirim kapatma dosyası hâlâ okunamıyor; yazma ertelendi.');
+        return false; // kirli kalır; bir sonraki değişiklikte ya da çıkışta yeniden denenir
+      }
+      kayitlar = birlestir(disk);
+      okunamadi = false;
+      okunamadiSilinen.clear();
+    }
     const gecici = `${dosyaYolu}.tmp`;
     try {
       const yol = String(dosyaYolu).replace(/[\\/][^\\/]*$/, '');
@@ -241,10 +296,19 @@ function kapatilanDeposuOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = () =
   return {
     yukle() {
       kayitlar = [];
+      okunamadi = false;
+      okunamadiSilinen.clear();
+      let ham;
       try {
         if (!fs.existsSync(dosyaYolu)) return 0;
-        const ham = JSON.parse(String(fs.readFileSync(dosyaYolu, 'utf8')).replace(/^﻿/, ''));
-        kayitlar = kapatilanlariDuzelt(ham, simdi());
+        ham = fs.readFileSync(dosyaYolu, 'utf8');
+      } catch {
+        okunamadi = true;
+        gunluk('Bildirim kapatma dosyası okunamadı; yazma ertelendi.');
+        return 0;
+      }
+      try {
+        kayitlar = kapatilanlariDuzelt(JSON.parse(String(ham).replace(/^﻿/, '')), simdi());
       } catch {
         gunluk('Bildirim kapatma dosyası okunamadı; liste boş başlatıldı.');
         kayitlar = [];
@@ -256,6 +320,7 @@ function kapatilanDeposuOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = () =
     ekle(anahtar) {
       if (!kapatilanAnahtariGecerliMi(anahtar)) return false;
       if (kayitlar.some((k) => k.anahtar === anahtar)) return true;
+      okunamadiSilinen.delete(anahtar);
       kayitlar = [{ anahtar, zaman: simdi() }, ...kayitlar].slice(0, KAPATILAN_EN_COK);
       yazmayiPlanla();
       return true;
@@ -263,11 +328,16 @@ function kapatilanDeposuOlustur({ dosyaYolu, fs, gunluk = () => {}, simdi = () =
     sil(anahtar) {
       const onceki = kayitlar.length;
       kayitlar = kayitlar.filter((k) => k.anahtar !== anahtar);
-      if (kayitlar.length !== onceki) yazmayiPlanla();
+      if (kayitlar.length !== onceki) {
+        if (okunamadi) okunamadiSilinen.add(anahtar);
+        yazmayiPlanla();
+      }
     },
     anahtarlar: () => kayitlar.map((k) => k.anahtar),
     temizle() {
-      if (kayitlar.length === 0) return;
+      if (kayitlar.length === 0 && !okunamadi) return;
+      okunamadi = false; // kullanıcı eylemi: disk içeriği de bilerek sıfırlanır
+      okunamadiSilinen.clear();
       kayitlar = [];
       yazmayiPlanla();
     },
@@ -301,6 +371,7 @@ function merkezOlustur({ kapatilan, simdi = () => Date.now(), t = TR, yeniOge = 
   let sonGizlenen = 0; // düzleştirilmiş metni süzgeçten geçmeyen öğe sayısı (son hesaplama)
   let piller = new Map();
   let guncellemeler = new Map();
+  let belirsizKimlikler = new Set(); // son taramada ulaşılamıyor / bilinmiyor olan varlık kimlikleri (kapatma kaydı budanmaz)
   let taramaHazir = false;
   let uyarilar = [];
   const bilinen = new Set();
@@ -391,7 +462,8 @@ function merkezOlustur({ kapatilan, simdi = () => Date.now(), t = TR, yeniOge = 
     if (taramaHazir) {
       for (const anahtar of kapatilan.anahtarlar()) {
         const kaynak = anahtar.startsWith('pil:') ? 'pil' : 'guncelleme';
-        if (ayar[kaynak] && !tum.has(anahtar)) kapatilan.sil(anahtar);
+        // Ulaşılamıyor / bilinmiyor varlığın kaydı budanmaz: koşul kalkmadı, cihaz yalnız susuyor (örn. elektrik kesintisi sonrası)
+        if (ayar[kaynak] && !tum.has(anahtar) && !belirsizKimlikler.has(anahtar.split(':')[1])) kapatilan.sil(anahtar);
       }
     }
     for (const oge of yeniler.slice(0, 50)) {
@@ -414,9 +486,14 @@ function merkezOlustur({ kapatilan, simdi = () => Date.now(), t = TR, yeniOge = 
     if (typeof anahtar !== 'string') return undefined;
     uyarilariBuda();
     const u = uyarilar.find((o) => o.anahtar === anahtar);
-    if (u) return { ...u };
+    if (u) return uyariGorunumu(u);
     const o = merkezOgeleri().get(anahtar);
     return o && !kapatilan.var(anahtar) ? { ...o } : undefined;
+  }
+
+  /** Uyarı öğesinin başlığı bellekte tutulmaz; her görünümde GÜNCEL dille çevrilir (uyarı 24 saat bellekte kalır, dil değişebilir). */
+  function uyariGorunumu(u) {
+    return { ...u, baslik: tr('merkez.uyari.baslik') };
   }
 
   function disaAktar(o) {
@@ -431,7 +508,7 @@ function merkezOlustur({ kapatilan, simdi = () => Date.now(), t = TR, yeniOge = 
         kalici: yeni.kalici !== undefined ? yeni.kalici === true : onceki.kalici,
         pil: yeni.pil !== undefined ? yeni.pil === true : onceki.pil,
         guncelleme: yeni.guncelleme !== undefined ? yeni.guncelleme === true : onceki.guncelleme,
-        pilEsigi: Number.isInteger(yeni.pilEsigi) && yeni.pilEsigi >= 5 && yeni.pilEsigi <= 50 ? yeni.pilEsigi : onceki.pilEsigi,
+        pilEsigi: Number.isInteger(yeni.pilEsigi) && yeni.pilEsigi >= 5 && yeni.pilEsigi <= PIL_ESIGI_AZAMI ? yeni.pilEsigi : onceki.pilEsigi,
       };
       esitle(true);
     },
@@ -455,6 +532,7 @@ function merkezOlustur({ kapatilan, simdi = () => Date.now(), t = TR, yeniOge = 
     taramaGuncelle(varliklar) {
       const sonuc = varliklariTara(varliklar);
       if (!sonuc) return false;
+      belirsizKimlikler = new Set([...sonuc.piller.values(), ...sonuc.guncellemeler.values()].filter((v) => v.belirsiz).map((v) => v.kimlik));
       // Ulaşılamıyor / bilinmiyor: koşulun kalktığı anlamına gelmez; öncekini koru (kapatma ve yinelenen bildirim sıfırlanmasın).
       for (const [kimlik, p] of sonuc.piller) if (p.belirsiz && piller.has(kimlik)) sonuc.piller.set(kimlik, piller.get(kimlik));
       for (const [kimlik, g] of sonuc.guncellemeler) if (g.belirsiz && guncellemeler.has(kimlik)) sonuc.guncellemeler.set(kimlik, guncellemeler.get(kimlik));
@@ -468,27 +546,27 @@ function merkezOlustur({ kapatilan, simdi = () => Date.now(), t = TR, yeniOge = 
     /** Uyarı değerlendiricisinin olayı (uyari-kurallari.js). @returns {object|null} eklenen öğe */
     uyariEkle(olay) {
       if (!olay || typeof olay.kuralId !== 'string') return null;
-      const metin = suzulmusDuzMetin(olay.metin, METIN_SINIRI);
+      // Uyarı metni zaten düz metindir (cümle + HA'daki ad + durum): Markdown düzleştiricisinden geçmez ("1. Kat Koridor", "- x" bozulmasın)
+      const metin = typeof olay.metin === 'string' ? guvenliMetin(olay.metin, METIN_SINIRI) : null;
       if (!metin) return null;
       const an = Number.isFinite(olay.zaman) ? olay.zaman : simdi();
       const oge = {
         anahtar: `uyari:${olay.kuralId}:${an}`,
         kaynak: 'uyari',
-        baslik: tr('merkez.uyari.baslik'),
         metin,
         zaman: an,
         simge: typeof olay.simge === 'string' && olay.simge.length > 0 && olay.simge.length <= 8 ? olay.simge : KAYNAK_SIMGELERI.uyari,
       };
       uyarilar = [oge, ...uyarilar.filter((u) => u.anahtar !== oge.anahtar)].slice(0, EN_COK_UYARI);
       degistiBildir();
-      return { ...oge };
+      return uyariGorunumu(oge);
     },
     /** Panelde gösterilecek model: { ogeler (en çok 30), sayi (toplam), gizlenen }. */
     model() {
       uyarilariBuda();
       const tum = [...merkezOgeleri().values()].filter((o) => !kapatilan.var(o.anahtar));
       const sira = (o) => KAYNAKLAR.indexOf(o.kaynak);
-      const hepsi = [...uyarilar, ...tum].sort((a, b) => sira(a) - sira(b) || b.zaman - a.zaman);
+      const hepsi = [...uyarilar.map(uyariGorunumu), ...tum].sort((a, b) => sira(a) - sira(b) || b.zaman - a.zaman);
       return { ogeler: hepsi.slice(0, EN_COK_OGE).map(disaAktar), sayi: hepsi.length, gizlenen: haGizlenen + sonGizlenen };
     },
     /** Anahtara göre güncel (görünen) öğe; yoksa undefined. */
@@ -506,6 +584,7 @@ function merkezOlustur({ kapatilan, simdi = () => Date.now(), t = TR, yeniOge = 
     taramaSifirla() {
       piller = new Map();
       guncellemeler = new Map();
+      belirsizKimlikler = new Set();
       taramaHazir = false;
       esitle(true);
     },

@@ -25,6 +25,8 @@ const {
 } = require('../src/lib/uyari-kurallari');
 const { FAVORI_ALANLARI } = require('../src/lib/suzgec');
 const { TR, anaCevirmen } = require('../src/lib/ceviri-varsayilan');
+const { HAVA_DURUMLARI, MEDYA_DURUMLARI, SUPURGE_DURUMLARI, ZAMANLAYICI_DURUMLARI } = require('../src/lib/varlik-ozellik');
+const { HVAC_MODLARI } = require('../src/lib/servis-izinleri');
 
 const EN = anaCevirmen('en');
 
@@ -314,10 +316,27 @@ test('durumMetni: bilinen durumlar çevrilir, sayıya birim eklenir, kapı metni
   assert.equal(durumMetni({ state: 'on' }, TR), TR('durum.on'));
   assert.equal(durumMetni({ state: 'on' }, EN), 'on');
   assert.equal(durumMetni({ state: '23.5', attributes: { unit_of_measurement: '°C' } }, TR), '23.5 °C');
-  assert.equal(durumMetni({ state: 'playing' }, TR), 'playing');
+  assert.equal(durumMetni({ state: 'playing' }, TR), 'çalıyor');
+  assert.equal(durumMetni({ state: 'bilinmeyen_durum_x' }, TR), 'bilinmeyen_durum_x', 'sözlükte olmayan durum ham kalır');
   assert.equal(durumMetni({ state: 'Kapıyı aç' }, TR), null);
   assert.equal(durumMetni({ state: 7 }, TR), null);
   assert.equal(durumMetni(null, TR), null);
+});
+
+test('durumMetni: Ayarlar’da kural kurulabilen hava, medya, süpürge, zamanlayıcı ve klima durumlarının hepsi beş dilde çevrilir', () => {
+  const durumlar = new Set([...HAVA_DURUMLARI, ...MEDYA_DURUMLARI, ...SUPURGE_DURUMLARI, ...ZAMANLAYICI_DURUMLARI, ...HVAC_MODLARI]);
+  assert.ok(durumlar.size > 30);
+  for (const dil of ['tr', 'en', 'de', 'fr', 'es']) {
+    const c = anaCevirmen(dil);
+    for (const d of durumlar) {
+      assert.equal(c.var(`durum.${d}`), true, `${dil}: durum.${d}`);
+      assert.notEqual(durumMetni({ state: d }, c), null);
+    }
+  }
+  assert.equal(durumMetni({ state: 'rainy' }, TR), 'yağmurlu');
+  assert.equal(durumMetni({ state: 'rainy' }, EN), 'rainy');
+  assert.equal(durumMetni({ state: 'partlycloudy' }, anaCevirmen('de')), 'teilweise bewölkt');
+  assert.equal(durumMetni({ state: 'idle' }, anaCevirmen('fr')), 'inactif');
 });
 
 test('uyariMetniKur: varsayılan cümle ad ve durumu içerir; iki dilde', () => {
@@ -548,6 +567,90 @@ test('değerlendirici: ısınma süresinde gelen değişimler yalnız tabanı g�
   ayarla('sensor.sicaklik', '20');
   ayarla('sensor.sicaklik', '35');
   assert.equal(olaylar.length, 1);
+});
+
+test('değerlendirici: ısınmada yinelenen durum bekleyen süre sayacını silmez (eşik)', () => {
+  const { d, olaylar, ayarla, zaman } = kur([kural({ sure: 60 })]);
+  ayarla('sensor.sicaklik', '20');
+  ayarla('sensor.sicaklik', '35');
+  zaman.ilerle(30_000);
+  d.isinmaBaslat(); // WS yeniden kuruldu
+  ayarla('sensor.sicaklik', '36'); // toplu yüklemede koşul hâlâ sağlanıyor
+  assert.equal(zaman.bekleyen(), 1, 'sayaç sürüyor');
+  zaman.ilerle(31_000);
+  assert.equal(olaylar.length, 1, 'ilk kopmadan 61 sn sonra bildirir');
+});
+
+test('değerlendirici: ısınmada aynı durum yinelenince süreli durum kuralı bildirir', () => {
+  const { d, olaylar, ayarla, zaman } = kur([kural({ varlik: 'switch.pompa', kosul: { tur: 'durum', deger: 'on' }, sure: 600 })]);
+  ayarla('switch.pompa', 'off');
+  ayarla('switch.pompa', 'on');
+  zaman.ilerle(120_000);
+  d.isinmaBaslat();
+  ayarla('switch.pompa', 'on');
+  zaman.ilerle(481_000);
+  assert.equal(olaylar.length, 1);
+});
+
+test('değerlendirici: ısınmada aynı durum yinelenince süreli geçiş kuralı bildirir', () => {
+  const { d, olaylar, ayarla, zaman } = kur([kural({ varlik: 'light.salon', sure: 30, kosul: { tur: 'gecis', den: 'off', ye: 'on' } })]);
+  ayarla('light.salon', 'off');
+  ayarla('light.salon', 'on');
+  zaman.ilerle(10_000);
+  d.isinmaBaslat();
+  ayarla('light.salon', 'on');
+  zaman.ilerle(21_000);
+  assert.equal(olaylar.length, 1);
+});
+
+test('değerlendirici: ısınmada koşul bozulursa ya da durum değişirse bekleyen sayaç iptal olur (taban alınır)', () => {
+  const { d, olaylar, ayarla, zaman } = kur([kural({ sure: 60 })]);
+  ayarla('sensor.sicaklik', '20');
+  ayarla('sensor.sicaklik', '35');
+  zaman.ilerle(30_000);
+  d.isinmaBaslat();
+  ayarla('sensor.sicaklik', '20'); // koşul bozuldu
+  assert.equal(zaman.bekleyen(), 0);
+  zaman.ilerle(120_000);
+  assert.equal(olaylar.length, 0);
+
+  const g = kur([kural({ varlik: 'light.salon', sure: 30, kosul: { tur: 'gecis', den: 'off', ye: 'on' } })]);
+  g.ayarla('light.salon', 'off');
+  g.ayarla('light.salon', 'on');
+  g.zaman.ilerle(10_000);
+  g.d.isinmaBaslat();
+  g.ayarla('light.salon', 'off'); // durum değişti: taban
+  g.zaman.ilerle(60_000);
+  assert.equal(g.olaylar.length, 0);
+});
+
+test('değerlendirici: bekleyen süre sayacı dolunca kuralın GÜNCEL metni, pencere ve sessiz saat ayarı uygulanır', () => {
+  const kurallar = [kural({ sure: 60, metin: 'ESKI {ad}' })];
+  const { d, olaylar, ayarla, zaman } = kur(kurallar);
+  ayarla('sensor.sicaklik', '20');
+  ayarla('sensor.sicaklik', '35');
+  zaman.ilerle(30_000);
+  kurallar[0] = kural({ sure: 60, metin: 'YENI {ad}', windows: true, sessizSaatler: { baslangic: '11:00', bitis: '13:00' } }); // şimdiki dakikayı (12:00) kapsar; süre ve koşul aynı: sayaç sürer
+  d.kurallarDegisti();
+  assert.equal(zaman.bekleyen(), 1, 'sayaç yeniden kurulmadı');
+  zaman.ilerle(31_000);
+  assert.equal(olaylar.length, 1);
+  assert.ok(olaylar[0].metin.includes('YENI'), olaylar[0].metin);
+  assert.ok(!olaylar[0].metin.includes('ESKI'));
+  assert.equal(olaylar[0].windows, true);
+  assert.equal(olaylar[0].sessiz, true);
+
+  const g = [kural({ varlik: 'light.salon', sure: 30, kosul: { tur: 'gecis', den: 'off', ye: 'on' }, metin: 'ESKI {ad}' })];
+  const o = kur(g);
+  o.ayarla('light.salon', 'off');
+  o.ayarla('light.salon', 'on');
+  o.zaman.ilerle(10_000);
+  g[0] = kural({ varlik: 'light.salon', sure: 30, kosul: { tur: 'gecis', den: 'off', ye: 'on' }, metin: 'YENI {ad}', windows: true });
+  o.d.kurallarDegisti();
+  o.zaman.ilerle(21_000);
+  assert.equal(o.olaylar.length, 1);
+  assert.ok(o.olaylar[0].metin.includes('YENI'));
+  assert.equal(o.olaylar[0].windows, true);
 });
 
 test('değerlendirici: varlık HA’da yok olunca taban sıfırlanır; geri gelince bildirim üretmez', () => {

@@ -25,6 +25,11 @@ test('düz bildirim: ileti, başlık ve etiket çözülür; düğme yoksa boş l
   assert.deepEqual(c, { tur: 'goster', baslik: 'Makine', mesaj: 'Çamaşır bitti', etiket: 'camasir', dugmeler: [], dusenDugme: 0 });
 });
 
+test('satır başındaki sıra sayısı bozulmaz: hangi katın olduğu kaybolmaz', () => {
+  assert.equal(bildirimiCoz({ message: '3. kat ışığı açık kaldı' }).mesaj, '3. kat ışığı açık kaldı');
+  assert.equal(bildirimiCoz({ message: 'x', title: '2. kat' }).baslik, '2. kat');
+});
+
 test('başlık ve etiket isteğe bağlıdır; boş başlık yok sayılır', () => {
   assert.deepEqual(bildirimiCoz({ message: 'Merhaba' }), { tur: 'goster', baslik: null, mesaj: 'Merhaba', etiket: null, dugmeler: [], dusenDugme: 0 });
   assert.equal(bildirimiCoz({ message: 'Merhaba', title: '   ' }).baslik, null);

@@ -1,12 +1,13 @@
-/* Düğmeli itme bildirimi kartı (o-61). Koyu tema varsayılan; Windows açık temadayken açık tema. Renkler yalnız değişkenlerdendir. */
+/* Düğmeli itme bildirimi kartı (o-61). Koyu tema varsayılan; Windows açık temadayken açık tema. Renkler yalnız değişkenlerdendir.
+   Düğme zemini/kenarı --metin ve --bg'den türer: özel palet (tema-renk.js) Windows şemasına zıt parlaklıkta olsa da metin zeminde okunur. */
 :root {
   color-scheme: dark;
   --bg: #1b1f27;
   --metin: #f1f5f9;
   --soluk: #b6c0cf;
   --bilgi: #60a5fa;
-  --dugme-bg: #2a3140;
-  --dugme-sinir: #46506a;
+  --dugme-bg: color-mix(in srgb, var(--metin) 12%, var(--bg));
+  --dugme-sinir: color-mix(in srgb, var(--metin) 35%, var(--bg));
   --dugme-vurgu: #3b82f6;
   --dugme-vurgu-metin: #08111f;
 }
@@ -22,8 +23,6 @@
     --metin: #0f172a;
     --soluk: #475569;
     --bilgi: #1d4ed8;
-    --dugme-bg: #e2e8f0;
-    --dugme-sinir: #94a3b8;
     --dugme-vurgu: #1d4ed8;
     --dugme-vurgu-metin: #ffffff;
   }
@@ -118,7 +117,7 @@ body {
 .mesaj {
   text-wrap: pretty;
   flex: 1;
-  min-height: 0;
+  min-height: calc(2 * 1.35em); /* en az iki satır ileti her durumda görünür */
   font-size: 14px;
   line-height: 1.35;
   overflow: hidden;
@@ -128,14 +127,17 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Tek satır: düğmeler sarınca sabit yükseklikli kartta ileti metni ezilirdi; uzun başlıklar orantılı kısalır (üç nokta + title ipucu) */
 .dugmeler {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   justify-content: flex-end;
 }
 
 .dugme {
+  flex: 0 1 auto;
+  min-width: 0;
   min-height: 30px;
   max-width: 100%;
   padding: 4px 12px;
@@ -152,10 +154,11 @@ body {
   white-space: nowrap;
 }
 
+/* Özel palette --vurgu / --vurgu-metin kontrast garantilidir; palet yoksa sabit yedek değerler kullanılır */
 .dugme:first-child {
-  border-color: var(--dugme-vurgu);
-  background: var(--dugme-vurgu);
-  color: var(--dugme-vurgu-metin);
+  border-color: var(--vurgu, var(--dugme-vurgu));
+  background: var(--vurgu, var(--dugme-vurgu));
+  color: var(--vurgu-metin, var(--dugme-vurgu-metin));
 }
 
 .dugme:hover {

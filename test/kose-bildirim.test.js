@@ -773,3 +773,55 @@ test('köşe bildirimi (1.6.1): kapat() sürmekte olan solmayı durdurur (yok ed
   adimla(t, 400);
   assert.equal(p.opakliklar.length, sayi);
 });
+
+test('köşe bildirimi: gösterim fırlatırsa pencere görünür kalıp kuyruğu kilitlemez; bilgi yedeğe düşer, sıra ilerler, sonraki bilgi çizilir', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'bilgi', metin: 'A', simge: 'a' });
+    await o.akit();
+    const p = o.pencereler[0];
+    const gercekSend = p.webContents.send.bind(p.webContents);
+    p.webContents.send = (kanal, yuk) => {
+      if (kanal === 'kose:goster' && yuk.metin === 'B') throw new Error('Render frame was disposed before WebFrameMain could be accessed');
+      gercekSend(kanal, yuk);
+    };
+    o.kose.goster({ tur: 'bilgi', metin: 'B', simge: 'b' }); // A görünürken sıraya girer
+    t.mock.timers.tick(6000 + 150); // A bitti, B çizilemedi
+    assert.ok(o.gunlukler.includes('Köşe bildirimi gösterilemedi.'));
+    assert.deepEqual(o.yedekler.map((y) => y.metin), ['B'], 'çizilemeyen bilgi yedeğe düştü');
+    assert.equal(p.gorunur, false, 'sıra boşaldı: pencere gizlendi, açık kalmadı');
+    o.kose.goster({ tur: 'bilgi', metin: 'C', simge: 'c' });
+    assert.deepEqual(o.mesajlar(p).map((m) => m.metin), ['A', 'C'], 'sonraki bilgi kuyruğa gömülmedi, çizildi');
+    assert.equal(p.gorunur, true);
+  } finally {
+    o.temizle();
+  }
+});
+
+test('köşe bildirimi: çizilemeyen hata ikinci Windows bildirimi çıkarmaz (geriBildirim zaten gösterir), sıradaki bilgi gösterilir; çizilemeyen ok da çıkarmaz', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const o = kur();
+  try {
+    o.kose.goster({ tur: 'ok', metin: 'ilk' });
+    await o.akit();
+    const p = o.pencereler[0];
+    const gercekSend = p.webContents.send.bind(p.webContents);
+    let at = 2;
+    p.webContents.send = (kanal, yuk) => {
+      if (kanal === 'kose:goster' && yuk.metin !== 'son' && at > 0) {
+        at -= 1;
+        throw new Error('disposed');
+      }
+      gercekSend(kanal, yuk);
+    };
+    o.kose.goster({ tur: 'bilgi', metin: 'son', simge: 's' }); // ilk 'ok' görünürken sıraya girer
+    o.kose.goster({ tur: 'ok', metin: 'tamam' }); // fırlatır: ok yedeğe düşmez; bilgiyi keser ve sıraya döndürür
+    assert.deepEqual(o.yedekler, [], 'ok için Windows bildirimi yok');
+    o.kose.goster({ tur: 'hata', metin: 'bozuk' }); // fırlatır: hata yedeğe düşmez (main.js geriBildirim hatayı zaten Windows bildirimi yapar)
+    assert.deepEqual(o.yedekler, [], 'hata için ikinci Windows bildirimi yok');
+    assert.ok(o.mesajlar(p).some((m) => m.metin === 'son'), 'sıradaki bilgi çizildi');
+  } finally {
+    o.temizle();
+  }
+});

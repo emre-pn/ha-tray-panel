@@ -18,7 +18,7 @@ const {
   kapatilanDeposuOlustur,
   merkezOlustur,
 } = require('../src/lib/bildirim-merkezi');
-const { anaCevirmen } = require('../src/lib/ceviri-varsayilan');
+const { anaCevirmen, TR } = require('../src/lib/ceviri-varsayilan');
 
 const EN = anaCevirmen('en');
 
@@ -99,10 +99,16 @@ test('duzMetin: Markdown düz metne iner', () => {
   assert.equal(duzMetin('# Başlık\n\n**Kalın** ve *italik* `kod`'), 'Başlık Kalın ve italik kod');
   assert.equal(duzMetin('Bak [bağlantı](https://ornek.test/x?y=1) burada'), 'Bak bağlantı burada');
   assert.equal(duzMetin('![resim](https://ornek.test/a.png) altı'), 'resim altı');
-  assert.equal(duzMetin('- bir\n- iki\n1. üç'), '• bir • iki üç');
+  assert.equal(duzMetin('- bir\n- iki\n1. üç'), '• bir • iki 1. üç');
   assert.equal(duzMetin('> alıntı\n\n---\nson'), 'alıntı son');
   assert.equal(duzMetin('<b>kalın</b> <https://ornek.test> metin'), 'kalın metin');
   assert.equal(duzMetin('```\nkod satırı\n```'), 'kod satırı');
+});
+
+test('duzMetin: satır başındaki sıra sayısı ve numara korunur ("2. kat" numaralı liste değildir)', () => {
+  assert.equal(duzMetin('2. kat sıcaklığı yüksek'), '2. kat sıcaklığı yüksek');
+  assert.equal(duzMetin('1) Salon pil düşük'), '1) Salon pil düşük');
+  assert.equal(duzMetin('Uyarı\n3. kattaki ışık açık kaldı'), 'Uyarı 3. kattaki ışık açık kaldı');
 });
 
 test('duzMetin: adres gösterilmez, entity_id altçizgileri bozulmaz, boşluklar teke iner', () => {
@@ -189,6 +195,42 @@ test('varliklariTara: sayı sınırları uygulanır', () => {
   assert.equal(varliklariTara(cok).piller.size, 100);
 });
 
+test('varliklariTara: sınır yalnız adaylara uygulanır; sağlıklı pil ve güncel güncelleme sınırı tüketmez', () => {
+  const sensorler = Array.from({ length: 150 }, (_, i) => pil(`sensor.p${i + 1}_pil`, i === 129 ? '3' : '90'));
+  const s = varliklariTara(sensorler);
+  assert.deepEqual([...s.piller.keys()], ['sensor.p130_pil'], 'yalnız düşük pil haritada; %90 piller girmez');
+
+  const guncellemeler = Array.from({ length: 60 }, (_, i) => guncelleme(`update.u${i + 1}`, i === 54 ? 'on' : 'off'));
+  const g = varliklariTara(guncellemeler);
+  assert.deepEqual([...g.guncellemeler.keys()], ['update.u55'], 'yalnız bekleyen güncelleme haritada');
+
+  // 120 "off" güncelleme ve ardından 5 "on": sınır adaylara uygulandığından hepsi görünür
+  const karisik = [...Array.from({ length: 120 }, (_, i) => guncelleme(`update.o${i}`, 'off')), ...Array.from({ length: 5 }, (_, i) => guncelleme(`update.b${i}`, 'on'))];
+  assert.equal(varliklariTara(karisik).guncellemeler.size, 5);
+
+  // 200 ulaşılamayan pil sonda düşük pili gizlemez
+  const olu = [...Array.from({ length: 200 }, (_, i) => pil(`sensor.o${i}_pil`, 'unavailable')), pil('sensor.son_pil', '4')];
+  assert.equal(varliklariTara(olu).piller.get('sensor.son_pil').yuzde, 4);
+
+  // aday sayısı sınırı aşarsa en düşük yüzdeliler kalır, bekleyen güncelleme sınırı da korunur
+  const cok = [...Array.from({ length: 120 }, (_, i) => pil(`sensor.y${i}_pil`, '40')), pil('sensor.cok_dusuk_pil', '1')];
+  const c = varliklariTara(cok);
+  assert.equal(c.piller.size, 100);
+  assert.ok(c.piller.has('sensor.cok_dusuk_pil'));
+  const bekleyenCok = Array.from({ length: 80 }, (_, i) => guncelleme(`update.k${i}`, 'on'));
+  assert.equal(varliklariTara(bekleyenCok).guncellemeler.size, 50);
+});
+
+test('merkez: tarama sırasının sonundaki düşük pil ve bekleyen güncelleme bildirimde görünür', () => {
+  const { merkez } = merkezKur();
+  merkez.taramaGuncelle([pil('sensor.ilk_pil', '90')]);
+  const liste = [...Array.from({ length: 149 }, (_, i) => pil(`sensor.p${i}_pil`, '90')), pil('sensor.p130_pil', '3'), ...Array.from({ length: 59 }, (_, i) => guncelleme(`update.o${i}`, 'off')), guncelleme('update.u55', 'on')];
+  merkez.taramaGuncelle(liste);
+  const m = merkez.model();
+  assert.equal(m.sayi, 2);
+  assert.deepEqual(m.ogeler.map((o) => o.kaynak).sort(), ['guncelleme', 'pil']);
+});
+
 // --- kapatılan deposu --------------------------------------------------------------------------------------------------
 
 test('kapatilanAnahtariGecerliMi: yalnız pil: ve guncelleme: anahtarları', () => {
@@ -253,6 +295,56 @@ test('kapatılan deposu: bozuk dosya boş başlar ve günlüğe sabit metin yaza
   assert.equal(gunluk.length, 1);
   for (let i = 0; i < KAPATILAN_EN_COK + 30; i += 1) d.ekle(`pil:sensor.s${i}`);
   assert.equal(d.sayi(), KAPATILAN_EN_COK);
+});
+
+test('kapatılan deposu: geçici okuma hatası (EBUSY) bozulma sayılmaz; dosya ezilmez, okunabilince birleştirilir', () => {
+  const eskiler = JSON.stringify({ surum: 1, kayitlar: [{ anahtar: 'pil:sensor.a', zaman: 900 }, { anahtar: 'pil:sensor.b', zaman: 800 }, { anahtar: 'guncelleme:update.c:1.0', zaman: 700 }] });
+  const fs = sahteFs({ 'k.json': eskiler });
+  const gercekOku = fs.readFileSync;
+  let kilitli = true;
+  fs.readFileSync = (y, k) => {
+    if (kilitli) throw Object.assign(new Error('meşgul'), { code: 'EBUSY' });
+    return gercekOku(y, k);
+  };
+  const gunluk = [];
+  const zaman = sahteZaman();
+  const d = kapatilanDeposuOlustur({ dosyaYolu: 'k.json', fs, gunluk: (m) => gunluk.push(m), zaman, simdi: () => 1_000 });
+  assert.equal(d.yukle(), 0);
+  assert.deepEqual(gunluk, ['Bildirim kapatma dosyası okunamadı; yazma ertelendi.']);
+  d.ekle('pil:sensor.yeni');
+  assert.equal(d.bosalt(), false, 'dosya hâlâ kilitli: yazılmaz');
+  assert.equal(fs.dosyalar.get('k.json'), eskiler, 'özgün dosya değişmedi');
+  assert.equal(d.sayi(), 1);
+  kilitli = false; // kilit kalktı
+  assert.equal(d.bosalt(), true);
+  const yazilan = JSON.parse(fs.dosyalar.get('k.json'));
+  assert.deepEqual(yazilan.kayitlar.map((k) => k.anahtar).sort(), ['guncelleme:update.c:1.0', 'pil:sensor.a', 'pil:sensor.b', 'pil:sensor.yeni']);
+  assert.equal(d.sayi(), 4, 'bellek de birleşti');
+});
+
+test('kapatılan deposu: okuma hatası sürerken silinen anahtar birleştirmede geri gelmez; bozuk JSON yine boş başlar', () => {
+  const fs = sahteFs({ 'k.json': JSON.stringify({ surum: 1, kayitlar: [{ anahtar: 'pil:sensor.a', zaman: 900 }] }) });
+  const gercekOku = fs.readFileSync;
+  let kilitli = true;
+  fs.readFileSync = (y, k) => {
+    if (kilitli) throw new Error('meşgul');
+    return gercekOku(y, k);
+  };
+  const d = kapatilanDeposuOlustur({ dosyaYolu: 'k.json', fs, zaman: sahteZaman(), simdi: () => 1_000 });
+  d.yukle();
+  d.ekle('pil:sensor.a');
+  d.sil('pil:sensor.a'); // koşul kalktı
+  kilitli = false;
+  d.bosalt();
+  assert.deepEqual(d.anahtarlar(), [], 'silinen anahtar diskten geri gelmedi');
+
+  const bozuk = sahteFs({ 'k.json': '{bozuk' });
+  const g = [];
+  const b = kapatilanDeposuOlustur({ dosyaYolu: 'k.json', fs: bozuk, gunluk: (m) => g.push(m), zaman: sahteZaman() });
+  b.yukle();
+  b.ekle('pil:sensor.x');
+  assert.equal(b.bosalt(), true, 'gerçek JSON bozulmasında mevcut davranış: boş başla ve yaz');
+  assert.deepEqual(JSON.parse(bozuk.dosyalar.get('k.json')).kayitlar.map((k) => k.anahtar), ['pil:sensor.x']);
 });
 
 test('kapatılan deposu: yazma hatası fırlatmaz', () => {
@@ -569,4 +661,49 @@ test('merkez: yerelde kapatılmış öğe yeniden "yeni" olarak yansıtılmaz', 
 
 test('KAYNAKLAR sıralaması: uyarı en üstte', () => {
   assert.deepEqual([...KAYNAKLAR], ['uyari', 'ha', 'pil', 'guncelleme']);
+});
+
+test('merkez: kapatılmış pil unavailable/unknown iken kapatma kaydı silinmez; dönünce yeni sayılıp yansıtılmaz', () => {
+  const { merkez, kapatilan, yeniler } = merkezKur();
+  kapatilan.ekle('pil:sensor.salon_pil'); // önceki oturumda kapatılmış
+  merkez.taramaGuncelle([pil('sensor.salon_pil', 'unavailable')]); // açılışta cihaz henüz yok: kayıt oluşmaz
+  assert.ok(kapatilan.var('pil:sensor.salon_pil'));
+  merkez.taramaGuncelle([pil('sensor.salon_pil', 'unknown')]);
+  assert.ok(kapatilan.var('pil:sensor.salon_pil'), 'ikinci taramada da budanmaz');
+  merkez.taramaGuncelle([pil('sensor.salon_pil', '12')]);
+  assert.equal(yeniler.length, 0);
+  assert.equal(merkez.model().sayi, 0, 'hâlâ kapatılmış');
+  merkez.taramaGuncelle([pil('sensor.salon_pil', '80')]);
+  assert.ok(!kapatilan.var('pil:sensor.salon_pil'), 'koşul gerçekten kalkınca budanır');
+});
+
+test('merkez: ulaşılamayan güncellemenin kapatma kaydı korunur; varlık HA’dan kalkınca budanır', () => {
+  const { merkez, kapatilan } = merkezKur();
+  merkez.taramaGuncelle([]);
+  kapatilan.ekle('guncelleme:update.core:2026.10.1');
+  merkez.taramaGuncelle([guncelleme('update.core', 'unavailable')]);
+  merkez.taramaGuncelle([guncelleme('update.core', 'unavailable')]);
+  assert.ok(kapatilan.var('guncelleme:update.core:2026.10.1'));
+  merkez.taramaGuncelle([]); // varlık tamamen kalktı
+  assert.ok(!kapatilan.var('guncelleme:update.core:2026.10.1'));
+});
+
+test('merkez: uyarı metni Markdown düzleştiricisinden geçmez (cihaz adındaki sıra sayısı ve işaretler korunur), Kapı Kuralı sürer', () => {
+  const { merkez } = merkezKur();
+  assert.equal(merkez.uyariEkle(olay({ metin: '1. Kat Koridor: açık' })).metin, '1. Kat Koridor: açık');
+  assert.equal(merkez.uyariEkle(olay({ zaman: 5_000_001, metin: '- Sensör: *3* düştü' })).metin, '- Sensör: *3* düştü');
+  assert.equal(merkez.uyariEkle(olay({ zaman: 5_000_002, metin: '  Salon   çok \n sıcak ' })).metin, 'Salon çok sıcak', 'boşluklar yine teke iner');
+  assert.equal(merkez.uyariEkle(olay({ metin: 'Kapıyı aç' })), null);
+  assert.equal(merkez.uyariEkle(olay({ metin: 42 })), null);
+  assert.equal(merkez.uyariEkle(olay({ metin: '   ' })), null);
+});
+
+test('merkez: uyarı başlığı arayüz dili değişince yeni dille görünür (bellekte eski dilde kalmaz)', () => {
+  const { merkez } = merkezKur();
+  const eklenen = merkez.uyariEkle(olay());
+  assert.equal(eklenen.baslik, TR('merkez.uyari.baslik'));
+  merkez.dilDegisti(EN);
+  assert.equal(merkez.model().ogeler[0].baslik, EN('merkez.uyari.baslik'));
+  assert.notEqual(EN('merkez.uyari.baslik'), TR('merkez.uyari.baslik'));
+  assert.equal(merkez.bul(eklenen.anahtar).baslik, EN('merkez.uyari.baslik'));
 });
